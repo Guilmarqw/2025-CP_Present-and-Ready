@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Tracker</title>
+    <link rel="stylesheet" href="../CamFootage/CamFootage.css">
+</head>
+<body>
+    <div class="container">
+        <div class="cctv-section">
+            <div class="cctv-feed">
+                <video autoplay muted loop controls>
+                    <source src="../CamFootage/00-24-59.mp4"video/mp4">
+                    <!-- Add additional source formats if needed -->
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+        </div>
+        <div class="attendance-section">
+            <header>
+                <div class="time-info">
+                    <span id="date-time">07/04/25-1:00PM</span>
+                    <div class="controls">
+                        <button>-</button>
+                        <span>55</span>
+                        <button>+</button>
+                    </div>
+                </div>
+                <div class="instructor-info">
+                    <img src="avatar-placeholder.png" alt="Instructor" class="avatar">
+                    <span>Instructor's Name</span>
+                </div>
+            </header>
+            <div class="student-list">
+                <div class="student-row">
+                    <img src="avatar-placeholder.png" alt="Student" class="avatar">
+                    <span class="student-name">Student Name</span>
+                    <span class="status present">Present</span>
+                </div>
+                <!-- More student rows will be added dynamically -->
+            </div>
+        </div>
+    </div>
+    <script src="CamFootage.js"></script>
+</body>
+</html
