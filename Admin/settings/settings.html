@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard</title>
+<link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <a href="../admin.html"><img src="https://upload.wikimedia.org/wikipedia/en/thumb/3/3e/WMSU_Seal.png/220px-WMSU_Seal.png" alt="Logo" class="logo"></a>
+      <div class="title">Admin Side</div>
+    </div>
+    <div class="header-right">
+      <div class="user-info">
+        <div class="name">Guilmar Acabo Quimba</div>
+        <div class="role">Admin</div>
+      </div>
+      <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="User" class="profile-pic" onclick="toggleDropdown()">
+      <div class="dropdown" id="dropdown">
+        <a href="#" onclick="showAccountSettings()">Account Settings</a>
+        <a href="#">Go back to Session</a>
+        <a href="#">Logout</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-content" id="account-settings">
+    <div class="card">
+      <div class="card-header">
+        <h2>Personal Information</h2>
+        <div class="buttons">
+          <button class="edit-btn">Edit</button>
+          <button class="logout-btn">Logout</button>
+        </div>
+      </div>
+
+      <div class="profile-section">
+        <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="Profile">
+        <div class="fullname">Guilmar Acabo Quimba</div>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-item">
+          <label>FIRST NAME</label>
+          <div>Guilmar</div>
+        </div>
+        <div class="info-item">
+          <label>MIDDLE NAME</label>
+          <div>Acabo</div>
+        </div>
+        <div class="info-item">
+          <label>LAST NAME</label>
+          <div>Quimba</div>
+        </div>
+        <div class="info-item">
+          <label>EMAIL</label>
+          <div><a href="mailto:guilmar12@example.com">guilmar12@example.com</a></div>
+        </div>
+        <div class="info-item">
+          <label>CONTACT</label>
+          <div>09554321563</div>
+        </div>
+        <div class="info-item">
+          <label>GENDER</label>
+          <div>Male</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="security-card">
+      <h3>Account Security</h3>
+      <div class="security-item">
+        <div>
+          <label>VCode</label>
+          <div>*******</div>
+        </div>
+        <button class="change-btn">Change VCode</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="settings.js"></script>
+
+</body>
+</html>

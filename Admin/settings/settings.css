@@ -1,0 +1,209 @@
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    body {
+      background: #ffffff;
+    }
+
+    .header {
+      background: #f0f0f0;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+    }
+
+    .logo {
+      width: 60px;
+      height: 60px;
+      margin-right: 20px;
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: bold;
+      color: green;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+
+    .user-info {
+      text-align: right;
+      margin-right: 10px;
+    }
+
+    .user-info .name {
+      font-size: 14px;
+      color: #1e4d2b;
+    }
+
+    .user-info .role {
+      font-size: 12px;
+      color: gray;
+    }
+
+    .profile-pic {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .dropdown {
+      display: none;
+      position: absolute;
+      top: 60px;
+      right: 0;
+      background: white;
+      border: 1px solid #ccc;
+      width: 200px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      z-index: 100;
+    }
+
+    .dropdown a {
+      display: block;
+      padding: 10px 15px;
+      text-decoration: none;
+      color: #222;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .dropdown a:last-child {
+      border-bottom: none;
+    }
+
+    .dropdown a:hover {
+      background: #f4f4f4;
+    }
+
+    .main-content {
+      padding: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .card-header h2 {
+      color: green;
+      font-size: 20px;
+    }
+
+    .card-header .buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    .card-header .buttons button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .edit-btn {
+      background: #8a75e8;
+    }
+
+    .logout-btn {
+      background: #e74c3c;
+    }
+
+    .profile-section {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .profile-section img {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      border: 3px solid #ccc;
+      margin-bottom: 10px;
+    }
+
+    .profile-section .fullname {
+      font-size: 18px;
+      font-weight: 600;
+      color: green;
+    }
+
+    .info-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 40px;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .info-item {
+      width: 200px;
+    }
+
+    .info-item label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 5px;
+      display: block;
+    }
+
+    .info-item div {
+      font-weight: 500;
+    }
+
+    .security-card {
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    }
+
+    .security-card h3 {
+      font-size: 18px;
+      color: green;
+      margin-bottom: 15px;
+    }
+
+    .security-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .change-btn {
+      padding: 8px 16px;
+      background: #8a75e8;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-weight: bold;
+      cursor: pointer;
+    }

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <a href="admin.html"><img src="https://upload.wikimedia.org/wikipedia/en/thumb/3/3e/WMSU_Seal.png/220px-WMSU_Seal.png" alt="Logo" class="logo"></a>
+      <div class="title">Admin Side</div>
+    </div>
+    <div class="header-right">
+      <div class="user-info">
+        <div class="name">Unknown User</div>
+        <div class="role">Admin</div>
+      </div>
+      <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="User" class="profile-pic" onclick="toggleDropdown()">
+      <div class="dropdown" id="dropdown">
+        <a href="settings/settings.html">Account Settings</a>
+        <a href="#">Go back to Session</a>
+        <a href="#">Logout</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="sidebar">
+      <div class="menu-item active"><i>🔲</i>Dashboard</div>
+      <div class="menu-item"><i>👨‍🏫</i>Instructors</div>
+      <div class="menu-item"><i>👥</i>Students</div>
+    </div>
+    <div class="main-content">
+      <div class="summary-title">Summary</div>
+      <div class="cards">
+        <div class="card">
+          <h3>Instructors</h3>
+          <div class="value">7</div>
+          <div class="label">Total</div>
+          <i>👨‍🏫</i>
+        </div>
+        <div class="card">
+          <h3>Students</h3>
+          <div class="value">561</div>
+          <div class="label">Total</div>
+          <i>👥</i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="admin.js"></script>
+</body>
+</html>
