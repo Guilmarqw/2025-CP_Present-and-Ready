@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin Dashboard</title>
-    <link rel="stylesheet" href="admin.css" />
+  <link rel="stylesheet" href="admin.css" />
 </head>
 <body>
 
@@ -29,29 +29,127 @@
 
   <div class="container">
     <div class="sidebar">
-      <div class="menu-item active"><i>🔲</i>Dashboard</div>
-      <div class="menu-item"><i>👨‍🏫</i>Instructors</div>
-      <div class="menu-item"><i>👥</i>Students</div>
+      <div class="menu-item active" onclick="showSection('dashboard', this)"><i>🔲</i>Dashboard</div>
+      <div class="menu-item" onclick="showSection('instructors', this)"><i>👨‍🏫</i>Instructors</div>
+      <div class="menu-item" onclick="showSection('students', this)"><i>👥</i>Students</div>
     </div>
+
     <div class="main-content">
-      <div class="summary-title">Summary</div>
-      <div class="cards">
-        <div class="card">
-          <h3>Instructors</h3>
-          <div class="value">7</div>
-          <div class="label">Total</div>
-          <i>👨‍🏫</i>
-        </div>
-        <div class="card">
-          <h3>Students</h3>
-          <div class="value">561</div>
-          <div class="label">Total</div>
-          <i>👥</i>
+      <!-- Dashboard -->
+      <div id="dashboard-section">
+        <div class="summary-title">Summary</div>
+        <div class="cards">
+          <div class="card">
+            <h3>Instructors</h3>
+            <div class="value">7</div>
+            <div class="label">Total</div>
+            <i>👨‍🏫</i>
+          </div>
+          <div class="card">
+            <h3>Students</h3>
+            <div class="value">561</div>
+            <div class="label">Total</div>
+            <i>👥</i>
+          </div>
         </div>
       </div>
+
+      <!-- Instructors -->
+      <div id="instructors-section" class="hidden">
+        <h2 class="summary-title">List of Instructors</h2>
+        <div class="top-bar">
+          <input type="text" placeholder="Search Name...">
+          <select><option>Department</option></select>
+          <label class="toggle"><input type="checkbox"> Show Removed Instructors</label>
+          <button class="invite-btn">Invite Instructor</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Photo</th>
+              <th>Name</th>
+              <th>ID Number</th>
+              <th>Faculty</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><img src="https://randomuser.me/api/portraits/men/75.jpg" /></td>
+              <td>Guilmar A. Quimba</td>
+              <td>1100-22</td>
+              <td>IT Department</td>
+              <td>
+                <button class="purple">✎</button>
+                <button class="blue">👁</button>
+                <button class="red">🗑</button>
+              </td>
+            </tr>
+            <tr>
+              <td><img src="https://randomuser.me/api/portraits/men/75.jpg" /></td>
+              <td>Guilmar A. Quimba</td>
+              <td>1100-22</td>
+              <td>CS Department</td>
+              <td>
+                <button class="purple">✎</button>
+                <button class="blue">👁</button>
+                <button class="red">🗑</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Students -->
+      <div id="students-section" class="hidden">
+        <h2 class="summary-title">List of Students</h2>
+        <div class="top-bar">
+          <input type="text" placeholder="Search Name...">
+          <select><option>Section</option></select>
+          <select><option>Course</option></select>
+          <label class="toggle"><input type="checkbox"> Show Removed Students</label>
+          <button class="invite-btn">Invite Student</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Photo</th>
+              <th>Name</th>
+              <th>ID Number</th>
+              <th>Course & Section</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><img src="https://randomuser.me/api/portraits/men/75.jpg" /></td>
+              <td>Guilmar A. Quimba</td>
+              <td>1100-22</td>
+              <td>BSCS 3B</td>
+              <td>
+                <button class="purple">✎</button>
+                <button class="blue">👁</button>
+                <button class="red">🗑</button>
+              </td>
+            </tr>
+            <tr>
+              <td><img src="https://randomuser.me/api/portraits/men/75.jpg" /></td>
+              <td>Guilmar A. Quimba</td>
+              <td>1100-22</td>
+              <td>BSIT 3C</td>
+              <td>
+                <button class="purple">✎</button>
+                <button class="blue">👁</button>
+                <button class="red">🗑</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 
-<script src="admin.js"></script>
+  <script src="admin.js"></script>
 </body>
 </html>
