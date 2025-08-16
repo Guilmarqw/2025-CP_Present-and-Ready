@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <title>Class Attendance Timer</title>
     <style>
         body {
@@ -137,10 +138,22 @@
             margin-left: 20px;
             font-size: 14px;
             z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px; /* Space between icon and text */
+            transition: background 0.2s;
         }
         .header-btn:hover {
             background-color: #004d00;
         }
+
+        .material-icons {
+        font-size: 20px; /* Icon size */
+        }
+        .btn-text {
+        font-size: 14px;
+        }
+
         #startBtn {
             background-color: #685A45;
             color: white;
@@ -185,7 +198,12 @@
     <div class="header">
         <img src="../img/logo.png" alt="University Logo" class="logo">
         <h1 class="title">CLASS ATTENDANCE TIMER</h1>
-        <button class="header-btn">Settings</button>
+        <a href="../Admin/Admin.html" style="text-decoration: none;">
+<button class="header-btn">
+  <span class="material-icons">dashboard</span>
+  <span class="btn-text">Go to Dashboard</span>
+</button>
+</a>
     </div>
     <div class="content-wrapper">
         <div class="timer-container">
@@ -244,7 +262,9 @@
                 </div>
             </div>
         </div>
-        <button id="startBtn">Start Session</button>
+   <a href="../CamFootage/CamFootage.html" style="text-decoration: none;">
+  <button id="startBtn">Start Session</button>
+</a>
     </div>
 
     <script>
