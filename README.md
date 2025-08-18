@@ -1,2 +1,1 @@
-# Present-and-Ready
-BSIT-4C GROUP 1
+# Present and Ready: A Liveness Detection for Real Time Face Recognition Attendance
