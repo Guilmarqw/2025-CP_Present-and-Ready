@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Summary</title>
+    <link rel="stylesheet" href="Summary.css">
+</head>
+<body>
+    <!-- Edit Modal (Hidden by default) -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">STUDENT ATTENDANCE EDITOR</h2>
+                <button class="modal-close" id="closeModal">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="search-container">
+                    <input type="text" class="search-input" placeholder="Search student name..." id="studentSearch">
+                </div>
+                <div class="attendance-options">
+                    <button class="attendance-option option-present">MARK PRESENT</button>
+                    <button class="attendance-option option-late">MARK LATE</button>
+                    <button class="attendance-option option-absent">MARK ABSENT</button>
+                </div>
+                <div class="students-container" id="modalStudentsList">
+                    <!-- Students will be populated by JavaScript -->
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" id="modalCancel">Cancel</button>
+                <button class="modal-btn modal-btn-save" id="modalSave">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <h1>ATTENDANCE SUMMARY</h1>
+            <div class="header-buttons">
+                <button class="btn btn-edit" id="editBtn">Edit</button>
+                <button class="btn btn-save">Save</button>
+                <button class="btn btn-cancel">Discard</button>
+            </div>
+        </div>
+
+        <div class="instructor-info">
+            <div class="instructor-row">
+                <div class="instructor-profile">
+                    <div class="instructor-avatar">
+                        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Ccircle cx='30' cy='30' r='30' fill='%23E5E7EB'/%3E%3Ccircle cx='30' cy='24' r='9' fill='%236B7280'/%3E%3Cpath d='M15 45c0-8.25 6.75-15 15-15s15 6.75 15 15' fill='%236B7280'/%3E%3C/svg%3E" alt="Instructor Avatar">
+                    </div>
+                    <div class="instructor-details">
+                        <div class="instructor-name">Instructor's Name</div>
+                        <div class="instructor-title">IT/CS Instructor</div>
+                    </div>
+                </div>
+                <div class="subject-info">
+                    <div class="subject-code">IT104</div>
+                    <div class="subject-label">Subject</div>
+                </div>
+                <div class="course-info">
+                    <div class="course-code">BSIT-2C</div>
+                    <div class="course-label">Course & Section</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="time-section">
+            <div class="time-item">
+                <div class="time-value">1:03pm</div>
+                <div class="time-label">Time Started</div>
+            </div>
+            <div class="duration-container">
+                <div class="duration-main">
+                    <div class="duration-value">3h:00m:00s</div>
+                    <div class="duration-label">Class Duration</div>
+                </div>
+                <div class="threshold-container">
+                    <div class="threshold-value">00h:15m:00s</div>
+                    <div class="threshold-label">Late Threshold</div>
+                </div>
+            </div>
+            <div class="time-item">
+                <div class="time-value">4:03pm</div>
+                <div class="time-label">Time Ended</div>
+            </div>
+        </div>
+
+        <div class="attendance-grid">
+            <div class="attendance-column column-present">
+                <div class="column-header">
+                    <div class="attendance-count count-present">29/36</div>
+                    <div class="attendance-label">Students Present</div>
+                </div>
+                <div class="student-list" id="presentList">
+                    <!-- Students will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="attendance-column column-late">
+                <div class="column-header">
+                    <div class="attendance-count count-late">10/36</div>
+                    <div class="attendance-label">Students Late</div>
+                </div>
+                <div class="student-list" id="lateList">
+                    <!-- Students will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="attendance-column column-absent">
+                <div class="column-header">
+                    <div class="attendance-count count-absent">7/36</div>
+                    <div class="attendance-label">Students Absent</div>
+                </div>
+                <div class="student-list" id="absentList">
+                    <!-- Students will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="Summary.js"></script>
+
+</body>
+</html>
