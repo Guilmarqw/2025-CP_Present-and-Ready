@@ -30,6 +30,13 @@
         body {
             background-color: #f5f7fb;
             color: var(--dark);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        html {
+            height: 100%;
+            overflow: hidden;
         }
 
         .container {
@@ -37,12 +44,14 @@
             min-height: 100vh;
             max-width: 1600px;
             margin: 0 auto;
+            height: 100vh;
+            overflow: hidden;
         }
         
         .cctv-section {
             flex: 2;
             background: #000;
-            overflow: hidden;
+            overflow: visible;
             box-shadow: 0 8px 30px rgba(0,0,0,0.12);
             display: flex;
             flex-direction: column;
@@ -125,10 +134,11 @@
             flex: 1;
             background: white;
             box-shadow: 0 8px 30px rgba(0,0,0,0.12);
-            overflow: hidden;
+            overflow: visible;
             display: flex;
             flex-direction: column;
             min-width: 350px;
+            height: 100%;
         }
 
         header {
@@ -195,20 +205,35 @@
             display: flex;
             align-items: center;
             gap: 0.75rem;
+            flex-direction: column;
+            align-items: flex-start;
         }
 
-        .avatar {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid white;
+        .instructor-role {
+            font-size: 0.8rem;
+            opacity: 0.8;
+            margin-top: 0.2rem;
+        }
+
+        .section-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            min-width: fit-content;
         }
 
         .search-bar {
             padding: 0.5rem;
             border-bottom: 1px solid var(--gray-light);
             position: relative;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
 
         .search-bar input {
@@ -228,7 +253,7 @@
 
         .search-icon {
             position: absolute;
-            left: 1.75rem;
+            left: 0.75rem;
             top: 50%;
             transform: translateY(-50%);
             color: var(--gray);
@@ -236,8 +261,25 @@
 
         .student-list {
             flex: 1;
+            max-height: calc(100vh - 350px); /* Adjust height to fit screen */
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 0.5rem;
+            scrollbar-width: thin;
+            scrollbar-color: var(--gray) transparent;
+        }
+
+        .student-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .student-list::-webkit-scrollbar-thumb {
+            background-color: var(--gray);
+            border-radius: 3px;
+        }
+
+        .student-list::-webkit-scrollbar-track {
+            background: transparent;
         }
 
         .list-header {
@@ -333,43 +375,84 @@
 
         .actions {
             display: flex;
-            padding: 0.5rem;
-            gap: 0.5rem;
+            padding: 0.75rem;
+            justify-content: center; /* Center the button */
             border-top: 1px solid var(--gray-light);
+            position: relative;
+            min-height: 65px;  /* Use min-height instead of height */
+            overflow: hidden;
         }
 
-        .actions button {
+        .action-toggle {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem; /* Increase horizontal padding */
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transform: translateY(0);
+            transition: transform 0.3s ease;
+            min-width: 160px; /* Add minimum width */
+            position: absolute;  /* Position absolutely to prevent layout shift */
+            left: 50%;
+            transform: translateX(-50%);  /* Center horizontally */
+            visibility: visible;
+            opacity: 1;
+            transition: all 0.3s ease;
+        }
+
+        .action-toggle.hidden {
+            transform: translate(-50%, 100%);   
+            visibility: hidden;
+            opacity: 0;
+        }
+
+        .action-menu {
+            position: absolute;
+            left: 0.75rem;
+            right: 0.75rem;
+            bottom: 0.08rem;
+            transform: translateY(0);
+            display: flex;
+            gap: 0.5rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            background: transparent;
+        }
+
+        .action-menu.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .action-menu button {
             flex: 1;
-            padding: 0.75rem;
+            padding: 0.75rem 1rem;
             border: none;
             border-radius: 8px;
-            font-weight: 500;
-            cursor: pointer;
+            background: var(--gray-light);
+            color: var(--dark);
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 0.5rem;
+            cursor: pointer;
             transition: all 0.2s;
-            font-size: 0.9rem;
+            min-width: 0;  /* Allow buttons to shrink */
         }
 
-        .primary-btn {
+        .action-menu button:hover {
             background: var(--primary);
             color: white;
         }
 
-        .primary-btn:hover {
-            background: var(--secondary);
-            transform: translateY(-1px);
-        }
-
-        .secondary-btn {
-            background: var(--gray-light);
-            color: var(--dark);
-        }
-
-        .secondary-btn:hover {
-            background: #d1d5db;
+        .action-menu button:last-child {
+            background: var(--primary-light);
+            color: var(--primary);
         }
 
         .stats-bar {
@@ -397,6 +480,49 @@
             font-size: 0.75rem;
         }
 
+        /* Additional style variants for different stat types */
+        .stat-item.present {
+            background: #e3fafc;
+        }
+        .stat-item.present .stat-value {
+            color: #1098ad;
+        }
+
+        .stat-item.late {
+            background: #fff9db;
+        }
+        .stat-item.late .stat-value {
+            color: #f59f00;
+        }
+
+        .stat-item.absent {
+            background: #fff5f5;
+        }
+        .stat-item.absent .stat-value {
+            color: #ff6b6b;
+        }
+
+        .stat-item.percentage {
+            background: var(--primary-light);
+        }
+        .stat-item.percentage .stat-value {
+            color: var(--primary);
+        }
+
+        /* Update the avatar styles */
+        .avatar {
+            width: 32px;  /* Smaller default size for student avatars */
+            height: 32px;
+        }
+
+        .instructor-avatar {
+            width: 48px;  /* Larger size for instructor avatar */
+            height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid white;
+        }
+
         @media (max-width: 1024px) {
             .container {
                 flex-direction: column;
@@ -419,24 +545,36 @@
             animation: pulse 0.3s ease;
         }
 
+        /* Replace student-count related styles */
         .student-count {
-            padding: 0.5rem 1rem;
-            color: var(--gray);
+            padding: 0.75rem 1rem;
+            background: var(--primary-light);
+            color: var(--dark);
             font-size: 0.9rem;
             border-bottom: 1px solid var(--gray-light);
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            justify-content: space-between;
         }
 
         .student-ratio {
-            background: var(--primary-light);
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: auto;
+            background: white;
+            padding: 0.4rem 0.75rem;
+            border-radius: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .student-ratio #detected-count {
             color: var(--primary);
-            font-weight: 500;
-            margin-left: auto; /* This will push it to the right */
+            font-weight: 600;
+        }
+
+        .student-ratio #total-count {
+            color: var(--gray);
         }
     </style>
 </head>
@@ -474,19 +612,36 @@
             <header>
 
                 <div class="instructor-info">
-                    <img src="https://randomuser.me/api/portraits/women/45.jpg" alt="Instructor" class="avatar">
-                    <span>Dr. Sarah Johnson</span>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <img src="https://randomuser.me/api/portraits/women/45.jpg" alt="Instructor" class="instructor-avatar">
+                        <div>
+                            <span>Dr. Sarah Johnson</span>
+                            <div class="instructor-role">Instructor</div>
+                        </div>
+                    </div>
+
                 </div>
             </header>
             
             <div class="search-bar">
-                <span class="material-icons search-icon">search</span>
-                <input type="text" placeholder="Search students by name or ID...">
+                <div class="section-info">
+                    <span class="material-icons">class</span>
+                    <span>BSCS 3A</span>
+                </div>
+                <div style="position: relative; flex: 1;">
+                    <span class="material-icons search-icon">search</span>
+                    <input type="text" placeholder="Search students by name or ID...">
+                </div>
             </div>
             
             <div class="student-count">
+                <span class="material-icons" style="color: var(--primary)">group</span>
                 <span>Students detected</span>
-                <span class="student-ratio"><span id="detected-count">15</span>/<span id="total-count">30</span></span>
+                <div class="student-ratio">
+                    <span id="detected-count">15</span>
+                    <span style="color: var(--gray)">/</span>
+                    <span id="total-count">30</span>
+                </div>
             </div>
             
             <div class="list-header">
@@ -504,7 +659,17 @@
                         </div>
                     </div>
                     <span class="status present">Present</span>
-                    <button class="status-toggle material-icons" title="Change status">edit</button>
+                    
+                </div>
+                 <div class="student-row">
+                    <div class="student-info">
+                        <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="Student" class="avatar">
+                        <div>
+                            <div class="student-name">Alex Chen</div>
+                            <div class="student-id">ID: S2023001</div>
+                        </div>
+                    </div>
+                    <span class="status present">Present</span>
                 </div>
                 <div class="student-row">
                     <div class="student-info">
@@ -515,7 +680,36 @@
                         </div>
                     </div>
                     <span class="status absent">Absent</span>
-                    <button class="status-toggle material-icons" title="Change status">edit</button>
+                </div>
+                 <div class="student-row">
+                    <div class="student-info">
+                        <img src="https://randomuser.me/api/portraits/women/28.jpg" alt="Student" class="avatar">
+                        <div>
+                            <div class="student-name">Maria Garcia</div>
+                            <div class="student-id">ID: S2023002</div>
+                        </div>
+                    </div>
+                    <span class="status absent">Absent</span>
+                </div>
+                 <div class="student-row">
+                    <div class="student-info">
+                        <img src="https://randomuser.me/api/portraits/women/28.jpg" alt="Student" class="avatar">
+                        <div>
+                            <div class="student-name">Maria Garcia</div>
+                            <div class="student-id">ID: S2023002</div>
+                        </div>
+                    </div>
+                    <span class="status absent">Absent</span>
+                </div>
+                 <div class="student-row">
+                    <div class="student-info">
+                        <img src="https://randomuser.me/api/portraits/women/28.jpg" alt="Student" class="avatar">
+                        <div>
+                            <div class="student-name">Maria Garcia</div>
+                            <div class="student-id">ID: S2023002</div>
+                        </div>
+                    </div>
+                    <span class="status absent">Absent</span>
                 </div>
                 <div class="student-row">
                     <div class="student-info">
@@ -526,7 +720,6 @@
                         </div>
                     </div>
                     <span class="status late">Late</span>
-                    <button class="status-toggle material-icons" title="Change status">edit</button>
                 </div>
                 <!-- More student rows would be added dynamically -->
             </div>
@@ -551,14 +744,28 @@
             </div>
             
             <div class="actions">
-                <button class="secondary-btn">
-                    <span class="material-icons">print</span>
-                    Export Report
+                <button class="action-toggle" onclick="toggleActionMenu()">
+                    <span class="material-icons">more_vert</span>
+                    Actions
                 </button>
-                <button class="primary-btn">
-                    <span class="material-icons">save</span>
-                    Save Attendance
-                </button>
+                <div class="action-menu">
+                    <button onclick="handleAction('add')">
+                        <span class="material-icons">add</span>
+                        Add Student
+                    </button>
+                    <button onclick="handleAction('delete')">
+                        <span class="material-icons">delete</span>
+                        Delete Student
+                    </button>
+                    <button onclick="handleAction('transfer')">
+                        <span class="material-icons">swap_horiz</span>
+                        Transfer Student
+                    </button>
+                    <button onclick="toggleActionMenu()">
+                        <span class="material-icons">arrow_back</span>
+                        Back
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -673,6 +880,37 @@
 
         // Start webcam when page loads
         initializeWebcam();
+
+        // Action menu functionality
+        function toggleActionMenu() {
+            const menu = document.querySelector('.action-menu');
+            const toggle = document.querySelector('.action-toggle');
+            
+            if (!menu.classList.contains('active')) {
+                toggle.classList.add('hidden');
+                setTimeout(() => menu.classList.add('active'), 100);
+            } else {
+                menu.classList.remove('active');
+                setTimeout(() => toggle.classList.remove('hidden'), 300);
+            }
+        }
+
+        function handleAction(action) {
+            console.log(`Performing action: ${action}`);
+            toggleActionMenu(); // Close menu after action
+        }
+
+        // Close action menu if clicked outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.actions')) {
+                const menu = document.querySelector('.action-menu');
+                const toggle = document.querySelector('.action-toggle');
+                if (menu.classList.contains('active')) {
+                    menu.classList.remove('active');
+                    setTimeout(() => toggle.classList.remove('hidden'), 300);
+                }
+            }
+        });
     </script>
 </body>
 </html>
