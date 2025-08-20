@@ -130,6 +130,15 @@
             background: rgba(255,255,255,0.2);
         }
 
+        .cctv-controls button.end-session {
+            background: rgba(255,0,0,0.2);
+            border: 1px solid rgba(255,0,0,0.3);
+        }
+
+        .cctv-controls button.end-session:hover {
+            background: rgba(255,0,0,0.3);
+        }
+
         .attendance-section {
             flex: 1;
             background: white;
@@ -648,19 +657,42 @@
             color: var(--gray);
         }
 
-        body.minimized {
-            background: black;
+     
+
+        .timer-iframe {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 80px;
+            border: none;
             margin: 0;
             padding: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
+            display: none;
+            background: white;
+            z-index: 999;
+        }
+
+
+        /* Settings Modal Styles */
+        .quality-select {
+            padding: 0.75rem;
+            border: 1px solid var(--gray-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            width: 100%;
+            background: white;
+            margin-top: 0.5rem;
+        }
+
+        .quality-select option {
+            padding: 0.5rem;
+            font-size: 0.9rem;
         }
 
         .minimized-container {
             position: fixed;
-            bottom: 0;
+            bottom: 20px;
             right: 20px;
             width: 300px;
             height: 220px;
@@ -680,34 +712,16 @@
             padding: 0 0.75rem;
             background: rgba(255,255,255,0.1);
             color: white;
-            border-top-left-radius: 10px;
-            border-top-right-radius: 10px;
         }
 
         .minimized-video {
-            height: 180px;
             width: 100%;
-            border-top-left-radius: 10px;
-            border-top-right-radius: 10px;
+            height: calc(100% - 40px);
             object-fit: cover;
         }
 
-        .timer-iframe {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 80px;
-            border: none;
-            margin: 0;
-            padding: 0;
-            display: none;
-            background: white;
-            z-index: 999;
-        }
-
-        body.minimized .container {
-            display: none !important;
+        body.minimized {
+            background: #f5f7fb;
         }
     </style>
 </head>
@@ -715,32 +729,35 @@
     <div class="container">
         <div class="cctv-section">
             <div class="cctv-header">
-                <h3>Classroom Live Feed</h3>
+                <h3>Database Management System</h3>
                 <span class="timer-display">
                     <span id="elapsed-time">00:00:00</span> / <span id="total-time">03:00:00</span>
                 </span>
                 <span id="date-time" class="time-display">07/04/25 - 1:00 PM</span>
-                <span class="material-icons">more_vert</span>
             </div>
             <div class="cctv-feed">
                 <video autoplay muted></video>
             </div>
             <div class="cctv-controls">
-                <button>
+                <button onclick="togglePause(this)">
                     <span class="material-icons">pause</span>
                     Pause
                 </button>
-                <button>
+                <button onclick="toggleFullscreen()">
                     <span class="material-icons">fullscreen</span>
                     Fullscreen
-                </button>
-                <button>
-                    <span class="material-icons">settings</span>
-                    Settings
                 </button>
                 <button onclick="minimizeScreen()">
                     <span class="material-icons">minimize</span>
                     Minimize
+                </button>
+                <button onclick="openSettings()">
+                    <span class="material-icons">settings</span>
+                    Settings
+                </button>
+                <button class="end-session" onclick="endSession()">
+                    <span class="material-icons">power_settings_new</span>
+                    End Session
                 </button>
             </div>
         </div>
@@ -806,46 +823,7 @@
                     </div>
                     <span class="status present">Present</span>
                 </div>
-                <div class="student-row">
-                    <div class="student-info">
-                        <img src="https://randomuser.me/api/portraits/women/28.jpg" alt="Student" class="avatar">
-                        <div>
-                            <div class="student-name">Maria Garcia</div>
-                            <div class="student-id">ID: S2023002</div>
-                        </div>
-                    </div>
-                    <span class="status absent">Absent</span>
-                </div>
-                 <div class="student-row">
-                    <div class="student-info">
-                        <img src="https://randomuser.me/api/portraits/women/28.jpg" alt="Student" class="avatar">
-                        <div>
-                            <div class="student-name">Maria Garcia</div>
-                            <div class="student-id">ID: S2023002</div>
-                        </div>
-                    </div>
-                    <span class="status absent">Absent</span>
-                </div>
-                 <div class="student-row">
-                    <div class="student-info">
-                        <img src="https://randomuser.me/api/portraits/women/28.jpg" alt="Student" class="avatar">
-                        <div>
-                            <div class="student-name">Maria Garcia</div>
-                            <div class="student-id">ID: S2023002</div>
-                        </div>
-                    </div>
-                    <span class="status absent">Absent</span>
-                </div>
-                 <div class="student-row">
-                    <div class="student-info">
-                        <img src="https://randomuser.me/api/portraits/women/28.jpg" alt="Student" class="avatar">
-                        <div>
-                            <div class="student-name">Maria Garcia</div>
-                            <div class="student-id">ID: S2023002</div>
-                        </div>
-                    </div>
-                    <span class="status absent">Absent</span>
-                </div>
+             
                 <div class="student-row">
                     <div class="student-info">
                         <img src="https://randomuser.me/api/portraits/men/45.jpg" alt="Student" class="avatar">
@@ -887,7 +865,7 @@
 
     <div class="minimized-container" id="minimizedView">
         <div class="minimized-header">
-            <span>Classroom Feed</span>
+            <span>Database Management System</span>
             <button onclick="maximizeScreen()" style="background: none; border: none; color: white; cursor: pointer;">
                 <span class="material-icons">open_in_full</span>
             </button>
@@ -896,6 +874,42 @@
     </div>
 
     <iframe src="../Timer/timer.html" class="timer-iframe" id="timerView"></iframe>
+
+    <!-- End Session Modal -->
+    <div class="modal" id="endSessionModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">End Session</h3>
+                <button class="close-modal" onclick="closeModal('endSessionModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Are you sure you want to end this session?</strong></p>
+                <div style="margin-top: 1rem;">
+                    <p>Session Summary:</p>
+                    <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
+                        <li>Duration: <span id="sessionDuration">00:00:00</span></li>
+                        <li>Total Students: <span id="totalStudentCount">30</span></li>
+                        <li>Present: <span id="presentCount">15</span></li>
+                        <li>Absent: <span id="absentCount">12</span></li>
+                        <li>Late: <span id="lateCount">3</span></li>
+                    </ul>
+                </div>
+                <p style="margin-top: 1rem; color: var(--warning);">
+                    <span class="material-icons" style="font-size: 1.2em; vertical-align: middle;">warning</span>
+                    This action will save all attendance records and end the current session.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('endSessionModal')">Cancel</button>
+                <button class="btn-submit" style="background: var(--danger)" onclick="confirmEndSession()">
+                    <span class="material-icons">power_settings_new</span>
+                    End Session
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Add Student Modal -->
     <div class="modal" id="addStudentModal">
@@ -913,7 +927,12 @@
                 </div>
                 <div class="form-group">
                     <label for="studentId">Student ID</label>
-                    <input type="text" id="studentId" placeholder="Enter student ID">
+                    <input type="text" 
+                           id="studentId" 
+                           placeholder="Enter student ID" 
+                           pattern="[0-9-]*"
+                           onkeypress="return event.charCode >= 48 && event.charCode <= 57 || event.charCode === 45"
+                           oninput="this.value = this.value.replace(/[^0-9-]/g, '')">
                 </div>
             </div>
             <div class="modal-footer">
@@ -945,7 +964,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn-cancel" onclick="closeModal('deleteStudentModal')">Cancel</button>
-                <button class="btn-submit" style="background: var(--danger)" onclick="submitDeleteStudent()">Delete</button>
+                <button class="btn-submit" style="background: red !important" onclick="submitDeleteStudent()">Delete</button>
             </div>
         </div>
     </div>
@@ -983,6 +1002,35 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Video Settings</h3>
+                <button class="close-modal" onclick="closeModal('settingsModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="videoQuality">Video Quality</label>
+                    <select id="videoQuality" class="quality-select" onchange="changeVideoQuality(this.value)">
+                        <option value="144">144p</option>
+                        <option value="360">360p</option>
+                        <option value="720" selected>720p</option>
+                    </select>
+                </div>
+                <p style="margin-top: 1rem; color: var(--gray); font-size: 0.9rem;">
+                    <span class="material-icons" style="font-size: 1.2em; vertical-align: middle;">info</span>
+                    Lower quality may improve performance on slower connections
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('settingsModal')">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Update date and time dynamically
         function updateDateTime() {
@@ -1004,23 +1052,93 @@
 
         // Timer functionality
         let startTime = new Date();
-        const totalSeconds = 3 * 60 * 60; // 3 hours in seconds
+        let pauseStartTime = null;
+        let totalPausedTime = 0;
+        let isTimerPaused = false;
+        let timerInterval;
 
         function updateTimer() {
-            const now = new Date();
-            const elapsedSeconds = Math.floor((now - startTime) / 1000);
-            const remainingSeconds = Math.min(elapsedSeconds, totalSeconds);
+            if (isTimerPaused) return;
             
-            const hours = Math.floor(remainingSeconds / 3600);
-            const minutes = Math.floor((remainingSeconds % 3600) / 60);
-            const seconds = remainingSeconds % 60;
+            const now = new Date();
+            const elapsedTime = now - startTime - totalPausedTime;
+            const totalSeconds = Math.floor(elapsedTime / 1000);
+            
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
             
             const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             document.getElementById('elapsed-time').textContent = timeString;
         }
 
-        // Update timer every second
-        setInterval(updateTimer, 1000);
+        function startTimer() {
+            if (!timerInterval) {
+                timerInterval = setInterval(updateTimer, 1000);
+            }
+        }
+
+        function togglePause(button) {
+            const video = document.querySelector('.cctv-feed video');
+            const icon = button.querySelector('.material-icons');
+            
+            if (video.paused) {
+                // Resume video and timer
+                video.play();
+                icon.textContent = 'pause';
+                button.innerHTML = '<span class="material-icons">pause</span>Pause';
+                isTimerPaused = false;
+                if (pauseStartTime) {
+                    totalPausedTime += (new Date() - pauseStartTime);
+                    pauseStartTime = null;
+                }
+            } else {
+                // Pause video and timer
+                video.pause();
+                icon.textContent = 'play_arrow';
+                button.innerHTML = '<span class="material-icons">play_arrow</span>Play';
+                isTimerPaused = true;
+                pauseStartTime = new Date();
+            }
+        }
+
+        function toggleFullscreen() {
+            const videoContainer = document.querySelector('.cctv-feed');
+            
+            if (!document.fullscreenElement) {
+                videoContainer.requestFullscreen().catch(err => {
+                    alert(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        function minimizeScreen() {
+            const minimizedView = document.getElementById('minimizedView');
+            const mainVideo = document.querySelector('.cctv-feed video');
+            const minimizedVideo = document.querySelector('.minimized-video');
+            
+            if (mainVideo.srcObject) {
+                minimizedVideo.srcObject = mainVideo.srcObject;
+                minimizedView.style.display = 'block';
+                document.querySelector('.container').style.display = 'none';
+                document.body.classList.add('minimized');
+            }
+        }
+
+        function maximizeScreen() {
+            const minimizedView = document.getElementById('minimizedView');
+            const mainVideo = document.querySelector('.cctv-feed video');
+            const minimizedVideo = document.querySelector('.minimized-video');
+            
+            if (minimizedVideo.srcObject) {
+                mainVideo.srcObject = minimizedVideo.srcObject;
+                minimizedView.style.display = 'none';
+                document.querySelector('.container').style.display = 'flex';
+                document.body.classList.remove('minimized');
+            }
+        }
 
         // Sample functionality for status toggling
         document.querySelectorAll('.status-toggle').forEach(button => {
@@ -1226,6 +1344,70 @@
                 event.target.style.display = 'none';
             }
         }
+
+        // Add this function to your JavaScript
+        function endSession() {
+            // Update session summary
+            document.getElementById('sessionDuration').textContent = document.getElementById('elapsed-time').textContent;
+            document.getElementById('totalStudentCount').textContent = document.getElementById('total-count').textContent;
+            
+            // Count current status
+            const studentRows = document.querySelectorAll('.student-row');
+            let present = 0, absent = 0, late = 0;
+            
+            studentRows.forEach(row => {
+                const status = row.querySelector('.status').textContent.toLowerCase();
+                if (status === 'present') present++;
+                else if(status === 'absent') absent++;
+                else if(status === 'late') late++;
+            });
+            
+            document.getElementById('presentCount').textContent = present;
+            document.getElementById('absentCount').textContent = absent;
+            document.getElementById('lateCount').textContent = late;
+            
+            // Show the modal
+            document.getElementById('endSessionModal').style.display = 'flex';
+        }
+
+        function confirmEndSession() {
+            // Add your session end logic here
+            alert('Session ended successfully');
+            window.location.href = '../index.html'; // Redirect to main page
+        }
+
+        // Add these new functions before the existing script closing tag
+        function openSettings() {
+            document.getElementById('settingsModal').style.display = 'flex';
+        }
+
+        function changeVideoQuality(quality) {
+            const video = document.querySelector('.cctv-feed video');
+            const constraints = {
+                video: {
+                    width: { ideal: parseInt(quality) },
+                    height: { ideal: parseInt(quality) * 9/16 }
+                }
+            };
+
+            // Update video constraints
+            if (video.srcObject) {
+                const track = video.srcObject.getVideoTracks()[0];
+                track.applyConstraints(constraints)
+                    .then(() => {
+                        console.log(`Quality changed to ${quality}p`);
+                    })
+                    .catch(err => {
+                        console.error('Error applying video constraints:', err);
+                        alert('Failed to change video quality. Your device may not support this resolution.');
+                    });
+            }
+        }
+
+        window.addEventListener('load', () => {
+            startTimer();
+            updateTimer(); // Initial update
+        });
     </script>
 </body>
 </html>
