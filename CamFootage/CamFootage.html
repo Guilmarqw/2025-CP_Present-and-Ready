@@ -502,6 +502,98 @@
             border: 2px solid white;
         }
 
+        /* Add these modal styles before the media query section */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            color: var(--gray);
+            cursor: pointer;
+            padding: 0.5rem;
+        }
+
+        .modal-body {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--dark);
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--gray-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+        }
+
+        .modal-footer button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-cancel {
+            background: var(--gray-light);
+            color: var(--dark);
+        }
+
+        .btn-submit {
+            background: #685A45;
+            color: white;
+        }
+
         @media (max-width: 1024px) {
             .container {
                 flex-direction: column;
@@ -805,6 +897,92 @@
 
     <iframe src="../Timer/timer.html" class="timer-iframe" id="timerView"></iframe>
 
+    <!-- Add Student Modal -->
+    <div class="modal" id="addStudentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Add New Student</h3>
+                <button class="close-modal" onclick="closeModal('addStudentModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="studentName">Full Name</label>
+                    <input type="text" id="studentName" placeholder="Enter student name">
+                </div>
+                <div class="form-group">
+                    <label for="studentId">Student ID</label>
+                    <input type="text" id="studentId" placeholder="Enter student ID">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('addStudentModal')">Cancel</button>
+                <button class="btn-submit" onclick="submitAddStudent()">Add Student</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Student Modal -->
+    <div class="modal" id="deleteStudentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Delete Student</h3>
+                <button class="close-modal" onclick="closeModal('deleteStudentModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="deleteStudentSelect">Select Student</label>
+                    <select id="deleteStudentSelect">
+                        <option value="">Select a student to delete...</option>
+                    </select>
+                </div>
+                <p style="color: var(--danger); margin-top: 1rem;">
+                    Warning: This action cannot be undone.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('deleteStudentModal')">Cancel</button>
+                <button class="btn-submit" style="background: var(--danger)" onclick="submitDeleteStudent()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transfer Student Modal -->
+    <div class="modal" id="transferStudentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Transfer Student</h3>
+                <button class="close-modal" onclick="closeModal('transferStudentModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="transferStudent">Select Student</label>
+                    <select id="transferStudent">
+                        <option value="">Select a student...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="transferSection">Target Section</label>
+                    <select id="transferSection">
+                        <option value="">Select target section...</option>
+                        <option value="BSCS 3B">BSCS 3B</option>
+                        <option value="BSCS 3C">BSCS 3C</option>
+                        <option value="BSCS 3D">BSCS 3D</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('transferStudentModal')">Cancel</button>
+                <button class="btn-submit" onclick="submitTransferStudent()">Transfer</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Update date and time dynamically
         function updateDateTime() {
@@ -931,42 +1109,122 @@
         }
 
         function handleAction(action) {
-            console.log(`Performing action: ${action}`);
-            toggleActionMenu(); // Close menu after action
-        }
-
-        // Close action menu if clicked outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.actions')) {
-                const menu = document.querySelector('.action-menu');
-                const toggle = document.querySelector('.action-toggle');
-                if (menu.classList.contains('active')) {
-                    menu.classList.remove('active');
-                    setTimeout(() => toggle.classList.remove('hidden'), 300);
-                }
+            switch(action) {
+                case 'add':
+                    document.getElementById('addStudentModal').style.display = 'flex';
+                    break;
+                case 'delete':
+                    populateDeleteStudentSelect();
+                    document.getElementById('deleteStudentModal').style.display = 'flex';
+                    break;
+                case 'transfer':
+                    populateTransferStudentSelect();
+                    document.getElementById('transferStudentModal').style.display = 'flex';
+                    break;
             }
-        });
-
-        function minimizeScreen() {
-            document.querySelector('.container').style.display = 'none';
-            document.getElementById('minimizedView').style.display = 'block';
-            document.getElementById('timerView').style.display = 'block';
-            
-            // Transfer the video stream to minimized view
-            const mainVideo = document.querySelector('.cctv-feed video');
-            const minimizedVideo = document.querySelector('.minimized-video');
-            minimizedVideo.srcObject = mainVideo.srcObject;
+            toggleActionMenu();
         }
 
-        function maximizeScreen() {
-            document.querySelector('.container').style.display = 'flex';
-            document.getElementById('minimizedView').style.display = 'none';
-            document.getElementById('timerView').style.display = 'none';
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function populateDeleteStudentSelect() {
+            const select = document.getElementById('deleteStudentSelect');
+            select.innerHTML = '<option value="">Select a student to delete...</option>';
             
-            // Transfer the video stream back to main view
-            const mainVideo = document.querySelector('.cctv-feed video');
-            const minimizedVideo = document.querySelector('.minimized-video');
-            mainVideo.srcObject = minimizedVideo.srcObject;
+            document.querySelectorAll('.student-row').forEach(row => {
+                const name = row.querySelector('.student-name').textContent;
+                const id = row.querySelector('.student-id').textContent.split(': ')[1];
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = `${name} (${id})`;
+                select.appendChild(option);
+            });
+        }
+
+        function populateTransferStudentSelect() {
+            const select = document.getElementById('transferStudent');
+            select.innerHTML = '<option value="">Select a student...</option>';
+            
+            document.querySelectorAll('.student-row').forEach(row => {
+                const name = row.querySelector('.student-name').textContent;
+                const id = row.querySelector('.student-id').textContent.split(': ')[1];
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = `${name} (${id})`;
+                select.appendChild(option);
+            });
+        }
+
+        function submitAddStudent() {
+            const name = document.getElementById('studentName').value;
+            const id = document.getElementById('studentId').value;
+            
+            if (!name || !id) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            // Add your logic to add the student to the list
+            const studentList = document.getElementById('studentList');
+            const newStudent = `
+                <div class="student-row">
+                    <div class="student-info">
+                        <img src="https://randomuser.me/api/portraits/men/${Math.floor(Math.random() * 50)}.jpg" alt="Student" class="avatar">
+                        <div>
+                            <div class="student-name">${name}</div>
+                            <div class="student-id">ID: ${id}</div>
+                        </div>
+                    </div>
+                    <span class="status present">Present</span>
+                </div>
+            `;
+            studentList.insertAdjacentHTML('beforeend', newStudent);
+            
+            closeModal('addStudentModal');
+            document.getElementById('studentName').value = '';
+            document.getElementById('studentId').value = '';
+        }
+
+        function submitDeleteStudent() {
+            const studentId = document.getElementById('deleteStudentSelect').value;
+            if (!studentId) {
+                alert('Please select a student');
+                return;
+            }
+
+            // Add your logic to delete the student
+            document.querySelectorAll('.student-row').forEach(row => {
+                const id = row.querySelector('.student-id').textContent.split(': ')[1];
+                if (id === studentId) {
+                    row.remove();
+                }
+            });
+            
+            closeModal('deleteStudentModal');
+        }
+
+        function submitTransferStudent() {
+            const studentId = document.getElementById('transferStudent').value;
+            const targetSection = document.getElementById('transferSection').value;
+            
+            if (!studentId || !targetSection) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            // Add your logic to transfer the student
+            alert(`Student ${studentId} will be transferred to ${targetSection}`);
+            
+            closeModal('transferStudentModal');
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
         }
     </script>
 </body>
