@@ -72,6 +72,12 @@
             z-index: 2;
         }
 
+        .cctv-header > div {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
         .cctv-header .time-display {
             font-size: 0.9rem;
             opacity: 0.9;
@@ -603,6 +609,23 @@
             color: white;
         }
 
+        .config-display {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.9rem;
+            z-index: 3;
+        }
+
+        .config-display p {
+            margin: 5px 0;
+            opacity: 0.9;
+        }
+
         @media (max-width: 1024px) {
             .container {
                 flex-direction: column;
@@ -821,7 +844,9 @@
     <div class="container">
         <div class="cctv-section">
             <div class="cctv-header">
-                <h3>Database Management System</h3>
+                <div>
+                    <span style="color: #fff; opacity: 0.8; font-size: 0.9rem;">COMP 20233</span>
+                </div>
                 <span class="timer-display">
                     <span id="elapsed-time">00:00:00</span> / <span id="total-time">03:00:00</span>
                 </span>
@@ -1103,27 +1128,48 @@
     <div class="modal" id="settingsModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">Video Settings</h3>
+                <h3 class="modal-title">Class Settings</h3>
                 <button class="close-modal" onclick="closeModal('settingsModal')">
                     <span class="material-icons">close</span>
                 </button>
             </div>
             <div class="modal-body">
+                
                 <div class="form-group">
-                    <label for="videoQuality">Video Quality</label>
-                    <select id="videoQuality" class="quality-select" onchange="changeVideoQuality(this.value)">
+                    <label>Course and Section</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="course" placeholder="Course (e.g. BSCS)" required>
+                        <input type="text" id="section" placeholder="Section (e.g. 3A)" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Instructor Information</label>
+                    <input type="text" id="instructorName" placeholder="Instructor Name" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Class Duration (minutes)</label>
+                    <input type="number" id="classDuration" placeholder="180" min="1" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Late Threshold (minutes)</label>
+                    <input type="number" id="lateThreshold" placeholder="15" min="1" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Video Quality</label>
+                    <select id="videoQuality" class="quality-select">
                         <option value="144">144p</option>
                         <option value="360">360p</option>
                         <option value="720" selected>720p</option>
                     </select>
                 </div>
-                <p style="margin-top: 1rem; color: var(--gray); font-size: 0.9rem;">
-                    <span class="material-icons" style="font-size: 1.2em; vertical-align: middle;">info</span>
-                    Lower quality may improve performance on slower connections
-                </p>
             </div>
             <div class="modal-footer">
-                <button class="btn-cancel" onclick="closeModal('settingsModal')">Close</button>
+                <button class="btn-cancel" onclick="closeModal('settingsModal')">Cancel</button>
+                <button class="btn-submit" onclick="saveSettings()">Save Settings</button>
             </div>
         </div>
     </div>
@@ -1547,6 +1593,7 @@
 
         // Add this to initialize everything when page loads
         window.addEventListener('load', () => {
+            loadClassSettings();
             startTimer();
             updateTimer();
             updateStudentCount();
@@ -1568,8 +1615,15 @@
                 alert('Please select at least one face');
                 return;
             }
+
+            const elapsedMinutes = Math.floor((new Date() - startTime - totalPausedTime) / 60000);
             
-            // Mark the selected faces with the chosen status
+            // If trying to mark as present but beyond late threshold, force late status
+            if (status === 'present' && elapsedMinutes > classConfig.lateThreshold) {
+                status = 'late';
+                alert(`Marking as 'Late' - Beyond ${classConfig.lateThreshold} minute threshold`);
+            }
+            
             selectedFaces.forEach(faceId => {
                 const faceCard = document.querySelector(`[value="${faceId}"]`).closest('.face-card');
                 faceCard.setAttribute('data-status', status);
@@ -1577,7 +1631,6 @@
                 faceCard.querySelector('input[type="checkbox"]').disabled = true;
             });
 
-            // Check if all faces have been marked
             checkAllFacesMarked();
         }
 
@@ -1645,6 +1698,124 @@ function confirmEndSession() {
     // Save your attendance data here if needed
     alert('Session ended successfully');
     window.location.href = '../Timer/SumSession/Summary.html'; // Redirect to Summary page
+}
+
+// Add this at the top of your script section
+let classConfig = {
+    subjectCode: '',
+    subjectName: '',
+    course: '',
+    section: '',
+    instructorName: '',
+    instructorId: '',
+    classDuration: 180,
+    lateThreshold: 15,
+    videoQuality: '720'
+};
+
+// Add this function to save settings
+function saveSettings() {
+    // Get all input values
+    classConfig = {
+        subjectCode: document.getElementById('subjectCode').value,
+        subjectName: document.getElementById('subjectName').value,
+        course: document.getElementById('course').value,
+        section: document.getElementById('section').value,
+        instructorName: document.getElementById('instructorName').value,
+        instructorId: document.getElementById('instructorId').value,
+        classDuration: parseInt(document.getElementById('classDuration').value) || 180,
+        lateThreshold: parseInt(document.getElementById('lateThreshold').value) || 15,
+        videoQuality: document.getElementById('videoQuality').value
+    };
+
+    // Update displays
+    updateConfigDisplay();
+    
+    // Update class header
+    document.querySelector('.cctv-header h3').textContent = classConfig.subjectName;
+    document.querySelector('.cctv-header span[style]').textContent = classConfig.subjectCode;
+    
+    // Update instructor info
+    document.querySelector('.instructor-info span').textContent = classConfig.instructorName;
+    
+    // Update section info
+    document.querySelector('.section-info span:last-child').textContent = 
+        `${classConfig.course} ${classConfig.section}`;
+    
+    // Update timers
+    document.getElementById('total-time').textContent = formatTime(classConfig.classDuration * 60);
+    
+    // Save to localStorage for persistence
+    localStorage.setItem('classConfig', JSON.stringify(classConfig));
+    
+    // Close modal
+    closeModal('settingsModal');
+}
+
+function updateConfigDisplay() {
+    document.getElementById('displaySubject').textContent = 
+        `${classConfig.subjectCode} - ${classConfig.subjectName}`;
+    document.getElementById('displayClass').textContent = 
+        `${classConfig.course} ${classConfig.section}`;
+    document.getElementById('displayInstructor').textContent = classConfig.instructorName;
+    document.getElementById('displayDuration').textContent = `${classConfig.classDuration} mins`;
+    document.getElementById('displayLateThreshold').textContent = `${classConfig.lateThreshold} mins`;
+}
+
+// Add this to your window.load event listener
+window.addEventListener('load', () => {
+    // Load saved config if exists
+    const savedConfig = localStorage.getItem('classConfig');
+    if (savedConfig) {
+        classConfig = JSON.parse(savedConfig);
+        updateConfigDisplay();
+    }
+    
+    // Load and apply settings
+    loadClassSettings();
+    startTimer();
+    updateTimer();
+    updateStudentCount();
+});
+
+// Add this function after window.addEventListener('load'...)
+function loadClassSettings() {
+    const settings = JSON.parse(localStorage.getItem('classSettings'));
+    if (!settings) {
+        window.location.href = '../Timer/timer.html';
+        return;
+    }
+    
+    // Update total time display
+    const totalSeconds = 
+        parseInt(settings.timer.session.hours) * 3600 +
+        parseInt(settings.timer.session.minutes) * 60 +
+        parseInt(settings.timer.session.seconds);
+    document.getElementById('total-time').textContent = formatTime(totalSeconds);
+    
+    // Update subject code
+    document.querySelector('.cctv-header span[style]').textContent = settings.classDetails.subjectCode;
+    
+    // Update section info
+    document.querySelector('.section-info span:last-child').textContent = settings.classDetails.courseSection;
+    
+    // Update instructor name
+    document.querySelector('.instructor-info span').textContent = settings.classDetails.instructor;
+    
+    // Store late threshold for status checks
+    const lateThresholdSeconds = 
+        parseInt(settings.timer.threshold.hours) * 3600 +
+        parseInt(settings.timer.threshold.minutes) * 60 + 
+        parseInt(settings.timer.threshold.seconds);
+    classConfig.lateThreshold = Math.floor(lateThresholdSeconds / 60); // Convert to minutes
+}
+
+// Add this helper function if not already present
+function formatTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
     </script>
 </body>

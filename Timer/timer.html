@@ -275,6 +275,51 @@
         let lateThreshold;
 
         document.getElementById('startBtn').addEventListener('click', function() {
+            // Get all input values
+            const settings = {
+                timer: {
+                    session: {
+                        hours: document.getElementById('sessionHours').value,
+                        minutes: document.getElementById('sessionMinutes').value,
+                        seconds: document.getElementById('sessionSeconds').value
+                    },
+                    threshold: {
+                        hours: document.getElementById('thresholdHours').value,
+                        minutes: document.getElementById('thresholdMinutes').value,
+                        seconds: document.getElementById('thresholdSeconds').value
+                    }
+                },
+                classDetails: {
+                    instructor: document.querySelector('input[placeholder="Subject Instructor"]').value,
+                    subjectCode: document.querySelector('input[placeholder="Subject Code"]').value,
+                    courseSection: document.querySelector('input[placeholder="Course & Section"]').value
+                }
+            };
+            
+            // Save settings to localStorage
+            localStorage.setItem('classSettings', JSON.stringify(settings));
+            
+            // Validate required fields
+            if (!settings.classDetails.instructor || 
+                !settings.classDetails.subjectCode || 
+                !settings.classDetails.courseSection) {
+                alert('Please fill in all class details');
+                event.preventDefault(); // Prevent navigation
+                return;
+            }
+            
+            // Calculate if timer is set
+            const totalSeconds = 
+                parseInt(settings.timer.session.hours) * 3600 + 
+                parseInt(settings.timer.session.minutes) * 60 + 
+                parseInt(settings.timer.session.seconds);
+                
+            if (totalSeconds === 0) {
+                alert('Please set a class duration');
+                event.preventDefault(); // Prevent navigation
+                return;
+            }
+
             if (!isRunning) {
                 // Calculate total seconds for session and threshold
                 sessionDuration = (
