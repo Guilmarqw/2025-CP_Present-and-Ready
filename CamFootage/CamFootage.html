@@ -723,6 +723,98 @@
         body.minimized {
             background: #f5f7fb;
         }
+
+        .btn-action {
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        .btn-action:hover {
+            filter: brightness(0.95);
+        }
+
+        .unrecognized-faces {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .face-card {
+            border: 1px solid var(--gray-light);
+            border-radius: 8px;
+            padding: 0.5rem;
+            text-align: center;
+        }
+
+        .face-card img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+        }
+
+        .face-card label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+
+        .face-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .select-all {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background: var(--gray-light);
+            border-radius: 4px;
+        }
+
+        .face-card[data-status] {
+            position: relative;
+        }
+        
+        .face-card[data-status]::after {
+            content: attr(data-status);
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            text-transform: capitalize;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .face-card[data-status="present"]::after {
+            background: #e3fafc;
+            color: #1098ad;
+        }
+        
+        .face-card[data-status="late"]::after {
+            background: #fff9db;
+            color: #f59f00;
+        }
+        
+        .face-card[data-status="unknown"]::after {
+            background: #ffebee;
+            color: #d32f2f;
+        }
     </style>
 </head>
 <body>
@@ -1054,6 +1146,67 @@
             </div>
             <div class="modal-footer">
                 <button class="btn-submit" onclick="closeModal('transferConfirmModal')">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update the unrecognized faces modal content -->
+    <div class="modal" id="unrecognizedFacesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">⚠️ Unrecognized Faces Detected</h3>
+                <button class="close-modal" onclick="closeModal('unrecognizedFacesModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--warning); margin-bottom: 1rem;">
+                    <span class="material-icons" style="vertical-align: middle;">warning</span>
+                    There are faces detected but not recognized by the system.
+                </p>
+                
+                <div class="select-all">
+                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
+                    <label for="selectAll">Select All Faces</label>
+                </div>
+
+                <div class="unrecognized-faces" id="unrecognizedFacesList">
+                    <!-- Example face cards - replace with dynamic content -->
+                    <div class="face-card">
+                        <img src="https://randomuser.me/api/portraits/men/1.jpg" alt="Unrecognized Face">
+                        <label>
+                            <input type="checkbox" name="face" value="face1">
+                            Face #1
+                        </label>
+                    </div>
+                    <div class="face-card">
+                        <img src="https://randomuser.me/api/portraits/women/1.jpg" alt="Unrecognized Face">
+                        <label>
+                            <input type="checkbox" name="face" value="face2">
+                            Face #2
+                        </label>
+                    </div>
+                </div>
+
+                <div class="face-actions">
+                    <button class="btn-action" onclick="markSelectedAs('present')" style="background: #e3fafc; color: #1098ad; flex: 1; padding: 1rem;">
+                        <span class="material-icons">how_to_reg</span>
+                        Mark as Present
+                    </button>
+                    <button class="btn-action" onclick="markSelectedAs('late')" style="background: #fff9db; color: #f59f00; flex: 1; padding: 1rem;">
+                        <span class="material-icons">schedule</span>
+                        Mark as Late
+                    </button>
+                    <button class="btn-action" onclick="markSelectedAs('unknown')" style="background: #ffebee; color: #d32f2f; flex: 1; padding: 1rem;">
+                        <span class="material-icons">person_off</span>
+                        Unknown Face
+                    </button>
+                </div>
+
+                <button class="btn-action" onclick="retakeFaces()" style="background: #e8f5e9; color: #388e3c; width: 100%; margin-top: 1rem; padding: 1rem; text-align: left;">
+                    <span class="material-icons">face_retouching_natural</span>
+                    Retake Face Detection
+                </button>
             </div>
         </div>
     </div>
@@ -1392,74 +1545,107 @@
             });
         }
 
-        // Add this function to update student count
-        function updateStudentCount() {
-            const currentStudents = document.querySelectorAll('.student-row').length;
-            document.getElementById('detected-count').textContent = currentStudents;
-        }
-
-        // Add these new functions before the existing script closing tag
-        function endSession() {
-            // Update session summary
-            document.getElementById('sessionDuration').textContent = document.getElementById('elapsed-time').textContent;
-            document.getElementById('totalStudentCount').textContent = document.getElementById('total-count').textContent;
-            
-            // Count current status
-            const studentRows = document.querySelectorAll('.student-row');
-            let present = 0, absent = 0, late = 0;
-            
-            studentRows.forEach(row => {
-                const status = row.querySelector('.status').textContent.toLowerCase();
-                if (status === 'present') present++;
-                else if(status === 'absent') absent++;
-                else if(status === 'late') late++;
-            });
-            
-            document.getElementById('presentCount').textContent = present;
-            document.getElementById('absentCount').textContent = absent;
-            document.getElementById('lateCount').textContent = late;
-            
-            // Show the modal
-            document.getElementById('endSessionModal').style.display = 'flex';
-        }
-
-        function confirmEndSession() {
-            // Add your session end logic here
-            alert('Session ended successfully');
-            window.location.href = '../index.html'; // Redirect to main page
-        }
-
-        function openSettings() {
-            const settingsModal = document.getElementById('settingsModal');
-            if (settingsModal) {
-                settingsModal.style.display = 'flex';
-            }
-        }
-
-        function changeVideoQuality(quality) {
-            const video = document.querySelector('.cctv-feed video');
-            if (!video || !video.srcObject) return;
-
-            const track = video.srcObject.getVideoTracks()[0];
-            if (!track) return;
-
-            track.applyConstraints({
-                width: { ideal: parseInt(quality) },
-                height: { ideal: parseInt(quality) * 9/16 }
-            }).then(() => {
-                console.log(`Quality changed to ${quality}p`);
-            }).catch(err => {
-                console.error('Error applying video constraints:', err);
-                alert('Failed to change video quality. Your device may not support this resolution.');
-            });
-        }
-
         // Add this to initialize everything when page loads
         window.addEventListener('load', () => {
             startTimer();
             updateTimer();
             updateStudentCount();
         });
+
+        function toggleSelectAll(checkbox) {
+            const faceCheckboxes = document.querySelectorAll('input[name="face"]');
+            faceCheckboxes.forEach(cb => cb.checked = checkbox.checked);
+        }
+
+        function getSelectedFaces() {
+            return Array.from(document.querySelectorAll('input[name="face"]:checked'))
+                .map(cb => cb.value);
+        }
+
+        function markSelectedAs(status) {
+            const selectedFaces = getSelectedFaces();
+            if (selectedFaces.length === 0) {
+                alert('Please select at least one face');
+                return;
+            }
+            
+            // Mark the selected faces with the chosen status
+            selectedFaces.forEach(faceId => {
+                const faceCard = document.querySelector(`[value="${faceId}"]`).closest('.face-card');
+                faceCard.setAttribute('data-status', status);
+                faceCard.style.opacity = '0.6';
+                faceCard.querySelector('input[type="checkbox"]').disabled = true;
+            });
+
+            // Check if all faces have been marked
+            checkAllFacesMarked();
+        }
+
+        function checkAllFacesMarked() {
+            const allFaces = document.querySelectorAll('.face-card');
+            const unmarkedFaces = Array.from(allFaces).filter(face => !face.hasAttribute('data-status'));
+            
+            if (unmarkedFaces.length === 0) {
+                // All faces have been marked, proceed to end session
+                closeModal('unrecognizedFacesModal');
+                showEndSessionConfirmation();
+            } else {
+                // Show message about remaining faces
+                const remainingCount = unmarkedFaces.length;
+                alert(`Please mark the status for ${remainingCount} more face${remainingCount > 1 ? 's' : ''}`);
+            }
+        }
+
+        // Update the retakeFaces function
+        function retakeFaces() {
+            if (confirm('Are you sure you want to retake face detection?')) {
+                closeModal('unrecognizedFacesModal');
+                // Add your face detection retake logic here
+                alert('Retaking face detection...');
+            }
+        }
+
+        // Update these functions in the script section
+function openSettings() {
+    const settingsModal = document.getElementById('settingsModal');
+    settingsModal.style.display = 'flex';
+}
+
+function endSession() {
+    const hasUnrecognizedFaces = true; // This would be your actual detection logic
+    if (hasUnrecognizedFaces) {
+        document.getElementById('unrecognizedFacesModal').style.display = 'flex';
+    } else {
+        showEndSessionConfirmation();
+    }
+}
+
+function showEndSessionConfirmation() {
+    document.getElementById('endSessionModal').style.display = 'flex';
+}
+
+// Add this function to handle video quality changes
+function changeVideoQuality(quality) {
+    const video = document.querySelector('.cctv-feed video');
+    if (!video || !video.srcObject) return;
+
+    const track = video.srcObject.getVideoTracks()[0];
+    if (!track) return;
+
+    track.applyConstraints({
+        width: { ideal: parseInt(quality) },
+        height: { ideal: parseInt(quality) * 9/16 }
+    }).catch(err => {
+        console.error('Error applying video constraints:', err);
+        alert('Failed to change video quality. Your device may not support this resolution.');
+    });
+}
+
+function confirmEndSession() {
+    // Save your attendance data here if needed
+    alert('Session ended successfully');
+    window.location.href = '../Timer/SumSession/Summary.html'; // Redirect to Summary page
+}
     </script>
 </body>
 </html>
