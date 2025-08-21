@@ -923,7 +923,12 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label for="studentName">Full Name</label>
-                    <input type="text" id="studentName" placeholder="Enter student name">
+                    <input type="text" 
+                           id="studentName" 
+                           placeholder="Enter student name"
+                           pattern="[A-Za-z\s]+"
+                           onkeypress="return /[A-Za-z\s]/.test(event.key)"
+                           oninput="this.value = this.value.replace(/[^A-Za-z\s]/g, '')">
                 </div>
                 <div class="form-group">
                     <label for="studentId">Student ID</label>
@@ -1031,6 +1036,28 @@
         </div>
     </div>
 
+    <!-- Transfer Confirmation Modal -->
+    <div class="modal" id="transferConfirmModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Transfer Successful</h3>
+                <button class="close-modal" onclick="closeModal('transferConfirmModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 1rem;">
+                    <span class="material-icons" style="color: var(--success); vertical-align: middle;">check_circle</span>
+                    Student has been successfully transferred.
+                </p>
+                <div id="transferDetails"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-submit" onclick="closeModal('transferConfirmModal')">OK</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Update date and time dynamically
         function updateDateTime() {
@@ -1079,12 +1106,10 @@
         }
 
         function togglePause(button) {
-            const video = document.querySelector('.cctv-feed video');
             const icon = button.querySelector('.material-icons');
             
-            if (video.paused) {
-                // Resume video and timer
-                video.play();
+            if (isTimerPaused) {
+                // Resume timer only
                 icon.textContent = 'pause';
                 button.innerHTML = '<span class="material-icons">pause</span>Pause';
                 isTimerPaused = false;
@@ -1093,8 +1118,7 @@
                     pauseStartTime = null;
                 }
             } else {
-                // Pause video and timer
-                video.pause();
+                // Pause timer only
                 icon.textContent = 'play_arrow';
                 button.innerHTML = '<span class="material-icons">play_arrow</span>Play';
                 isTimerPaused = true;
@@ -1284,7 +1308,6 @@
                 return;
             }
 
-            // Add your logic to add the student to the list
             const studentList = document.getElementById('studentList');
             const newStudent = `
                 <div class="student-row">
@@ -1295,14 +1318,32 @@
                             <div class="student-id">ID: ${id}</div>
                         </div>
                     </div>
-                    <span class="status present">Present</span>
+                    <span class="status present" onclick="updateStatus(this)">Present</span>
                 </div>
             `;
             studentList.insertAdjacentHTML('beforeend', newStudent);
             
+            updateStudentCount(); // Update count after adding
             closeModal('addStudentModal');
             document.getElementById('studentName').value = '';
             document.getElementById('studentId').value = '';
+        }
+
+        function updateStatus(statusElement) {
+            const currentStatus = statusElement.textContent.trim();
+            
+            if(currentStatus === 'Present') {
+                statusElement.textContent = 'Late';
+                statusElement.className = 'status late';
+            } else {
+                statusElement.textContent = 'Present';
+                statusElement.className = 'status present';
+            }
+            
+            statusElement.classList.add('status-updated');
+            setTimeout(() => {
+                statusElement.classList.remove('status-updated');
+            }, 300);
         }
 
         function submitDeleteStudent() {
@@ -1312,11 +1353,11 @@
                 return;
             }
 
-            // Add your logic to delete the student
             document.querySelectorAll('.student-row').forEach(row => {
                 const id = row.querySelector('.student-id').textContent.split(': ')[1];
                 if (id === studentId) {
                     row.remove();
+                    updateStudentCount(); // Update count after removing
                 }
             });
             
@@ -1332,20 +1373,32 @@
                 return;
             }
 
-            // Add your logic to transfer the student
-            alert(`Student ${studentId} will be transferred to ${targetSection}`);
-            
-            closeModal('transferStudentModal');
+            document.querySelectorAll('.student-row').forEach(row => {
+                const id = row.querySelector('.student-id').textContent.split(': ')[1];
+                if (id === studentId) {
+                    const name = row.querySelector('.student-name').textContent;
+                    row.remove();
+                    updateStudentCount();
+                    
+                    // Show transfer confirmation
+                    document.getElementById('transferDetails').innerHTML = `
+                        <p><strong>Student Name:</strong> ${name}</p>
+                        <p><strong>Student ID:</strong> ${studentId}</p>
+                        <p><strong>Transferred to:</strong> ${targetSection}</p>
+                    `;
+                    closeModal('transferStudentModal');
+                    document.getElementById('transferConfirmModal').style.display = 'flex';
+                }
+            });
         }
 
-        // Close modals when clicking outside
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
-            }
+        // Add this function to update student count
+        function updateStudentCount() {
+            const currentStudents = document.querySelectorAll('.student-row').length;
+            document.getElementById('detected-count').textContent = currentStudents;
         }
 
-        // Add this function to your JavaScript
+        // Add these new functions before the existing script closing tag
         function endSession() {
             // Update session summary
             document.getElementById('sessionDuration').textContent = document.getElementById('elapsed-time').textContent;
@@ -1376,37 +1429,36 @@
             window.location.href = '../index.html'; // Redirect to main page
         }
 
-        // Add these new functions before the existing script closing tag
         function openSettings() {
-            document.getElementById('settingsModal').style.display = 'flex';
+            const settingsModal = document.getElementById('settingsModal');
+            if (settingsModal) {
+                settingsModal.style.display = 'flex';
+            }
         }
 
         function changeVideoQuality(quality) {
             const video = document.querySelector('.cctv-feed video');
-            const constraints = {
-                video: {
-                    width: { ideal: parseInt(quality) },
-                    height: { ideal: parseInt(quality) * 9/16 }
-                }
-            };
+            if (!video || !video.srcObject) return;
 
-            // Update video constraints
-            if (video.srcObject) {
-                const track = video.srcObject.getVideoTracks()[0];
-                track.applyConstraints(constraints)
-                    .then(() => {
-                        console.log(`Quality changed to ${quality}p`);
-                    })
-                    .catch(err => {
-                        console.error('Error applying video constraints:', err);
-                        alert('Failed to change video quality. Your device may not support this resolution.');
-                    });
-            }
+            const track = video.srcObject.getVideoTracks()[0];
+            if (!track) return;
+
+            track.applyConstraints({
+                width: { ideal: parseInt(quality) },
+                height: { ideal: parseInt(quality) * 9/16 }
+            }).then(() => {
+                console.log(`Quality changed to ${quality}p`);
+            }).catch(err => {
+                console.error('Error applying video constraints:', err);
+                alert('Failed to change video quality. Your device may not support this resolution.');
+            });
         }
 
+        // Add this to initialize everything when page loads
         window.addEventListener('load', () => {
             startTimer();
-            updateTimer(); // Initial update
+            updateTimer();
+            updateStudentCount();
         });
     </script>
 </body>
