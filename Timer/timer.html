@@ -192,6 +192,55 @@
             color: #666;
             font-size: 0.9rem;
         }
+
+        .warning-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .warning-modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .warning-icon {
+            color: #f59f00;
+            font-size: 48px;
+            margin-bottom: 1rem;
+        }
+
+        .warning-buttons {
+            margin-top: 1.5rem;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
+
+        .warning-buttons button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-adjust {
+            background: #685A45;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -267,6 +316,17 @@
 </a>
     </div>
 
+    <div class="warning-modal" id="thresholdWarningModal">
+        <div class="warning-modal-content">
+            <span class="material-icons warning-icon">warning</span>
+            <h3>Late Threshold Warning</h3>
+            <p>Late threshold cannot exceed or equal the class duration.</p>
+            <div class="warning-buttons">
+                <button class="btn-adjust" onclick="adjustThreshold()">Adjust Threshold</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let timerInterval;
         let startTime;
@@ -274,7 +334,33 @@
         let sessionDuration;
         let lateThreshold;
 
-        document.getElementById('startBtn').addEventListener('click', function() {
+        function validateTimeInputs() {
+            const mainSeconds = 
+                parseInt(document.getElementById('sessionHours').value) * 3600 +
+                parseInt(document.getElementById('sessionMinutes').value) * 60 +
+                parseInt(document.getElementById('sessionSeconds').value);
+
+            const thresholdSeconds = 
+                parseInt(document.getElementById('thresholdHours').value) * 3600 +
+                parseInt(document.getElementById('thresholdMinutes').value) * 60 +
+                parseInt(document.getElementById('thresholdSeconds').value);
+
+            if (thresholdSeconds >= mainSeconds) {
+                document.getElementById('thresholdWarningModal').style.display = 'flex';
+                return false;
+            }
+            return true;
+        }
+
+        function adjustThreshold() {
+            // Reset threshold inputs
+            document.getElementById('thresholdHours').value = '00';
+            document.getElementById('thresholdMinutes').value = '00';
+            document.getElementById('thresholdSeconds').value = '00';
+            document.getElementById('thresholdWarningModal').style.display = 'none';
+        }
+
+        document.getElementById('startBtn').addEventListener('click', function(event) {
             // Get all input values
             const settings = {
                 timer: {
@@ -317,6 +403,11 @@
             if (totalSeconds === 0) {
                 alert('Please set a class duration');
                 event.preventDefault(); // Prevent navigation
+                return;
+            }
+
+            if (!validateTimeInputs()) {
+                event.preventDefault();
                 return;
             }
 
@@ -394,6 +485,14 @@
                 this.value = String(value).padStart(2, '0');
             });
         });
+
+        // Add validation on threshold input changes
+        document.querySelectorAll('.threshold-container .time-unit input').forEach(input => {
+            input.addEventListener('change', validateTimeInputs);
+        });
     </script>
+</body>
+</html>
+
 </body>
 </html>
