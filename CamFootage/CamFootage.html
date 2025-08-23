@@ -1287,15 +1287,48 @@
             if (isTimerPaused) return;
             
             const now = new Date();
-            const elapsedTime = now - startTime - totalPausedTime;
-            const totalSeconds = Math.floor(elapsedTime / 1000);
+            const diff = now - startTime - totalPausedTime;
+            const settings = JSON.parse(localStorage.getItem('classSettings'));
             
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            const seconds = totalSeconds % 60;
+            // Calculate total session duration in milliseconds from settings
+            const totalDuration = (
+                parseInt(settings.timer.session.hours) * 3600 +
+                parseInt(settings.timer.session.minutes) * 60 +
+                parseInt(settings.timer.session.seconds)
+            ) * 1000;
             
-            const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            document.getElementById('elapsed-time').textContent = timeString;
+            // Check if session duration is reached
+            if (diff >= totalDuration) {
+                clearInterval(timerInterval);
+                isRunning = false;
+                
+                // Show unrecognized faces modal first
+                document.getElementById('unrecognizedFacesModal').style.display = 'flex';
+                
+                // Then show end session modal after faces are handled
+                document.getElementById('sessionDuration').textContent = formatTime(totalDuration / 1000);
+                return;
+            }
+
+            const remaining = totalDuration - diff;
+            const hours = Math.floor(remaining / 3600000);
+            const minutes = Math.floor((remaining % 3600000) / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+
+            // Update display with remaining time
+            document.getElementById('elapsed-time').textContent = formatTime(Math.floor(diff / 1000));
+            document.getElementById('total-time').textContent = formatTime(totalDuration / 1000);
+
+            // Check late threshold
+            const lateThresholdMs = (
+                parseInt(settings.timer.threshold.hours) * 3600000 +
+                parseInt(settings.timer.threshold.minutes) * 60000 +
+                parseInt(settings.timer.threshold.seconds) * 1000
+            );
+            
+            if (diff >= lateThresholdMs && diff < totalDuration) {
+                document.getElementById('mainTimer').classList.add('late');
+            }
         }
 
         function startTimer() {
