@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Instructors</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f5f7f9;
+            color: #333;
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 250px;
+            background: linear-gradient(to bottom, #3a4f66, #2c3e50);
+            color: white;
+            height: 100vh;
+            position: fixed;
+            padding: 20px 0;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .logo {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .logo h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .user-info .avatar {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background-color: #1a2530;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+            font-size: 28px;
+        }
+
+        .user-info .name {
+            font-weight: 600;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .user-info .role {
+            color: #aab7c5;
+            font-size: 14px;
+        }
+
+        .nav-items {
+            list-style: none;
+            padding: 0 15px;
+        }
+
+        .nav-items li {
+            margin-bottom: 5px;
+        }
+
+        .nav-items a {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            color: #e3e9f2;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-items a:hover, .nav-items a.active {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .nav-items a i {
+            margin-right: 10px;
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+
+        /* Main Content Styles */
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 25px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            margin-bottom: 25px;
+        }
+
+        .header h2 {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .header .search-box {
+            display: flex;
+            align-items: center;
+            background: #f5f7f9;
+            padding: 8px 15px;
+            border-radius: 20px;
+            width: 250px;
+        }
+
+        .header .search-box input {
+            border: none;
+            background: transparent;
+            outline: none;
+            padding: 5px;
+            width: 100%;
+        }
+
+        .header .search-box i {
+            color: #7f8c8d;
+            margin-right: 5px;
+        }
+        .instructor-photo {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #e0e0e0;
+        }
+        /* Instructor Content */
+        .instructor-content {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .instructor-content h3 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            font-weight: 500;
+            font-size: 14px;
+            color: #2c3e50;
+        }
+
+        .filter-group select, .filter-group input {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+
+        .instructors-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .instructors-table th {
+            background-color: #f0f4f8;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #2c3e50;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .instructors-table td {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            vertical-align: middle;
+        }
+
+        .instructors-table tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #5c6bc0;
+            transition: color 0.3s;
+        }
+
+        .action-btn:hover {
+            color: #3f51b5;
+        }
+
+        .invite-btn {
+            background: #685A45;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            transition: background-color 0.3s;
+        }
+
+        .invite-btn:hover {
+            background: #4e4233;
+        }
+
+        .invite-link-container {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+            background: #f5f7f9;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        .invite-link-container input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #333;
+            background: white;
+        }
+
+        .copy-btn {
+            background: #685A45;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background-color 0.3s;
+        }
+
+        .copy-btn:hover {
+            background: #4e4233;
+        }
+
+        .copy-status {
+            font-size: 14px;
+            color: #28a745;
+            margin-top: 10px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            animation: fadeIn 0.3s;
+        }
+
+        .modal-content {
+            position: relative;
+            background-color: #fff;
+            margin: 5% auto;
+            padding: 20px;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            animation: slideIn 0.3s;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: #555;
+        }
+
+        .modal-body {
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #5c6bc0;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-cancel {
+            background: #eee;
+            color: #333;
+        }
+
+        .btn-cancel:hover {
+            background: #ddd;
+        }
+
+        .btn-submit {
+            background: #11998e;
+            color: white;
+        }
+
+        .btn-submit:hover {
+            background: #0d7f68;
+        }
+
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #c82333;
+        }
+
+        /* View Modal Styles */
+        .instructor-details {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .detail-row {
+            display: flex;
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            width: 120px;
+            color: #555;
+        }
+
+        .detail-value {
+            flex: 1;
+        }
+
+        /* Alert Modal Styles */
+        .alert-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            animation: fadeIn 0.3s;
+        }
+
+        .alert-content {
+            position: relative;
+            background-color: #fff;
+            margin: 15% auto;
+            padding: 20px;
+            width: 90%;
+            max-width: 400px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            animation: slideIn 0.3s;
+            text-align: center;
+        }
+
+        .alert-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .success-icon {
+            color: #28a745;
+        }
+
+        .error-icon {
+            color: #dc3545;
+        }
+
+        .alert-message {
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+
+        .alert-btn {
+            padding: 8px 20px;
+            background: #11998e;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .alert-btn:hover {
+            background: #0d7f68;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 992px) {
+            .sidebar {
+                width: 80px;
+            }
+            
+            .sidebar .logo h1, 
+            .sidebar .user-info .name, 
+            .sidebar .user-info .role,
+            .sidebar .nav-items a span {
+                display: none;
+            }
+            
+            .sidebar .user-info {
+                padding: 15px 5px;
+            }
+            
+            .sidebar .nav-items a {
+                justify-content: center;
+                padding: 15px;
+            }
+            
+            .sidebar .nav-items a i {
+                margin-right: 0;
+                font-size: 20px;
+            }
+            
+            .main-content {
+                margin-left: 80px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .filters {
+                flex-direction: column;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .header .search-box {
+                width: 100%;
+            }
+            
+            .instructors-table {
+                display: block;
+                overflow-x: auto;
+            }
+            
+            .modal-content {
+                width: 95%;
+                margin: 10% auto;
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo">
+            <h1>Admin Side</h1>
+        </div>
+        
+        <div class="user-info">
+            <div class="avatar">
+                <i class="fas fa-user"></i>
+            </div>
+            <div class="name">Unknown User</div>
+            <div class="role">Admin</div>
+        </div>
+        
+        <ul class="nav-items">
+            <li><a href="../dashboard/dashboard.html"><i class="fas fa-th-large"></i> <span>Dashboard</span></a></li>
+            <li><a href="../instructors/instructors.html" class="active"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
+            <li><a href="../students/student.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
+            <li><a href="#"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
+            <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Logout</span></a></li>
+        </ul>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="header">
+            <h2>List of Instructors</h2>
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Search instructors...">
+            </div>
+        </div>
+        
+        <div class="instructor-content">
+            <h3>Instructor Management</h3>
+            
+            <div class="filters">
+                <div class="filter-group">
+                    <label for="departmentFilter">Department</label>
+                    <select id="departmentFilter">
+                        <option value="">All Departments</option>
+                        <option value="cs">Computer Science</option>
+                        <option value="it">Information Technology</option>
+                        <option value="se">Software Engineering</option>
+                    </select>
+                </div>
+                
+                <button class="invite-btn" id="inviteBtn">
+                    <i class="fas fa-user-plus"></i> Invite Instructor
+                </button>
+            </div>
+            
+            <table class="instructors-table">
+                <thead>
+                    <tr>
+                        <th>Photo</th>
+                        <th>Name</th>
+                        <th>ID Number</th>
+                        <th>Department</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><img src="https://ui-avatars.com/api/?name=Dr.+Sarah+Johnson&background=random" class="instructor-photo" alt="Instructor Photo"></td>
+                        <td>Dr. Sarah Johnson</td>
+                        <td>INST-001</td>
+                        <td>Computer Science</td>
+                        <td class="action-buttons">
+                            <button class="action-btn edit-btn" data-id="1"><i class="fas fa-edit"></i></button>
+                            <button class="action-btn view-btn" data-id="1"><i class="fas fa-eye"></i></button>
+                            <button class="action-btn delete-btn" data-id="1"><i class="fas fa-trash"></i></button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><img src="https://ui-avatars.com/api/?name=Prof.+Michael+Chen&background=random" class="instructor-photo" alt="Instructor Photo"></td>
+                        <td>Prof. Michael Chen</td>
+                        <td>INST-002</td>
+                        <td>Information Technology</td>
+                        <td class="action-buttons">
+                            <button class="action-btn edit-btn" data-id="2"><i class="fas fa-edit"></i></button>
+                            <button class="action-btn view-btn" data-id="2"><i class="fas fa-eye"></i></button>
+                            <button class="action-btn delete-btn" data-id="2"><i class="fas fa-trash"></i></button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- Invite Link Modal -->
+    <div id="inviteLinkModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Invite Instructor</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 15px;">Share this link to invite instructors to join:</p>
+                <div class="invite-link-container">
+                    <input type="text" id="inviteLink" value="https://present-ready.com/instructor/join/abc123" readonly>
+                    <button class="copy-btn" onclick="copyInviteLink()">
+                        <i class="fas fa-copy"></i>
+                        Copy
+                    </button>
+                </div>
+                <p class="copy-status" id="copyStatus"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Instructor Modal -->
+    <div id="editInstructorModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Edit Instructor</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="editInstructorForm">
+                    <input type="hidden" id="editId">
+                    <div class="form-group">
+                        <label for="editName">Instructor Name</label>
+                        <input type="text" id="editName" placeholder="Enter instructor name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editIdNumber">ID Number</label>
+                        <input type="text" id="editIdNumber" placeholder="Enter ID number" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editDepartment">Department</label>
+                        <select id="editDepartment" required>
+                            <option value="">Select Department</option>
+                            <option value="CS">Computer Science</option>
+                            <option value="IT">Information Technology</option>
+                            <option value="SE">Software Engineering</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editSpecialization">Specialization</label>
+                        <input type="text" id="editSpecialization" placeholder="Enter specialization">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Cancel</button>
+                <button class="modal-btn btn-submit" id="submitEditInstructor">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Instructor Modal -->
+    <div id="viewInstructorModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Instructor Details</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="instructor-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Name:</span>
+                        <span class="detail-value" id="viewName"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">ID Number:</span>
+                        <span class="detail-value" id="viewId"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Department:</span>
+                        <span class="detail-value" id="viewDepartment"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Specialization:</span>
+                        <span class="detail-value" id="viewSpecialization"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Status:</span>
+                        <span class="detail-value" id="viewStatus">Active</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteInstructorModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Delete Instructor</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong id="deleteInstructorName"></strong>? This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Cancel</button>
+                <button class="modal-btn btn-delete" id="confirmDelete">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div id="alertModal" class="alert-modal">
+        <div class="alert-content">
+            <div class="alert-icon" id="alertIcon">
+                <i class="fas fa-check-circle success-icon"></i>
+            </div>
+            <p class="alert-message" id="alertMessage"></p>
+            <button class="alert-btn" id="alertButton">OK</button>
+        </div>
+    </div>
+
+    <script>
+        // Instructor data (simulating a database)
+        let instructors = [
+            { 
+                id: 1, 
+                name: "Dr. Sarah Johnson", 
+                idNumber: "INST-001", 
+                department: "Computer Science",
+                specialization: "Database Management",
+                status: "Active",
+                photo: "https://ui-avatars.com/api/?name=Sarah+Johnson&background=random" 
+            },
+            { 
+                id: 2, 
+                name: "Prof. Michael Chen", 
+                idNumber: "INST-002", 
+                department: "Information Technology",
+                specialization: "Network Security",
+                status: "Active",
+                photo: "https://ui-avatars.com/api/?name=Michael+Chen&background=random" 
+            }
+        ];
+
+        // DOM Elements
+        const inviteBtn = document.getElementById('inviteBtn');
+        const inviteLinkModal = document.getElementById('inviteLinkModal');
+        const editInstructorModal = document.getElementById('editInstructorModal');
+        const viewInstructorModal = document.getElementById('viewInstructorModal');
+        const deleteInstructorModal = document.getElementById('deleteInstructorModal');
+        const alertModal = document.getElementById('alertModal');
+        const closeButtons = document.querySelectorAll('.close');
+        const cancelButtons = document.querySelectorAll('.btn-cancel');
+        const submitEditInstructor = document.getElementById('submitEditInstructor');
+        const confirmDelete = document.getElementById('confirmDelete');
+        const alertButton = document.getElementById('alertButton');
+        const alertMessage = document.getElementById('alertMessage');
+        const alertIcon = document.getElementById('alertIcon');
+
+        // Modal functions
+        function openModal(modal) {
+            modal.style.display = "block";
+        }
+
+        function closeModal(modal) {
+            modal.style.display = "none";
+        }
+
+        // Show alert function
+        function showAlert(message, isSuccess = true) {
+            alertMessage.textContent = message;
+            
+            if (isSuccess) {
+                alertIcon.innerHTML = '<i class="fas fa-check-circle success-icon"></i>';
+            } else {
+                alertIcon.innerHTML = '<i class="fas fa-exclamation-circle error-icon"></i>';
+            }
+            
+            openModal(alertModal);
+        }
+
+        // Generate a unique ID
+        function generateId() {
+            return instructors.length > 0 ? Math.max(...instructors.map(i => i.id)) + 1 : 1;
+        }
+
+        // Add instructor to table
+        function addInstructorToTable(instructor) {
+            const tbody = document.querySelector('.instructors-table tbody');
+            const row = document.createElement('tr');
+            
+            row.innerHTML = `
+                <td><img src="${instructor.photo}" class="instructor-photo" alt="Instructor Photo"></td>
+                <td>${instructor.name}</td>
+                <td>${instructor.idNumber}</td>
+                <td>${instructor.department}</td>
+                <td class="action-buttons">
+                    <button class="action-btn edit-btn" data-id="${instructor.id}"><i class="fas fa-edit"></i></button>
+                    <button class="action-btn view-btn" data-id="${instructor.id}"><i class="fas fa-eye"></i></button>
+                    <button class="action-btn delete-btn" data-id="${instructor.id}"><i class="fas fa-trash"></i></button>
+                </td>
+            `;
+            
+            tbody.appendChild(row);
+            
+            // Add event listeners to the new buttons
+            addEventListenersToRow(row);
+        }
+
+        // Add event listeners to a table row
+        function addEventListenersToRow(row) {
+            const editBtn = row.querySelector('.edit-btn');
+            const viewBtn = row.querySelector('.view-btn');
+            const deleteBtn = row.querySelector('.delete-btn');
+            
+            editBtn.addEventListener('click', function() {
+                const instructorId = parseInt(this.getAttribute('data-id'));
+                const instructor = instructors.find(i => i.id === instructorId);
+                
+                if (instructor) {
+                    document.getElementById('editId').value = instructor.id;
+                    document.getElementById('editName').value = instructor.name;
+                    document.getElementById('editIdNumber').value = instructor.idNumber;
+                    document.getElementById('editDepartment').value = instructor.department;
+                    document.getElementById('editSpecialization').value = instructor.specialization;
+                    
+                    openModal(editInstructorModal);
+                }
+            });
+            
+            viewBtn.addEventListener('click', function() {
+                const instructorId = parseInt(this.getAttribute('data-id'));
+                const instructor = instructors.find(i => i.id === instructorId);
+                
+                if (instructor) {
+                    document.getElementById('viewName').textContent = instructor.name;
+                    document.getElementById('viewId').textContent = instructor.idNumber;
+                    document.getElementById('viewDepartment').textContent = instructor.department;
+                    document.getElementById('viewSpecialization').textContent = instructor.specialization;
+                    
+                    openModal(viewInstructorModal);
+                }
+            });
+            
+            deleteBtn.addEventListener('click', function() {
+                const instructorId = parseInt(this.getAttribute('data-id'));
+                const instructor = instructors.find(i => i.id === instructorId);
+                
+                if (instructor) {
+                    document.getElementById('deleteInstructorName').textContent = instructor.name;
+                    confirmDelete.setAttribute('data-id', instructor.id);
+                    
+                    openModal(deleteInstructorModal);
+                }
+            });
+        }
+
+        // Event Listeners
+        inviteBtn.addEventListener('click', () => {
+            openModal(inviteLinkModal);
+        });
+
+        closeButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const modal = this.closest('.modal');
+                closeModal(modal);
+            });
+        });
+
+        cancelButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const modal = this.closest('.modal');
+                closeModal(modal);
+            });
+        });
+
+        alertButton.addEventListener('click', function() {
+            closeModal(alertModal);
+        });
+
+        // Close modal when clicking outside
+        window.addEventListener('click', function(event) {
+            if (event.target.classList.contains('modal')) {
+                closeModal(event.target);
+            }
+        });
+
+        // Add event listeners to existing table rows
+        document.querySelectorAll('.instructors-table tbody tr').forEach(row => {
+            addEventListenersToRow(row);
+        });
+
+        // Edit instructor functionality
+        submitEditInstructor.addEventListener('click', function() {
+            const id = parseInt(document.getElementById('editId').value);
+            const name = document.getElementById('editName').value;
+            const idNumber = document.getElementById('editIdNumber').value;
+            const department = document.getElementById('editDepartment').value;
+            const specialization = document.getElementById('editSpecialization').value;
+            
+            if (name && idNumber && department) {
+                // Check if ID number already exists (excluding current instructor)
+                if (instructors.some(instructor => instructor.idNumber === idNumber && instructor.id !== id)) {
+                    showAlert('ID number already exists!', false);
+                    return;
+                }
+                
+                // Update instructor in array
+                const instructorIndex = instructors.findIndex(i => i.id === id);
+                if (instructorIndex !== -1) {
+                    instructors[instructorIndex] = {
+                        ...instructors[instructorIndex],
+                        name,
+                        idNumber,
+                        department,
+                        specialization,
+                        photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`
+                    };
+                    
+                    // Update the table row
+                    const row = document.querySelector(`.edit-btn[data-id="${id}"]`).closest('tr');
+                    row.cells[1].textContent = name;
+                    row.cells[2].textContent = idNumber;
+                    row.cells[3].textContent = department;
+                    row.cells[0].querySelector('img').src = instructors[instructorIndex].photo;
+                    
+                    // Show success message
+                    showAlert(`Instructor ${name} updated successfully!`);
+                    
+                    // Close modal
+                    closeModal(editInstructorModal);
+                }
+            } else {
+                showAlert('Please fill all required fields', false);
+            }
+        });
+
+        // Delete instructor functionality
+        confirmDelete.addEventListener('click', function() {
+            const instructorId = parseInt(this.getAttribute('data-id'));
+            const instructorIndex = instructors.findIndex(i => i.id === instructorId);
+            
+            if (instructorIndex !== -1) {
+                const deletedInstructor = instructors[instructorIndex];
+                
+                // Remove from array
+                instructors.splice(instructorIndex, 1);
+                
+                // Remove from table
+                const row = document.querySelector(`.delete-btn[data-id="${instructorId}"]`).closest('tr');
+                row.remove();
+                
+                // Show success message
+                showAlert(`Instructor ${deletedInstructor.name} deleted successfully!`);
+                
+                // Close modal
+                closeModal(deleteInstructorModal);
+            }
+        });
+
+        // Search functionality specific to instructors
+        const searchInput = document.querySelector('.search-box input');
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const tbody = document.querySelector('.instructors-table tbody');
+            const rows = tbody.querySelectorAll('tr');
+            
+            rows.forEach(row => {
+                const name = row.cells[1].textContent.toLowerCase();
+                const id = row.cells[2].textContent.toLowerCase();
+                const department = row.cells[3].textContent.toLowerCase();
+                
+                if (name.includes(searchTerm) || 
+                    id.includes(searchTerm) || 
+                    department.includes(searchTerm)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+
+        // Filter functionality for instructors
+        document.getElementById('departmentFilter').addEventListener('change', function() {
+            const department = this.value.toLowerCase();
+            const tbody = document.querySelector('.instructors-table tbody');
+            const rows = tbody.querySelectorAll('tr');
+            
+            rows.forEach(row => {
+                const rowDepartment = row.cells[3].textContent.toLowerCase();
+                row.style.display = department === '' || rowDepartment.includes(department) ? '' : 'none';
+            });
+        });
+
+        // Initialize the page
+        window.addEventListener('load', () => {
+            instructors.forEach(instructor => addInstructorToTable(instructor));
+        });
+
+        function copyInviteLink() {
+            const inviteLink = document.getElementById('inviteLink');
+            inviteLink.select();
+            document.execCommand('copy');
+            
+            const copyStatus = document.getElementById('copyStatus');
+            copyStatus.textContent = 'Link copied to clipboard!';
+            
+            setTimeout(() => {
+                copyStatus.textContent = '';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
