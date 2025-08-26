@@ -43,13 +43,21 @@
       margin-bottom: 20px;
       color: #333;
     }
-    input[type="email"], input[type="text"], input[type="file"] {
+    input[type="email"], input[type="text"], input[type="file"], select {
       width: 100%;
       padding: 12px;
       margin: 8px 0;
       border-radius: 6px;
       border: 1px solid #ccc;
       font-size: 15px;
+    }
+    .name-fields {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .name-fields input {
+      flex: 1;
     }
     .otp-boxes {
       display: flex;
@@ -76,6 +84,10 @@
     }
     button:hover {
       background: #3a2c16;
+    }
+    button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
     }
     .hidden {
       display: none;
@@ -129,6 +141,64 @@
       color: green;
       margin-bottom: 10px;
     }
+    .scan-instruction {
+      margin: 15px 0;
+      font-weight: bold;
+      color: #685A45;
+      min-height: 24px;
+    }
+    .scan-progress {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin: 15px 0;
+    }
+    .progress-step {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background-color: #ccc;
+    }
+    .progress-step.active {
+      background-color: #685A45;
+    }
+    .upload-container {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      margin: 10px auto;
+    }
+    .upload-preview {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 2px solid #685A45;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #f8f8f8;
+      cursor: pointer;
+    }
+    .upload-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .upload-preview span {
+      color: #888;
+      font-size: 14px;
+    }
+    .upload-input {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+      z-index: 10;
+    }
     /* Modal */
     .modal {
       display: none;
@@ -169,6 +239,10 @@
         width: 180px;
         height: 180px;
       }
+      .name-fields {
+        flex-direction: column;
+        gap: 8px;
+      }
     }
   </style>
 </head>
@@ -191,12 +265,12 @@
       <div class="content">
         <h2>Check your WMSU Gmail</h2>
         <div class="otp-boxes">
-          <input type="text" maxlength="1">
-          <input type="text" maxlength="1">
-          <input type="text" maxlength="1">
-          <input type="text" maxlength="1">
-          <input type="text" maxlength="1">
-          <input type="text" maxlength="1">
+          <input type="text" maxlength="1" id="otp1" oninput="moveToNext(1, event)">
+          <input type="text" maxlength="1" id="otp2" oninput="moveToNext(2, event)">
+          <input type="text" maxlength="1" id="otp3" oninput="moveToNext(3, event)">
+          <input type="text" maxlength="1" id="otp4" oninput="moveToNext(4, event)">
+          <input type="text" maxlength="1" id="otp5" oninput="moveToNext(5, event)">
+          <input type="text" maxlength="1" id="otp6" oninput="moveToNext(6, event)">
         </div>
         <button onclick="validateStep2()">Verify</button>
       </div>
@@ -207,10 +281,27 @@
       <div class="header">FILL-UP INSTRUCTOR INFORMATION</div>
       <div class="content">
         <h2>Upload Photo & Info</h2>
-        <input type="file" id="photo">
-        <input type="text" placeholder="Full Name" id="name">
-        <input type="text" placeholder="Instructor ID" id="instructorId">
-        <input type="text" placeholder="Department" id="department">
+        <div class="upload-container">
+          <div class="upload-preview" id="uploadPreview">
+            <span>Click to Upload</span>
+          </div>
+          <input type="file" id="photo" class="upload-input" accept="image/*" onchange="previewUploadedImage(event)">
+        </div>
+        <div class="name-fields">
+          <input type="text" placeholder="Last Name" id="lastName">
+          <input type="text" placeholder="First Name" id="firstName">
+          <input type="text" placeholder="Middle Name" id="middleName">
+        </div>
+        <input type="text" placeholder="Instructor ID (numbers and hyphens only)" id="instructorId" oninput="validateInstructorId(this)">
+        
+        <!-- Department Dropdown (Updated) -->
+        <select id="department">
+          <option value="">Select Department</option>
+          <option value="BSIT">BS Information Technology</option>
+          <option value="BSCS">BS Computer Science</option>
+          <option value="ACT">Associate in Computer Technology</option>
+        </select>
+        
         <input type="text" placeholder="Designation" id="designation">
         <button onclick="validateStep3()">Next</button>
       </div>
@@ -220,11 +311,18 @@
     <div id="step4" class="hidden">
       <div class="header">FACE SCAN</div>
       <div class="content">
-        <h2>Scan your face</h2>
+        <h2>Facial Biometrics Detection</h2>
+        <div class="scan-instruction" id="scanInstruction">Please look straight at the camera</div>
         <div class="face-scan">
           <video id="video" autoplay playsinline></video>
         </div>
-        <button onclick="captureFace()">Capture & Continue</button>
+        <div class="scan-progress">
+          <div class="progress-step" id="step-front"></div>
+          <div class="progress-step" id="step-left"></div>
+          <div class="progress-step" id="step-right"></div>
+          <div class="progress-step" id="step-wink"></div>
+        </div>
+        <button id="continueButton" disabled onclick="nextStep(5)">Continue</button>
       </div>
     </div>
 
@@ -266,11 +364,16 @@
 
   <script>
     let faceImage = null;
+    let uploadedPhoto = null;
+    let videoStream = null;
+    let scanState = 0; // 0: front, 1: left, 2: right, 3: wink, 4: complete
+    let scanInterval = null;
 
     function showModal(message) {
       document.getElementById("modalMessage").textContent = message;
       document.getElementById("modal").style.display = "flex";
     }
+    
     function closeModal() {
       document.getElementById("modal").style.display = "none";
     }
@@ -281,13 +384,29 @@
       }
       document.getElementById("step" + step).classList.remove("hidden");
 
+      if (step === 4) {
+        startCamera();
+        startFaceScan();
+      }
+      
       if (step === 5) {
-        document.getElementById("previewName").textContent = document.getElementById("name").value;
+        const firstName = document.getElementById("firstName").value;
+        const lastName = document.getElementById("lastName").value;
+        const middleName = document.getElementById("middleName").value;
+        
+        document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`;
         document.getElementById("previewInstructorId").textContent = document.getElementById("instructorId").value;
-        document.getElementById("previewDepartment").textContent = document.getElementById("department").value;
+        
+        // Get the selected department text
+        const departmentSelect = document.getElementById("department");
+        const selectedDepartmentText = departmentSelect.options[departmentSelect.selectedIndex].text;
+        document.getElementById("previewDepartment").textContent = selectedDepartmentText;
+        
         document.getElementById("previewDesignation").textContent = document.getElementById("designation").value;
-        if (faceImage) {
-          document.getElementById("idPhoto").innerHTML = `<img src="${faceImage}">`;
+        
+        // Use the uploaded photo in the ID preview
+        if (uploadedPhoto) {
+          document.getElementById("idPhoto").innerHTML = `<img src="${uploadedPhoto}">`;
         }
       }
     }
@@ -298,50 +417,178 @@
         showModal("Please enter a valid WMSU email address.");
       } else {
         nextStep(2);
+        // Auto-focus first OTP box
+        setTimeout(() => document.getElementById("otp1").focus(), 100);
+      }
+    }
+
+    function moveToNext(current, event) {
+      const value = event.target.value;
+      
+      // If a value was entered and it's a number
+      if (value && /^[0-9]$/.test(value)) {
+        if (current < 6) {
+          document.getElementById(`otp${current + 1}`).focus();
+        }
+      }
+      
+      // If backspace was pressed and the field is empty
+      if (event.inputType === 'deleteContentBackward' && !value && current > 1) {
+        document.getElementById(`otp${current - 1}`).focus();
       }
     }
 
     function validateStep2() {
       let boxes = document.querySelectorAll(".otp-boxes input");
+      let otp = "";
+      
       for (let b of boxes) {
-        if (b.value.trim() === "") {
-          showModal("Please enter the complete OTP.");
+        if (b.value.trim() === "" || !/^[0-9]$/.test(b.value)) {
+          showModal("Please enter a valid 6-digit OTP.");
           return;
         }
+        otp += b.value;
       }
+      
+      // Here you would typically verify the OTP with your backend
+      console.log("OTP entered:", otp);
       nextStep(3);
     }
 
+    function validateInstructorId(input) {
+      // Allow only numbers and hyphens
+      input.value = input.value.replace(/[^0-9-]/g, '');
+    }
+
+    function previewUploadedImage(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          uploadedPhoto = e.target.result;
+          document.getElementById("uploadPreview").innerHTML = `<img src="${uploadedPhoto}" alt="Uploaded Photo">`;
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
     function validateStep3() {
-      let name = document.getElementById("name").value.trim();
-      let iid = document.getElementById("instructorId").value.trim();
-      let dept = document.getElementById("department").value.trim();
-      let desig = document.getElementById("designation").value.trim();
-      if (!name || !iid || !dept || !desig) {
-        showModal("Please fill out all fields.");
+      const lastName = document.getElementById("lastName").value.trim();
+      const firstName = document.getElementById("firstName").value.trim();
+      const instructorId = document.getElementById("instructorId").value.trim();
+      const department = document.getElementById("department").value;
+      const designation = document.getElementById("designation").value.trim();
+      
+      if (!lastName || !firstName || !instructorId || !department || !designation) {
+        showModal("Please fill out all required fields.");
         return;
       }
+      
+      if (!uploadedPhoto) {
+        showModal("Please upload a photo.");
+        return;
+      }
+      
       nextStep(4);
-      startCamera();
     }
 
     function startCamera() {
       let video = document.getElementById("video");
+      
+      // Stop any existing stream
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+      
       navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => { video.srcObject = stream; })
-        .catch(err => { showModal("Camera access denied."); });
+        .then(stream => {
+          video.srcObject = stream;
+          videoStream = stream;
+        })
+        .catch(err => {
+          showModal("Camera access denied. Please allow camera access to continue.");
+          console.error("Camera error:", err);
+        });
     }
 
-    function captureFace() {
-      let video = document.getElementById("video");
-      let canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      let ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      faceImage = canvas.toDataURL("image/png");
-      nextStep(5);
+    function startFaceScan() {
+      scanState = 0;
+      updateScanProgress();
+      
+      // Reset continue button
+      document.getElementById("continueButton").disabled = true;
+      
+      // Start scanning process (simulated)
+      scanInterval = setInterval(scanFace, 3000);
     }
+    
+    function scanFace() {
+      const instructions = [
+        "Please look straight at the camera",
+        "Please turn your head to the left",
+        "Please turn your head to the right",
+        "Please wink with your right eye"
+      ];
+      
+      const instructionEl = document.getElementById("scanInstruction");
+      instructionEl.textContent = instructions[scanState];
+      
+      // Update progress indicators
+      updateScanProgress();
+      
+      // Move to next state
+      scanState++;
+      
+      // If scanning is complete
+      if (scanState > 3) {
+        clearInterval(scanInterval);
+        
+        // Capture the final face image
+        let video = document.getElementById("video");
+        let canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        let ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        faceImage = canvas.toDataURL("image/png");
+        
+        instructionEl.textContent = "Face scan completed successfully!";
+        document.getElementById("continueButton").disabled = false;
+        
+        // Stop camera
+        if (videoStream) {
+          videoStream.getTracks().forEach(track => track.stop());
+          videoStream = null;
+        }
+      }
+    }
+    
+    function updateScanProgress() {
+      // Reset all progress steps
+      for (let i = 1; i <= 4; i++) {
+        document.getElementById(`step-${i === 1 ? 'front' : i === 2 ? 'left' : i === 3 ? 'right' : 'wink'}`).classList.remove("active");
+      }
+      
+      // Activate current and previous steps
+      for (let i = 0; i < scanState; i++) {
+        const stepId = i === 0 ? 'front' : i === 1 ? 'left' : i === 2 ? 'right' : 'wink';
+        document.getElementById(`step-${stepId}`).classList.add("active");
+      }
+    }
+
+    // Initialize OTP boxes to handle input properly
+    document.addEventListener('DOMContentLoaded', function() {
+      const otpInputs = document.querySelectorAll('.otp-boxes input');
+      
+      otpInputs.forEach(input => {
+        input.addEventListener('keydown', function(e) {
+          // Allow only numbers
+          if (e.key.length === 1 && !/^[0-9]$/.test(e.key)) {
+            e.preventDefault();
+          }
+        });
+      });
+    });
   </script>
 
 </body>
