@@ -430,15 +430,13 @@
 
     function moveToNext(current, event) {
       const value = event.target.value;
-      
-      // If a value was entered and it's a number
-      if (value && /^[0-9]$/.test(value)) {
-        if (current < 6) {
-          document.getElementById(`otp${current + 1}`).focus();
-        }
+
+      // Allow any character and move to next input if not empty
+      if (value.length > 0 && current < 6) {
+        document.getElementById(`otp${current + 1}`).focus();
       }
-      
-      // If backspace was pressed and the field is empty
+
+      // Move back on backspace
       if (event.inputType === 'deleteContentBackward' && !value && current > 1) {
         document.getElementById(`otp${current - 1}`).focus();
       }
@@ -449,8 +447,8 @@
       let otp = "";
       
       for (let b of boxes) {
-        if (b.value.trim() === "" || !/^[0-9]$/.test(b.value)) {
-          showModal("Please enter a valid 6-digit OTP.");
+        if (b.value.trim() === "") {
+          showModal("Please fill all OTP fields.");
           return;
         }
         otp += b.value;
@@ -585,11 +583,13 @@
     // Initialize OTP boxes to handle input properly
     document.addEventListener('DOMContentLoaded', function() {
       const otpInputs = document.querySelectorAll('.otp-boxes input');
-      
+
       otpInputs.forEach(input => {
         input.addEventListener('keydown', function(e) {
-          // Allow only numbers
-          if (e.key.length === 1 && !/^[0-9]$/.test(e.key)) {
+          // Allow all characters, limit to one per box
+          if (e.key === "Backspace" || e.key === "Delete") return;
+
+          if (input.value.length >= 1 && e.key.length === 1) {
             e.preventDefault();
           }
         });

@@ -302,7 +302,14 @@
           <option value="ACT">Associate in Computer Technology</option>
         </select>
         
-        <input type="text" placeholder="Designation" id="designation">
+        <select id="designation">
+          <option value="">Select Designation</option>
+          <option value="Instructor">Instructor</option>
+          <option value="Professor">Professor</option>
+          <option value="Department Head">Department Head</option>
+          <option value="Program Coordinator">Program Coordinator</option>
+          <option value="Lecturer">Lecturer</option>
+        </select>
         <button onclick="validateStep3()">Next</button>
       </div>
     </div>
@@ -424,27 +431,44 @@
 
     function moveToNext(current, event) {
       const value = event.target.value;
-      
-      // If a value was entered and it's a number
-      if (value && /^[0-9]$/.test(value)) {
-        if (current < 6) {
-          document.getElementById(`otp${current + 1}`).focus();
-        }
+  
+      // Allow any character input
+      if (current < 6 && value.length > 0) {
+        document.getElementById(`otp${current + 1}`).focus();
       }
-      
+  
       // If backspace was pressed and the field is empty
       if (event.inputType === 'deleteContentBackward' && !value && current > 1) {
-        document.getElementById(`otp${current - 1}`).focus();
+       document.getElementById(`otp${current - 1}`).focus();
       }
     }
+
+    // Initialize OTP boxes to handle input properly
+    document.addEventListener('DOMContentLoaded', function() {
+      const otpInputs = document.querySelectorAll('.otp-boxes input');
+  
+      otpInputs.forEach(input => {
+        input.addEventListener('keydown', function(e) {
+          // Allow all characters
+          if (e.key === 'Backspace' || e.key === 'Delete') {
+            // Allow backspace and delete
+            return;
+         }
+          // If the input exceeds one character, prevent further input
+          if (input.value.length >= 1 && e.key.length === 1) {
+            e.preventDefault();
+          }
+        });
+      });
+    });
 
     function validateStep2() {
       let boxes = document.querySelectorAll(".otp-boxes input");
       let otp = "";
       
       for (let b of boxes) {
-        if (b.value.trim() === "" || !/^[0-9]$/.test(b.value)) {
-          showModal("Please enter a valid 6-digit OTP.");
+        if (b.value.trim() === "") {
+          showModal("Please fill all OTP fields.");
           return;
         }
         otp += b.value;
@@ -575,15 +599,17 @@
         document.getElementById(`step-${stepId}`).classList.add("active");
       }
     }
-
-    // Initialize OTP boxes to handle input properly
+      // Initialize OTP boxes to handle input properly
     document.addEventListener('DOMContentLoaded', function() {
       const otpInputs = document.querySelectorAll('.otp-boxes input');
-      
+
       otpInputs.forEach(input => {
         input.addEventListener('keydown', function(e) {
-          // Allow only numbers
-          if (e.key.length === 1 && !/^[0-9]$/.test(e.key)) {
+          // Allow all characters – just prevent more than 1 character
+          if (e.key === 'Backspace' || e.key === 'Delete') {
+            return;
+          }
+          if (input.value.length >= 1 && e.key.length === 1) {
             e.preventDefault();
           }
         });
