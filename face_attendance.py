@@ -250,25 +250,26 @@ def generate_frames():
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 
-# 1) Timer page (Timer/Timer.html)
+# Timer page
 @app.route('/')
 def timer_page():
     return send_from_directory('Timer', 'Timer.html')
 
-# 2) CamFootage page (templates/CamFootage.html)
+# CamFootage page
 @app.route('/camfootage')
 def camfootage_page():
-    return render_template('CamFootage.html')
+    return send_from_directory('CamFootage', 'CamFootage.html')
 
-# 3) Summary page (Timer/SumSession/Summary.html)
+# Summary page
 @app.route('/summary')
 def summary_page():
     return send_from_directory(os.path.join('Timer', 'SumSession'), 'Summary.html')
 
-# 4) Video feed (used in CamFootage.html)
+# Video feed
 @app.route('/video_feed')
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 
 if __name__ == "__main__":
     try:
