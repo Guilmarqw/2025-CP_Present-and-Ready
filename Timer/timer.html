@@ -122,7 +122,7 @@
             gap: 20px;
             margin-bottom: 15px;
         }
-        input {
+        input, select {
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 5px;
@@ -248,11 +248,11 @@
         <img src="../img/logo.png" alt="University Logo" class="logo">
         <h1 class="title">CLASS ATTENDANCE TIMER</h1>
         <a href="../Admin/Admin.html" style="text-decoration: none;">
-<button class="header-btn">
-  <span class="material-icons">dashboard</span>
-  <span class="btn-text">Go to Dashboard</span>
-</button>
-</a>
+            <button class="header-btn">
+                <span class="material-icons">dashboard</span>
+                <span class="btn-text">Go to Dashboard</span>
+            </button>
+        </a>
     </div>
     <div class="content-wrapper">
         <div class="timer-container">
@@ -279,7 +279,6 @@
                     <div class="time-unit">
                         <input type="number" min="0" max="23" value="00" id="thresholdHours">
                         <span class="time-label">Hours</span>
-
                     </div>
                     <div class="time-unit">
                         <input type="number" min="0" max="59" value="00" id="thresholdMinutes">
@@ -298,9 +297,19 @@
             <div class="input-form-group">
                 <h3 class="group-title">Class Details</h3>
                 <div class="input-group">
-                    <input type="text" placeholder="Subject Instructor">
-                    <input type="text" placeholder="Subject Code">
-                    <input type="text" placeholder="Course & Section">
+                    <input type="text" placeholder="Subject Instructor" id="subjectInstructor">
+                    <select id="subjectCode">
+                        <option value="" selected disabled>Select Subject Code</option>
+                        <!-- Options will be populated by JavaScript -->
+                    </select>
+                    <input type="text" placeholder="Year Level" id="yearLevel" readonly>
+                </div>
+                <div class="input-group">
+                    <select id="courseSection">
+                        <option value="" selected disabled>Select Section</option>
+                        <!-- Options will be populated by JavaScript based on year -->
+                    </select>
+                    <input type="text" placeholder="Course" id="course">
                 </div>
             </div>
             
@@ -311,9 +320,9 @@
                 </div>
             </div>
         </div>
-   <a href="/camfootage" style="text-decoration: none;">
-  <button id="startBtn">Start Session</button>
-</a>
+        <a href="/camfootage" style="text-decoration: none;">
+            <button id="startBtn">Start Session</button>
+        </a>
     </div>
 
     <div class="warning-modal" id="thresholdWarningModal">
@@ -328,6 +337,62 @@
     </div>
 
     <script>
+        // Sample data - in a real application, this would come from a database
+        const subjectData = {
+            "CS101": { year: "1st Year", course: "BSCS", sections: ["A", "B", "C"] },
+            "CS201": { year: "2nd Year", course: "BSCS", sections: ["A", "B"] },
+            "CS301": { year: "3rd Year", course: "BSCS", sections: ["A", "B", "C", "D"] },
+            "CS401": { year: "4th Year", course: "BSCS", sections: ["A", "B"] },
+            "IT101": { year: "1st Year", course: "BSIT", sections: ["A", "B"] },
+            "IT201": { year: "2nd Year", course: "BSIT", sections: ["A", "B", "C"] },
+            "IT301": { year: "3rd Year", course: "BSIT", sections: ["A", "B"] },
+            "IT401": { year: "4th Year", course: "BSIT", sections: ["A"] },
+            "EE101": { year: "1st Year", course: "BSEE", sections: ["A", "B", "C"] },
+            "EE201": { year: "2nd Year", course: "BSEE", sections: ["A", "B"] }
+        };
+
+        // Populate subject code dropdown on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const subjectCodeDropdown = document.getElementById('subjectCode');
+            
+            // Add options to subject code dropdown
+            for (const code in subjectData) {
+                const option = document.createElement('option');
+                option.value = code;
+                option.textContent = code;
+                subjectCodeDropdown.appendChild(option);
+            }
+            
+            // Add event listener to subject code dropdown
+            subjectCodeDropdown.addEventListener('change', function() {
+                const selectedCode = this.value;
+                const yearField = document.getElementById('yearLevel');
+                const courseField = document.getElementById('course');
+                const sectionDropdown = document.getElementById('courseSection');
+                
+                if (selectedCode && subjectData[selectedCode]) {
+                    // Auto-fill year level
+                    yearField.value = subjectData[selectedCode].year;
+                    
+                    // Auto-fill course
+                    courseField.value = subjectData[selectedCode].course;
+                    
+                    // Populate section dropdown based on year
+                    sectionDropdown.innerHTML = '<option value="" selected disabled>Select Section</option>';
+                    subjectData[selectedCode].sections.forEach(section => {
+                        const option = document.createElement('option');
+                        option.value = section;
+                        option.textContent = section;
+                        sectionDropdown.appendChild(option);
+                    });
+                } else {
+                    yearField.value = '';
+                    courseField.value = '';
+                    sectionDropdown.innerHTML = '<option value="" selected disabled>Select Section</option>';
+                }
+            });
+        });
+
         let timerInterval;
         let startTime;
         let isRunning = false;
@@ -376,9 +441,11 @@
                     }
                 },
                 classDetails: {
-                    instructor: document.querySelector('input[placeholder="Subject Instructor"]').value,
-                    subjectCode: document.querySelector('input[placeholder="Subject Code"]').value,
-                    courseSection: document.querySelector('input[placeholder="Course & Section"]').value
+                    instructor: document.getElementById('subjectInstructor').value,
+                    subjectCode: document.getElementById('subjectCode').value,
+                    yearLevel: document.getElementById('yearLevel').value,
+                    course: document.getElementById('course').value,
+                    section: document.getElementById('courseSection').value
                 }
             };
             
@@ -388,7 +455,9 @@
             // Validate required fields
             if (!settings.classDetails.instructor || 
                 !settings.classDetails.subjectCode || 
-                !settings.classDetails.courseSection) {
+                !settings.classDetails.yearLevel ||
+                !settings.classDetails.course ||
+                !settings.classDetails.section) {
                 alert('Please fill in all class details');
                 event.preventDefault(); // Prevent navigation
                 return;
@@ -491,8 +560,5 @@
             input.addEventListener('change', validateTimeInputs);
         });
     </script>
-</body>
-</html>
-
 </body>
 </html>
