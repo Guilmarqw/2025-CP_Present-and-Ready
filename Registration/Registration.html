@@ -230,6 +230,16 @@
         <input type="text" placeholder="Student ID" id="studentId">
         <input type="text" placeholder="Course" id="course">
         <input type="text" placeholder="Year & Section" id="yearSection">
+                    <div class="input-group">
+                <label for="pin" style="display: block; margin-bottom: 8px; color: #555;">6-Digit PIN</label>
+                <div class="pin-container">
+                    <input type="password" class="pin-digit" maxlength="1" oninput="moveToNext(this, 1)">
+                    <input type="password" class="pin-digit" maxlength="1" oninput="moveToNext(this, 2)">
+                    <input type="password" class="pin-digit" maxlength="1" oninput="moveToNext(this, 3)">
+                    <input type="password" class="pin-digit" maxlength="1" oninput="moveToNext(this, 4)">
+                    <input type="password" class="pin-digit" maxlength="1" oninput="moveToNext(this, 5)">
+                    <input type="password" class="pin-digit" maxlength="1" oninput="moveToNext(this, 6)">
+                </div>
         <button onclick="validateStep3()">Next</button>
       </div>
     </div>

@@ -43,7 +43,7 @@
       margin-bottom: 20px;
       color: #333;
     }
-    input[type="email"], input[type="text"], input[type="file"], select {
+    input[type="email"], input[type="text"], input[type="file"], select, input[type="password"] {
       width: 100%;
       padding: 12px;
       margin: 8px 0;
@@ -59,13 +59,14 @@
     .name-fields input {
       flex: 1;
     }
-    .otp-boxes {
+    .otp-boxes, .pin-boxes {
       display: flex;
       justify-content: center;
       gap: 10px;
       flex-wrap: wrap;
+      margin: 15px 0;
     }
-    .otp-boxes input {
+    .otp-boxes input, .pin-boxes input {
       width: 45px;
       height: 50px;
       text-align: center;
@@ -199,6 +200,13 @@
       cursor: pointer;
       z-index: 10;
     }
+    .pin-label {
+      display: block;
+      text-align: left;
+      margin: 15px 0 5px;
+      font-weight: bold;
+      color: #555;
+    }
     /* Modal */
     .modal {
       display: none;
@@ -230,7 +238,7 @@
       .container {
         margin: 0 10px;
       }
-      .otp-boxes input {
+      .otp-boxes input, .pin-boxes input {
         width: 40px;
         height: 45px;
         font-size: 20px;
@@ -265,12 +273,12 @@
       <div class="content">
         <h2>Check your WMSU Gmail</h2>
         <div class="otp-boxes">
-          <input type="text" maxlength="1" id="otp1" oninput="moveToNext(1, event)">
-          <input type="text" maxlength="1" id="otp2" oninput="moveToNext(2, event)">
-          <input type="text" maxlength="1" id="otp3" oninput="moveToNext(3, event)">
-          <input type="text" maxlength="1" id="otp4" oninput="moveToNext(4, event)">
-          <input type="text" maxlength="1" id="otp5" oninput="moveToNext(5, event)">
-          <input type="text" maxlength="1" id="otp6" oninput="moveToNext(6, event)">
+          <input type="text" maxlength="1" id="otp1" oninput="moveToNext(1, event)" onkeydown="return onlyNumbers(event)">
+          <input type="text" maxlength="1" id="otp2" oninput="moveToNext(2, event)" onkeydown="return onlyNumbers(event)">
+          <input type="text" maxlength="1" id="otp3" oninput="moveToNext(3, event)" onkeydown="return onlyNumbers(event)">
+          <input type="text" maxlength="1" id="otp4" oninput="moveToNext(4, event)" onkeydown="return onlyNumbers(event)">
+          <input type="text" maxlength="1" id="otp5" oninput="moveToNext(5, event)" onkeydown="return onlyNumbers(event)">
+          <input type="text" maxlength="1" id="otp6" oninput="moveToNext(6, event)" onkeydown="return onlyNumbers(event)">
         </div>
         <button onclick="validateStep2()">Verify</button>
       </div>
@@ -310,6 +318,18 @@
           <option value="Program Coordinator">Program Coordinator</option>
           <option value="Lecturer">Lecturer</option>
         </select>
+        
+        <!-- 6-Digit PIN Section -->
+        <label class="pin-label">Create 6-Digit PIN (Password)</label>
+        <div class="pin-boxes">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(1, event)" onkeydown="return onlyNumbers(event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(2, event)" onkeydown="return onlyNumbers(event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(3, event)" onkeydown="return onlyNumbers(event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(4, event)" onkeydown="return onlyNumbers(event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(5, event)" onkeydown="return onlyNumbers(event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(6, event)" onkeydown="return onlyNumbers(event)">
+        </div>
+        
         <button onclick="validateStep3()">Next</button>
       </div>
     </div>
@@ -429,10 +449,29 @@
       }
     }
 
+    function onlyNumbers(event) {
+      // Allow: backspace, delete, tab, escape, enter
+      if ([46, 8, 9, 27, 13].includes(event.keyCode) || 
+          // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+          (event.keyCode === 65 && event.ctrlKey === true) || 
+          (event.keyCode === 67 && event.ctrlKey === true) || 
+          (event.keyCode === 86 && event.ctrlKey === true) || 
+          (event.keyCode === 88 && event.ctrlKey === true) ||
+          // Allow: home, end, left, right
+          (event.keyCode >= 35 && event.keyCode <= 39)) {
+        return;
+      }
+      
+      // Ensure it's a number and stop the keypress if not
+      if ((event.keyCode < 48 || event.keyCode > 57) && (event.keyCode < 96 || event.keyCode > 105)) {
+        event.preventDefault();
+      }
+    }
+
     function moveToNext(current, event) {
       const value = event.target.value;
   
-      // Allow any character input
+      // Allow any character and move to next input if not empty
       if (current < 6 && value.length > 0) {
         document.getElementById(`otp${current + 1}`).focus();
       }
@@ -442,25 +481,21 @@
        document.getElementById(`otp${current - 1}`).focus();
       }
     }
+    
+    function moveToNextPin(current, event) {
+      const value = event.target.value;
+      const pinInputs = document.querySelectorAll('.pin-digit');
 
-    // Initialize OTP boxes to handle input properly
-    document.addEventListener('DOMContentLoaded', function() {
-      const otpInputs = document.querySelectorAll('.otp-boxes input');
-  
-      otpInputs.forEach(input => {
-        input.addEventListener('keydown', function(e) {
-          // Allow all characters
-          if (e.key === 'Backspace' || e.key === 'Delete') {
-            // Allow backspace and delete
-            return;
-         }
-          // If the input exceeds one character, prevent further input
-          if (input.value.length >= 1 && e.key.length === 1) {
-            e.preventDefault();
-          }
-        });
-      });
-    });
+      // Allow any character and move to next input if not empty
+      if (value.length > 0 && current < 6) {
+        pinInputs[current].focus();
+      }
+
+      // Move back on backspace
+      if (event.inputType === 'deleteContentBackward' && !value && current > 1) {
+        pinInputs[current - 2].focus();
+      }
+    }
 
     function validateStep2() {
       let boxes = document.querySelectorAll(".otp-boxes input");
@@ -513,6 +548,24 @@
         return;
       }
       
+      // Validate PIN
+      const pinInputs = document.querySelectorAll('.pin-digit');
+      let pin = "";
+      let pinComplete = true;
+      
+      for (let input of pinInputs) {
+        pin += input.value;
+        if (input.value === '') {
+          pinComplete = false;
+        }
+      }
+      
+      if (!pinComplete || pin.length !== 6) {
+        showModal("Please enter a complete 6-digit PIN.");
+        return;
+      }
+      
+      console.log("PIN created:", pin);
       nextStep(4);
     }
 
@@ -599,16 +652,28 @@
         document.getElementById(`step-${stepId}`).classList.add("active");
       }
     }
-      // Initialize OTP boxes to handle input properly
+
+    // Initialize OTP boxes to handle input properly
     document.addEventListener('DOMContentLoaded', function() {
       const otpInputs = document.querySelectorAll('.otp-boxes input');
+      const pinInputs = document.querySelectorAll('.pin-digit');
 
       otpInputs.forEach(input => {
         input.addEventListener('keydown', function(e) {
-          // Allow all characters – just prevent more than 1 character
-          if (e.key === 'Backspace' || e.key === 'Delete') {
-            return;
+          // Allow all characters, limit to one per box
+          if (e.key === "Backspace" || e.key === "Delete") return;
+
+          if (input.value.length >= 1 && e.key.length === 1) {
+            e.preventDefault();
           }
+        });
+      });
+      
+      pinInputs.forEach(input => {
+        input.addEventListener('keydown', function(e) {
+          // Allow all characters, limit to one per box
+          if (e.key === "Backspace" || e.key === "Delete") return;
+
           if (input.value.length >= 1 && e.key.length === 1) {
             e.preventDefault();
           }
