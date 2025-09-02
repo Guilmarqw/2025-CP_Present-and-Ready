@@ -168,25 +168,31 @@
         }
 
         .stats-container {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
 
         .stat-card {
-            flex: 1;
             background: linear-gradient(to right, #4a6fa9, #6a11cb);
             color: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: transform 0.3s ease;
         }
 
-        .stat-card.instructors {
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card.cs {
             background: linear-gradient(to right, #11998e, #38ef7d);
         }
 
-        .stat-card.students {
+        .stat-card.act {
             background: linear-gradient(to right, #f46b45, #eea849);
         }
 
@@ -201,10 +207,17 @@
             font-weight: 700;
         }
 
+        .stat-card .period {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
         /* Curriculum Management Styles */
         .curriculum-controls {
             display: flex;
-            gap: 15px;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 20px;
             flex-wrap: wrap;
         }
@@ -268,13 +281,6 @@
             background-color: #f8f9fa;
         }
 
-        .action-buttons {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 20px;
-        }
-
         .btn {
             padding: 10px 20px;
             border: none;
@@ -311,18 +317,141 @@
             background-color: #c82333;
         }
 
-        .editable {
-            background-color: #f8f9fa;
-            padding: 8px;
-            border-radius: 4px;
-            border: 1px dashed #ccc;
-            min-height: 38px;
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            overflow-y: auto;
+            padding: 20px 0;
         }
 
-        .editable:focus {
-            outline: none;
-            border-color: #4a6fa9;
+        .modal-content {
             background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            width: 700px;
+            max-width: 90%;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .modal-header h3 {
+            color: #2c3e50;
+            margin: 0;
+        }
+
+        .close {
+            color: #aaa;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close:hover {
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #2c3e50;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .subject-inputs {
+            margin-top: 20px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+        }
+
+        .subject-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+
+        .subject-item input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .subject-item .subject-code {
+            flex: 0 0 100px;
+        }
+
+        .subject-item .subject-units {
+            flex: 0 0 80px;
+        }
+
+        .remove-subject {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            width: 35px;
+            height: 35px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .add-subject-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 15px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 10px;
         }
 
         /* Responsive Design */
@@ -359,7 +488,7 @@
 
         @media (max-width: 768px) {
             .stats-container {
-                flex-direction: column;
+                grid-template-columns: 1fr;
             }
             
             .header {
@@ -373,11 +502,23 @@
             
             .curriculum-controls {
                 flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
             }
             
             .subjects-table {
                 display: block;
                 overflow-x: auto;
+            }
+
+            .subject-item {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .subject-item .subject-code,
+            .subject-item .subject-units {
+                flex: 1;
             }
         }
     </style>
@@ -418,42 +559,39 @@
         </div>
         
         <div class="dashboard-content">
-            <h3>Overview</h3>
+            <h3>Curriculum Overview</h3>
             
             <div class="stats-container">
-                <div class="stat-card">
-                    <h4>Total Courses</h4>
-                    <div class="number">12</div>
+                <div class="stat-card" data-department="it">
+                    <h4>Information Technology</h4>
+                    <div class="number">4 Years</div>
+                    <div class="period">2022-2025</div>
                 </div>
                 
-                <div class="stat-card instructors">
-                    <h4>Departments</h4>
-                    <div class="number">6</div>
+                <div class="stat-card cs" data-department="cs">
+                    <h4>Computer Science</h4>
+                    <div class="number">4 Years</div>
+                    <div class="period">2023-2026</div>
                 </div>
                 
-                <div class="stat-card students">
-                    <h4>Total Subjects</h4>
-                    <div class="number">184</div>
+                <div class="stat-card act" data-department="act">
+                    <h4>Accounting Technology</h4>
+                    <div class="number">4 Years</div>
+                    <div class="period">2022-2025</div>
                 </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="add-curriculum-btn">
+                    <i class="fas fa-plus"></i> Add New Curriculum
+                </button>
             </div>
         </div>
 
         <div class="dashboard-content">
-            <h3>Curriculum Editor</h3>
+            <h3>Current Curriculum: <span id="current-curriculum-name">Information Technology 2022-2025</span></h3>
             
             <div class="curriculum-controls">
-                <div class="control-group">
-                    <label for="department">Department</label>
-                    <select id="department">
-                        <option value="it">Information Technology</option>
-                        <option value="cs">Computer Science</option>
-                        <option value="is">Information Systems</option>
-                        <option value="ce">Computer Engineering</option>
-                        <option value="ece">Electronics Engineering</option>
-                        <option value="ee">Electrical Engineering</option>
-                    </select>
-                </div>
-                
                 <div class="control-group">
                     <label for="year-level">Year Level</label>
                     <select id="year-level">
@@ -471,14 +609,7 @@
                         <option value="2">2nd Semester</option>
                     </select>
                 </div>
-                
-                <div class="control-group">
-                    <label for="school-year">School Year</label>
-                    <input type="text" id="school-year" value="2023-2024">
-                </div>
             </div>
-            
-            <h4>Subjects for <span id="current-department">Information Technology</span> - <span id="current-year">1st Year</span></h4>
             
             <div class="semester-tabs">
                 <div class="semester-tab active" data-semester="1">1st Semester</div>
@@ -488,226 +619,336 @@
             <table class="subjects-table">
                 <thead>
                     <tr>
-                        <th width="10%">Code</th>
-                        <th width="40%">Subject Name</th>
-                        <th width="10%">Lec Units</th>
-                        <th width="10%">Lab Units</th>
-                        <th width="10%">Total Units</th>
-                        <th width="10%">Pre-Requisites</th>
-                        <th width="10%">Actions</th>
+                        <th width="15%">Code</th>
+                        <th width="70%">Subject Name</th>
+                        <th width="15%">Units</th>
                     </tr>
                 </thead>
                 <tbody id="subjects-body">
                     <!-- Subjects will be populated here -->
                 </tbody>
             </table>
-            
-            <button class="btn btn-primary" id="add-subject">
-                <i class="fas fa-plus"></i> Add Subject
-            </button>
-            
-            <div class="action-buttons">
-                <button class="btn btn-danger" id="reset-changes">
-                    <i class="fas fa-undo"></i> Reset Changes
-                </button>
-                <button class="btn btn-success" id="save-changes">
-                    <i class="fas fa-save"></i> Save Curriculum
-                </button>
-            </div>
         </div>
     </main>
+
+    <!-- Add Curriculum Modal -->
+    <div class="modal" id="add-curriculum-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Curriculum</h3>
+                <span class="close">&times;</span>
+            </div>
+            <form id="add-curriculum-form">
+                <div class="form-group">
+                    <label for="curriculum-name">Curriculum Name</label>
+                    <input type="text" id="curriculum-name" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="curriculum-department">Department</label>
+                    <select id="curriculum-department" required>
+                        <option value="">Select Department</option>
+                        <option value="it">Information Technology</option>
+                        <option value="cs">Computer Science</option>
+                        <option value="act">Accounting Technology</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="curriculum-period">Curriculum Period</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="number" id="curriculum-start-year" min="2020" max="2030" placeholder="Start Year" required>
+                        <span style="line-height: 40px;">-</span>
+                        <input type="number" id="curriculum-end-year" min="2020" max="2030" placeholder="End Year" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="curriculum-duration">Program Duration (Years)</label>
+                    <input type="number" id="curriculum-duration" min="1" max="6" value="4" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="curriculum-description">Description</label>
+                    <textarea id="curriculum-description"></textarea>
+                </div>
+                
+                <div class="subject-inputs">
+                    <h4>Subjects</h4>
+                    
+                    <div id="subjects-container">
+                        <div class="subject-item">
+                            <input type="text" class="subject-code" placeholder="Code" required>
+                            <input type="text" class="subject-name" placeholder="Subject Name" required>
+                            <input type="number" class="subject-units" placeholder="Units" min="1" max="6" required>
+                            <button type="button" class="remove-subject">&times;</button>
+                        </div>
+                    </div>
+                    
+                    <button type="button" class="add-subject-btn" id="add-subject-btn">
+                        <i class="fas fa-plus"></i> Add Subject
+                    </button>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" id="cancel-curriculum">Cancel</button>
+                    <button type="submit" class="btn btn-success">Add Curriculum</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <script>
         // Sample curriculum data
         const curriculumData = {
-            it: {
+            "it-2022-2025": {
+                name: "Information Technology 2022-2025",
+                department: "it",
+                period: "2022-2025",
+                duration: 4,
                 1: {
                     1: [
-                        { code: "IT101", name: "Introduction to Computing", lec: 3, lab: 0, preReq: "" },
-                        { code: "IT102", name: "Computer Programming 1", lec: 2, lab: 1, preReq: "" },
-                        { code: "MATH101", name: "College Algebra", lec: 3, lab: 0, preReq: "" },
-                        { code: "ENG101", name: "Communication Skills 1", lec: 3, lab: 0, preReq: "" },
-                        { code: "FIL101", name: "Komunikasyon sa Akademikong Filipino", lec: 3, lab: 0, preReq: "" },
-                        { code: "PE101", name: "Physical Fitness", lec: 2, lab: 0, preReq: "" },
-                        { code: "NSTP1", name: "National Service Training Program 1", lec: 3, lab: 0, preReq: "" }
+                        { code: "IT101", name: "Introduction to Computing", units: 3 },
+                        { code: "IT102", name: "Computer Programming 1", units: 3 },
+                        { code: "MATH101", name: "College Algebra", units: 3 },
+                        { code: "ENG101", name: "Communication Skills 1", units: 3 },
+                        { code: "FIL101", name: "Komunikasyon sa Akademikong Filipino", units: 3 },
+                        { code: "PE101", name: "Physical Fitness", units: 2 },
+                        { code: "NSTP1", name: "National Service Training Program 1", units: 3 }
                     ],
                     2: [
-                        { code: "IT103", name: "Computer Programming 2", lec: 2, lab: 1, preReq: "IT102" },
-                        { code: "IT104", name: "Discrete Mathematics", lec: 3, lab: 0, preReq: "MATH101" },
-                        { code: "MATH102", name: "Trigonometry", lec: 3, lab: 0, preReq: "MATH101" },
-                        { code: "ENG102", name: "Communication Skills 2", lec: 3, lab: 0, preReq: "ENG101" },
-                        { code: "FIL102", name: "Pagbasa at Pagsulat Tungo sa Pananaliksik", lec: 3, lab: 0, preReq: "FIL101" },
-                        { code: "PE102", name: "Rhythmic Activities", lec: 2, lab: 0, preReq: "PE101" },
-                        { code: "NSTP2", name: "National Service Training Program 2", lec: 3, lab: 0, preReq: "NSTP1" }
+                        { code: "IT103", name: "Computer Programming 2", units: 3 },
+                        { code: "IT104", name: "Discrete Mathematics", units: 3 },
+                        { code: "MATH102", name: "Trigonometry", units: 3 },
+                        { code: "ENG102", name: "Communication Skills 2", units: 3 },
+                        { code: "FIL102", name: "Pagbasa at Pagsulat Tungo sa Pananaliksik", units: 3 },
+                        { code: "PE102", name: "Rhythmic Activities", units: 2 },
+                        { code: "NSTP2", name: "National Service Training Program 2", units: 3 }
                     ]
                 },
                 2: {
                     1: [
-                        { code: "IT201", name: "Data Structures and Algorithms", lec: 2, lab: 1, preReq: "IT103" },
-                        { code: "IT202", name: "Object-Oriented Programming", lec: 2, lab: 1, preReq: "IT103" },
-                        { code: "MATH203", name: "Probability and Statistics", lec: 3, lab: 0, preReq: "MATH102" },
-                        { code: "SCI201", name: "Physics for IT", lec: 3, lab: 1, preReq: "MATH102" },
-                        { code: "SOCSCI201", name: "Philippine History", lec: 3, lab: 0, preReq: "" },
-                        { code: "PE201", name: "Individual/Dual Sports", lec: 2, lab: 0, preReq: "PE102" }
+                        { code: "IT201", name: "Data Structures and Algorithms", units: 3 },
+                        { code: "IT202", name: "Object-Oriented Programming", units: 3 },
+                        { code: "MATH203", name: "Probability and Statistics", units: 3 },
+                        { code: "SCI201", name: "Physics for IT", units: 4 },
+                        { code: "SOCSCI201", name: "Philippine History", units: 3 },
+                        { code: "PE201", name: "Individual/Dual Sports", units: 2 }
                     ],
                     2: [
-                        { code: "IT203", name: "Web Development", lec: 2, lab: 1, preReq: "IT201" },
-                        { code: "IT204", name: "Database Management Systems", lec: 2, lab: 1, preReq: "IT201" },
-                        { code: "IT205", name: "Networking 1", lec: 2, lab: 1, preReq: "IT201" },
-                        { code: "MATH204", name: "Calculus", lec: 3, lab: 0, preReq: "MATH203" },
-                        { code: "SOCSCI202", name: "Society and Culture", lec: 3, lab: 0, preReq: "SOCSCI201" },
-                        { code: "PE202", name: "Team Sports", lec: 2, lab: 0, preReq: "PE201" }
-                    ]
-                },
-                3: {
-                    1: [
-                        { code: "IT301", name: "Advanced Database Systems", lec: 2, lab: 1, preReq: "IT204" },
-                        { code: "IT302", name: "Mobile Application Development", lec: 2, lab: 1, preReq: "IT202" },
-                        { code: "IT303", name: "Networking 2", lec: 2, lab: 1, preReq: "IT205" },
-                        { code: "IT304", name: "Systems Analysis and Design", lec: 3, lab: 0, preReq: "IT204" },
-                        { code: "IT305", name: "Information Management", lec: 3, lab: 0, preReq: "IT204" },
-                        { code: "ETHICS", name: "Ethics", lec: 3, lab: 0, preReq: "" }
-                    ],
-                    2: [
-                        { code: "IT306", name: "Software Engineering", lec: 2, lab: 1, preReq: "IT304" },
-                        { code: "IT307", name: "Web Frameworks", lec: 2, lab: 1, preReq: "IT203" },
-                        { code: "IT308", name: "Human-Computer Interaction", lec: 3, lab: 0, preReq: "IT304" },
-                        { code: "IT309", name: "IT Elective 1", lec: 2, lab: 1, preReq: "3rd Year Standing" },
-                        { code: "IT310", name: "IT Research Methods", lec: 3, lab: 0, preReq: "MATH203" },
-                        { code: "RIZAL", name: "Life and Works of Rizal", lec: 3, lab: 0, preReq: "" }
-                    ]
-                },
-                4: {
-                    1: [
-                        { code: "IT401", name: "Capstone Project 1", lec: 1, lab: 2, preReq: "IT306, IT310" },
-                        { code: "IT402", name: "IT Project Management", lec: 3, lab: 0, preReq: "IT306" },
-                        { code: "IT403", name: "Information Security", lec: 2, lab: 1, preReq: "IT303" },
-                        { code: "IT404", name: "IT Elective 2", lec: 2, lab: 1, preReq: "4th Year Standing" },
-                        { code: "IT405", name: "IT Elective 3", lec: 2, lab: 1, preReq: "4th Year Standing" },
-                        { code: "IT406", name: "Practicum (200 hours)", lec: 0, lab: 3, preReq: "4th Year Standing" }
-                    ],
-                    2: [
-                        { code: "IT407", name: "Capstone Project 2", lec: 1, lab: 2, preReq: "IT401" },
-                        { code: "IT408", name: "Emerging Technologies", lec: 3, lab: 0, preReq: "4th Year Standing" },
-                        { code: "IT409", name: "IT Elective 4", lec: 2, lab: 1, preReq: "4th Year Standing" },
-                        { code: "IT410", name: "IT Seminar", lec: 1, lab: 0, preReq: "4th Year Standing" },
-                        { code: "IT411", name: "Social and Professional Issues", lec: 3, lab: 0, preReq: "ETHICS" }
+                        { code: "IT203", name: "Web Development", units: 3 },
+                        { code: "IT204", name: "Database Management Systems", units: 3 },
+                        { code: "IT205", name: "Networking 1", units: 3 },
+                        { code: "MATH204", name: "Calculus", units: 3 },
+                        { code: "SOCSCI202", name: "Society and Culture", units: 3 },
+                        { code: "PE202", name: "Team Sports", units: 2 }
                     ]
                 }
             },
-            // Other departments would be defined here
-            cs: {},
-            is: {},
-            ce: {},
-            ece: {},
-            ee: {}
+            "cs-2023-2026": {
+                name: "Computer Science 2023-2026",
+                department: "cs",
+                period: "2023-2026",
+                duration: 4,
+                1: {
+                    1: [
+                        { code: "CS101", name: "Introduction to Programming", units: 3 },
+                        { code: "CS102", name: "Computer Fundamentals", units: 3 },
+                        { code: "MATH101", name: "College Algebra", units: 3 },
+                        { code: "ENG101", name: "Communication Skills 1", units: 3 }
+                    ],
+                    2: [
+                        { code: "CS103", name: "Data Structures", units: 3 },
+                        { code: "CS104", name: "Discrete Mathematics", units: 3 },
+                        { code: "MATH102", name: "Trigonometry", units: 3 },
+                        { code: "ENG102", name: "Communication Skills 2", units: 3 }
+                    ]
+                }
+            },
+            "act-2022-2025": {
+                name: "Accounting Technology 2022-2025",
+                department: "act",
+                period: "2022-2025",
+                duration: 4,
+                1: {
+                    1: [
+                        { code: "ACT101", name: "Fundamentals of Accounting", units: 3 },
+                        { code: "ACT102", name: "Business Mathematics", units: 3 },
+                        { code: "ENG101", name: "Communication Skills 1", units: 3 }
+                    ],
+                    2: [
+                        { code: "ACT103", name: "Financial Accounting", units: 3 },
+                        { code: "ACT104", name: "Cost Accounting", units: 3 },
+                        { code: "ENG102", name: "Communication Skills 2", units: 3 }
+                    ]
+                }
+            }
         };
 
-        // Initialize with IT department data
-        let currentDepartment = 'it';
+        // Initialize with IT curriculum data
+        let currentCurriculum = 'it-2022-2025';
         let currentYear = '1';
         let currentSemester = '1';
         
         // DOM elements
-        const departmentSelect = document.getElementById('department');
         const yearLevelSelect = document.getElementById('year-level');
         const semesterSelect = document.getElementById('semester');
-        const currentDepartmentSpan = document.getElementById('current-department');
-        const currentYearSpan = document.getElementById('current-year');
+        const currentCurriculumName = document.getElementById('current-curriculum-name');
         const subjectsBody = document.getElementById('subjects-body');
         const semesterTabs = document.querySelectorAll('.semester-tab');
-        const addSubjectBtn = document.getElementById('add-subject');
-        const saveChangesBtn = document.getElementById('save-changes');
-        const resetChangesBtn = document.getElementById('reset-changes');
+        const addCurriculumBtn = document.getElementById('add-curriculum-btn');
+        const addCurriculumModal = document.getElementById('add-curriculum-modal');
+        const addCurriculumForm = document.getElementById('add-curriculum-form');
+        const closeModalBtn = document.querySelector('.close');
+        const cancelCurriculumBtn = document.getElementById('cancel-curriculum');
+        const statCards = document.querySelectorAll('.stat-card');
+        const addSubjectBtn = document.getElementById('add-subject-btn');
+        const subjectsContainer = document.getElementById('subjects-container');
         
         // Function to update the displayed curriculum
         function updateCurriculum() {
-            currentDepartment = departmentSelect.value;
             currentYear = yearLevelSelect.value;
             currentSemester = document.querySelector('.semester-tab.active').dataset.semester;
             
-            // Update the display texts
-            currentDepartmentSpan.textContent = departmentSelect.options[departmentSelect.selectedIndex].text;
-            currentYearSpan.textContent = yearLevelSelect.options[yearLevelSelect.selectedIndex].text;
-            
             // Get the subjects for the current selection
-            const subjects = curriculumData[currentDepartment][currentYear][currentSemester] || [];
+            const subjects = curriculumData[currentCurriculum] && 
+                            curriculumData[currentCurriculum][currentYear] && 
+                            curriculumData[currentCurriculum][currentYear][currentSemester] || [];
+            
+            // Update the curriculum name
+            currentCurriculumName.textContent = curriculumData[currentCurriculum].name;
             
             // Clear the table body
             subjectsBody.innerHTML = '';
             
             // Add each subject to the table
-            subjects.forEach((subject, index) => {
+            if (subjects.length === 0) {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td><div class="editable" contenteditable="true" data-field="code">${subject.code}</div></td>
-                    <td><div class="editable" contenteditable="true" data-field="name">${subject.name}</div></td>
-                    <td><div class="editable" contenteditable="true" data-field="lec">${subject.lec}</div></td>
-                    <td><div class="editable" contenteditable="true" data-field="lab">${subject.lab}</div></td>
-                    <td>${subject.lec + subject.lab}</td>
-                    <td><div class="editable" contenteditable="true" data-field="preReq">${subject.preReq}</div></td>
-                    <td>
-                        <button class="btn btn-danger remove-subject" data-index="${index}">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                    <td colspan="3" style="text-align: center; padding: 20px;">
+                        No subjects found for this selection.
                     </td>
                 `;
                 subjectsBody.appendChild(row);
+            } else {
+                subjects.forEach((subject, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${subject.code}</td>
+                        <td>${subject.name}</td>
+                        <td>${subject.units}</td>
+                    `;
+                    subjectsBody.appendChild(row);
+                });
+            }
+        }
+        
+        // Function to show modal
+        function showModal() {
+            addCurriculumModal.style.display = 'flex';
+        }
+        
+        // Function to hide modal
+        function hideModal() {
+            addCurriculumModal.style.display = 'none';
+            addCurriculumForm.reset();
+            // Reset subject inputs to one
+            subjectsContainer.innerHTML = `
+                <div class="subject-item">
+                    <input type="text" class="subject-code" placeholder="Code" required>
+                    <input type="text" class="subject-name" placeholder="Subject Name" required>
+                    <input type="number" class="subject-units" placeholder="Units" min="1" max="6" required>
+                    <button type="button" class="remove-subject">&times;</button>
+                </div>
+            `;
+            initRemoveSubjectButtons();
+        }
+        
+        // Function to handle form submission
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            
+            // Get form values
+            const name = document.getElementById('curriculum-name').value;
+            const department = document.getElementById('curriculum-department').value;
+            const startYear = document.getElementById('curriculum-start-year').value;
+            const endYear = document.getElementById('curriculum-end-year').value;
+            const duration = document.getElementById('curriculum-duration').value;
+            const description = document.getElementById('curriculum-description').value;
+            
+            // Get subject data
+            const subjectItems = subjectsContainer.querySelectorAll('.subject-item');
+            const subjects = [];
+            
+            subjectItems.forEach(item => {
+                const code = item.querySelector('.subject-code').value;
+                const name = item.querySelector('.subject-name').value;
+                const units = item.querySelector('.subject-units').value;
+                
+                if (code && name && units) {
+                    subjects.push({ code, name, units: parseInt(units) });
+                }
             });
             
-            // Add event listeners to remove buttons
-            document.querySelectorAll('.remove-subject').forEach(button => {
-                button.addEventListener('click', function() {
-                    const index = parseInt(this.dataset.index);
-                    curriculumData[currentDepartment][currentYear][currentSemester].splice(index, 1);
+            // In a real application, you would send this data to a server
+            console.log('New Curriculum:', { 
+                name, 
+                department, 
+                period: `${startYear}-${endYear}`,
+                duration, 
+                description,
+                subjects 
+            });
+            
+            // Show success message
+            alert('Curriculum added successfully!');
+            
+            // Hide modal
+            hideModal();
+        }
+        
+        // Function to handle curriculum card click
+        function handleCardClick() {
+            const department = this.dataset.department;
+            
+            // Find the curriculum for this department
+            for (const key in curriculumData) {
+                if (curriculumData[key].department === department) {
+                    currentCurriculum = key;
                     updateCurriculum();
+                    break;
+                }
+            }
+        }
+        
+        // Function to add a subject input field
+        function addSubjectInput() {
+            const subjectItem = document.createElement('div');
+            subjectItem.className = 'subject-item';
+            subjectItem.innerHTML = `
+                <input type="text" class="subject-code" placeholder="Code" required>
+                <input type="text" class="subject-name" placeholder="Subject Name" required>
+                <input type="number" class="subject-units" placeholder="Units" min="1" max="6" required>
+                <button type="button" class="remove-subject">&times;</button>
+            `;
+            subjectsContainer.appendChild(subjectItem);
+            initRemoveSubjectButtons();
+        }
+        
+        // Function to initialize remove subject buttons
+        function initRemoveSubjectButtons() {
+            const removeButtons = subjectsContainer.querySelectorAll('.remove-subject');
+            removeButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Don't remove if there's only one subject input
+                    if (subjectsContainer.querySelectorAll('.subject-item').length > 1) {
+                        this.parentElement.remove();
+                    }
                 });
             });
-        }
-        
-        // Function to add a new subject
-        function addNewSubject() {
-            if (!curriculumData[currentDepartment][currentYear][currentSemester]) {
-                curriculumData[currentDepartment][currentYear][currentSemester] = [];
-            }
-            
-            curriculumData[currentDepartment][currentYear][currentSemester].push({
-                code: "NEW101",
-                name: "New Subject",
-                lec: 3,
-                lab: 0,
-                preReq: ""
-            });
-            
-            updateCurriculum();
-        }
-        
-        // Function to save changes
-        function saveChanges() {
-            // Update the data model with edited values
-            const rows = subjectsBody.querySelectorAll('tr');
-            rows.forEach((row, index) => {
-                const editableDivs = row.querySelectorAll('.editable');
-                editableDivs.forEach(div => {
-                    const field = div.dataset.field;
-                    curriculumData[currentDepartment][currentYear][currentSemester][index][field] = div.textContent;
-                });
-            });
-            
-            alert('Curriculum changes saved successfully!');
-        }
-        
-        // Function to reset changes
-        function resetChanges() {
-            if (confirm('Are you sure you want to reset all changes?')) {
-                // This would typically reload from a saved state
-                // For this demo, we'll just reload the page
-                location.reload();
-            }
         }
         
         // Event listeners
-        departmentSelect.addEventListener('change', updateCurriculum);
         yearLevelSelect.addEventListener('change', updateCurriculum);
         semesterSelect.addEventListener('change', function() {
             document.querySelectorAll('.semester-tab').forEach(tab => {
@@ -727,9 +968,26 @@
             });
         });
         
-        addSubjectBtn.addEventListener('click', addNewSubject);
-        saveChangesBtn.addEventListener('click', saveChanges);
-        resetChangesBtn.addEventListener('click', resetChanges);
+        addCurriculumBtn.addEventListener('click', showModal);
+        closeModalBtn.addEventListener('click', hideModal);
+        cancelCurriculumBtn.addEventListener('click', hideModal);
+        addCurriculumForm.addEventListener('submit', handleFormSubmit);
+        addSubjectBtn.addEventListener('click', addSubjectInput);
+        
+        // Close modal when clicking outside the modal content
+        window.addEventListener('click', function(e) {
+            if (e.target === addCurriculumModal) {
+                hideModal();
+            }
+        });
+        
+        // Add event listeners to curriculum cards
+        statCards.forEach(card => {
+            card.addEventListener('click', handleCardClick);
+        });
+        
+        // Initialize remove subject buttons
+        initRemoveSubjectButtons();
         
         // Initialize the curriculum display
         updateCurriculum();
