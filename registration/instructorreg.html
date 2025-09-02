@@ -72,6 +72,12 @@
       text-align: center;
       font-size: 22px;
     }
+    .resend-otp {
+      margin: 15px 0;
+      color: #685A45;
+      cursor: pointer;
+      text-decoration: underline;
+    }
     button {
       background: #685A45;
       color: white;
@@ -273,13 +279,14 @@
       <div class="content">
         <h2>Check your WMSU Gmail</h2>
         <div class="otp-boxes">
-          <input type="text" maxlength="1" id="otp1" oninput="moveToNext(1, event)" onkeydown="return onlyNumbers(event)">
-          <input type="text" maxlength="1" id="otp2" oninput="moveToNext(2, event)" onkeydown="return onlyNumbers(event)">
-          <input type="text" maxlength="1" id="otp3" oninput="moveToNext(3, event)" onkeydown="return onlyNumbers(event)">
-          <input type="text" maxlength="1" id="otp4" oninput="moveToNext(4, event)" onkeydown="return onlyNumbers(event)">
-          <input type="text" maxlength="1" id="otp5" oninput="moveToNext(5, event)" onkeydown="return onlyNumbers(event)">
-          <input type="text" maxlength="1" id="otp6" oninput="moveToNext(6, event)" onkeydown="return onlyNumbers(event)">
+          <input type="text" maxlength="1" id="otp1" oninput="moveToNext(1, event)" onkeydown="handleOtpKeydown(1, event)">
+          <input type="text" maxlength="1" id="otp2" oninput="moveToNext(2, event)" onkeydown="handleOtpKeydown(2, event)">
+          <input type="text" maxlength="1" id="otp3" oninput="moveToNext(3, event)" onkeydown="handleOtpKeydown(3, event)">
+          <input type="text" maxlength="1" id="otp4" oninput="moveToNext(4, event)" onkeydown="handleOtpKeydown(4, event)">
+          <input type="text" maxlength="1" id="otp5" oninput="moveToNext(5, event)" onkeydown="handleOtpKeydown(5, event)">
+          <input type="text" maxlength="1" id="otp6" oninput="moveToNext(6, event)" onkeydown="handleOtpKeydown(6, event)">
         </div>
+        <div class="resend-otp" onclick="resendOTP()">Didn't receive OTP?</div>
         <button onclick="validateStep2()">Verify</button>
       </div>
     </div>
@@ -322,12 +329,12 @@
         <!-- 6-Digit PIN Section -->
         <label class="pin-label">Create 6-Digit PIN (Password)</label>
         <div class="pin-boxes">
-          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(1, event)" onkeydown="return onlyNumbers(event)">
-          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(2, event)" onkeydown="return onlyNumbers(event)">
-          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(3, event)" onkeydown="return onlyNumbers(event)">
-          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(4, event)" onkeydown="return onlyNumbers(event)">
-          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(5, event)" onkeydown="return onlyNumbers(event)">
-          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(6, event)" onkeydown="return onlyNumbers(event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(1, event)" onkeydown="handlePinKeydown(1, event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(2, event)" onkeydown="handlePinKeydown(2, event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(3, event)" onkeydown="handlePinKeydown(3, event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(4, event)" onkeydown="handlePinKeydown(4, event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(5, event)" onkeydown="handlePinKeydown(5, event)">
+          <input type="password" maxlength="1" class="pin-digit" oninput="moveToNextPin(6, event)" onkeydown="handlePinKeydown(6, event)">
         </div>
         
         <button onclick="validateStep3()">Next</button>
@@ -470,18 +477,36 @@
 
     function moveToNext(current, event) {
       const value = event.target.value;
-  
+
       // Allow any character and move to next input if not empty
-      if (current < 6 && value.length > 0) {
+      if (value.length > 0 && current < 6) {
         document.getElementById(`otp${current + 1}`).focus();
       }
-  
-      // If backspace was pressed and the field is empty
-      if (event.inputType === 'deleteContentBackward' && !value && current > 1) {
-       document.getElementById(`otp${current - 1}`).focus();
-      }
     }
-    
+
+    function handleOtpKeydown(current, event) {
+      // Handle backspace key
+      if (event.key === "Backspace") {
+        const currentInput = document.getElementById(`otp${current}`);
+        
+        // If current input is empty, move to previous input and clear it
+        if (currentInput.value === "" && current > 1) {
+          const prevInput = document.getElementById(`otp${current - 1}`);
+          prevInput.value = "";
+          prevInput.focus();
+        } else {
+          // Clear current input but stay in the same box
+          currentInput.value = "";
+        }
+        
+        // Prevent default to avoid any browser-specific behavior
+        event.preventDefault();
+      }
+      
+      // Call onlyNumbers to restrict to numbers only
+      onlyNumbers(event);
+    }
+
     function moveToNextPin(current, event) {
       const value = event.target.value;
       const pinInputs = document.querySelectorAll('.pin-digit');
@@ -490,11 +515,30 @@
       if (value.length > 0 && current < 6) {
         pinInputs[current].focus();
       }
+    }
 
-      // Move back on backspace
-      if (event.inputType === 'deleteContentBackward' && !value && current > 1) {
-        pinInputs[current - 2].focus();
+    function handlePinKeydown(current, event) {
+      // Handle backspace key
+      if (event.key === "Backspace") {
+        const pinInputs = document.querySelectorAll('.pin-digit');
+        const currentInput = pinInputs[current - 1];
+        
+        // If current input is empty, move to previous input and clear it
+        if (currentInput.value === "" && current > 1) {
+          const prevInput = pinInputs[current - 2];
+          prevInput.value = "";
+          prevInput.focus();
+        } else {
+          // Clear current input but stay in the same box
+          currentInput.value = "";
+        }
+        
+        // Prevent default to avoid any browser-specific behavior
+        event.preventDefault();
       }
+      
+      // Call onlyNumbers to restrict to numbers only
+      onlyNumbers(event);
     }
 
     function validateStep2() {
@@ -512,6 +556,19 @@
       // Here you would typically verify the OTP with your backend
       console.log("OTP entered:", otp);
       nextStep(3);
+    }
+
+    function resendOTP() {
+      // This would typically call your backend to resend the OTP
+      showModal("A new OTP has been sent to your email.");
+      
+      // Clear all OTP fields
+      for (let i = 1; i <= 6; i++) {
+        document.getElementById(`otp${i}`).value = "";
+      }
+      
+      // Focus back to the first OTP field
+      document.getElementById("otp1").focus();
     }
 
     function validateInstructorId(input) {
