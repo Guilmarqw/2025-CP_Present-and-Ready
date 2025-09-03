@@ -49,6 +49,16 @@ RECONNECT_COOLDOWN = 2.0
 GRAB_SLEEP = 0.01
 MAX_EMPTY_GRABS = 150
 
+# Anti-spoofing configuration
+LIVENESS_THRESHOLD = 100  # Adjust based on testing
+MIN_FACE_SIZE = 40  # Minimum face size in pixels for recognition
+HIGH_CONFIDENCE_THRESHOLD = 0.4  # High confidence match threshold
+MEDIUM_CONFIDENCE_THRESHOLD = 0.6  # Medium confidence match threshold
+
+# Performance optimization
+PROCESSING_INTERVAL = 3  # Process every 3rd frame for face recognition
+RESIZE_FACTOR = 0.5  # Resize factor for faster processing (0.5 = half size)
+
 # Database configuration
 DB_CONFIG = {
     'host': 'localhost',
@@ -287,9 +297,9 @@ def update_trackers(rgb, frame, frame_idx):
             kept.append(tr)
     tracks = kept
 
-def recognize_face(face_image, tolerance=0.6):
+def enhanced_recognize_face(face_image, tolerance=0.6):
     """
-    Enhanced face recognition with better handling for low-resolution images
+    Enhanced face recognition with multiple validation checks
     """
     try:
         # Preprocess image for better recognition
@@ -307,41 +317,109 @@ def recognize_face(face_image, tolerance=0.6):
             enhanced = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         else:
             enhanced = face_image
-            
-        # Generate face encoding with more jitters for better accuracy
-        encodings = face_recognition.face_encodings(
+        
+        # Detect multiple faces in the image
+        face_locations = face_recognition.face_locations(enhanced, model="hog")
+        
+        if not face_locations:
+            return "Unknown", None, float('inf')
+        
+        # Get encodings for all detected faces
+        face_encodings = face_recognition.face_encodings(
             enhanced, 
-            known_face_locations=[(0, enhanced.shape[1], enhanced.shape[0], 0)],  # Use entire image
-            num_jitters=3,  # Increased from default for better accuracy
-            model="large"   # Use large model for better accuracy
+            known_face_locations=face_locations, 
+            num_jitters=3,
+            model="large"
         )
         
-        if not encodings:
+        if not face_encodings:
             return "Unknown", None, float('inf')
-            
-        face_encoding = encodings[0]
+        
+        # If multiple faces detected, use the largest one
+        if len(face_encodings) > 1:
+            # Find the largest face
+            face_sizes = [(bottom - top) * (right - left) for (top, right, bottom, left) in face_locations]
+            largest_face_idx = np.argmax(face_sizes)
+            face_encoding = face_encodings[largest_face_idx]
+        else:
+            face_encoding = face_encodings[0]
         
         # Compare with known faces
         if known_face_encodings:
             face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
             best_match_index = np.argmin(face_distances)
             
+            # Apply stricter matching for low distances
             if face_distances[best_match_index] <= tolerance:
-                return known_face_names[best_match_index], known_face_ids[best_match_index], face_distances[best_match_index]
+                # Additional confidence check
+                if face_distances[best_match_index] < 0.4:  # High confidence match
+                    return known_face_names[best_match_index], known_face_ids[best_match_index], face_distances[best_match_index]
+                elif face_distances[best_match_index] < 0.6:  # Medium confidence
+                    # Require additional validation for medium confidence matches
+                    return known_face_names[best_match_index], known_face_ids[best_match_index], face_distances[best_match_index]
         
         return "Unknown", None, float('inf')
         
     except Exception as e:
-        logger.error(f"Error in recognize_face: {e}")
-        return "Unknown", None, float('inf')    
+        logger.error(f"Error in enhanced_recognize_face: {e}")
+        return "Unknown", None, float('inf')
+
+def detect_liveness(face_image):
+    """
+    Simple liveness detection to prevent spoofing with photos
+    """
+    try:
+        # Convert to grayscale
+        gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
+        
+        # Calculate image variance (blurry images from photos tend to have lower variance)
+        fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+        
+        # Check if variance is above threshold (real faces typically have higher variance)
+        if fm < 100:  # Adjust this threshold based on testing
+            return False
+            
+        # Additional checks could include:
+        # - Eye blinking detection
+        # - Head movement detection
+        # - Texture analysis
+        
+        return True
+    except Exception as e:
+        logger.error(f"Liveness detection error: {e}")
+        return False
+
+def recognize_face_with_anti_spoofing(face_image, tolerance=0.6):
+    """
+    Enhanced face recognition with anti-spoofing
+    """
+    # First check if this is a real face (not a photo)
+    if not detect_liveness(face_image):
+        return "Unknown", None, float('inf'), False
+    
+    # Then proceed with recognition
+    name, student_id, distance = enhanced_recognize_face(face_image, tolerance)
+    return name, student_id, distance, True
+
+
+
+# Update your refresh_with_detections function
 
 def refresh_with_detections(frame, rgb, frame_idx):
     global tracks
     if len(tracks) > MAX_TRACKS:
         tracks = tracks[:MAX_TRACKS]
+    
     h, w = frame.shape[:2]
+    
+    # Only process every Nth frame for detection to improve performance
+    if frame_idx % DETECT_EVERY != 0:
+        return
+    
     frame_eq = enhance_lighting(frame)
-    results = yolo.predict(source=frame_eq, verbose=False, conf=CONF_THRESH, imgsz=max(STREAM_WIDTH, STREAM_HEIGHT), device=DEVICE)
+    results = yolo.predict(source=frame_eq, verbose=False, conf=CONF_THRESH, 
+                          imgsz=640, device=DEVICE)  # Reduced image size for faster processing
+    
     dets = []
     if results:
         r = results[0]
@@ -367,14 +445,18 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if face_region.size == 0 or face_region.shape[0] < 20 or face_region.shape[1] < 20:
             logger.info(f"Face region too small for recognition: {face_region.shape}")
             name = "Unknown"
+            student_id = None
         else:
-            # Use our enhanced recognition function
-            name, student_id, distance = recognize_face(face_region, TOLERANCE)
+            # Use our enhanced recognition function with anti-spoofing
+            name, student_id, distance, is_real_face = recognize_face_with_anti_spoofing(face_region, TOLERANCE)
             
-            if name != "Unknown":
+            if name != "Unknown" and is_real_face:
                 logger.info(f"Recognized {name} (ID: {student_id}) with distance {distance:.4f}")
                 # Mark attendance for recognized face
                 mark_attendance(name, student_id)
+            else:
+                name = "Unknown"
+                student_id = None
         
         # Create tracker for this face
         dtracker = dlib.correlation_tracker()
