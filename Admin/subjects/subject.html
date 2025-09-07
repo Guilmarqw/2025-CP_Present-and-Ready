@@ -20,92 +20,6 @@
             min-height: 100vh;
         }
 
-        /* Sidebar Styles */
-        .sidebar {
-            width: 250px;
-            background: linear-gradient(to bottom, #3a4f66, #2c3e50);
-            color: white;
-            height: 100vh;
-            position: fixed;
-            padding: 20px 0;
-            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .logo {
-            text-align: center;
-            padding: 20px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            margin-bottom: 20px;
-        }
-
-        .logo h1 {
-            font-size: 24px;
-            font-weight: 600;
-        }
-
-        .user-info {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 15px 20px;
-            margin-bottom: 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .user-info .avatar {
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
-            background-color: #1a2530;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 15px;
-            font-size: 28px;
-        }
-
-        .user-info .name {
-            font-weight: 600;
-            font-size: 18px;
-            margin-bottom: 5px;
-        }
-
-        .user-info .role {
-            color: #aab7c5;
-            font-size: 14px;
-        }
-
-        .nav-items {
-            list-style: none;
-            padding: 0 15px;
-        }
-
-        .nav-items li {
-            margin-bottom: 5px;
-        }
-
-        .nav-items a {
-            display: flex;
-            align-items: center;
-            padding: 12px 15px;
-            color: #e3e9f2;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: all 0.3s ease;
-        }
-
-        .nav-items a:hover, .nav-items a.active {
-            background-color: rgba(255, 255, 255, 0.1);
-            color: white;
-        }
-
-        .nav-items a i {
-            margin-right: 10px;
-            font-size: 18px;
-            width: 24px;
-            text-align: center;
-        }
-
         /* Main Content Styles */
         .main-content {
             flex: 1;
@@ -525,28 +439,7 @@
 </head>
 <body>
     <!-- Sidebar -->
-    <aside class="sidebar">
-        <div class="logo">
-            <h1>Admin Side</h1>
-        </div>
-        
-        <div class="user-info">
-            <div class="avatar">
-                <i class="fas fa-user"></i>
-            </div>
-            <div class="name">Admin User</div>
-            <div class="role">Curriculum Manager</div>
-        </div>
-        
-        <ul class="nav-items">
-            <li><a href="#" class="active"><i class="fas fa-th-large"></i> <span>Dashboard</span></a></li>
-            <li><a href="#"><i class="fas fa-book"></i> <span>Curriculum</span></a></li>
-            <li><a href="#"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
-            <li><a href="#"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
-            <li><a href="#"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
-            <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Logout</span></a></li>
-        </ul>
-    </aside>
+    <div id="sidebar-container"></div>
 
     <!-- Main Content -->
     <main class="main-content">
@@ -991,6 +884,13 @@
         
         // Initialize the curriculum display
         updateCurriculum();
+
+        // Load sidebar.html into sidebar-container
+        fetch('../sidebar.html')
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('sidebar-container').innerHTML = html;
+            });
     </script>
 </body>
 </html>
