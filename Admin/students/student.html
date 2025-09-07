@@ -534,18 +534,26 @@
                         <option value="">Select Course</option>
                         <option value="bscs">BSCS</option>
                         <option value="bsit">BSIT</option>
-                        <option value="bsis">BSIS</option>
+                        <option value="bsis">ACT</option>
                     </select>
                 </div>
                 
                 <div class="filter-group">
-                    <label for="section">Section</label>
+                    <label for="section">Year &Section</label>
                     <select id="section">
                         <option value="">Select Section</option>
+                        <option value="1a">1A</option>
+                        <option value="1b">1B</option>
+                        <option value="1c">1C</option>
+                        <option value="2a">2A</option>
+                        <option value="2b">2B</option>
+                        <option value="2c">2C</option>
                         <option value="3a">3A</option>
                         <option value="3b">3B</option>
                         <option value="3c">3C</option>
                         <option value="4a">4A</option>
+                        <option value="4b">4B</option>
+                        <option value="4c">4C</option>
                     </select>
                 </div>
                 
@@ -1116,11 +1124,18 @@
             }, 2000);
         }
 
-        // Load sidebar.html into sidebar-container
+        // Load sidebar with correct path
         fetch('../sidebar.html')
             .then(response => response.text())
             .then(html => {
                 document.getElementById('sidebar-container').innerHTML = html;
+                // Fix navigation paths after sidebar loads
+                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+                    // Convert relative paths to correct module paths
+                    if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
+                        link.href = '../' + link.getAttribute('href');
+                    }
+                });
             });
     </script>
 </body>

@@ -155,25 +155,6 @@
             background-color: #f9f9f9;
         }
 
-        .semester-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .semester-tab {
-            padding: 10px 20px;
-            background-color: #e9ecef;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .semester-tab.active {
-            background-color: #4a6fa9;
-            color: white;
-        }
-
         .subjects-table {
             width: 100%;
             border-collapse: collapse;
@@ -468,7 +449,7 @@
                 </div>
                 
                 <div class="stat-card act" data-department="act">
-                    <h4>Accounting Technology</h4>
+                    <h4>Associate in Computer Technology</h4>
                     <div class="number">4 Years</div>
                     <div class="period">2022-2025</div>
                 </div>
@@ -502,11 +483,6 @@
                         <option value="2">2nd Semester</option>
                     </select>
                 </div>
-            </div>
-            
-            <div class="semester-tabs">
-                <div class="semester-tab active" data-semester="1">1st Semester</div>
-                <div class="semester-tab" data-semester="2">2nd Semester</div>
             </div>
             
             <table class="subjects-table">
@@ -543,7 +519,7 @@
                         <option value="">Select Department</option>
                         <option value="it">Information Technology</option>
                         <option value="cs">Computer Science</option>
-                        <option value="act">Accounting Technology</option>
+                        <option value="act">Associate in Computer Technology</option>
                     </select>
                 </div>
                 
@@ -659,19 +635,19 @@
                 }
             },
             "act-2022-2025": {
-                name: "Accounting Technology 2022-2025",
+                name: "Associate in Computer Technology 2022-2025",
                 department: "act",
                 period: "2022-2025",
                 duration: 4,
                 1: {
                     1: [
-                        { code: "ACT101", name: "Fundamentals of Accounting", units: 3 },
-                        { code: "ACT102", name: "Business Mathematics", units: 3 },
+                        { code: "ACT101", name: "Introduction to Computing", units: 3 },
+                        { code: "ACT102", name: "Computer Programming 1", units: 3 },
                         { code: "ENG101", name: "Communication Skills 1", units: 3 }
                     ],
                     2: [
-                        { code: "ACT103", name: "Financial Accounting", units: 3 },
-                        { code: "ACT104", name: "Cost Accounting", units: 3 },
+                        { code: "ACT103", name: "Computer Programming 2", units: 3 },
+                        { code: "ACT104", name: "Database Management", units: 3 },
                         { code: "ENG102", name: "Communication Skills 2", units: 3 }
                     ]
                 }
@@ -688,7 +664,6 @@
         const semesterSelect = document.getElementById('semester');
         const currentCurriculumName = document.getElementById('current-curriculum-name');
         const subjectsBody = document.getElementById('subjects-body');
-        const semesterTabs = document.querySelectorAll('.semester-tab');
         const addCurriculumBtn = document.getElementById('add-curriculum-btn');
         const addCurriculumModal = document.getElementById('add-curriculum-modal');
         const addCurriculumForm = document.getElementById('add-curriculum-form');
@@ -701,7 +676,7 @@
         // Function to update the displayed curriculum
         function updateCurriculum() {
             currentYear = yearLevelSelect.value;
-            currentSemester = document.querySelector('.semester-tab.active').dataset.semester;
+            currentSemester = semesterSelect.value; // Changed from semester tabs to semester select
             
             // Get the subjects for the current selection
             const subjects = curriculumData[currentCurriculum] && 
@@ -844,21 +819,8 @@
         // Event listeners
         yearLevelSelect.addEventListener('change', updateCurriculum);
         semesterSelect.addEventListener('change', function() {
-            document.querySelectorAll('.semester-tab').forEach(tab => {
-                tab.classList.remove('active');
-                if (tab.dataset.semester === this.value) {
-                    tab.classList.add('active');
-                }
-            });
+            currentSemester = this.value;
             updateCurriculum();
-        });
-        
-        semesterTabs.forEach(tab => {
-            tab.addEventListener('click', function() {
-                semesterTabs.forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-                updateCurriculum();
-            });
         });
         
         addCurriculumBtn.addEventListener('click', showModal);
@@ -885,11 +847,18 @@
         // Initialize the curriculum display
         updateCurriculum();
 
-        // Load sidebar.html into sidebar-container
+        // Load sidebar with correct path
         fetch('../sidebar.html')
             .then(response => response.text())
             .then(html => {
                 document.getElementById('sidebar-container').innerHTML = html;
+                // Fix navigation paths after sidebar loads
+                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+                    // Convert relative paths to correct module paths
+                    if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
+                        link.href = '../' + link.getAttribute('href');
+                    }
+                });
             });
     </script>
 </body>

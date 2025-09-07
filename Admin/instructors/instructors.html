@@ -977,11 +977,18 @@
             }, 2000);
         }
 
-        // Load sidebar.html into sidebar-container
+        // Load sidebar with correct path
         fetch('../sidebar.html')
             .then(response => response.text())
             .then(html => {
                 document.getElementById('sidebar-container').innerHTML = html;
+                // Fix navigation paths after sidebar loads
+                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+                    // Convert relative paths to correct module paths
+                    if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
+                        link.href = '../' + link.getAttribute('href');
+                    }
+                });
             });
     </script>
 </body>

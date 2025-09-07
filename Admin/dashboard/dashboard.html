@@ -88,11 +88,18 @@
 
         .stat-card {
             flex: 1;
-            background: linear-gradient(to right, #4a6fa9, #6a11cb);
             color: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: transform 0.3s ease;
+            text-decoration: none;
+            display: block;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
         }
 
         .stat-card.instructors {
@@ -101,6 +108,18 @@
 
         .stat-card.students {
             background: linear-gradient(to right, #f46b45, #eea849);
+        }
+
+        .stat-card.cs-students {
+            background: linear-gradient(to right, #4a90e2, #357abd);
+        }
+
+        .stat-card.it-students {
+            background: linear-gradient(to right, #50c878, #2e8b57);
+        }
+
+        .stat-card.act-students {
+            background: linear-gradient(to right, #ff7f50, #ff6347);
         }
 
         .stat-card h4 {
@@ -180,20 +199,30 @@
             <h3>Overview</h3>
             
             <div class="stats-container">
-                <div class="stat-card">
-                    <h4>Total Courses</h4>
-                    <div class="number">42</div>
-                </div>
-                
-                <div class="stat-card instructors">
+                                <a href="../students/student.html" class="stat-card students">
+                    <h4>Total Students</h4>
+                    <div class="number">356</div>
+                </a>
+                <a href="../instructors/instructors.html" class="stat-card instructors">
                     <h4>Instructors</h4>
                     <div class="number">18</div>
-                </div>
+                </a>
+
+                <a href="../students/student.html" class="stat-card cs-students">
+                    <h4>CS Students</h4>
+                    <div class="number">124</div>
+                </a>
                 
-                <div class="stat-card students">
-                    <h4>Students</h4>
-                    <div class="number">356</div>
-                </div>
+                <a href="../students/student.html" class="stat-card it-students">
+                    <h4>IT Students</h4>
+                    <div class="number">156</div>
+                </a>
+                
+                <a href="../students/student.html" class="stat-card act-students">
+                    <h4>ACT Students</h4>
+                    <div class="number">76</div>
+                </a>
+
             </div>
             
             <h3>Recent Activity</h3>
@@ -202,11 +231,18 @@
     </main>
 
     <script>
-        // Load sidebar.html into sidebar-container
+        // Load sidebar with correct path
         fetch('../sidebar.html')
             .then(response => response.text())
             .then(html => {
                 document.getElementById('sidebar-container').innerHTML = html;
+                // Fix navigation paths after sidebar loads
+                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+                    // Convert relative paths to correct module paths
+                    if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
+                        link.href = '../' + link.getAttribute('href');
+                    }
+                });
             });
 
         // Simple JavaScript to handle active state
