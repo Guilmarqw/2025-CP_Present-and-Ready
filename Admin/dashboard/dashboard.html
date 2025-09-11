@@ -31,11 +31,10 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 15px 25px;
-            background-color: white;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            background: none !important;
             margin-bottom: 25px;
+            box-shadow: none !important;
         }
 
         .header h2 {
@@ -43,27 +42,6 @@
             font-weight: 600;
         }
 
-        .header .search-box {
-            display: flex;
-            align-items: center;
-            background: #f5f7f9;
-            padding: 8px 15px;
-            border-radius: 20px;
-            width: 250px;
-        }
-
-        .header .search-box input {
-            border: none;
-            background: transparent;
-            outline: none;
-            padding: 5px;
-            width: 100%;
-        }
-
-        .header .search-box i {
-            color: #7f8c8d;
-            margin-right: 5px;
-        }
 
         /* Dashboard Content */
         .dashboard-content {
@@ -175,9 +153,7 @@
                 gap: 15px;
             }
             
-            .header .search-box {
-                width: 100%;
-            }
+
         }
     </style>
 </head>
@@ -189,10 +165,6 @@
     <main class="main-content">
         <div class="header">
             <h2>Dashboard</h2>
-            <div class="search-box">
-                <i class="fas fa-search"></i>
-                <input type="text" placeholder="Search...">
-            </div>
         </div>
         
         <div class="dashboard-content">
@@ -254,6 +226,7 @@
                 item.classList.add('active');
             });
         });
+        
     </script>
 </body>
 </html>

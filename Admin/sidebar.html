@@ -23,8 +23,8 @@
         /* Sidebar Styles */
         .sidebar {
             width: 250px;
-            background: #685A45;
-            color: white;
+            background: white;
+            color: black;
             height: 100vh;
             position: fixed;
             padding: 20px 0;
@@ -88,7 +88,7 @@
             display: flex;
             align-items: center;
             padding: 12px 15px;
-            color: #e3e9f2;
+            color: black;
             text-decoration: none;
             border-radius: 5px;
             transition: all 0.3s ease;
@@ -96,7 +96,7 @@
 
         .nav-items a:hover, .nav-items a.active {
             background-color: rgba(255, 255, 255, 0.1);
-            color: white;
+            color: black;
         }
 
         .nav-items a i {
@@ -264,16 +264,15 @@
         </div>
         
         <ul class="nav-items">
-            <li><a href="dashboard/dashboard.html"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
-            <li><a href="subjects/subject.html"><i class="fas fa-book"></i> <span>Subjects</span></a></li>
-            <li><a href="instructors/instructors.html"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
-            <li><a href="students/student.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
-            <li><a href="settings/settings.html"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
+            <li><a href="../Admin/dashboard/dashboard.html"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
+            <li><a href="../Admin/subjects/subject.html"><i class="fas fa-book"></i> <span>Subjects</span></a></li>
+            <li><a href="../Admin/instructors/instructors.html"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
+            <li><a href="../Admin/students/student.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
+            <li><a href="../Admin/schedule/schedule.html"><i class="fas fa-calendar-alt"></i> <span>Schedules</span></a></li>
+            <li><a href="../Admin/settings/settings.html"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
             <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
         </ul>
     </aside>
-
-  
 
     <script>
         // Simple JavaScript to handle active state
