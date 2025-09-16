@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Curriculum Management System</title>
+  <title>Schedules</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     * {
@@ -18,67 +18,6 @@
       color: #333;
       display: flex;
       min-height: 100vh;
-    }
-
-    /* Sidebar Styles */
-    .sidebar {
-      width: 250px;
-      background: #2c3e50;
-      color: #fff;
-      height: 100vh;
-      position: fixed;
-      overflow-y: auto;
-      transition: all 0.3s;
-    }
-
-    .sidebar-header {
-      padding: 20px;
-      background: #1a2530;
-      text-align: center;
-    }
-
-    .sidebar-header h3 {
-      margin: 0;
-      font-weight: 600;
-    }
-
-    .nav-items {
-      list-style: none;
-      padding: 10px 0;
-    }
-
-    .nav-items li {
-      margin: 5px 0;
-    }
-
-    .nav-items a {
-      color: #ddd;
-      text-decoration: none;
-      padding: 12px 20px;
-      display: block;
-      transition: all 0.3s;
-      font-size: 15px;
-    }
-
-    .nav-items a:hover, .nav-items a.active {
-      background: #34495e;
-      color: #fff;
-    }
-
-    .nav-items a i {
-      margin-right: 10px;
-      width: 20px;
-      text-align: center;
-    }
-
-    .dropdown-btn {
-      cursor: pointer;
-    }
-
-    .dropdown-content {
-      display: none;
-      background: #1a2530;
-      padding-left: 20px;
     }
 
     /* Main Content */
@@ -105,7 +44,7 @@
       color: #2c3e50;
     }
 
-    .courses-table, .schedule-form, .schedule-table {
+    .schedule-form, .schedule-table {
       background: #fff;
       border-radius: 8px;
       padding: 20px;
@@ -113,7 +52,7 @@
       margin-bottom: 25px;
     }
 
-    .courses-table h3, .schedule-form h3, .schedule-table h3 {
+    .schedule-form h3, .schedule-table h3 {
       margin-bottom: 15px;
       color: #2c3e50;
       border-bottom: 1px solid #eee;
@@ -152,7 +91,6 @@
       border-radius: 6px;
       font-size: 14px;
       cursor: pointer;
-      transition: all 0.3s;
     }
 
     .btn-primary {
@@ -161,19 +99,6 @@
     }
 
     .btn-primary:hover {
-      background: #3b5b8d;
-    }
-
-    .btn-view {
-      background: #4a6fa9;
-      color: white;
-      padding: 5px 10px;
-      border-radius: 4px;
-      text-decoration: none;
-      display: inline-block;
-    }
-
-    .btn-view:hover {
       background: #3b5b8d;
     }
 
@@ -210,34 +135,7 @@
     .action-btns .edit { color: #4a6fa9; }
     .action-btns .delete { color: #e74c3c; }
 
-    .page-container {
-      display: block;
-    }
-
-    .schedule-page {
-      display: none;
-    }
-
-    .back-btn {
-      background: #95a5a6;
-      color: white;
-      margin-right: 10px;
-    }
-
-    .back-btn:hover {
-      background: #7f8c8d;
-    }
-
     @media (max-width: 992px) {
-      .sidebar {
-        width: 80px;
-      }
-      .sidebar-header h3, .nav-items span {
-        display: none;
-      }
-      .nav-items a i {
-        margin-right: 0;
-      }
       .main-content {
         margin-left: 80px;
       }
@@ -247,195 +145,93 @@
       .form-grid {
         grid-template-columns: 1fr;
       }
-      .sidebar {
-        width: 0;
-        display: none;
-      }
-      .main-content {
-        margin-left: 0;
-      }
     }
   </style>
 </head>
 <body>
 
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <div class="sidebar-header">
-      <h3>Curriculum Manager</h3>
-    </div>
-    <ul class="nav-items">
-      <li><a href="#" class="active"><i class="fas fa-home"></i> <span>Dashboard</span></a></li>
-      <li><a href="#"><i class="fas fa-book"></i> <span>Courses</span></a></li>
-      <li><a href="#"><i class="fas fa-calendar-alt"></i> <span>Schedules</span></a></li>
-      <li><a href="#"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
-      <li><a href="#"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
-    </ul>
-  </div>
+  <!-- Sidebar Container -->
+  <div id="sidebar-container"></div>
 
   <!-- Main Content -->
   <div class="main-content">
-    <!-- Courses Page -->
-    <div class="page-container" id="coursesPage">
-      <div class="header">
-        <h2><i class="fas fa-book"></i> Curriculum Management</h2>
-      </div>
-
-      <div class="courses-table">
-        <h3>Available Courses</h3>
-        <table id="coursesTable">
-          <thead>
-            <tr>
-              <th>Course Code</th>
-              <th>Course Name</th>
-              <th>Department</th>
-              <th>Total Subjects</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>IT</td>
-              <td>Information Technology</td>
-              <td>College of Computer Studies</td>
-              <td>45</td>
-              <td><span style="color: green;">Active</span></td>
-              <td>
-                <a href="#" class="btn-view view-course" data-course="IT">View</a>
-              </td>
-            </tr>
-            <tr>
-              <td>CS</td>
-              <td>Computer Science</td>
-              <td>College of Computer Studies</td>
-              <td>48</td>
-              <td><span style="color: green;">Active</span></td>
-              <td>
-                <a href="#" class="btn-view view-course" data-course="CS">View</a>
-              </td>
-            </tr>
-            <tr>
-              <td>ACT</td>
-              <td>Associate in Computer Technology</td>
-              <td>College of Computer Studies</td>
-              <td>40</td>
-              <td><span style="color: green;">Active</span></td>
-              <td>
-                <a href="#" class="btn-view view-course" data-course="ACT">View</a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="header">
+      <h2><i class="fas fa-calendar-alt"></i> Instructor Schedules</h2>
     </div>
 
-    <!-- Schedule Page (Initially Hidden) -->
-    <div class="page-container schedule-page" id="schedulePage">
-      <div class="header">
-        <div>
-          <button class="btn back-btn" id="backToCourses"><i class="fas fa-arrow-left"></i> Back to Courses</button>
-          <h2><i class="fas fa-calendar-alt"></i> <span id="courseTitle">Schedules</span></h2>
+    <!-- Add Schedule Form -->
+    <div class="schedule-form">
+      <h3>Add Schedule</h3>
+      <form id="scheduleForm">
+        <div class="form-grid">
+          <div>
+            <label for="instructor">Instructor</label>
+            <select id="instructor" required>
+              <option value="">-- Select Instructor --</option>
+              <option>Prof. Juan Dela Cruz</option>
+              <option>Prof. Maria Santos</option>
+              <option>Prof. Jose Rizal</option>
+            </select>
+          </div>
+          <div>
+            <label for="subject">Subject</label>
+            <select id="subject" required>
+              <option value="">-- Select Subject --</option>
+              <option>Math 101</option>
+              <option>CS 202</option>
+              <option>Eng 303</option>
+            </select>
+          </div>
+          <div>
+            <label for="day">Day</label>
+            <select id="day" required>
+              <option value="">-- Select Day --</option>
+              <option>Monday</option>
+              <option>Tuesday</option>
+              <option>Wednesday</option>
+              <option>Thursday</option>
+              <option>Friday</option>
+            </select>
+          </div>
+          <div>
+            <label for="time">Time</label>
+            <input type="time" id="time" required>
+          </div>
+          <div>
+            <label for="room">Room</label>
+            <input type="text" id="room" placeholder="Enter room no." required>
+          </div>
         </div>
-      </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add Schedule</button>
+        </div>
+      </form>
+    </div>
 
-      <!-- Add Schedule Form -->
-      <div class="schedule-form">
-        <h3>Add Schedule</h3>
-        <form id="scheduleForm">
-          <div class="form-grid">
-            <div>
-              <label for="instructor">Instructor</label>
-              <select id="instructor" required>
-                <option value="">-- Select Instructor --</option>
-                <option>Prof. Juan Dela Cruz</option>
-                <option>Prof. Maria Santos</option>
-                <option>Prof. Jose Rizal</option>
-              </select>
-            </div>
-            <div>
-              <label for="subject">Subject</label>
-              <select id="subject" required>
-                <option value="">-- Select Subject --</option>
-                <option>Math 101</option>
-                <option>CS 202</option>
-                <option>Eng 303</option>
-              </select>
-            </div>
-            <div>
-              <label for="day">Day</label>
-              <select id="day" required>
-                <option value="">-- Select Day --</option>
-                <option>Monday</option>
-                <option>Tuesday</option>
-                <option>Wednesday</option>
-                <option>Thursday</option>
-                <option>Friday</option>
-              </select>
-            </div>
-            <div>
-              <label for="time">Time</label>
-              <input type="time" id="time" required>
-            </div>
-            <div>
-              <label for="room">Room</label>
-              <input type="text" id="room" placeholder="Enter room no." required>
-            </div>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add Schedule</button>
-          </div>
-        </form>
-      </div>
-
-      <!-- Schedule Table -->
-      <div class="schedule-table">
-        <h3>Schedule List</h3>
-        <table id="scheduleTable">
-          <thead>
-            <tr>
-              <th>Instructor</th>
-              <th>Subject</th>
-              <th>Day</th>
-              <th>Time</th>
-              <th>Room</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Dynamic rows appear here -->
-          </tbody>
-        </table>
-      </div>
+    <!-- Schedule Table -->
+    <div class="schedule-table">
+      <h3>Schedule List</h3>
+      <table id="scheduleTable">
+        <thead>
+          <tr>
+            <th>Instructor</th>
+            <th>Subject</th>
+            <th>Day</th>
+            <th>Time</th>
+            <th>Room</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Dynamic rows appear here -->
+        </tbody>
+      </table>
     </div>
   </div>
 
   <script>
-    // DOM Elements
-    const coursesPage = document.getElementById('coursesPage');
-    const schedulePage = document.getElementById('schedulePage');
-    const courseTitle = document.getElementById('courseTitle');
-    const backToCoursesBtn = document.getElementById('backToCourses');
-    const viewCourseButtons = document.querySelectorAll('.view-course');
     const form = document.getElementById('scheduleForm');
     const tableBody = document.querySelector('#scheduleTable tbody');
-
-    // View Course Button Event Listeners
-    viewCourseButtons.forEach(button => {
-      button.addEventListener('click', function(e) {
-        e.preventDefault();
-        const course = this.getAttribute('data-course');
-        courseTitle.textContent = `${course} Schedules`;
-        coursesPage.style.display = 'none';
-        schedulePage.style.display = 'block';
-      });
-    });
-
-    // Back to Courses Button
-    backToCoursesBtn.addEventListener('click', function() {
-      schedulePage.style.display = 'none';
-      coursesPage.style.display = 'block';
-    });
 
     // Add schedule
     form.addEventListener('submit', function(e) {
@@ -467,11 +263,63 @@
       form.reset();
     });
 
-    // Mobile menu toggle (optional enhancement)
-    function toggleSidebar() {
-      const sidebar = document.querySelector('.sidebar');
-      sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none';
-    }
+    // Load sidebar dynamically
+    fetch('../../sidebar.html')
+      .then(response => response.text())
+      .then(html => {
+        document.getElementById('sidebar-container').innerHTML = html;
+
+        // Fix relative paths
+        document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+          if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
+            link.href = '../../' + link.getAttribute('href');
+          }
+        });
+
+        // Initialize dropdown functionality
+        document.querySelectorAll(".dropdown-btn").forEach(btn => {
+          btn.addEventListener("click", function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Close all other dropdowns first
+            document.querySelectorAll('.dropdown-content').forEach(content => {
+              if (content !== this.nextElementSibling) {
+                content.style.display = 'none';
+              }
+            });
+
+            // Toggle current dropdown
+            const content = this.nextElementSibling;
+            if (content) {
+              content.style.display = content.style.display === 'block' ? 'none' : 'block';
+            }
+          });
+        });
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(e) {
+          if (!e.target.closest('.dropdown')) {
+            document.querySelectorAll('.dropdown-content').forEach(content => {
+              content.style.display = 'none';
+            });
+          }
+        });
+
+        // Handle active state
+        const currentPath = window.location.pathname;
+        document.querySelectorAll('.nav-items a').forEach(link => {
+          const linkPath = link.getAttribute('href');
+          if (currentPath.includes(linkPath) && linkPath !== '#') {
+            link.classList.add('active');
+            // If link is in dropdown, show parent dropdown
+            const dropdown = link.closest('.dropdown-content');
+            if (dropdown) {
+              dropdown.style.display = 'block';
+            }
+          }
+        });
+      });
   </script>
 </body>
 </html>
