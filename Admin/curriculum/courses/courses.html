@@ -454,12 +454,6 @@
                     <div class="period">2022-2025</div>
                 </div>
             </div>
-
-            <div class="action-buttons">
-                <button class="btn btn-primary" id="add-curriculum-btn">
-                    <i class="fas fa-plus"></i> Add New Curriculum
-                </button>
-            </div>
         </div>
 
         <div class="dashboard-content">
@@ -489,7 +483,7 @@
                 <thead>
                     <tr>
                         <th width="15%">Code</th>
-                        <th width="70%">Subject Name</th>
+                        <th width="70%">Course Name</th>
                         <th width="15%">Units</th>
                     </tr>
                 </thead>
@@ -664,7 +658,6 @@
         const semesterSelect = document.getElementById('semester');
         const currentCurriculumName = document.getElementById('current-curriculum-name');
         const subjectsBody = document.getElementById('subjects-body');
-        const addCurriculumBtn = document.getElementById('add-curriculum-btn');
         const addCurriculumModal = document.getElementById('add-curriculum-modal');
         const addCurriculumForm = document.getElementById('add-curriculum-form');
         const closeModalBtn = document.querySelector('.close');
@@ -823,7 +816,6 @@
             updateCurriculum();
         });
         
-        addCurriculumBtn.addEventListener('click', showModal);
         closeModalBtn.addEventListener('click', hideModal);
         cancelCurriculumBtn.addEventListener('click', hideModal);
         addCurriculumForm.addEventListener('submit', handleFormSubmit);
