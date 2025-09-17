@@ -1,564 +1,396 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <title>Class Attendance Timer</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: white;
-        }
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background-color: #E8E8E8;
-            padding: 10px 20px;
-            width: 100%;
-            box-sizing: border-box;
-            position: relative;
-        }
-        .content-wrapper {
-            padding: 0 20px;
-            max-width: 500;
-        }
-        .logo {
-            width: 50px;
-            height: 50px;
-            z-index: 1;
-        }
-        .title {
-            color: #006400;
-            font-size: 24px;
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            margin: 0;
-            width: auto;
-            text-align: center;
-        }
-        .timer-container {
-            text-align: center;
-            max-width: 100%;
-            display: flex;
-            justify-content: space-between;
-            gap: 1%;
-        }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
 
-        .timer-display {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin: 20px 0;
-        }
-        .time-unit {
-            width: 100px;
-            padding: 20px;
-            border-radius: 10px;
-        }
-        .time-unit input {
-            width: 100%;
-            font-size: 48px;
-            padding: 5px;
-            font-weight: bold;
-        }
-        .time-label {
-            font-size: 1rem;
-            color: #666;
-            margin-top: 8px;
-            display: block;
-        }
-        .threshold-container {
-            background-color: white;
-            padding: 14px;
-            border-radius: 15px;
-            width: fit-content;
-            margin: 30px auto;
-            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
-        }
-        .main-timer-container {
-            background-color: white;
-            padding: 25px;
-            border-radius: 15px;
-            width: fit-content;
-            margin: 20px auto;
-            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
-        }
-        .input-section {
-            margin-top: 20px;
-            display: flex;
-            gap: 20px;
-        }
-        .input-form-group {
-            flex: 2;
-            background-color: white;
-            padding: 25px;
-            border-radius: 15px;
-            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
-        }
-        .file-upload-group {
-            flex: 1;
-            background-color: white;
-            padding: 25px;
-            border-radius: 15px;
-            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
-        }
-        .group-title {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 1rem;
-            text-align: center;
-        }
-        .input-section h3 {
-            color: #333;
-            margin-bottom: 15px;
-        }
-        .input-group {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 15px;
-        }
-        input, select {
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            flex: 1;
-        }
-        .header-btn {
-            background-color: #006400;
-            color: white;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-left: 20px;
-            font-size: 14px;
-            z-index: 1;
-            display: flex;
-            align-items: center;
-            gap: 8px; /* Space between icon and text */
-            transition: background 0.2s;
-        }
-        .header-btn:hover {
-            background-color: #004d00;
-        }
+        body {
+            background-color: #f5f7f9;
+            color: #333;
+            display: flex;
+            min-height: 100vh;
+        }
 
-        .material-icons {
-        font-size: 20px; /* Icon size */
-        }
-        .btn-text {
-        font-size: 14px;
-        }
+        /* Sidebar Styles */
+        #sidebar-container {
+            width: 250px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            background-color: #2c3e50;
+            color: white;
+            overflow-y: auto;
+            z-index: 1000;
+            transition: width 0.3s ease;
+        }
 
-        #startBtn {
-            background-color: #685A45;
-            color: white;
-            padding: 14px;
-            border: none;
-            border-radius: 5px;
-            width: 30%;
-            margin: 0 auto;
-            display: block;
-            cursor: pointer;
-            font-size: 1rem;
-            margin-top: 2%;
-        }
-        /* Remove spinner buttons from number inputs */
-        .time-unit input::-webkit-inner-spin-button,
-        .time-unit input::-webkit-outer-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        .time-unit input[type=number] {
-            -moz-appearance: textfield;
-        }
-        .file-upload {
-            margin: 15px 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .file-upload input[type="file"] {
-            padding: 8px;
-            border: 1px dashed #ddd;
-            border-radius: 5px;
-            flex: 1;
-        }
-        .file-upload label {
-            color: #666;
-            font-size: 0.9rem;
-        }
+        #sidebar-container .logo {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #34495e;
+        }
+        
+        #sidebar-container .logo h1 {
+            font-size: 24px;
+            font-weight: 700;
+        }
 
-        .warning-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
+        #sidebar-container .user-info {
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #34495e;
+        }
 
-        .warning-modal-content {
-            background-color: white;
-            padding: 2rem;
-            border-radius: 12px;
-            width: 90%;
-            max-width: 400px;
-            text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-        }
+        #sidebar-container .user-info .profile-pic {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: #ecf0f1;
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #2c3e50;
+        }
 
-        .warning-icon {
-            color: #f59f00;
-            font-size: 48px;
-            margin-bottom: 1rem;
-        }
+        #sidebar-container .user-info .details {
+            flex: 1;
+        }
 
-        .warning-buttons {
-            margin-top: 1.5rem;
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-        }
+        #sidebar-container .user-info .name {
+            font-weight: 600;
+        }
 
-        .warning-buttons button {
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 500;
-        }
+        #sidebar-container .user-info .role {
+            font-size: 14px;
+            color: #bdc3c7;
+        }
 
-        .btn-adjust {
-            background: #685A45;
-            color: white;
-        }
-    </style>
+        #sidebar-container .nav-items {
+            padding: 20px 0;
+        }
+
+        #sidebar-container .nav-items a, #sidebar-container .nav-items .dropdown-btn {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            color: white;
+            text-decoration: none;
+            transition: background-color 0.3s ease;
+            cursor: pointer;
+        }
+
+        #sidebar-container .nav-items a:hover, #sidebar-container .nav-items .dropdown-btn:hover,
+        #sidebar-container .nav-items a.active, #sidebar-container .nav-items .dropdown-btn.active {
+            background-color: #34495e;
+        }
+        
+        #sidebar-container .nav-items a i, #sidebar-container .nav-items .dropdown-btn i {
+            margin-right: 15px;
+            font-size: 18px;
+        }
+
+        #sidebar-container .dropdown-container {
+            display: none;
+            background-color: #34495e;
+            padding-left: 30px;
+        }
+
+        #sidebar-container .dropdown-container a {
+            padding: 12px 20px;
+        }
+        
+        #sidebar-container .dropdown-btn .fa-caret-down {
+            margin-left: auto;
+            transition: transform 0.3s ease;
+        }
+        
+        #sidebar-container .dropdown-btn.active .fa-caret-down {
+            transform: rotate(-90deg);
+        }
+        /* Main Content Styles */
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 25px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            margin-bottom: 25px;
+        }
+
+        .header h2 {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+
+        /* Dashboard Content */
+        .dashboard-content {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .dashboard-content h3 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .stats-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            flex: 1;
+            min-width: 150px;
+            color: white !important;
+            background: #95a5a6 !important;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: transform 0.3s ease;
+            text-decoration: none;
+            display: block;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h4 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        /* Specific color for new stat cards */
+        .stat-card.present {
+            background: #27ae60 !important; /* Green for Present */
+        }
+        .stat-card.absent {
+            background: #e74c3c !important; /* Red for Absent */
+        }
+        .stat-card.tardy {
+            background: #f1c40f !important; /* Yellow for Late/Tardy */
+        }
+
+        /* Responsive Design */
+        @media (max-width: 992px) {
+            .sidebar {
+                width: 80px;
+            }
+            
+            .sidebar .logo h1, 
+            .sidebar .user-info .name, 
+            .sidebar .user-info .role,
+            .sidebar .nav-items a span {
+                display: none;
+            }
+            
+            .sidebar .user-info {
+                padding: 15px 5px;
+            }
+            
+            .sidebar .nav-items a {
+                justify-content: center;
+                padding: 15px;
+            }
+            
+            .sidebar .nav-items a i {
+                margin-right: 0;
+                font-size: 20px;
+            }
+            
+            .main-content {
+                margin-left: 80px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .stats-container {
+                flex-direction: column;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+
+        }
+    </style>
 </head>
 <body>
-    <div class="header">
-        <img src="../img/logo.png" alt="University Logo" class="logo">
-        <h1 class="title">CLASS ATTENDANCE TIMER</h1>
-        <a href="../Admin/Admin.html" style="text-decoration: none;">
-            <button class="header-btn">
-                <span class="material-icons">dashboard</span>
-                <span class="btn-text">Go to Dashboard</span>
-            </button>
-        </a>
-    </div>
-    <div class="content-wrapper">
-        <div class="timer-container">
-            <div class="main-timer-container">
-                <div class="timer-display" id="mainTimer">
-                    <div class="time-unit">
-                        <input type="number" min="0" max="23" value="00" id="sessionHours">
-                        <span class="time-label">Hours</span>
-                    </div>
-                    <div class="time-unit">
-                        <input type="number" min="0" max="59" value="00" id="sessionMinutes">
-                        <span class="time-label">Minutes</span>
-                    </div>
-                    <div class="time-unit">
-                        <input type="number" min="0" max="59" value="00" id="sessionSeconds">
-                        <span class="time-label">Seconds</span>
-                    </div>
-                </div>
-                <p>Set Class Session Timer</p>
-            </div>
-            
-            <div class="threshold-container">
-                <div class="timer-display">
-                    <div class="time-unit">
-                        <input type="number" min="0" max="23" value="00" id="thresholdHours">
-                        <span class="time-label">Hours</span>
-                    </div>
-                    <div class="time-unit">
-                        <input type="number" min="0" max="59" value="00" id="thresholdMinutes">
-                        <span class="time-label">Minutes</span>
-                    </div>
-                    <div class="time-unit">
-                        <input type="number" min="0" max="59" value="00" id="thresholdSeconds">
-                        <span class="time-label">Seconds</span> 
-                    </div>
-                </div>
-                <p>Set Late Threshold</p>
-            </div>
-        </div>
+        <div id="sidebar-container"></div>
 
-        <div class="input-section">
-            <div class="input-form-group">
-                <h3 class="group-title">Class Details</h3>
-                <div class="input-group">
-                    <input type="text" placeholder="Subject Instructor" id="subjectInstructor">
-                    <select id="subjectCode">
-                        <option value="" selected disabled>Select Subject Code</option>
-                        <!-- Options will be populated by JavaScript -->
-                    </select>
-                    <input type="text" placeholder="Year Level" id="yearLevel" readonly>
-                </div>
-                <div class="input-group">
-                    <select id="courseSection">
-                        <option value="" selected disabled>Select Section</option>
-                        <!-- Options will be populated by JavaScript based on year -->
-                    </select>
-                    <input type="text" placeholder="Course" id="course">
-                </div>
-            </div>
-            
-            <div class="file-upload-group">
-                <h3 class="group-title">Upload Existing Records</h3>
-                <div class="file-upload">
-                    <input type="file" accept=".csv,.xlsx,.xls" id="recordFile">
-                </div>
-            </div>
-        </div>
-        <a href="/camfootage" style="text-decoration: none;">
-            <button id="startBtn">Start Session</button>
-        </a>
-    </div>
+        <main class="main-content">
+        <div class="header">
+            <h2>Dashboard</h2>
+        </div>
+        
+        <div class="dashboard-content">
+            <h3>School Overview</h3>
+            
+            <div class="stats-container">
+                <a href="../students/student.html" class="stat-card students">
+                    <h4>Total Students</h4>
+                    <div class="number">356</div>
+                </a>
+                <a href="../instructors/instructors.html" class="stat-card instructors">
+                    <h4>Instructors</h4>
+                    <div class="number">18</div>
+                </a>
 
-    <div class="warning-modal" id="thresholdWarningModal">
-        <div class="warning-modal-content">
-            <span class="material-icons warning-icon">warning</span>
-            <h3>Late Threshold Warning</h3>
-            <p>Late threshold cannot exceed or equal the class duration.</p>
-            <div class="warning-buttons">
-                <button class="btn-adjust" onclick="adjustThreshold()">Adjust Threshold</button>
-            </div>
-        </div>
-    </div>
+                <a href="../students/student.html" class="stat-card cs-students">
+                    <h4>CS Students</h4>
+                    <div class="number">124</div>
+                </a>
+                
+                <a href="../students/student.html" class="stat-card it-students">
+                    <h4>IT Students</h4>
+                    <div class="number">156</div>
+                </a>
+                
+                <a href="../students/student.html" class="stat-card act-students">
+                    <h4>ACT Students</h4>
+                    <div class="number">76</div>
+                </a>
+            </div>
+            
+            <h3>Attendance Summary (Today)</h3>
+            <div class="stats-container">
+                <div class="stat-card present">
+                    <h4>Present Today</h4>
+                    <div class="number" id="present-count">0</div>
+                </div>
+                <div class="stat-card absent">
+                    <h4>Absent Today</h4>
+                    <div class="number" id="absent-count">0</div>
+                </div>
+                <div class="stat-card tardy">
+                    <h4>Lates Today</h4>
+                    <div class="number" id="tardy-count">0</div>
+                </div>
+            </div>
+            
+            <h3>Recent Activity</h3>
+            <p>System is running smoothly. No issues reported.</p>
+        </div>
+    </main>
 
-    <script>
-        // Sample data - in a real application, this would come from a database
-        const subjectData = {
-            "CS101": { year: "1st Year", course: "BSCS", sections: ["A", "B", "C"] },
-            "CS201": { year: "2nd Year", course: "BSCS", sections: ["A", "B"] },
-            "CS301": { year: "3rd Year", course: "BSCS", sections: ["A", "B", "C", "D"] },
-            "CS401": { year: "4th Year", course: "BSCS", sections: ["A", "B"] },
-            "IT101": { year: "1st Year", course: "BSIT", sections: ["A", "B"] },
-            "IT201": { year: "2nd Year", course: "BSIT", sections: ["A", "B", "C"] },
-            "IT301": { year: "3rd Year", course: "BSIT", sections: ["A", "B"] },
-            "IT401": { year: "4th Year", course: "BSIT", sections: ["A"] },
-            "EE101": { year: "1st Year", course: "BSEE", sections: ["A", "B", "C"] },
-            "EE201": { year: "2nd Year", course: "BSEE", sections: ["A", "B"] }
-        };
+    <script>
+        // Load sidebar with correct path
+        fetch('../sidebar.html')
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('sidebar-container').innerHTML = html;
+                
+                // Fix navigation paths after sidebar loads
+                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+                    // Convert relative paths to correct module paths
+                    if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
+                        link.href = '../' + link.getAttribute('href');
+                    }
+                });
 
-        // Populate subject code dropdown on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            const subjectCodeDropdown = document.getElementById('subjectCode');
-            
-            // Add options to subject code dropdown
-            for (const code in subjectData) {
-                const option = document.createElement('option');
-                option.value = code;
-                option.textContent = code;
-                subjectCodeDropdown.appendChild(option);
-            }
-            
-            // Add event listener to subject code dropdown
-            subjectCodeDropdown.addEventListener('change', function() {
-                const selectedCode = this.value;
-                const yearField = document.getElementById('yearLevel');
-                const courseField = document.getElementById('course');
-                const sectionDropdown = document.getElementById('courseSection');
-                
-                if (selectedCode && subjectData[selectedCode]) {
-                    // Auto-fill year level
-                    yearField.value = subjectData[selectedCode].year;
-                    
-                    // Auto-fill course
-                    courseField.value = subjectData[selectedCode].course;
-                    
-                    // Populate section dropdown based on year
-                    sectionDropdown.innerHTML = '<option value="" selected disabled>Select Section</option>';
-                    subjectData[selectedCode].sections.forEach(section => {
-                        const option = document.createElement('option');
-                        option.value = section;
-                        option.textContent = section;
-                        sectionDropdown.appendChild(option);
-                    });
-                } else {
-                    yearField.value = '';
-                    courseField.value = '';
-                    sectionDropdown.innerHTML = '<option value="" selected disabled>Select Section</option>';
-                }
-            });
-        });
+                // Initialize dropdown functionality
+                document.querySelectorAll(".dropdown-btn").forEach(btn => {
+                    btn.addEventListener("click", function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        // Close all other dropdowns first
+                        document.querySelectorAll('.dropdown-content').forEach(content => {
+                            if (content !== this.nextElementSibling) {
+                                content.style.display = 'none';
+                            }
+                        });
 
-        let timerInterval;
-        let startTime;
-        let isRunning = false;
-        let sessionDuration;
-        let lateThreshold;
+                        // Toggle current dropdown
+                        const content = this.nextElementSibling;
+                        if (content) {
+                            content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                        }
+                    });
+                });
 
-        function validateTimeInputs() {
-            const mainSeconds = 
-                parseInt(document.getElementById('sessionHours').value) * 3600 +
-                parseInt(document.getElementById('sessionMinutes').value) * 60 +
-                parseInt(document.getElementById('sessionSeconds').value);
+                // Close dropdowns when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('.dropdown')) {
+                        document.querySelectorAll('.dropdown-content').forEach(content => {
+                            content.style.display = 'none';
+                        });
+                    }
+                });
 
-            const thresholdSeconds = 
-                parseInt(document.getElementById('thresholdHours').value) * 3600 +
-                parseInt(document.getElementById('thresholdMinutes').value) * 60 +
-                parseInt(document.getElementById('thresholdSeconds').value);
+                // Handle active state
+                const currentPath = window.location.pathname;
+                document.querySelectorAll('.nav-items a').forEach(link => {
+                    const linkPath = link.getAttribute('href');
+                    if (currentPath.includes(linkPath) && linkPath !== '#') {
+                        link.classList.add('active');
+                        // If link is in dropdown, show parent dropdown
+                        const dropdown = link.closest('.dropdown-content');
+                        if (dropdown) {
+                            dropdown.style.display = 'block';
+                        }
+                    }
+                });
 
-            if (thresholdSeconds >= mainSeconds) {
-                document.getElementById('thresholdWarningModal').style.display = 'flex';
-                return false;
-            }
-            return true;
-        }
+                // New: Attendance Data Calculation and Display
+                function updateAttendanceData() {
+                    const mockAttendanceData = [
+                        'present', 'present', 'absent', 'present', 'late',
+                        'present', 'present', 'late', 'absent', 'present',
+                        'present', 'present', 'present', 'present', 'absent',
+                        'present', 'present', 'present', 'present', 'present',
+                        'absent', 'present', 'present', 'late', 'present',
+                        'present', 'present', 'present', 'absent', 'present'
+                    ];
 
-        function adjustThreshold() {
-            // Reset threshold inputs
-            document.getElementById('thresholdHours').value = '00';
-            document.getElementById('thresholdMinutes').value = '00';
-            document.getElementById('thresholdSeconds').value = '00';
-            document.getElementById('thresholdWarningModal').style.display = 'none';
-        }
+                    const presentCount = mockAttendanceData.filter(status => status === 'present').length;
+                    const absentCount = mockAttendanceData.filter(status => status === 'absent').length;
+                    const tardyCount = mockAttendanceData.filter(status => status === 'late').length;
 
-        document.getElementById('startBtn').addEventListener('click', function(event) {
-            // Get all input values
-            const settings = {
-                timer: {
-                    session: {
-                        hours: document.getElementById('sessionHours').value,
-                        minutes: document.getElementById('sessionMinutes').value,
-                        seconds: document.getElementById('sessionSeconds').value
-                    },
-                    threshold: {
-                        hours: document.getElementById('thresholdHours').value,
-                        minutes: document.getElementById('thresholdMinutes').value,
-                        seconds: document.getElementById('thresholdSeconds').value
-                    }
-                },
-                classDetails: {
-                    instructor: document.getElementById('subjectInstructor').value,
-                    subjectCode: document.getElementById('subjectCode').value,
-                    yearLevel: document.getElementById('yearLevel').value,
-                    course: document.getElementById('course').value,
-                    section: document.getElementById('courseSection').value
-                }
-            };
-            
-            // Save settings to localStorage
-            localStorage.setItem('classSettings', JSON.stringify(settings));
-            
-            // Validate required fields
-            if (!settings.classDetails.instructor || 
-                !settings.classDetails.subjectCode || 
-                !settings.classDetails.yearLevel ||
-                !settings.classDetails.course ||
-                !settings.classDetails.section) {
-                alert('Please fill in all class details');
-                event.preventDefault(); // Prevent navigation
-                return;
-            }
-            
-            // Calculate if timer is set
-            const totalSeconds = 
-                parseInt(settings.timer.session.hours) * 3600 + 
-                parseInt(settings.timer.session.minutes) * 60 + 
-                parseInt(settings.timer.session.seconds);
-                
-            if (totalSeconds === 0) {
-                alert('Please set a class duration');
-                event.preventDefault(); // Prevent navigation
-                return;
-            }
+                    document.getElementById('present-count').textContent = presentCount;
+                    document.getElementById('absent-count').textContent = absentCount;
+                    document.getElementById('tardy-count').textContent = tardyCount;
+                }
 
-            if (!validateTimeInputs()) {
-                event.preventDefault();
-                return;
-            }
-
-            if (!isRunning) {
-                // Calculate total seconds for session and threshold
-                sessionDuration = (
-                    parseInt(document.getElementById('sessionHours').value) * 3600 +
-                    parseInt(document.getElementById('sessionMinutes').value) * 60 +
-                    parseInt(document.getElementById('sessionSeconds').value)
-                ) * 1000; // Convert to milliseconds
-
-                lateThreshold = (
-                    parseInt(document.getElementById('thresholdHours').value) * 3600 +
-                    parseInt(document.getElementById('thresholdMinutes').value) * 60 +
-                    parseInt(document.getElementById('thresholdSeconds').value)
-                ) * 1000; // Convert to milliseconds
-
-                startTime = new Date();
-                timerInterval = setInterval(updateTimer, 1000);
-                this.textContent = 'Stop Timer';
-                isRunning = true;
-
-                // Disable inputs while timer is running
-                document.querySelectorAll('.time-unit input').forEach(input => {
-                    input.disabled = true;
-                });
-            } else {
-                clearInterval(timerInterval);
-                this.textContent = 'Start Timer';
-                isRunning = false;
-
-                // Enable inputs when timer is stopped
-                document.querySelectorAll('.time-unit input').forEach(input => {
-                    input.disabled = false;
-                });
-            }
-        });
-
-        function updateTimer() {
-            const now = new Date();
-            const diff = now - startTime;
-            
-            if (diff >= sessionDuration) {
-                clearInterval(timerInterval);
-                document.getElementById('startBtn').textContent = 'Start Timer';
-                isRunning = false;
-                return;
-            }
-
-            const remaining = sessionDuration - diff;
-            const hours = Math.floor(remaining / 3600000);
-            const minutes = Math.floor((remaining % 3600000) / 60000);
-            const seconds = Math.floor((remaining % 60000) / 1000);
-
-            document.getElementById('sessionHours').value = String(hours).padStart(2, '0');
-            document.getElementById('sessionMinutes').value = String(minutes).padStart(2, '0');
-            document.getElementById('sessionSeconds').value = String(seconds).padStart(2, '0');
-
-            // Check if current time exceeds late threshold
-            if (diff >= lateThreshold) {
-                document.getElementById('mainTimer').classList.add('late');
-            }
-        }
-
-        // Add input validation
-        document.querySelectorAll('.time-unit input').forEach(input => {
-            input.addEventListener('input', function() {
-                let value = parseInt(this.value);
-                if (isNaN(value)) value = 0;
-                if (this.id.includes('Hours')) {
-                    value = Math.min(23, Math.max(0, value));
-                } else {
-                    value = Math.min(59, Math.max(0, value));
-                }
-                this.value = String(value).padStart(2, '0');
-            });
-        });
-
-        // Add validation on threshold input changes
-        document.querySelectorAll('.threshold-container .time-unit input').forEach(input => {
-            input.addEventListener('change', validateTimeInputs);
-        });
-    </script>
+                updateAttendanceData();
+            });
+    </script>
 </body>
 </html>

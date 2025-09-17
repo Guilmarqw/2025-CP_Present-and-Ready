@@ -6,160 +6,203 @@
   <title>Schedules</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
+
     * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
+    /* Body Layout */
     body {
-      background: #f5f7f9;
-      color: #333;
-      display: flex;
-      min-height: 100vh;
+        background: #f5f7f9;
+        color: #333;
+        display: flex;
+        min-height: 100vh;
     }
 
     /* Main Content */
     .main-content {
-      flex: 1;
-      margin-left: 250px;
-      padding: 20px;
+        flex: 1;
+        margin-left: 250px;
+        padding: 20px;
     }
 
+    /* Header */
     .header {
-      background: #fff;
-      padding: 15px 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-      margin-bottom: 25px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+        background: #fff;
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        margin-bottom: 25px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
 
-    .header h2 {
-      margin: 0;
-      font-weight: 600;
-      color: #2c3e50;
+    /* Schedule Form & Table */
+    .schedule-form,
+    .schedule-table {
+        background: #fff;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        margin-bottom: 25px;
     }
 
-    .schedule-form, .schedule-table {
-      background: #fff;
-      border-radius: 8px;
-      padding: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-      margin-bottom: 25px;
-    }
-
-    .schedule-form h3, .schedule-table h3 {
-      margin-bottom: 15px;
-      color: #2c3e50;
-      border-bottom: 1px solid #eee;
-      padding-bottom: 10px;
-    }
-
+    /* Form Grid Layout */
     .form-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
-      margin-bottom: 15px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 15px;
     }
 
     .form-grid label {
-      font-weight: 500;
-      font-size: 14px;
-      margin-bottom: 5px;
-      display: block;
+        font-weight: 500;
+        font-size: 14px;
+        margin-bottom: 5px;
+        display: block;
     }
 
-    .form-grid input, .form-grid select {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 14px;
+    .form-grid input,
+    .form-grid select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 14px;
     }
 
+    .form-grid input:disabled,
+    .form-grid select:disabled {
+        background: #e9ecef;
+        cursor: not-allowed;
+    }
+
+    /* Form Actions */
     .form-actions {
-      text-align: right;
+        text-align: right;
+        margin-top: 10px;
     }
 
+    /* Buttons */
     .btn {
-      padding: 8px 15px;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      cursor: pointer;
+        padding: 8px 15px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
     }
 
     .btn-primary {
-      background: #4a6fa9;
-      color: #fff;
+        background: #4a6fa9;
+        color: #fff;
     }
 
     .btn-primary:hover {
-      background: #3b5b8d;
+        background: #3b5b8d;
     }
 
+    /* Table Styling */
     table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
     }
 
-    table th, table td {
-      padding: 12px;
-      border: 1px solid #ddd;
-      text-align: center;
-      font-size: 14px;
+    th,
+    td {
+        padding: 10px;
+        border: 1px solid #ddd;
+        text-align: center;
     }
 
-    table th {
-      background: #f0f2f5;
-      font-weight: 600;
+    th {
+        background: #f0f2f5;
+        font-weight: 600;
     }
 
-    table tr:hover {
-      background: #f9fafb;
+    tr:hover {
+        background: #f9fafb;
     }
 
+    /* Action Buttons */
     .action-btns button {
-      background: none;
+        background: none;
+        border: none;
+        cursor: pointer;
+        margin: 0 5px;
+        font-size: 16px;
+    }
+
+    .action-btns .delete {
+        color: #e74c3c;
+    }
+
+    /* Meeting List */
+    .meeting-list {
+        margin-top: 10px;
+        background: #f8f9fa;
+        padding: 8px;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .meeting-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+    }
+
+
+    /* Modal Styling */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 400px;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .modal h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+      color: #c0392b;
+    }
+    .modal button {
+      background: #c0392b;
+      color: white;
       border: none;
+      padding: 8px 15px;
+      border-radius: 6px;
       cursor: pointer;
-      margin: 0 5px;
-      font-size: 16px;
+      margin-top: 10px;
     }
-
-    .action-btns .edit { color: #4a6fa9; }
-    .action-btns .delete { color: #e74c3c; }
-
-    @media (max-width: 992px) {
-      .main-content {
-        margin-left: 80px;
-      }
-    }
-
-    @media (max-width: 768px) {
-      .form-grid {
-        grid-template-columns: 1fr;
-      }
+    .modal button:hover {
+      background: #a93226;
     }
   </style>
 </head>
 <body>
 
-  <!-- Sidebar Container -->
   <div id="sidebar-container"></div>
 
-  <!-- Main Content -->
   <div class="main-content">
     <div class="header">
       <h2><i class="fas fa-calendar-alt"></i> Instructor Schedules</h2>
     </div>
 
-    <!-- Add Schedule Form -->
     <div class="schedule-form">
       <h3>Add Schedule</h3>
       <form id="scheduleForm">
@@ -167,7 +210,7 @@
           <div>
             <label for="instructor">Instructor</label>
             <select id="instructor" required>
-              <option value="">-- Select Instructor --</option>
+              <option value="" disabled selected>-- Select Instructor --</option>
               <option>Prof. Juan Dela Cruz</option>
               <option>Prof. Maria Santos</option>
               <option>Prof. Jose Rizal</option>
@@ -175,44 +218,61 @@
           </div>
           <div>
             <label for="subject">Subject</label>
-            <select id="subject" required>
-              <option value="">-- Select Subject --</option>
+            <select id="subject" disabled required>
+              <option value="" disabled selected>-- Select Subject --</option>
               <option>Math 101</option>
               <option>CS 202</option>
               <option>Eng 303</option>
             </select>
           </div>
           <div>
+            <label for="classType">Class Type</label>
+            <select id="classType" disabled required>
+              <option value="" disabled selected>-- Select Type --</option>
+              <option>Lecture</option>
+              <option>Laboratory</option>
+            </select>
+          </div>
+          <div>
             <label for="day">Day</label>
-            <select id="day" required>
-              <option value="">-- Select Day --</option>
+            <select id="day" disabled required>
+              <option value="" disabled selected>-- Select Day --</option>
               <option>Monday</option>
               <option>Tuesday</option>
               <option>Wednesday</option>
               <option>Thursday</option>
               <option>Friday</option>
+              <option>Saturday</option>
             </select>
           </div>
           <div>
-            <label for="time">Start Time</label>
-            <input type="time" id="time" required>
+            <label for="startTime">Start Time</label>
+            <input type="time" id="startTime" disabled required>
           </div>
-                    <div>
-            <label for="time">End Time</label>
-            <input type="time" id="time" required>
+          <div>
+            <label for="endTime">End Time</label>
+            <input type="time" id="endTime" disabled required>
           </div>
           <div>
             <label for="room">Room</label>
-            <input type="text" id="room" placeholder="Enter room no." required>
+            <select id="room" disabled required>
+              <option value="" disabled selected>-- Select Room --</option>
+            </select>
           </div>
         </div>
+
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add Schedule</button>
+          <button type="button" class="btn btn-primary" id="addMeeting" disabled><i class="fas fa-plus"></i> Add Meeting</button>
+        </div>
+
+        <div class="meeting-list" id="meetingList"></div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="saveBtn" disabled><i class="fas fa-save"></i> Save Subject Schedule</button>
         </div>
       </form>
     </div>
 
-    <!-- Schedule Table -->
     <div class="schedule-table">
       <h3>Schedule List</h3>
       <table id="scheduleTable">
@@ -220,110 +280,195 @@
           <tr>
             <th>Instructor</th>
             <th>Subject</th>
-            <th>Day</th>
-            <th>Time</th>
-            <th>Room</th>
+            <th>Meetings</th>
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody>
-          <!-- Dynamic rows appear here -->
-        </tbody>
+        <tbody></tbody>
       </table>
     </div>
   </div>
 
-  <script>
-    const form = document.getElementById('scheduleForm');
-    const tableBody = document.querySelector('#scheduleTable tbody');
+  <!-- Warning Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <h3 id="modalTitle">Warning</h3>
+      <p id="modalMessage"></p>
+      <button id="closeModal">Close</button>
+    </div>
+  </div>
 
-    // Add schedule
-    form.addEventListener('submit', function(e) {
-      e.preventDefault();
+<script>
+const modalOverlay = document.getElementById('modalOverlay');
+const modalMessage = document.getElementById('modalMessage');
+const closeModal = document.getElementById('closeModal');
 
-      const instructor = document.getElementById('instructor').value;
-      const subject = document.getElementById('subject').value;
-      const day = document.getElementById('day').value;
-      const time = document.getElementById('time').value;
-      const room = document.getElementById('room').value;
+function showModal(message) {
+  modalMessage.textContent = message;
+  modalOverlay.style.display = 'flex';
+}
+closeModal.addEventListener('click', () => {
+  modalOverlay.style.display = 'none';
+});
 
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${instructor}</td>
-        <td>${subject}</td>
-        <td>${day}</td>
-        <td>${time}</td>
-        <td>${room}</td>
-        <td class="action-btns">
-          <button class="delete"><i class="fas fa-trash-alt"></i></button>
-        </td>
-      `;
+const meetingList = document.getElementById('meetingList');
+const addMeetingBtn = document.getElementById('addMeeting');
+const form = document.getElementById('scheduleForm');
+const tableBody = document.querySelector('#scheduleTable tbody');
+const instructorSelect = document.getElementById('instructor');
+const subjectSelect = document.getElementById('subject');
+const classTypeSelect = document.getElementById('classType');
+const daySelect = document.getElementById('day');
+const startInput = document.getElementById('startTime');
+const endInput = document.getElementById('endTime');
+const roomSelect = document.getElementById('room');
+const saveBtn = document.getElementById('saveBtn');
 
-      row.querySelector('.delete').addEventListener('click', () => {
-        row.remove();
+let currentMeetings = [];
+let allSchedules = [];
+
+function toggleForm(disabled) {
+  [subjectSelect, classTypeSelect, daySelect, startInput, endInput, roomSelect, addMeetingBtn, saveBtn].forEach(el => el.disabled = disabled);
+}
+
+toggleForm(true);
+
+instructorSelect.addEventListener('change', () => {
+  const selectedInstructor = instructorSelect.value;
+  form.reset();
+  instructorSelect.value = selectedInstructor;
+  toggleForm(!selectedInstructor);
+  meetingList.innerHTML = "";
+  currentMeetings = [];
+});
+
+classTypeSelect.addEventListener('change', () => {
+  const classType = classTypeSelect.value;
+  roomSelect.innerHTML = '<option value="" disabled selected>-- Select Room --</option>';
+  let rooms = classType === "Lecture" ? ["LR1","LR2","LR3","LR4","LR5"] : classType === "Laboratory" ? ["LAB1","LAB2"] : [];
+  rooms.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r; opt.textContent = r;
+    roomSelect.appendChild(opt);
+  });
+});
+
+function hasConflict(instructor, room, day, start, end) {
+  const combinedSchedules = [...allSchedules, ...currentMeetings];
+  return combinedSchedules.some(schedule =>
+    schedule.day === day &&
+    (schedule.room === room || schedule.instructor === instructor) &&
+    ((start >= schedule.start && start < schedule.end) ||
+     (end > schedule.start && end <= schedule.end) ||
+     (start <= schedule.start && end >= schedule.end))
+  );
+}
+
+function timeToMinutes(time) {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+}
+
+addMeetingBtn.addEventListener('click', () => {
+  const instructor = instructorSelect.value;
+  const subject = subjectSelect.value;
+  const classType = classTypeSelect.value;
+  const day = daySelect.value;
+  const start = startInput.value;
+  const end = endInput.value;
+  const room = roomSelect.value;
+
+  if (!instructor || !subject || !classType || !day || !start || !end || !room) {
+    showModal("Please fill all fields before adding a meeting.");
+    return;
+  }
+
+  if (start >= end) {
+    showModal("⚠️ End time must be later than start time.");
+    return;
+  }
+
+  const startMinutes = timeToMinutes(start);
+  const endMinutes = timeToMinutes(end);
+
+  if (startMinutes < 420 || endMinutes > 1140) { // 07:00 = 420 mins, 19:00 = 1140 mins
+    showModal("⚠️ Class must be scheduled between 7:00 AM and 7:00 PM.");
+    return;
+  }
+
+  if (endMinutes - startMinutes < 60) {
+    showModal("⚠️ Minimum class duration is 1 hour.");
+    return;
+  }
+
+  if (hasConflict(instructor, room, day, start, end)) {
+    showModal("⚠️ Schedule conflict! This room or instructor is already booked in this time range.");
+    return;
+  }
+
+  const meeting = { instructor, subject, classType, day, start, end, room };
+  currentMeetings.push(meeting);
+
+  const div = document.createElement('div');
+  div.classList.add('meeting-item');
+  div.innerHTML = `${classType} | ${day} | ${start} - ${end} | ${room}
+    <button style="color:red;border:none;background:none;cursor:pointer;">x</button>`;
+  div.querySelector('button').addEventListener('click', () => {
+    div.remove();
+    currentMeetings = currentMeetings.filter(m => m !== meeting);
+  });
+  meetingList.appendChild(div);
+
+  classTypeSelect.value = "";
+  daySelect.value = "";
+  startInput.value = "";
+  endInput.value = "";
+  roomSelect.innerHTML = '<option value="" disabled selected>-- Select Room --</option>';
+});
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (currentMeetings.length === 0) {
+    showModal("Add at least one meeting before saving.");
+    return;
+  }
+  currentMeetings.forEach(m => allSchedules.push(m));
+
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td>${instructorSelect.value}</td>
+    <td>${subjectSelect.value}</td>
+    <td>${currentMeetings.map(m => `<div>${m.classType} - ${m.day} (${m.start} to ${m.end}) @ ${m.room}</div>`).join('')}</td>
+    <td class="action-btns"><button class="delete"><i class="fas fa-trash-alt"></i></button></td>`;
+  row.querySelector('.delete').addEventListener('click', () => {
+    row.remove();
+    allSchedules = allSchedules.filter(s => !currentMeetings.includes(s));
+  });
+  tableBody.appendChild(row);
+
+  form.reset();
+  toggleForm(true);
+  meetingList.innerHTML = "";
+  currentMeetings = [];
+});
+
+fetch('../../sidebar.html')
+  .then(res => res.text())
+  .then(html => {
+    document.getElementById('sidebar-container').innerHTML = html;
+    document.querySelectorAll(".dropdown-btn").forEach(btn => {
+      btn.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.querySelectorAll('.dropdown-content').forEach(content => {
+          if (content !== this.nextElementSibling) content.style.display = 'none';
+        });
+        const content = this.nextElementSibling;
+        if (content) content.style.display = content.style.display === 'block' ? 'none' : 'block';
       });
-
-      tableBody.appendChild(row);
-      form.reset();
     });
+  });
+</script>
 
-    // Load sidebar dynamically
-    fetch('../../sidebar.html')
-      .then(response => response.text())
-      .then(html => {
-        document.getElementById('sidebar-container').innerHTML = html;
-
-        // Fix relative paths
-        document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
-          if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
-            link.href = '../../' + link.getAttribute('href');
-          }
-        });
-
-        // Initialize dropdown functionality
-        document.querySelectorAll(".dropdown-btn").forEach(btn => {
-          btn.addEventListener("click", function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            // Close all other dropdowns first
-            document.querySelectorAll('.dropdown-content').forEach(content => {
-              if (content !== this.nextElementSibling) {
-                content.style.display = 'none';
-              }
-            });
-
-            // Toggle current dropdown
-            const content = this.nextElementSibling;
-            if (content) {
-              content.style.display = content.style.display === 'block' ? 'none' : 'block';
-            }
-          });
-        });
-
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', function(e) {
-          if (!e.target.closest('.dropdown')) {
-            document.querySelectorAll('.dropdown-content').forEach(content => {
-              content.style.display = 'none';
-            });
-          }
-        });
-
-        // Handle active state
-        const currentPath = window.location.pathname;
-        document.querySelectorAll('.nav-items a').forEach(link => {
-          const linkPath = link.getAttribute('href');
-          if (currentPath.includes(linkPath) && linkPath !== '#') {
-            link.classList.add('active');
-            // If link is in dropdown, show parent dropdown
-            const dropdown = link.closest('.dropdown-content');
-            if (dropdown) {
-              dropdown.style.display = 'block';
-            }
-          }
-        });
-      });
-  </script>
 </body>
 </html>
