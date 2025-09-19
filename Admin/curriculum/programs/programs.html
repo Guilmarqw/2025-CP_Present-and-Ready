@@ -20,14 +20,128 @@
       min-height: 100vh;
     }
 
-    /* Sidebar Container */
-    #sidebar-container {
+    /* Sidebar Styles - Updated to light theme */
+    .sidebar {
       width: 250px;
-      position: fixed;
+      background: white;
+      color: black;
       height: 100vh;
-      overflow-y: auto;
-      transition: all 0.3s;
-      z-index: 1000;
+      position: fixed;
+      padding: 20px 0;
+      box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .logo {
+      text-align: center;
+      padding: 20px 0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      margin-bottom: 20px;
+    }
+
+    .logo h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .user-info {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 15px 20px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .user-info .avatar {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background-color: #1a2530;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 15px;
+      font-size: 28px;
+      color: white;
+    }
+
+    .user-info .name {
+      font-weight: 600;
+      font-size: 18px;
+      margin-bottom: 5px;
+      color: #2c3e50;
+    }
+
+    .user-info .role {
+      color: #7f8c8d;
+      font-size: 14px;
+    }
+
+    .nav-items {
+      list-style: none;
+      padding: 0 15px;
+    }
+
+    .nav-items li {
+      margin-bottom: 5px;
+    }
+
+    .nav-items a {
+      display: flex;
+      align-items: center;
+      padding: 12px 15px;
+      color: black;
+      text-decoration: none;
+      border-radius: 5px;
+      transition: all 0.3s ease;
+    }
+
+    .nav-items a:hover, .nav-items a.active {
+      background-color: rgba(0, 0, 0, 0.05);
+      color: black;
+    }
+
+    .nav-items a i {
+      margin-right: 10px;
+      font-size: 18px;
+      width: 24px;
+      text-align: center;
+    }
+
+    /* Dropdown Styles */
+    .dropdown .dropdown-btn {
+      display: flex;
+      align-items: center;
+      padding: 12px 15px;
+      color: black;
+      text-decoration: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .dropdown .dropdown-btn:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .dropdown-content {
+      display: none;
+      list-style: none;
+      padding-left: 20px;
+    }
+
+    .dropdown-content li a {
+      display: flex;
+      align-items: center;
+      padding: 10px 15px;
+      color: #555;
+      font-size: 14px;
+      border-radius: 5px;
+    }
+
+    .dropdown-content li a:hover {
+      background-color: rgba(0, 0, 0, 0.05);
     }
 
     /* Main Content */
@@ -94,6 +208,9 @@
     .form-actions {
       text-align: right;
       margin-top: 20px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
     }
 
     .btn {
@@ -103,6 +220,9 @@
       font-size: 14px;
       cursor: pointer;
       transition: all 0.3s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
     }
 
     .btn-primary {
@@ -232,10 +352,102 @@
       cursor: pointer;
     }
 
+    .warning-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(3px);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      animation: fadeIn 0.2s ease-in-out forwards;
+    }
+
+    /* Modal Box */
+    .warning-modal-content {
+      background: #fff;
+      padding: 25px 20px;
+      border-radius: 16px;
+      max-width: 400px;
+      text-align: center;
+      box-shadow: 极速飞艇0 8px 25px rgba(0, 0, 0, 0.15);
+      animation: scaleUp 0.25s ease-out;
+    }
+
+    .warning-icon {
+      font-size: 56px;
+      color: #f59f00;
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    .warning-modal-content h3 {
+      margin-bottom: 8px;
+      font-size: 1.4rem;
+      color: #333;
+    }
+
+    .warning-modal-content p {
+      margin-bottom: 15px;
+      font-size: 0.95rem;
+      color: #555;
+    }
+
+    .btn-close {
+      background: #f59f00;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s ease;
+    }
+
+    .btn-close:hover {
+      background: #d88a00;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes scaleUp {
+      from { transform: scale(0.85); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
     @media (max-width: 992px) {
-      #sidebar-container {
+      .sidebar {
         width: 80px;
       }
+      
+      .sidebar .logo h1, 
+      .sidebar .user-info .name, 
+      .sidebar .user-info .role,
+      .sidebar .nav-items a span {
+        display: none;
+      }
+      
+      .sidebar .user-info {
+        padding: 15px 5px;
+      }
+      
+      .sidebar .nav-items a {
+        justify-content: center;
+        padding: 15px;
+      }
+      
+      .sidebar .nav-items a i {
+        margin-right: 0;
+        font-size: 20px;
+      }
+      
       .main-content {
         margin-left: 80px;
       }
@@ -243,9 +455,9 @@
 
     @media (max-width: 768px) {
       .form-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1极速飞艇fr;
       }
-      #sidebar-container {
+      .sidebar {
         width: 0;
         display: none;
       }
@@ -257,13 +469,144 @@
         flex-direction: column;
         align-items: stretch;
       }
+      
+      .header {
+        flex-direction: column;
+        gap: 15px;
+      }
+      
+      .form-actions {
+        flex-direction: column;
+      }
+    }
+
+    .course-details {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    
+    .schedule-items {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .schedule-item {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    
+    .schedule-item select {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    
+    .btn-icon {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 50%;
+      background: #4a6fa9;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .btn-icon:hover {
+      background: #3b5b8d;
+    }
+    
+    .remove-schedule {
+      background: #dc3545;
+    }
+    
+    .remove-schedule:hover {
+      background: #c82333;
+    }
+    
+    .course-container {
+      margin-bottom: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      background: #f9f9f9;
+    }
+    
+    .course-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .course-title {
+      font-weight: bold;
+      color: #2c3e50;
+    }
+    
+    .remove-course {
+      background: #e74c3c;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .time-conflict {
+      border: 2px solid #e74c3c !important;
+      background-color: #ffe6e6 !important;
+    }
+    
+    .duplicate-schedule {
+      border: 2px solid #ff9900 !important;
+      background-color: #fff5e6 !important;
     }
   </style>
 </head>
 <body>
 
-  <!-- Sidebar Container -->
-  <div id="sidebar-container"></div>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <h1>Admin Side</h1>
+    </div>
+    
+    <div class="user-info">
+      <div class="avatar">
+        <i class="fas fa-user"></i>
+      </div>
+      <div class="name">Admin User</div>
+      <div class="role">Administrator</div>
+    </div>
+    
+    <ul class="nav-items">
+      <li><a href="../Admin/dashboard/dashboard.html"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
+      <li class="dropdown">
+        <a href="#" class="dropdown-btn">
+          <i class="fas fa-graduation-cap"></i> <span>Curriculum</span>
+          <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
+        </a>
+        <ul class="dropdown-content">
+          <li><a href="../Admin/curriculum/programs/programs.html"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
+          <li><a href="../Admin/curriculum/courses/courses.html"><i class="fas fa-book"></i> <span>Courses</span></a></li>
+          <li><a href="../Admin/curriculum/schedule/schedule.html"><i class="fas fa-calendar-check"></i> <span>Instructor Schedules</span></a></li>
+          <li><a href="../Admin/curriculum/class schedule/classsched.html" class="active"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
+        </ul>
+      </li>
+      <li><a href="../Admin/instructors/instructors.html"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
+      <li><a href="../Admin/students/student.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
+      <li><a href="../Admin/settings/settings.html"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
+      <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
+    </ul>
+  </aside>
 
   <!-- Main Content -->
   <div class="main-content">
@@ -280,7 +623,7 @@
             <tr>
               <th>Program Code</th>
               <th>Program Name</th>
-              <th>Department</th>
+              <极速飞艇th>Department</th>
               <th>Total Courses</th>
               <th>Status</th>
               <th>Actions</th>
@@ -298,10 +641,10 @@
               </td>
             </tr>
             <tr>
-              <td>CS</td>
+              <td极速飞艇>CS</td>
               <td>Computer Science</td>
               <td>College of Computer Studies</td>
-              <td>48</td>
+              <td>48</极速飞艇td>
               <td><span style="color: green;">Active</span></td>
               <td>
                 <a href="#" class="btn-view view-course" data-course="CS" data-name="Computer Science">View</a>
@@ -324,7 +667,7 @@
 
     <!-- Curriculum Page (Initially Hidden) -->
     <div class="page-container curriculum-page" id="curriculumPage">
-      <div class="header">
+      <div class极速飞艇="header">
         <div style="display: flex; align-items: center;">
           <h2><i class="fas fa-book"></i> <span id="courseTitle">Curriculum Management</span></h2>
         </div>
@@ -339,70 +682,39 @@
         <form id="curriculumForm">
           <div class="form-grid">
             <div>
-              <label for="curriculumYear">Curriculum Year</label>
-              <input type="number" id="curriculumYear" min="2020" max="2030" value="2024" required>
-            </div>
-            <div>
-              <label for="period">Period</label>
-              <select id="period" required>
-                <option value="">-- Select Period --</option>
-                <option>1st Semester</option>
-                <option>2nd Semester</option>
-                <option>Summer</option>
-              </select>
-            </div>
-            <div>
-              <label for="level">Level</label>
-              <select id="level" required>
-                <option value="">-- Select Level --</option>
-                <option>1st Year</option>
-                <option>2nd Year</option>
-                <option>3rd Year</option>
-                <option>4th Year</option>
-                <option>5th Year</option>
-              </select>
-            </div>
-            <div>
               <label for="programCode">Program Code</label>
-              <input type="text" id="programCode" placeholder="Enter program code" required>
+              <input type="text" id="programCode" placeholder="Enter program code" readonly style="background-color: #f5f5f5;">
             </div>
           </div>
           
-          <h4 style="margin: 20px 0 10px 0;">Subjects</h4>
+          <h4 style="margin: 20px 0 10px 0;">Course Details</h4>
           
-          <div id="subjectsContainer">
-            <div class="subject-item">
-              <input type="text" placeholder="Course Code" class="course-code" required>
-              <input type="text" placeholder="Course Name" class="course-name" required>
-              <select class="course-type" required>
-                <option value="">-- Type --</option>
-                <option>Lecture</option>
-                <option>Laboratory</option>
-                <option>Lecture/Lab</option>
-              </select>
-              <button type="button" class="remove-subject"><i class="fas fa-times"></i></button>
-            </div>
+          <div id="coursesContainer">
+            <!-- Course containers will be added here -->
           </div>
           
-          <button type="button" id="addSubject" class="btn btn-secondary"><i class="fas fa-plus"></i> Add Subject</button>
+          <button type="button" class="btn btn-secondary" id="addCourseBtn" style="margin-top: 15px;">
+            <i class="fas fa-plus"></i> Add Subject
+          </button>
           
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Curriculum</button>
+          <div class="form-actions" style="margin-top: 20px; text-align: right;">
+            <button type="button" class="btn btn-primary" id="saveCurriculumBtn"><i class="fas fa-save"></i> Save Curriculum</button>
           </div>
         </form>
       </div>
 
       <!-- Curriculum Table -->
       <div class="curriculum-table">
-        <h3>Curriculum List</h3>
+        <h3>Curriculum List</极速飞艇h3>
         <table id="curriculumTable">
           <thead>
             <tr>
-              <th>Curriculum Year</th>
-              <th>Period</th>
-              <th>Level</th>
               <th>Program Code</th>
-              <th>Subjects</th>
+              <th>Day</极速飞艇th>
+              <th>Time</th>
+              <th>Course Code</th>
+              <th>Course Name</th>
+              <th>Type</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -412,92 +724,51 @@
         </table>
       </div>
     </div>
+
+    <div class="warning-modal" id="scheduleWarningModal">
+      <div class="warning-modal-content">
+        <i class="fas fa-exclamation-triangle warning-icon"></i>
+        <h3>Schedule Duration Error</h3>
+        <p id="scheduleErrorMessage">Class duration must be between 1 to 3 hours.</p>
+        <button class="btn-close" onclick="document.getElementById('scheduleWarningModal').style.display='none'">
+          Adjust Schedule
+        </button>
+      </div>
+    </div>  
   </div>
 
   <script>
-    // Load sidebar
-    fetch('../../sidebar.html')
-      .then(response => response.text())
-      .then(html => {
-        document.getElementById('sidebar-container').innerHTML = html;
-        
-        // Fix navigation paths after sidebar loads
-        document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
-          // Convert relative paths to correct module paths
-          if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
-            link.href = '../../' + link.getAttribute('href');
-          }
+    // Initialize sidebar functionality
+    function initSidebar() {
+      // Toggle dropdown
+      document.querySelectorAll(".dropdown-btn").forEach(btn => {
+        btn.addEventListener("click", function(e) {
+          e.preventDefault();
+          const content = this.nextElementSibling;
+          content.style.display = (content.style.display === 'block') ? 'none' : 'block';
         });
-
-        // Initialize dropdown functionality
-        document.querySelectorAll(".dropdown-btn").forEach(btn => {
-          btn.addEventListener("click", function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            // Close all other dropdowns first
-            document.querySelectorAll('.dropdown-content').forEach(content => {
-              if (content !== this.nextElementSibling) {
-                content.style.display = 'none';
-              }
-            });
-
-            // Toggle current dropdown
-            const content = this.nextElementSibling;
-            if (content) {
-              content.style.display = content.style.display === 'block' ? 'none' : 'block';
-            }
-          });
-        });
-
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', function(e) {
-          if (!e.target.closest('.dropdown')) {
-            document.querySelectorAll('.dropdown-content').forEach(content => {
-              content.style.display = 'none';
-            });
-          }
-        });
-
-        // Handle active state
-        const currentPath = window.location.pathname;
-        document.querySelectorAll('.nav-items a').forEach(link => {
-          const linkPath = link.getAttribute('href');
-          if (currentPath.includes(linkPath) && linkPath !== '#') {
-            link.classList.add('active');
-            // If link is in dropdown, show parent dropdown
-            const dropdown = link.closest('.dropdown-content');
-            if (dropdown) {
-              dropdown.style.display = 'block';
-            }
-          }
-        });
-      })
-      .catch(error => {
-        console.error('Error loading sidebar:', error);
-        // Fallback sidebar if fetch fails
-        document.getElementById('sidebar-container').innerHTML = `
-          <div class="sidebar">
-            <div class="logo">
-              <h1>Admin Side</h1>
-            </div>
-            <div class="user-info">
-              <div class="avatar">
-                <i class="fas fa-user"></i>
-              </div>
-              <div class="name">Unknown User</div>
-              <div class="role">Admin</div>
-            </div>
-            <ul class="nav-items">
-              <li><a href="#"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
-              <li><a href="#" class="active"><i class="fas fa-book"></i> <span>Curriculum</span></a></li>
-              <li><a href="#"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
-              <li><a href="#"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
-              <li><a href="#"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
-            </ul>
-          </div>
-        `;
       });
+
+      // Set active state based on current page
+      const currentPath = window.location.pathname;
+      document.querySelectorAll('.nav-items a').forEach(link => {
+        if (link.textContent.includes('Curriculum Management') || link.getAttribute('href').includes('curriculum')) {
+          link.classList.add('active');
+          // If link is in dropdown, show the dropdown
+          const dropdown = link.closest('.dropdown-content');
+          if (dropdown) {
+            dropdown.style.display = 'block';
+          }
+        }
+      });
+    }
+
+    // Initialize sidebar
+    if (document.readyState !== 'loading') {
+      initSidebar();
+    } else {
+      document.addEventListener('DOMContentLoaded', initSidebar);
+    }
 
     // DOM Elements
     const coursesPage = document.getElementById('coursesPage');
@@ -506,9 +777,10 @@
     const backToCoursesBtn = document.getElementById('backToCourses');
     const viewCourseButtons = document.querySelectorAll('.view-course');
     const curriculumForm = document.getElementById('curriculumForm');
-    const addSubjectBtn = document.getElementById('addSubject');
-    const subjectsContainer = document.getElementById('subjectsContainer');
+    const addCourseBtn = document.getElementById('addCourseBtn');
+    const coursesContainer = document.getElementById('coursesContainer');
     const curriculumTableBody = document.querySelector('#curriculumTable tbody');
+    const saveCurriculumBtn = document.getElementById('saveCurriculumBtn');
 
     // View Course Button Event Listeners
     viewCourseButtons.forEach(button => {
@@ -523,6 +795,12 @@
         
         coursesPage.style.display = 'none';
         curriculumPage.style.display = 'block';
+        
+        // Clear any existing courses
+        coursesContainer.innerHTML = '';
+        
+        // Add the first course
+        addNewCourse();
       });
     });
 
@@ -531,118 +809,457 @@
       curriculumPage.style.display = 'none';
       coursesPage.style.display = 'block';
     });
-
-    // Add subject button
-    addSubjectBtn.addEventListener('click', function() {
-      const subjectItem = document.createElement('div');
-      subjectItem.className = 'subject-item';
-      subjectItem.innerHTML = `
-        <input type="text" placeholder="Course Code" class="course-code" required>
-        <input type="text" placeholder="Course Name" class="course-name" required>
-        <select class="course-type" required>
-          <option value="">-- Type --</option>
-          <option>Lecture</option>
-          <option>Laboratory</option>
-          <option>Lecture/Lab</option>
-        </select>
-        <button type="button" class="remove-subject"><i class="fas fa-times"></i></button>
+    
+    // Function to convert time to minutes for comparison
+    function timeToMinutes(timeStr) {
+      if (!timeStr) return 0;
+      
+      const [time, period] = timeStr.split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+      
+      let totalMinutes = hours % 12 * 60 + minutes;
+      if (period === 'PM') totalMinutes += 12 * 60;
+      
+      return totalMinutes;
+    }
+    
+    // Function to validate time duration and conflicts
+    function validateSchedule(startTime, endTime, day, courseCode, scheduleItems) {
+      // Reset any previous validation styles
+      startTime.classList.remove('time-conflict', 'duplicate-schedule');
+      endTime.classList.remove('time-conflict', 'duplicate-schedule');
+      
+      const startMins极速飞艇 = timeToMinutes(startTime.value);
+      const endMins = timeToMinutes(endTime.value);
+      
+      // Check if start time is before end time
+      if (startMins >= endMins) {
+        startTime.classList.add('time-conflict');
+        endTime.classList.add('time-conflict');
+        document.getElementById('scheduleErrorMessage').textContent = "Start time must be before end time.";
+        document.getElementById('scheduleWarningModal').style.display = 'flex';
+        return false;
+      }
+      
+      // Check if duration is between 1-3 hours
+      const duration = (endMins - start极速飞艇Mins) / 60;
+      if (duration < 1 || duration > 3) {
+        startTime.classList.add('time-conflict');
+        endTime.classList.add('time-conflict');
+        document.getElementById('scheduleErrorMessage').textContent = "Class duration must be between 1 to 3 hours.";
+        document.getElementById('scheduleWarningModal').style.display = 'flex';
+        return false;
+      }
+      
+      // Check for duplicate schedules (same day and time)
+      const schedules = scheduleItems.querySelectorAll('.schedule-item');
+      for (const schedule of schedules) {
+        if (schedule.contains(startTime)) continue; // Skip current schedule
+        
+        const otherDay = schedule.querySelector('.schedule-day').value;
+        const otherStart = timeToMinutes(schedule.querySelector('.start-time').value);
+        const otherEnd = timeToMinutes(schedule.querySelector('.end-time').value);
+        
+        // Only check if the other schedule has all values
+        if (otherDay && otherStart && otherEnd) {
+          if (day === otherDay && 
+              ((startMins >= otherStart && startMins < otherEnd) ||
+               (endMins > otherStart && endMins <= otherEnd) ||
+               (startMins <= otherStart && endMins >= otherEnd))) {
+            startTime.classList.add('duplicate-schedule');
+            endTime.classList.add('duplicate-schedule');
+            document.getElementById('scheduleErrorMessage').textContent = "Schedule conflict with another class at the same time.";
+            document.getElementById('scheduleWarningModal').style.display = 'flex';
+            return false;
+          }
+        }
+      }
+      
+      return true;
+    }
+    
+    // Add new course function
+    function addNewCourse() {
+      const courseId = Date.now(); // Unique ID for the course
+      const courseDiv = document.createElement('div');
+      courseDiv.className = 'course-container';
+      courseDiv.id = `course-${courseId}`;
+      courseDiv.innerHTML = `
+        <div class="course-header">
+          <div class="course-title">Subject Details</div>
+          <button type="button" class="remove-course" data-course-id="${courseId}">
+            <i class="fas fa-times"></i> Remove Subject
+          </button>
+        </div>
+        <div class="form-grid">
+          <div>
+            <label>Course Code</label>
+            <input type="text" class="course-code" placeholder="Enter course code" required>
+          </div>
+          <div>
+            <label>Course Name</label>
+            <input type="text" class极速飞艇="course-name" placeholder="Enter course name" required>
+          </div>
+          <div>
+            <label>Course Type</label>
+            <select class="course-type" required>
+              <option value="" disabled selected>-- Select Type --</option>
+              <option>Lecture</option>
+              <option>Laboratory</option>
+              <option>Lecture/Lab</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="schedule-container">
+          <h5 style="margin: 10px 0;">Class Schedule</h5>
+          <div class="schedule-items" id="schedule-items-${courseId}">
+            <div class="schedule-item">
+              <select class="schedule-day" required>
+                <option value="" disabled selected>Day</option>
+                <option>Monday</option>
+                <option>Tuesday</option>
+                <option>Wednesday</option>
+                <option>Thursday</option>
+                <option>Friday</option>
+                <option>Saturday</option>
+              </select>
+              <select class="start-time极速飞艇" required>
+                <option value="" disabled selected>Start</option>
+                <option>7:00 AM</option>
+                <option>7:30 AM</option>
+                <option>8:00 AM</option>
+                <option>8:30 AM</option>
+                <option>9:00 AM</option>
+                <option>9:30 AM</option>
+                <option>10:00 AM</option>
+                <option极速飞艇>10:30 AM</option>
+                <option>11:00 AM</option>
+                <option>11:30 AM</option>
+                <option>12:00 PM</option>
+                <option>12:30 PM</option>
+                <option>1:00 PM</option>
+                <option>1:30 PM</option>
+                <option>2:00 PM</option>
+                <option>2:30 PM</option>
+                <option>3:00 PM</option>
+                <option>3:30 PM</option>
+                <option>4:极速飞艇00 PM</option>
+                <option>4:30 PM</option>
+                <option>5:00 PM</option>
+                <option>5:30 PM</option>
+                <option>6:00 PM</option>
+                <option>6:30 PM</option>
+                <option>7:00 PM</option>
+              </select>
+              <select class="end-time" required>
+                <option value="" disabled selected>End</option>
+                <option>8:00 AM</option>
+                <option>8:30 AM</option>
+                <option>9:00 AM</option>
+                <option>9:30 AM</option>
+                <option>10:00 AM</option>
+                <option>10:30 AM</option>
+                <option>11:00 AM</option>
+                <option>11:30 AM</option>
+                <option>12:00 PM</option>
+                <option>12:30 PM</option>
+                <option>1:00 PM</option>
+                <option>1:30 PM</option>
+                <option>2:00 PM</option>
+                <option>2:30 PM</option>
+                <option>3:00 PM</option>
+                <option>3:30 PM</option>
+                <option>4:00 PM</option>
+                <option>4:30 PM</option>
+                <option>5:00 PM</option>
+                <option>5:30 PM</option>
+                <option>6:00 PM</option>
+                <option>6:30 PM</option>
+                <option>7:00 PM</option>
+                <option>7:30 PM</option>
+                <option>8极速飞艇:00 PM</option>
+              </select>
+              <button type="button" class="btn-icon remove-schedule"><极速飞艇i class="fas fa-times"></i></button>
+            </div>
+          </div>
+          <button type="button" class="btn-icon add-schedule" data-course-id="${courseId}">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
       `;
       
-      // Add event listener to remove button
-      subjectItem.querySelector('.remove-subject').addEventListener('click', function() {
-        subjectItem.remove();
-      });
+      coursesContainer.appendChild(courseDiv);
       
-      subjectsContainer.appendChild(subjectItem);
-    });
-
-    // Add event listeners to existing remove buttons
-    document.querySelectorAll('.remove-subject').forEach(button => {
-      button.addEventListener('click', function() {
-        this.closest('.subject-item').remove();
-      });
-    });
-
-    // Curriculum form submission
-    curriculumForm.addEventListener('submit', function(e) {
-      e.preventDefault();
-
-      const curriculumYear = document.getElementById('curriculumYear').value;
-      const period = document.getElementById('period').value;
-      const level = document.getElementById('level').value;
-      const programCode = document.getElementById('programCode').value;
-      
-      // Get all subjects
-      const subjects = [];
-      document.querySelectorAll('.subject-item').forEach(item => {
-        const courseCode = item.querySelector('.course-code').value;
-        const courseName = item.querySelector('.course-name').value;
-        const courseType = item.querySelector('.course-type').value;
-        
-        if (courseCode && courseName && courseType) {
-          subjects.push({ courseCode, courseName, courseType });
+      // Add event listeners for the new course
+      const removeCourseBtn = courseDiv.querySelector('.remove-course');
+      removeCourseBtn.addEventListener('click', function() {
+        if (document.querySelectorAll('.course-container').length > 1) {
+          document.getElementById(`course-${this.getAttribute('data-course-id')}`).remove();
+        } else {
+          alert("You need to have at least one subject.");
         }
       });
       
-      if (subjects.length === 0) {
-        alert('Please add at least one subject');
+      const addScheduleBtn = courseDiv.querySelector('.add-schedule');
+      addScheduleBtn.addEventListener('click', function() {
+        const courseId = this.getAttribute('data-course-id');
+        const scheduleItems = document.getElementById(`schedule-items-${courseId}`);
+        const newSchedule = document.createElement('div');
+        newSchedule.className = 'schedule-item';
+        newSchedule.innerHTML = `
+          <select class="schedule-day" required>
+            <option value="" disabled selected>Day</option>
+            <option>Monday</option>
+            <option>Tuesday</option>
+            <option>Wednesday</option>
+            <option>Thursday</option>
+            <option>Friday</option>
+            <option>Saturday</option>
+          </select>
+          <select class="start-time" required>
+            <option value="" disabled selected>Start</option>
+            <option>7:00 AM</option>
+            <option>7:30 AM</option>
+            <option>8极速飞艇:00 AM</option>
+            <option>8:30 AM</option>
+            <option>9:00 AM</option>
+            <option>9:30 AM</option>
+            <option>10:00 AM</option>
+            <option>10:30 AM</option>
+            <option>11:00 AM</option>
+            <option>11:30 AM</option>
+            <option>12:00 PM</option>
+            <option>12:极速飞艇30 PM</option>
+            <option极速飞艇>1:00 PM</option>
+            <option>1:30 PM</option>
+            <option>2:00 PM</option>
+            <option>2:30 PM</option>
+            <option>3:00 PM</option>
+            <option>3:30 PM</option>
+            <option>4:00 PM</option>
+            <option>4:30 PM</option>
+            <option>5:00 PM</option>
+            <option>5:30 PM</option>
+            <option>6:00 PM</option>
+            <option>6:30 PM</option>
+            <option>7:00 PM</option>
+          </select>
+          <select class="end-time" required>
+            <option value="" disabled selected>End</option>
+            <option>8:00 AM</option>
+            <option>8:30 AM</option>
+            <option>9:00 AM</option>
+            <option>9:30 AM</option>
+            <option>10:00 AM</option>
+            <option>10:30 AM</option>
+            <option>11:00 AM</option>
+            <option>11:30 AM</option>
+            <option>12:00 PM</option>
+            <option>12:30 PM</option>
+            <option>1:00 PM</option>
+            <option>1:30 PM</option>
+            <option>2:00 PM</option>
+            <option>2:30 PM</option>
+            <option>3:00 PM</option>
+            <option>3:30 PM</option>
+            <option>4:00 PM</option>
+            <option>4:30 PM</option>
+            <option>5:00 PM</option>
+            <option>5:30 PM</option>
+            <option>6:00 PM</option>
+            <option>6:30 PM</option>
+            <option>7:00 PM</option>
+            <option>7:30 PM</option>
+            <option>8:00 PM</option>
+          </select>
+          <button type="button" class="btn-icon remove-schedule"><i class="fas fa-times"></i></button>
+        `;
+        scheduleItems.appendChild(newSchedule);
+        
+        // Add event listener to remove button
+        newSchedule.querySelector('.remove-schedule').addEventListener('click', function() {
+          if (scheduleItems.querySelectorAll('.schedule-item').length > 1) {
+            this.closest('.schedule极速飞艇-item').remove();
+          } else {
+            alert("Each course must have at least one schedule.");
+          }
+        });
+        
+        // Add validation to time selects
+        const startTime = newSchedule.querySelector('.start-time');
+        const endTime = newSchedule.querySelector('.end-time');
+        const daySelect = newSchedule.querySelector('.schedule-day');
+        
+        const validateNewTime = () => {
+          if (startTime.value && endTime.value && daySelect.value) {
+            validateSchedule(startTime, endTime, daySelect.value, '', scheduleItems);
+          } else {
+            startTime.classList.remove('time-conflict', 'duplicate-schedule');
+            endTime.classList.remove('time-conflict', 'duplicate-schedule');
+          }
+        };
+        
+        startTime.addEventListener('change', validateNewTime);
+        endTime.addEventListener('change', validateNewTime);
+        daySelect.addEventListener('change', validateNewTime);
+      });
+      
+      // Add event listeners to remove schedule buttons
+      courseDiv.querySelectorAll('.remove-schedule').forEach(button => {
+        button.addEventListener('click', function() {
+          const scheduleItems = this.closest('.schedule-items');
+          if (scheduleItems.querySelectorAll('.schedule-item').length > 1) {
+            this.closest('.schedule-item').remove();
+          } else {
+            alert("Each course must have at least one schedule.");
+          }
+        });
+      });
+      
+      // Add validation to time selects for the first schedule
+      const firstSchedule = courseDiv.querySelector('.schedule-item');
+      const startTime = firstSchedule.querySelector('.start-time');
+      const endTime = firstSchedule.querySelector('.end-time');
+      const daySelect = firstSchedule.querySelector('.schedule-day');
+      
+      const validateTime = () => {
+        if (startTime.value && endTime.value && daySelect.value) {
+          validateSchedule(startTime, endTime, daySelect.value, '', courseDiv.querySelector('.schedule-items'));
+        } else {
+          startTime.classList.remove('time-conflict', 'duplicate-schedule');
+          endTime.classList.remove('time-conflict', 'duplicate-schedule');
+        }
+      };
+      
+      startTime.addEventListener('change', validateTime);
+      endTime.addEventListener('change', validateTime);
+      daySelect.addEventListener('change', validate极速飞艇Time);
+    }
+    
+    // Add course button
+    addCourseBtn.addEventListener('click', function() {
+      addNewCourse();
+    });
+    
+    // Save curriculum button
+    saveCurriculumBtn.addEventListener('click', function() {
+      const programCode = document.getElementById('programCode').value;
+      
+      // Get all courses
+      const courses = [];
+      let hasErrors = false;
+      
+      document.querySelectorAll('.course-container').forEach(course => {
+        const courseCode = course.querySelector('.course-code').value;
+        const courseName = course.querySelector('.course-name').value;
+        const courseType = course.querySelector('.course-type极速飞艇').value;
+        
+        // Validate course fields
+        if (!courseCode || !courseName || !courseType) {
+          alert('Please fill in all course fields');
+          hasErrors = true;
+          return;
+        }
+        
+        // Get all schedules for this course
+        const schedules = [];
+        const scheduleItems = course.querySelector('.schedule-items');
+        
+        course.querySelectorAll('.schedule-item').forEach(schedule => {
+          const day = schedule.querySelector('.schedule-day').value;
+          const startTime = schedule.querySelector('.start-time');
+          const endTime = schedule.querySelector('.end-time');
+          
+          if (!day || !startTime.value || !endTime.value) {
+            alert('Please fill in all schedule fields');
+            hasErrors = true;
+            return;
+          }
+          
+          // Validate schedule duration and conflicts
+          if (!validateSchedule(startTime, endTime, day, courseCode, scheduleItems)) {
+            hasErrors = true;
+            return;
+          }
+          
+          schedules.push({
+            day: day,
+            startTime: startTime.value,
+            endTime: endTime.value
+          });
+        });
+        
+        if (schedules.length === 0) {
+          alert('Each course must have at least one schedule');
+          hasErrors = true;
+          return;
+        }
+        
+        courses.push({
+          courseCode: courseCode,
+          courseName: courseName,
+          courseType: courseType,
+          schedules: schedules
+        });
+      });
+      
+      if (hasErrors || courses.length === 0) {
         return;
       }
       
-      // Create a new row in the curriculum table
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${curriculumYear}</td>
-        <td>${period}</td>
-        <td>${level}</td>
-        <td>${programCode}</td>
-        <td>${subjects.length} subjects</td>
-        <td class="action-btns">
-          <button class="view" title="View Subjects"><i class="fas fa-eye"></i></button>
-          <button class="edit" title="Edit"><i class="fas fa-edit"></i></button>
-          <button class="delete" title="Delete"><i class="fas fa-trash-alt"></i></button>
-        </td>
-      `;
-      
-      // Store the subjects data as a data attribute
-      row.setAttribute('data-subjects', JSON.stringify(subjects));
-      
-      // Add event listeners to action buttons
-      row.querySelector('.view').addEventListener('click', function() {
-        const subjects = JSON.parse(row.getAttribute('data-subjects'));
-        alert('Subjects:\n' + subjects.map(s => `${s.courseCode} - ${s.courseName} (${s.courseType})`).join('\n'));
+      // Create a row for each course and schedule combination
+      courses.forEach(course => {
+        course.schedules.forEach(schedule => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${programCode}</td>
+            <td>${schedule.day}</td>
+            <td>${schedule.startTime} - ${schedule.endTime}</td>
+            <td>${course.courseCode}</td>
+            <td>${course.courseName}</td>
+            <td>${course.courseType}</td>
+            <td class="action-btns">
+              <button class="edit" title="Edit"><i class="fas fa-edit"></i></button>
+              <button class="delete" title="Delete"><i class="fas fa-trash-alt"></i></button>
+            </td>
+          `;
+          
+          // Add event listener to delete button
+          row.querySelector('.delete').addEventListener('click', function() {
+            row.remove();
+          });
+          
+          curriculumTableBody.appendChild(row);
+        });
       });
-      
-      row.querySelector('.edit').addEventListener('click', function() {
-        alert('Edit functionality would be implemented here');
-      });
-      
-      row.querySelector('.delete').addEventListener('click', function() {
-        if (confirm('Are you sure you want to delete this curriculum?')) {
-          row.remove();
-        }
-      });
-      
-      curriculumTableBody.appendChild(row);
-      
-      // Reset the form but keep the program code
-      document.getElementById('curriculumYear').value = '2024';
-      document.getElementById('period').selectedIndex = 0;
-      document.getElementById('level').selectedIndex = 0;
-      
-      // Clear all subjects except the first one
-      const subjectItems = document.querySelectorAll('.subject-item');
-      for (let i = 1; i < subjectItems.length; i++) {
-        subjectItems[i].remove();
-      }
-      
-      // Reset the first subject
-      const firstSubject = subjectItems[0];
-      firstSubject.querySelector('.course-code').value = '';
-      firstSubject.querySelector('.course-name').value = '';
-      firstSubject.querySelector('.course-type').selectedIndex = 0;
       
       alert('Curriculum saved successfully!');
+    });
+
+    // Initialize the first course when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      // Add event listeners to view course buttons
+      viewCourseButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+          e.preventDefault();
+          const courseCode = this.getAttribute('data-course');
+          const courseName = this.getAttribute('data-name');
+          courseTitle.textContent = `${courseCode} - ${courseName} Curriculum`;
+          
+          // Set the program code to the course code
+          document.getElementById('programCode').value = courseCode;
+          
+          coursesPage.style.display = 'none';
+          curriculumPage.style.display = 'block';
+          
+          // Clear any existing courses
+          coursesContainer.innerHTML = '';
+          
+          // Add the first course
+          addNewCourse();
+        });
+      });
     });
   </script>
 </body>

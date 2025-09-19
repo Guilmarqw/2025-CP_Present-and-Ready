@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Class Schedules</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+        background-color: #f5f7f9;
+        color: #333;
+        display: flex;
+        min-height: 100vh;
+    }
+
+    /* Sidebar Styles */
+    .sidebar {
+        width: 250px;
+        background: white;
+        color: black;
+        height: 100vh;
+        position: fixed;
+        padding: 20px 0;
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .logo {
+        text-align: center;
+        padding: 20px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+    }
+
+    .logo h1 {
+        font-size: 24px;
+        font-weight: 600;
+    }
+
+    .user-info {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .user-info .avatar {
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        background-color: #1a2530;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 15px;
+        font-size: 28px;
+        color: white;
+    }
+
+    .user-info .name {
+        font-weight: 600;
+        font-size: 18px;
+        margin-bottom: 5px;
+    }
+
+    .user-info .role {
+        color: #7f8c8d;
+        font-size: 14px;
+    }
+
+    .nav-items {
+        list-style: none;
+        padding: 0 15px;
+    }
+
+    .nav-items li {
+        margin-bottom: 5px;
+    }
+
+    .nav-items a {
+        display: flex;
+        align-items: center;
+        padding: 12px 15px;
+        color: black;
+        text-decoration: none;
+        border-radius: 5px;
+        transition: all 0.3s ease;
+    }
+
+    .nav-items a:hover, .nav-items a.active {
+        background-color: rgba(0, 0, 0, 0.05);
+        color: black;
+    }
+
+    .nav-items a i {
+        margin-right: 10px;
+        font-size: 18px;
+        width: 24px;
+        text-align: center;
+    }
+
+    /* Dropdown Styles */
+    .dropdown .dropdown-btn {
+        display: flex;
+        align-items: center;
+        padding: 12px 15px;
+        color: black;
+        text-decoration: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .dropdown .dropdown-btn:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .dropdown-content {
+        display: none;
+        list-style: none;
+        padding-left: 20px;
+    }
+
+    .dropdown-content li a {
+        display: flex;
+        align-items: center;
+        padding: 10px 15px;
+        color: #555;
+        font-size: 14px;
+        border-radius: 5px;
+    }
+
+    .dropdown-content li a:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    /* Main Content */
+    .main-content {
+        flex: 1;
+        margin-left: 250px;
+        padding: 20px;
+    }
+
+    /* Header */
+    .header {
+        background: #fff;
+        padding: 15px 25px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        margin-bottom: 25px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .header h2 {
+        color: #2c3e50;
+        font-weight: 600;
+    }
+
+    .header .search-box {
+        display: flex;
+        align-items: center;
+        background: #f5f7f9;
+        padding: 8px 15px;
+        border-radius: 20px;
+        width: 250px;
+    }
+
+    .header .search-box input {
+        border: none;
+        background: transparent;
+        outline: none;
+        padding: 5px;
+        width: 100%;
+    }
+
+    .header .search-box i {
+        color: #7f8c8d;
+        margin-right: 5px;
+    }
+
+    /* Schedule Form & Table */
+    .schedule-form,
+    .schedule-table {
+        background: #fff;
+        border-radius: 8px;
+        padding: 25px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        margin-bottom: 25px;
+    }
+
+    /* Form Grid Layout */
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 15px;
+    }
+
+    .form-grid label {
+        font-weight: 500;
+        font-size: 14px;
+        margin-bottom: 5px;
+        display: block;
+    }
+
+    .form-grid input,
+    .form-grid select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .form-grid input:disabled,
+    .form-grid select:disabled {
+        background: #e9ecef;
+        cursor: not-allowed;
+    }
+
+    /* Year & Section Dropdown - Made smaller */
+    .year-section-dropdown {
+        margin-bottom: 15px;
+        padding: 8px;
+        background: none !important;
+        border-radius: 6px;
+        max-width: 300px;
+    }
+
+    .year-section-dropdown label {
+        font-weight: 500;
+        margin-bottom: 8px;
+        display: block;
+    }
+
+    .year-section-dropdown select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    /* Schedule Container */
+    .schedule-container {
+        margin-top: 20px;
+        margin-bottom: 20px;
+        padding: 15px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        grid-column: 1 / -1; /* Make it span all columns */
+    }
+
+    .schedule-items {
+        margin-bottom: 10px;
+    }
+
+    .schedule-item {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+        align-items: center;
+    }
+
+    .schedule-item select {
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+    }
+
+    .btn-icon {
+        background: #4a6fa9;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 8px 12px;
+        cursor: pointer;
+    }
+
+    .btn-icon:hover {
+        background: #3b5b8d;
+    }
+
+    .remove-schedule {
+        background: #e74c3c;
+    }
+
+    .remove-schedule:hover {
+        background: #c0392b;
+    }
+
+    /* Form Actions */
+    .form-actions {
+        text-align: right;
+        margin-top: 10px;
+    }
+
+    /* Buttons */
+    .btn {
+        padding: 8px 15px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+    .btn-primary {
+        background: #4a6fa9;
+        color: #fff;
+    }
+
+    .btn-primary:hover {
+        background: #3b5b8d;
+    }
+
+    /* Table Styling */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+    }
+
+    th,
+    td {
+        padding: 10px;
+        border: 1px solid #ddd;
+        text-align: center;
+    }
+
+    th {
+        background: #f0f2f5;
+        font-weight: 600;
+    }
+
+    tr:hover {
+        background: #f9fafb;
+    }
+
+    /* Action Buttons */
+    .action-btns button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        margin: 0 5px;
+        font-size: 16px;
+    }
+
+    .action-btns .delete {
+        color: #e74c3c;
+    }
+
+    /* Meeting List */
+    .meeting-list {
+        margin-top: 10px;
+        background: #f8f9fa;
+        padding: 8px;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .meeting-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+    }
+
+    /* Modal Styling */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 400px;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .modal h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+      color: #c0392b;
+    }
+    .modal button {
+      background: #c0392b;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .modal button:hover {
+      background: #a93226;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 992px) {
+        .sidebar {
+            width: 80px;
+        }
+        
+        .sidebar .logo h1, 
+        .sidebar .user-info .name, 
+        .sidebar .user-info .role,
+        .sidebar .nav-items a span {
+            display: none;
+        }
+        
+        .sidebar .user-info {
+            padding: 15px 5px;
+        }
+        
+        .sidebar .nav-items a {
+            justify-content: center;
+            padding: 15px;
+        }
+        
+        .sidebar .nav-items a i {
+            margin-right: 0;
+            font-size: 20px;
+        }
+        
+        .main-content {
+            margin-left: 80px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .header {
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .header .search-box {
+            width: 100%;
+        }
+        
+        .form-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .schedule-item {
+            flex-direction: column;
+            align-items: stretch;
+        }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar Container -->
+  <div id="sidebar-container">
+    <!-- Sidebar will be loaded here -->
+    <aside class="sidebar">
+      <div class="logo">
+          <h1>Admin Side</h1>
+      </div>
+      
+      <div class="user-info">
+          <div class="avatar">
+              <i class="fas fa-user"></i>
+          </div>
+          <div class="name">Unknown User</div>
+          <div class="role">Admin</div>
+      </div>
+      
+      <ul class="nav-items">
+          <li><a href="#"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
+          <li class="dropdown">
+              <a href="#" class="dropdown-btn">
+                  <i class="fas fa-graduation-cap"></i> <span>Curriculum</span>
+                  <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
+              </a>
+              <ul class="dropdown-content">
+                  <li><a href="#"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
+                  <li><a href="#"><i class="fas fa-book"></i> <span>Courses</span></a></li>
+                  <li><a href="#"><i class="fas fa-calendar-check"></i> <span>Instructor Schedules</span></a></li>
+                  <li><a href="#" class="active"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
+              </ul>
+          </li>
+          <li><a href="#"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
+          <li><a href="#"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
+          <li><a href="#"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
+          <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
+      </ul>
+    </aside>
+  </div>
+
+  <div class="main-content">
+    <div class="header">
+      <h2><i class="fas fa-users"></i> Class Schedules</h2>
+      <div class="search-box">
+        <i class="fas fa-search"></i>
+        <input type="text" placeholder="Search class schedules...">
+      </div>
+    </div>
+
+    <div class="schedule-form">
+      <h3>Add Class Schedule</h3>
+      <form id="classScheduleForm">
+        <!-- Year & Section Dropdown -->
+        <div class="year-section-dropdown">
+          <label for="yearSection">Year & Section</label>
+          <select id="yearSection" required>
+            <option value="" disabled selected>-- Select Year & Section --</option>
+            <option>1st Year - Section A</option>
+            <option>1st Year - Section B</option>
+            <option>2nd Year - Section A</option>
+            <option>2nd Year - Section B</option>
+            <option>3rd Year - Section A</option>
+            <option>3rd Year - Section B</option>
+            <option>4th Year - Section A</option>
+            <option>4th Year - Section B</option>
+          </select>
+        </div>
+        
+        <div class="form-grid">
+          <div>
+            <label for="className">Class Name</label>
+            <select id="className" required disabled>
+              <option value="" disabled selected>-- Select Class --</option>
+              <option>CS-101</option>
+              <option>IT-202</option>
+              <option>ENG-303</option>
+              <option>MATH-404</option>
+            </select>
+          </div>
+          <div>
+            <label for="subject">Subject</label>
+            <select id="subject" disabled required>
+              <option value="" disabled selected>-- Select Subject --</option>
+              <option>Mathematics</option>
+              <option>Computer Science</option>
+              <option>English</option>
+              <option>Physics</option>
+            </select>
+          </div>
+          <div>
+            <label for="classType">Class Type</label>
+            <select id="classType" disabled required>
+              <option value="" disabled selected>-- Select Type --</option>
+              <option>Lecture</option>
+              <option>Laboratory</option>
+            </select>
+          </div>
+          <div>
+            <label for="room">Room</label>
+            <select id="room" disabled required>
+              <option value="" disabled selected>-- Select Room --</option>
+            </select>
+          </div>
+          
+          <!-- Schedule Container moved inside form-grid -->
+          <div class="schedule-container">
+            <h5 style="margin: 10px 0;">Class Schedule</h5>
+            <div class="schedule-items">
+              <div class="schedule-item">
+                <select class="schedule-day" required disabled>
+                  <option value="" disabled selected>Day</option>
+                  <option>Monday</option>
+                  <option>Tuesday</option>
+                  <option>Wednesday</option>
+                  <option>Thursday</option>
+                  <option>Friday</option>
+                  <option>Saturday</option>
+                </select>
+                <select class="start-time" required disabled>
+                  <option value="" disabled selected>Start</option>
+                  <option>7:00 AM</option>
+                  <option>7:30 AM</option>
+                  <option>8:00 AM</option>
+                  <option>8:30 AM</option>
+                  <option>9:00 AM</option>
+                  <option>9:30 AM</option>
+                  <option>10:00 AM</option>
+                  <option>10:30 AM</option>
+                  <option>11:00 AM</option>
+                  <option>11:30 AM</option>
+                  <option>12:00 PM</option>
+                  <option>12:30 PM</option>
+                  <option>1:00 PM</option>
+                  <option>1:30 PM</option>
+                  <option>2:00 PM</option>
+                  <option>2:30 PM</option>
+                  <option>3:00 PM</option>
+                  <option>3:30 PM</option>
+                  <option>4:00 PM</option>
+                  <option>4:30 PM</option>
+                  <option>5:00 PM</option>
+                  <option>5:30 PM</option>
+                  <option>6:00 PM</option>
+                  <option>6:30 PM</option>
+                  <option>7:00 PM</option>
+                </select>
+                <select class="end-time" required disabled>
+                  <option value="" disabled selected>End</option>
+                  <option>8:00 AM</option>
+                  <option>8:30 AM</option>
+                  <option>9:00 AM</option>
+                  <option>9:30 AM</option>
+                  <option>10:00 AM</option>
+                  <option>10:30 AM</option>
+                  <option>11:00 AM</option>
+                  <option>11:30 AM</option>
+                  <option>12:00 PM</option>
+                  <option>12:30 PM</option>
+                  <option>1:00 PM</option>
+                  <option>1:30 PM</option>
+                  <option>2:00 PM</option>
+                  <option>2:30 PM</option>
+                  <option>3:00 PM</option>
+                  <option>3:30 PM</option>
+                  <option>4:00 PM</option>
+                  <option>4:30 PM</option>
+                  <option>5:00 PM</option>
+                  <option>5:30 PM</option>
+                  <option>6:00 PM</option>
+                  <option>6:30 PM</option>
+                  <option>7:00 PM</option>
+                </select>
+                <button type="button" class="btn-icon remove-schedule" disabled><i class="fas fa-times"></i></button>
+              </div>
+            </div>
+            <button type="button" class="btn-icon add-schedule" disabled><i class="fas fa-plus"></i> Add Schedule</button>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="saveBtn" disabled><i class="fas fa-save"></i> Save Class Schedule</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="schedule-table">
+      <h3>Class Schedule List</h3>
+      <table id="classScheduleTable">
+        <thead>
+          <tr>
+            <th>Year & Section</th>
+            <th>Class</th>
+            <th>Subject</th>
+            <th>Schedule</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Warning Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <h3 id="modalTitle">Warning</h3>
+      <p id="modalMessage"></p>
+      <button id="closeModal">Close</button>
+    </div>
+  </div>
+
+<script>
+// Load sidebar content
+fetch('../../sidebar.html')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Sidebar not found, using default sidebar');
+    }
+    return response.text();
+  })
+  .then(html => {
+    document.getElementById('sidebar-container').innerHTML = html;
+    
+    // Fix navigation paths after sidebar loads
+    document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+      // Convert relative paths to correct module paths
+      if (link.getAttribute('href') && !link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
+        link.href = '../../' + link.getAttribute('href');
+      }
+    });
+
+    // Initialize dropdown functionality
+    document.querySelectorAll(".dropdown-btn").forEach(btn => {
+      btn.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Close all other dropdowns first
+        document.querySelectorAll('.dropdown-content').forEach(content => {
+          if (content !== this.nextElementSibling) {
+            content.style.display = 'none';
+          }
+        });
+
+        // Toggle current dropdown
+        const content = this.nextElementSibling;
+        if (content) {
+          content.style.display = content.style.display === 'block' ? 'none' : 'block';
+        }
+      });
+    });
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.dropdown')) {
+        document.querySelectorAll('.dropdown-content').forEach(content => {
+          content.style.display = 'none';
+        });
+      }
+    });
+
+    // Handle active state
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.nav-items a').forEach(link => {
+      const linkPath = link.getAttribute('href');
+      if (currentPath.includes(linkPath) && linkPath !== '#') {
+        link.classList.add('active');
+        // If link is in dropdown, show parent dropdown
+        const dropdown = link.closest('.dropdown-content');
+        if (dropdown) {
+          dropdown.style.display = 'block';
+        }
+      }
+    });
+  })
+  .catch(error => {
+    console.error('Error loading sidebar:', error);
+    // Keep the default sidebar that's already in the HTML
+  });
+
+const modalOverlay = document.getElementById('modalOverlay');
+const modalMessage = document.getElementById('modalMessage');
+const closeModal = document.getElementById('closeModal');
+
+function showModal(message) {
+  modalMessage.textContent = message;
+  modalOverlay.style.display = 'flex';
+}
+closeModal.addEventListener('click', () => {
+  modalOverlay.style.display = 'none';
+});
+
+const form = document.getElementById('classScheduleForm');
+const tableBody = document.querySelector('#classScheduleTable tbody');
+const classNameSelect = document.getElementById('className');
+const subjectSelect = document.getElementById('subject');
+const classTypeSelect = document.getElementById('classType');
+const roomSelect = document.getElementById('room');
+const yearSectionSelect = document.getElementById('yearSection');
+const saveBtn = document.getElementById('saveBtn');
+
+// Function to toggle form elements
+function toggleForm(disabled) {
+  const elementsToToggle = [
+    subjectSelect, classTypeSelect, roomSelect, 
+    saveBtn, ...document.querySelectorAll('.schedule-day'),
+    ...document.querySelectorAll('.start-time'),
+    ...document.querySelectorAll('.end-time'),
+    ...document.querySelectorAll('.remove-schedule'),
+    document.querySelector('.add-schedule')
+  ];
+  
+  elementsToToggle.forEach(el => el.disabled = disabled);
+}
+
+// Initially disable all form elements except yearSection
+toggleForm(true);
+
+// Enable className dropdown when yearSection is selected
+yearSectionSelect.addEventListener('change', () => {
+  const selectedYearSection = yearSectionSelect.value;
+  if (selectedYearSection) {
+    classNameSelect.disabled = false;
+  } else {
+    classNameSelect.disabled = true;
+    toggleForm(true);
+  }
+});
+
+// Enable other form elements when className is selected
+classNameSelect.addEventListener('change', () => {
+  const selectedClass = classNameSelect.value;
+  if (selectedClass) {
+    toggleForm(false);
+  } else {
+    toggleForm(true);
+  }
+});
+
+classTypeSelect.addEventListener('change', () => {
+  const classType = classTypeSelect.value;
+  roomSelect.innerHTML = '<option value="" disabled selected>-- Select Room --</option>';
+  let rooms = classType === "Lecture" ? ["LR1","LR2","LR3","LR4","LR5"] : classType === "Laboratory" ? ["LAB1","LAB2"] : [];
+  rooms.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r; opt.textContent = r;
+    roomSelect.appendChild(opt);
+  });
+});
+
+// Schedule container functionality
+const scheduleItems = document.querySelector('.schedule-items');
+const addScheduleBtn = document.querySelector('.add-schedule');
+
+// Add schedule item
+addScheduleBtn.addEventListener('click', () => {
+  const newSchedule = document.createElement('div');
+  newSchedule.classList.add('schedule-item');
+  newSchedule.innerHTML = `
+    <select class="schedule-day" required>
+      <option value="" disabled selected>Day</option>
+      <option>Monday</option>
+      <option>Tuesday</option>
+      <option>Wednesday</option>
+      <option>Thursday</option>
+      <option>Friday</option>
+      <option>Saturday</option>
+    </select>
+    <select class="start-time" required>
+      <option value="" disabled selected>Start</option>
+      <option>7:00 AM</option>
+      <option>7:30 AM</option>
+      <option>8:00 AM</option>
+      <option>8:30 AM</option>
+      <option>极速飞艇</option>
+      <option>9:30 AM</option>
+      <option>10:00 AM</option>
+      <option>10:30 AM</option>
+      <option>11:00 AM</option>
+      <option>11:30 AM</option>
+      <option>12:00 PM</option>
+      <option>12:30 PM</option>
+      <option>1:00 PM</option>
+      <option>1:30 PM</option>
+      <option>2:00 PM</option>
+      <option>2:30 PM</option>
+      <option>3:00 PM</option>
+      <option>3:30 PM</option>
+      <option>4:00 PM</option>
+      <option>4:30 PM</option>
+      <option>5:00 PM</option>
+      <option>5:30 PM</option>
+      <option>6:00 PM</option>
+      <option>6:30 PM</option>
+      <option>7:00 PM</option>
+    </select>
+    <select class="end-time" required>
+      <option value="" disabled selected>End</option>
+      <option>8:00 AM</option>
+      <option>8:30 AM</option>
+      <option>9:00 AM</option>
+      <option>9:30 AM</option>
+      <option>10:00 AM</option>
+      <option>10:30 AM</option>
+      <option>11:00 AM</option>
+      <option>11:30 AM</option>
+      <option>12:00 PM</option>
+      <option>12:30 PM</option>
+      <option>1:00 PM</option>
+      <option>1:30 PM</option>
+      <option>2:00 PM</option>
+      <option>2:30 PM</option>
+      <option>3:00 PM</option>
+      <option>3:30 PM</option>
+      <option>4:00 PM</option>
+      <option>4:30 PM</option>
+      <option>5:00 PM</option>
+      <option>5:30 PM</option>
+      <option>6:00 PM</option>
+      <option>6:30 PM</option>
+      <option>7:00 PM</option>
+    </select>
+    <button type="button" class="btn-icon remove-schedule"><i class="fas fa-times"></i></button>
+  `;
+  
+  // Add remove functionality to the new button
+  newSchedule.querySelector('.remove-schedule').addEventListener('click', function() {
+    this.parentElement.remove();
+  });
+  
+  scheduleItems.appendChild(newSchedule);
+});
+
+// Add remove functionality to initial remove button
+document.querySelector('.remove-schedule').addEventListener('click', function() {
+  // Don't remove if it's the only schedule item
+  if (document.querySelectorAll('.schedule-item').length > 1) {
+    this.parentElement.remove();
+  } else {
+    showModal("At least one schedule is required.");
+  }
+});
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  
+  // Validate schedule items
+  const scheduleItems = document.querySelectorAll('.schedule-item');
+  let isValid = true;
+  let scheduleData = [];
+  
+  scheduleItems.forEach(item => {
+    const day = item.querySelector('.schedule-day').value;
+    const start = item.querySelector('.start-time').value;
+    const end = item.querySelector('.end-time').value;
+    
+    if (!day || !start || !end) {
+      isValid = false;
+      showModal("Please complete all schedule fields.");
+      return;
+    }
+    
+    scheduleData.push(`${day} (${start} - ${end})`);
+  });
+  
+  if (!isValid) return;
+  
+  // Add to table
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td>${yearSectionSelect.value}</td>
+    <td>${classNameSelect.value}</td>
+    <td>${subjectSelect.value}</td>
+    <td>${scheduleData.join('<br>')}</td>
+    <td class="action-btns"><button class="delete"><i class="fas fa-trash-alt"></i></button></td>`;
+  
+  row.querySelector('.delete').addEventListener('click', () => {
+    row.remove();
+  });
+  
+  tableBody.appendChild(row);
+
+  // Reset form
+  form.reset();
+  toggleForm(true);
+  classNameSelect.disabled = true;
+  
+  // Keep only one schedule item
+  const scheduleContainer = document.querySelector('.schedule-items');
+  scheduleContainer.innerHTML = `
+    <div class="schedule-item">
+      <select class="schedule-day" required disabled>
+        <option value="" disabled selected>Day</option>
+        <option>Monday</option>
+        <option>Tuesday</option>
+        <option>Wednesday</option>
+        <option>Thursday</option>
+        <option>Friday</option>
+        <option>Saturday</option>
+      </select>
+      <select class="start-time" required disabled>
+        <option value="" disabled selected>Start</option>
+        <option>7:00 AM</option>
+        <option>7:30 AM</option>
+        <option>8:00 AM</option>
+        <option>8:30 AM</option>
+        <option>9:00 AM</option>
+        <option>9:30 AM</option>
+        <option>10:00 AM</option>
+        <option>10:30 AM</option>
+        <option>11:00 AM</option>
+        <option>11:30 AM</option>
+        <option>12:00 PM</option>
+        <option>12:30 PM</option>
+        <option>1:00 PM</option>
+        <option>1:30 PM</option>
+        <option>2:00 PM</option>
+        <option>2:30 PM</option>
+        <option>3:00 PM</option>
+        <option>3:30 PM</option>
+        <option>4:00 PM</option>
+        <option>4:30 PM</option>
+        <option>5:00 PM</option>
+        <option>5:30 PM</option>
+        <option>6:00 PM</option>
+        <option>6:30 PM</option>
+        <option>7:00 PM</option>
+      </select>
+      <select class="end-time" required disabled>
+        <option value="" disabled selected>End</option>
+        <option>8:00 AM</option>
+        <option>8:30 AM</option>
+        <option>9:00 AM</option>
+        <option>9:30 AM</option>
+        <option>10:00 AM</option>
+        <option>10:30 AM</option>
+        <option>11:00 AM</option>
+        <option>11:30 AM</option>
+        <option>12:00 PM</option>
+        <option>12:30 PM</option>
+        <option>1:00 PM</option>
+        <极速飞艇option>1:30 PM</option>
+        <option>2:00 PM</option>
+        <option>2:30 PM</option>
+        <option>3:00 PM</option>
+        <option>3:30 PM</option>
+        <option>4:00 PM</option>
+        <option>4:30 PM</option>
+        <option>5:00 PM</option>
+        <option>5:30 PM</option>
+        <option>6:00 PM</option>
+        <option>6:30 PM</option>
+        <option>7:00 PM</option>
+      </select>
+      <button type="button" class="btn-icon remove-schedule" disabled><i class="fas fa-times"></i></button>
+    </div>
+  `;
+  
+  // Add event listener to the new remove button
+  document.querySelector('.remove-schedule').addEventListener('click', function() {
+    if (document.querySelectorAll('.schedule-item').length > 1) {
+      this.parentElement.remove();
+    } else {
+      showModal("At least one schedule is required.");
+    }
+  });
+});
+
+// Handle dropdown and active states
+document.querySelectorAll(".dropdown-btn").forEach(btn => {
+  btn.addEventListener("click", function(e) {
+    e.preventDefault();
+    const content = this.nextElementSibling;
+    content.style.display = (content.style.display === 'block') ? 'none' : 'block';
+  });
+});
+
+// Set active state for current page
+document.querySelectorAll('.nav-items a').forEach(link => {
+  if (link.textContent.includes('Class Schedules')) {
+    link.classList.add('active');
+    const dropdown = link.closest('.dropdown-content');
+    if (dropdown) {
+      dropdown.style.display = 'block';
+    }
+  }
+});
+</script>
+
+</body> 
+</html>
