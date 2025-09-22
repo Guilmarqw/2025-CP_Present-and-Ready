@@ -20,7 +20,7 @@
       background: white;
     }
 
-    .login-container {
+    .container {
       background: white;
       padding: 2rem;
       border-radius: 1rem;
@@ -77,30 +77,63 @@
       background: #a83232;
     }
 
+    .forgot-btn, .back-btn {
+      background: none;
+      border: none;
+      color: #800000;
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+      cursor: pointer;
+      width: 100%;
+      text-align: center;
+      text-decoration: underline;
+    }
+
+    .forgot-btn:hover, .back-btn:hover {
+      color: #a83232;
+    }
+
     .error {
       color: red;
       font-size: 0.85rem;
       margin-bottom: 0.5rem;
     }
+
+    .hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
-  <div class="login-container">
-    <h2>WMSU Login</h2>
+  <div class="container">
+    <div id="loginForm">
+      <h2>WMSU Login</h2>
+      <div class="input-group">
+        <label for="email">WMSU Email</label>
+        <input type="email" id="email" placeholder="yourname@wmsu.edu.ph">
+      </div>
+      <p id="emailError" class="error" style="display: none;">Please enter a valid WMSU email.</p>
 
-    <div class="input-group">
-      <label for="email">WMSU Email</label>
-      <input type="email" id="email" placeholder="yourname@wmsu.edu.ph">
+      <div class="input-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter your password">
+      </div>
+      <p id="passwordError" class="error" style="display: none;">Password cannot be empty.</p>
+
+      <button class="btn" onclick="login()">Login</button>
+      <button class="forgot-btn" onclick="showResetForm()">Forgot Password?</button>
     </div>
-    <p id="emailError" class="error" style="display: none;">Please enter a valid WMSU email.</p>
 
-    <div class="input-group">
-      <label for="password">Password</label>
-      <input type="password" id="password" placeholder="Enter your password">
+    <div id="resetForm" class="hidden">
+      <h2>Reset Password</h2>
+      <div class="input-group">
+        <label for="resetEmail">WMSU Email</label>
+        <input type="email" id="resetEmail" placeholder="yourname@wmsu.edu.ph">
+      </div>
+      <p id="resetEmailError" class="error" style="display: none;">Please enter a valid WMSU email.</p>
+      <button class="btn" onclick="submitResetPassword()">Send Reset Link</button>
+      <button class="back-btn" onclick="showLoginForm()">Back to Login</button>
     </div>
-    <p id="passwordError" class="error" style="display: none;">Password cannot be empty.</p>
-
-    <button class="btn" onclick="login()">Login</button>
   </div>
 
   <script>
@@ -133,6 +166,33 @@
       if (valid) {
         // Simulate redirect to dashboard after validation
         window.location.href = "../Admin/dashboard/dashboard.html";
+      }
+    }
+
+    function showResetForm() {
+      document.getElementById('loginForm').classList.add('hidden');
+      document.getElementById('resetForm').classList.remove('hidden');
+    }
+
+    function showLoginForm() {
+      document.getElementById('resetForm').classList.add('hidden');
+      document.getElementById('loginForm').classList.remove('hidden');
+      document.getElementById('resetEmail').value = '';
+      document.getElementById('resetEmailError').style.display = 'none';
+    }
+
+    function submitResetPassword() {
+      const resetEmailInput = document.getElementById('resetEmail');
+      const resetEmailError = document.getElementById('resetEmailError');
+      const email = resetEmailInput.value.trim();
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@wmsu\.edu\.ph$/;
+
+      if (!emailRegex.test(email)) {
+        resetEmailError.style.display = 'block';
+      } else {
+        resetEmailError.style.display = 'none';
+        alert(`A password reset link has been sent to ${email}. Please check your email.`);
+        showLoginForm();
       }
     }
   </script>
