@@ -236,6 +236,14 @@
       margin-bottom: 18px;
     }
 
+    .horizontal-form-group .form-actions {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+      padding: 10px 0 0 0;
+      border-top: 1px solid #e9ecef;
+      margin-top: 10px;
+    }
+
     .form-row-1 {
       grid-column: 1 / -1;
       display: grid;
@@ -372,42 +380,64 @@
       margin: 0;
     }
 
-    .schedule-info {
-      background: #e8f5e8;
-      padding: 12px;
+    /* Pending Schedules Section */
+    .pending-schedules {
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
       border-radius: 6px;
-      margin: 12px;
-      border-left: none !important;
+      padding: 15px;
+      margin: 15px 0;
     }
 
-    .schedule-info h5 {
-      color: #155724;
-      font-size: 0.95rem;
-      margin-bottom: 8px;
+    .pending-schedules h5 {
+      color: #856404;
+      margin-bottom: 10px;
       display: flex;
       align-items: center;
       gap: 6px;
+      font-size: 0.95rem;
     }
 
-    .schedule-details {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 8px;
-      font-size: 0.85rem;
+    .pending-list {
+      list-style: none;
+      max-height: 200px;
+      overflow-y: auto;
     }
 
-    .schedule-detail {
+    .pending-item {
       background: white;
-      padding: 6px 10px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
       border-radius: 4px;
-      border: 1px solid #dee2e6;
+      border-left: 3px solid #ffc107;
+      font-size: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
-    .schedule-detail strong {
-      color: #495057;
-      display: block;
-      font-size: 0.8rem;
-      margin-bottom: 2px;
+    .pending-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .pending-item .schedule-info {
+      flex: 1;
+    }
+
+    .pending-item .delete-pending {
+      background: #e74c3c;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .pending-item .delete-pending:hover {
+      background: #c0392b;
+      transform: scale(1.05);
     }
 
     /* Form Actions - Reduced */
@@ -464,6 +494,30 @@
       background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
       transform: translateY(-1px);
       box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+    }
+
+    .btn-warning {
+      background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+      color: #212529;
+      box-shadow: 0 2px 4px rgba(255, 193, 7, 0.2);
+    }
+
+    .btn-warning:hover:not(:disabled) {
+      background: linear-gradient(135deg, #e0a800 0%, #d39e00 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(255, 193, 7, 0.3);
+    }
+
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+      box-shadow: 0 2px 4px rgba(108, 117, 125, 0.2);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #5a6268;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(108, 117, 125, 0.3);
     }
 
     /* Table Styling - Enhanced for merged rows */
@@ -742,6 +796,10 @@
         grid-template-columns: 1fr;
         gap: 12px;
       }
+      
+      .horizontal-form-group .form-actions {
+        justify-content: center;
+      }
     }
 
     @media (max-width: 768px) {
@@ -773,23 +831,10 @@
         padding: 16px;
       }
       
-      .schedule-details {
-        grid-template-columns: 1fr;
-      }
-      
-      .schedule-item {
-        padding: 6px 0;
-        margin-bottom: 4px;
-      }
-      
-      .schedule-type {
-        display: block;
-        margin: 2px 0;
-      }
-      
-      .class-types-list, .rooms-list {
+      .pending-item {
         flex-direction: column;
-        align-items: center;
+        align-items: flex-start;
+        gap: 8px;
       }
     }
 
@@ -991,48 +1036,33 @@
               </select>
             </div>
           </div>
+
+          <!-- Add Schedule Button Row -->
+          <div class="form-actions">
+            <button type="button" class="btn btn-warning" id="addScheduleBtn" disabled>
+              <i class="fas fa-plus"></i> Add Schedule
+            </button>
+          </div>
         </div>
 
-        <!-- Schedule Summary Section -->
+        <!-- Pending Schedules Section -->
         <div class="form-section">
-          <div class="form-grid">
-            <div class="schedule-section">
-              <div class="schedule-header">
-                <h4><i class="fas fa-calendar-check"></i> Schedule Summary</h4>
-              </div>
-              
-              <div class="schedule-info">
-                <h5><i class="fas fa-info-circle"></i> Schedule Information</h5>
-                <div class="schedule-details" id="scheduleSummary">
-                  <div class="schedule-detail">
-                    <strong>Selected Schedule:</strong>
-                    <div id="selectedSchedule">No schedule selected</div>
-                  </div>
-                  <div class="schedule-detail">
-                    <strong>Duration:</strong>
-                    <div id="scheduleDuration">Not calculated</div>
-                  </div>
-                  <div class="schedule-detail">
-                    <strong>Class Type:</strong>
-                    <div id="summaryClassType">Not selected</div>
-                  </div>
-                  <div class="schedule-detail">
-                    <strong>Room:</strong>
-                    <div id="summaryRoom">Not selected</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div class="pending-schedules" id="pendingSchedules" style="display: none;">
+            <h5><i class="fas fa-clock"></i> Pending Schedules (<span id="pendingCount">0</span>)</h5>
+            <ul class="pending-list" id="pendingList"></ul>
           </div>
         </div>
 
         <!-- Compact Form Actions -->
         <div class="form-actions">
           <button type="reset" class="btn" style="background: #6c757d; color: white;" id="resetBtn">
-            <i class="fas fa-undo"></i> Reset
+            <i class="fas fa-undo"></i> Reset All
           </button>
-          <button type="submit" class="btn btn-primary" id="saveBtn" disabled>
-            <i class="fas fa-save"></i> Save Schedule
+          <button type="button" class="btn btn-secondary" id="clearPendingBtn" style="display: none;">
+            <i class="fas fa-trash"></i> Clear Pending
+          </button>
+          <button type="submit" class="btn btn-primary" id="saveAllBtn" disabled>
+            <i class="fas fa-save"></i> Save All Schedules (<span id="totalPendingCount">0</span>)
           </button>
         </div>
       </form>
@@ -1165,6 +1195,8 @@
 
     // Global storage for all schedules - grouped by subject code and year section
     let scheduleGroups = {};
+    // Temporary storage for pending schedules
+    let pendingSchedules = [];
 
     // DOM Elements
     const form = document.getElementById('classScheduleForm');
@@ -1176,12 +1208,14 @@
     const startTimeSelect = document.getElementById('startTime');
     const endTimeSelect = document.getElementById('endTime');
     const roomSelect = document.getElementById('room');
-    const saveBtn = document.getElementById('saveBtn');
+    const addScheduleBtn = document.getElementById('addScheduleBtn');
+    const saveAllBtn = document.getElementById('saveAllBtn');
     const resetBtn = document.getElementById('resetBtn');
-    const selectedScheduleDiv = document.getElementById('selectedSchedule');
-    const scheduleDurationDiv = document.getElementById('scheduleDuration');
-    const summaryClassTypeDiv = document.getElementById('summaryClassType');
-    const summaryRoomDiv = document.getElementById('summaryRoom');
+    const clearPendingBtn = document.getElementById('clearPendingBtn');
+    const pendingSchedulesDiv = document.getElementById('pendingSchedules');
+    const pendingList = document.getElementById('pendingList');
+    const pendingCount = document.getElementById('pendingCount');
+    const totalPendingCount = document.getElementById('totalPendingCount');
 
     // Function to populate rooms based on class type
     function populateRooms(classType) {
@@ -1233,38 +1267,16 @@
       }
     }
 
-    // Function to update schedule summary
-    function updateScheduleSummary() {
-      if (yearSectionSelect.value && subjectCodeSelect.value && classTypeSelect.value && 
-          scheduleDaySelect.value && startTimeSelect.value && endTimeSelect.value && roomSelect.value) {
-        
-        const subjectName = SUBJECT_DATABASE[subjectCodeSelect.value] || 'Unknown Subject';
-        const scheduleText = `${scheduleDaySelect.value}, ${startTimeSelect.value} - ${endTimeSelect.value}`;
-        const durationMinutes = timeToMinutes(endTimeSelect.value) - timeToMinutes(startTimeSelect.value);
-        const durationHours = (durationMinutes / 60).toFixed(1);
-        
-        if (selectedScheduleDiv) selectedScheduleDiv.textContent = scheduleText;
-        if (scheduleDurationDiv) scheduleDurationDiv.textContent = `${durationHours} hours`;
-        if (summaryClassTypeDiv) summaryClassTypeDiv.textContent = classTypeSelect.value;
-        if (summaryRoomDiv) summaryRoomDiv.textContent = roomSelect.value;
-        
-        // Enable save button
-        if (saveBtn) saveBtn.disabled = false;
-        if (saveBtn.classList.contains('btn-primary')) {
-          saveBtn.classList.remove('btn-primary');
-          saveBtn.classList.add('btn-success');
-        }
-      } else {
-        if (selectedScheduleDiv) selectedScheduleDiv.textContent = 'No schedule selected';
-        if (scheduleDurationDiv) scheduleDurationDiv.textContent = 'Not calculated';
-        if (summaryClassTypeDiv) summaryClassTypeDiv.textContent = 'Not selected';
-        if (summaryRoomDiv) summaryRoomDiv.textContent = 'Not selected';
-        
-        if (saveBtn) {
-          saveBtn.disabled = true;
-          saveBtn.classList.remove('btn-success');
-          saveBtn.classList.add('btn-primary');
-        }
+    // Function to check if form is complete
+    function isFormComplete() {
+      return yearSectionSelect.value && subjectCodeSelect.value && classTypeSelect.value && 
+             scheduleDaySelect.value && startTimeSelect.value && endTimeSelect.value && roomSelect.value;
+    }
+
+    // Function to update Add Schedule button state
+    function updateAddScheduleButton() {
+      if (addScheduleBtn) {
+        addScheduleBtn.disabled = !isFormComplete();
       }
     }
 
@@ -1298,17 +1310,192 @@
       return true;
     }
 
-    // Function to check for duplicate schedule in the same group
-    function isDuplicateSchedule(groupKey, newSchedule) {
-      if (!scheduleGroups[groupKey]) return false;
+    // Function to check for duplicate schedule in pending or existing schedules
+    function isDuplicateSchedule(newSchedule, checkExisting = false) {
+      // Check pending schedules
+      if (pendingSchedules.some(pending => 
+        pending.day === newSchedule.day &&
+        pending.startTime === newSchedule.startTime &&
+        pending.endTime === newSchedule.endTime &&
+        pending.room === newSchedule.room &&
+        pending.classType === newSchedule.classType &&
+        pending.subjectCode === newSchedule.subjectCode &&
+        pending.yearSection === newSchedule.yearSection
+      )) {
+        return true;
+      }
+
+      // Check existing schedules if requested
+      if (checkExisting) {
+        const groupKey = `${newSchedule.subjectCode}-${newSchedule.yearSection}`;
+        if (scheduleGroups[groupKey] && scheduleGroups[groupKey].schedules.some(existing => 
+          existing.day === newSchedule.day &&
+          existing.startTime === newSchedule.startTime &&
+          existing.endTime === newSchedule.endTime &&
+          existing.room === newSchedule.room &&
+          existing.classType === newSchedule.classType
+        )) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    // Function to add schedule to pending list
+    function addToPending() {
+      if (!validateSchedule(startTimeSelect, endTimeSelect, scheduleDaySelect.value)) {
+        return;
+      }
+
+      const subjectName = SUBJECT_DATABASE[subjectCodeSelect.value] || 'Unknown Subject';
+      const newScheduleEntry = {
+        yearSection: yearSectionSelect.value,
+        subjectCode: subjectCodeSelect.value,
+        subjectName: subjectName,
+        classType: classTypeSelect.value,
+        day: scheduleDaySelect.value,
+        startTime: startTimeSelect.value,
+        endTime: endTimeSelect.value,
+        room: roomSelect.value,
+        id: Date.now() // Unique ID for pending items
+      };
+
+      // Check for duplicates
+      if (isDuplicateSchedule(newScheduleEntry, true)) {
+        showModal("This exact schedule already exists for the selected subject.", "Duplicate Schedule");
+        return;
+      }
+
+      // Add to pending schedules
+      pendingSchedules.push(newScheduleEntry);
       
-      return scheduleGroups[groupKey].schedules.some(existing => 
-        existing.day === newSchedule.day &&
-        existing.startTime === newSchedule.startTime &&
-        existing.endTime === newSchedule.endTime &&
-        existing.room === newSchedule.room &&
-        existing.classType === newSchedule.classType
-      );
+      // Update pending list display
+      updatePendingDisplay();
+      
+      // Show success message
+      showModal(`Added ${classTypeSelect.value} session for ${subjectName} to pending list.`, "Schedule Added");
+      
+      // DO NOT reset form - keep current values for easy editing/addition of similar schedules
+      // Focus back to room field for quick next entry
+      setTimeout(() => {
+        roomSelect.focus();
+      }, 500);
+    }
+
+    // Function to update pending schedules display
+    function updatePendingDisplay() {
+      pendingList.innerHTML = '';
+      pendingCount.textContent = pendingSchedules.length;
+      totalPendingCount.textContent = pendingSchedules.length;
+      
+      if (pendingSchedules.length > 0) {
+        pendingSchedulesDiv.style.display = 'block';
+        clearPendingBtn.style.display = 'inline-flex';
+        saveAllBtn.disabled = false;
+        
+        pendingSchedules.forEach((schedule, index) => {
+          const li = document.createElement('li');
+          li.className = 'pending-item';
+          li.innerHTML = `
+            <div class="schedule-info">
+              <strong>${schedule.subjectName}</strong> - ${schedule.classType}<br>
+              <small>${schedule.yearSection} | ${schedule.day}, ${schedule.startTime} - ${schedule.endTime} (${schedule.room})</small>
+            </div>
+            <button class="delete-pending" onclick="removePending(${schedule.id})" title="Remove from pending">
+              <i class="fas fa-times"></i>
+            </button>
+          `;
+          pendingList.appendChild(li);
+        });
+      } else {
+        pendingSchedulesDiv.style.display = 'none';
+        clearPendingBtn.style.display = 'none';
+        saveAllBtn.disabled = true;
+      }
+    }
+
+    // Function to remove pending schedule
+    window.removePending = function(id) {
+      const index = pendingSchedules.findIndex(s => s.id === id);
+      if (index > -1) {
+        const removedSchedule = pendingSchedules[index];
+        pendingSchedules.splice(index, 1);
+        updatePendingDisplay();
+        showModal(`Removed ${removedSchedule.classType} session for ${removedSchedule.subjectName} from pending list.`, "Schedule Removed");
+      }
+    }
+
+    // Function to save all pending schedules
+    function saveAllPending() {
+      if (pendingSchedules.length === 0) {
+        showModal("No pending schedules to save.", "No Schedules");
+        return;
+      }
+
+      // Group pending schedules by subject and year section
+      const pendingGroups = {};
+      pendingSchedules.forEach(schedule => {
+        const groupKey = `${schedule.subjectCode}-${schedule.yearSection}`;
+        if (!pendingGroups[groupKey]) {
+          pendingGroups[groupKey] = {
+            yearSection: schedule.yearSection,
+            subjectCode: schedule.subjectCode,
+            subjectName: schedule.subjectName,
+            classType: schedule.classType,
+            schedules: []
+          };
+        }
+        pendingGroups[groupKey].schedules.push({
+          classType: schedule.classType,
+          day: schedule.day,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          room: schedule.room
+        });
+      });
+
+      // Merge with existing groups
+      Object.entries(pendingGroups).forEach(([groupKey, group]) => {
+        if (!scheduleGroups[groupKey]) {
+          scheduleGroups[groupKey] = group;
+        } else {
+          // Merge schedules, avoiding duplicates
+          group.schedules.forEach(newSchedule => {
+            if (!scheduleGroups[groupKey].schedules.some(existing => 
+              existing.day === newSchedule.day &&
+              existing.startTime === newSchedule.startTime &&
+              existing.endTime === newSchedule.endTime &&
+              existing.room === newSchedule.room &&
+              existing.classType === newSchedule.classType
+            )) {
+              scheduleGroups[groupKey].schedules.push(newSchedule);
+            }
+          });
+        }
+      });
+
+      // Clear pending schedules
+      const totalSaved = pendingSchedules.length;
+      pendingSchedules = [];
+      
+      // NOW reset the form after successful save
+      form.reset();
+      roomSelect.innerHTML = '<option value="" disabled selected>-- Select Class Type First --</option>';
+      roomSelect.disabled = true;
+      roomSelect.classList.add('auto-populated');
+      
+      updatePendingDisplay();
+      
+      // Re-render the table
+      renderSchedules();
+      
+      showModal(`${totalSaved} schedule(s) saved successfully!`, "All Schedules Saved");
+      
+      // Focus back to year section for next entry
+      setTimeout(() => {
+        yearSectionSelect.focus();
+      }, 500);
     }
 
     // Function to render all schedules in table
@@ -1395,29 +1582,27 @@
 
     // Event Listeners
     if (yearSectionSelect) {
-      yearSectionSelect.addEventListener('change', updateScheduleSummary);
+      yearSectionSelect.addEventListener('change', updateAddScheduleButton);
     }
 
     if (subjectCodeSelect) {
-      subjectCodeSelect.addEventListener('change', updateScheduleSummary);
+      subjectCodeSelect.addEventListener('change', updateAddScheduleButton);
     }
 
     if (classTypeSelect) {
       classTypeSelect.addEventListener('change', (e) => {
         const selectedClassType = e.target.value;
         populateRooms(selectedClassType);
-        updateScheduleSummary();
+        updateAddScheduleButton();
       });
     }
 
     if (scheduleDaySelect) {
-      scheduleDaySelect.addEventListener('change', updateScheduleSummary);
+      scheduleDaySelect.addEventListener('change', updateAddScheduleButton);
     }
 
     if (startTimeSelect) {
-      startTimeSelect.addEventListener('change', () => {
-        updateScheduleSummary();
-      });
+      startTimeSelect.addEventListener('change', updateAddScheduleButton);
     }
 
     if (endTimeSelect) {
@@ -1425,93 +1610,63 @@
         if (startTimeSelect.value && endTimeSelect.value) {
           validateSchedule(startTimeSelect, endTimeSelect, scheduleDaySelect.value);
         }
-        updateScheduleSummary();
+        updateAddScheduleButton();
       });
     }
 
     if (roomSelect) {
-      roomSelect.addEventListener('change', updateScheduleSummary);
+      roomSelect.addEventListener('change', updateAddScheduleButton);
+    }
+
+    // Add Schedule button functionality
+    if (addScheduleBtn) {
+      addScheduleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        addToPending();
+      });
+    }
+
+    // Save All button functionality
+    if (saveAllBtn) {
+      saveAllBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        saveAllPending();
+      });
+    }
+
+    // Clear Pending button functionality
+    if (clearPendingBtn) {
+      clearPendingBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (confirm('Are you sure you want to clear all pending schedules? This cannot be undone.')) {
+          pendingSchedules = [];
+          updatePendingDisplay();
+          showModal('All pending schedules cleared.', 'Pending Cleared');
+        }
+      });
     }
 
     // Reset button functionality
     if (resetBtn) {
       resetBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        if (confirm('Are you sure you want to reset the entire form?')) {
+        if (confirm('Are you sure you want to reset everything? This will clear the form and all pending schedules.')) {
           form.reset();
+          pendingSchedules = [];
           roomSelect.innerHTML = '<option value="" disabled selected>-- Select Class Type First --</option>';
           roomSelect.disabled = true;
           roomSelect.classList.add('auto-populated');
-          updateScheduleSummary();
+          updatePendingDisplay();
+          updateAddScheduleButton();
         }
       });
     }
 
-    // Form submission
+    // Form submission (now handles save all)
     if (form) {
       form.addEventListener('submit', (e) => {
         e.preventDefault();
-        
-        // Validate main schedule
-        if (!yearSectionSelect.value || !subjectCodeSelect.value || !classTypeSelect.value || 
-            !scheduleDaySelect.value || !startTimeSelect.value || !endTimeSelect.value || !roomSelect.value) {
-          showModal("Please complete all required fields.", "Missing Information");
-          return;
-        }
-
-        if (!validateSchedule(startTimeSelect, endTimeSelect, scheduleDaySelect.value)) {
-          return;
-        }
-
-        const subjectName = SUBJECT_DATABASE[subjectCodeSelect.value] || 'Unknown Subject';
-        const newScheduleEntry = {
-          classType: classTypeSelect.value,
-          day: scheduleDaySelect.value,
-          startTime: startTimeSelect.value,
-          endTime: endTimeSelect.value,
-          room: roomSelect.value
-        };
-
-        // Create group key
-        const groupKey = `${subjectCodeSelect.value}-${yearSectionSelect.value}`;
-        
-        // Check for duplicate schedule
-        if (isDuplicateSchedule(groupKey, newScheduleEntry)) {
-          showModal("This exact schedule already exists for the selected subject.", "Duplicate Schedule");
-          return;
-        }
-
-        // Initialize group if it doesn't exist
-        if (!scheduleGroups[groupKey]) {
-          scheduleGroups[groupKey] = {
-            yearSection: yearSectionSelect.value,
-            subjectCode: subjectCodeSelect.value,
-            subjectName: subjectName,
-            classType: classTypeSelect.value, // Default to first class type
-            schedules: []
-          };
-        }
-
-        // Add the new schedule entry to the group
-        scheduleGroups[groupKey].schedules.push(newScheduleEntry);
-        
-        const totalSessions = scheduleGroups[groupKey].schedules.length;
-        const message = totalSessions === 1 
-          ? `Class schedule for ${subjectName} has been successfully added!`
-          : `Added ${classTypeSelect.value} session for ${subjectName}. Total: ${totalSessions} sessions`;
-        
-        showModal(message, "Success");
-        
-        // Re-render the table
-        renderSchedules();
-        
-        // Update summary to reflect current selection (no form reset)
-        updateScheduleSummary();
-        
-        // Focus back to year section for next entry
-        setTimeout(() => {
-          yearSectionSelect.focus();
-        }, 500);
+        saveAllPending();
       });
     }
 
@@ -1544,14 +1699,20 @@
         }
       }
       
-      if (e.ctrlKey && e.key === 's' && saveBtn && !saveBtn.disabled) {
+      if (e.ctrlKey && e.key === 's' && saveAllBtn && !saveAllBtn.disabled) {
         e.preventDefault();
-        form.dispatchEvent(new Event('submit'));
+        saveAllPending();
+      }
+      
+      if (e.ctrlKey && e.key === 'Enter' && addScheduleBtn && !addScheduleBtn.disabled) {
+        e.preventDefault();
+        addToPending();
       }
     });
 
     // Initialize
-    updateScheduleSummary();
+    updateAddScheduleButton();
+    updatePendingDisplay();
   </script>
 </body>
 </html>
