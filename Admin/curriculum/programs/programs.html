@@ -413,6 +413,61 @@
       border-left: 4px solid #28a745;
     }
 
+    /* Checkbox Styles for Class Type */
+    .checkbox-group {
+      margin-bottom: 20px;
+    }
+
+    .checkbox-group label {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      font-weight: 500;
+      color: #2c3e50;
+      cursor: pointer;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      margin-right: 10px;
+      width: 18px;
+      height: 18px;
+      accent-color: #4a6fa9;
+    }
+
+    .checkbox-group .checkbox-label {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      margin: 5px 0;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      background: #f8f9fa;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .checkbox-group .checkbox-label:hover {
+      border-color: #4a6fa9;
+      background: #e8f0fe;
+    }
+
+    .checkbox-group .checkbox-label input[type="checkbox"] {
+      margin-right: 12px;
+    }
+
+    .checkbox-group .checkbox-label.checked {
+      border-color: #4a6fa9;
+      background: #e3f2fd;
+      color: #2c3e50;
+    }
+
+    .checkbox-group .class-type-badge {
+      margin-left: auto;
+      padding: 2px 6px;
+      font-size: 10px;
+      border-radius: 4px;
+    }
+
     @media (max-width: 992px) {
       .sidebar { width: 80px; }
       .sidebar .logo h1, 
@@ -490,7 +545,7 @@
     .subjects-table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 700px;
+      min-width: 500px;
     }
 
     .subjects-table th {
@@ -517,24 +572,6 @@
       font-family: 'Courier New', monospace;
     }
 
-    .subjects-table .subject-time {
-      font-weight: 500;
-      color: #495057;
-      background: #f8f9fa;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 13px;
-    }
-
-    .subjects-table .subject-day {
-      text-transform: capitalize;
-      color: #6c757d;
-      font-weight: 500;
-      background: #e9ecef;
-      padding: 4px 8px;
-      border-radius: 4px;
-    }
-
     .class-type-badge {
       display: inline-block;
       padding: 4px 8px;
@@ -542,6 +579,8 @@
       font-size: 12px;
       font-weight: 600;
       text-transform: uppercase;
+      margin-right: 5px;
+      margin-bottom: 2px;
     }
 
     .class-type-lecture {
@@ -594,21 +633,6 @@
       opacity: 0.5;
     }
 
-    .time-invalid {
-      border-color: #dc3545 !important;
-      background-color: #f8d7da !important;
-    }
-
-    .time-warning {
-      font-size: 12px;
-      color: #856404;
-      background-color: #fff3cd;
-      border: 1px solid #ffeaa7;
-      padding: 8px;
-      border-radius: 4px;
-      margin-top: 5px;
-    }
-
     .selection-prompt {
       background: #e3f2fd;
       border: 1px solid #bbdefb;
@@ -634,6 +658,20 @@
     .selection-prompt p {
       color: #666;
       margin: 0;
+    }
+
+    .duplicate-warning {
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 15px;
+      color: #856404;
+      font-size: 14px;
+    }
+
+    .duplicate-warning i {
+      margin-right: 8px;
     }
 
     @media (max-width: 768px) {
@@ -663,6 +701,9 @@
         flex-direction: column;
         gap: 15px;
         text-align: center;
+      }
+      .checkbox-group .checkbox-label {
+        justify-content: space-between;
       }
     }
 
@@ -696,42 +737,6 @@
       border-radius: 5px;
       background-color: #f9f9f9;
       font-size: 14px;
-    }
-
-    .start-time, .end-time {
-      padding: 12px 15px;
-      font-size: 14px;
-      min-height: 45px;
-    }
-
-    .start-time:focus, .end-time:focus {
-      outline: none;
-      border-color: #4a6fa9;
-      box-shadow: 0 0 0 2px rgba(74, 111, 169, 0.2);
-    }
-
-    .conflict-details {
-      background: #fff3cd;
-      border: 1px solid #ffeaa7;
-      border-radius: 6px;
-      padding: 15px;
-      margin-bottom: 15px;
-    }
-
-    .conflict-details h4 {
-      color: #856404;
-      margin-bottom: 10px;
-      margin-top: 0;
-    }
-
-    .conflict-details ul {
-      margin: 0;
-      padding-left: 20px;
-      color: #856404;
-    }
-
-    .conflict-details li {
-      margin-bottom: 5px;
     }
   </style>
 </head>
@@ -977,52 +982,6 @@
       hideConfirmModal();
     }
 
-    // Time options for dropdowns
-    const timeOptions = [
-      { display: '7:00 AM', value: '07:00' },
-      { display: '7:30 AM', value: '07:30' },
-      { display: '8:00 AM', value: '08:00' },
-      { display: '8:30 AM', value: '08:30' },
-      { display: '9:00 AM', value: '09:00' },
-      { display: '9:30 AM', value: '09:30' },
-      { display: '10:00 AM', value: '10:00' },
-      { display: '10:30 AM', value: '10:30' },
-      { display: '11:00 AM', value: '11:00' },
-      { display: '11:30 AM', value: '11:30' },
-      { display: '12:00 PM', value: '12:00' },
-      { display: '12:30 PM', value: '12:30' },
-      { display: '1:00 PM', value: '13:00' },
-      { display: '1:30 PM', value: '13:30' },
-      { display: '2:00 PM', value: '14:00' },
-      { display: '2:30 PM', value: '14:30' },
-      { display: '3:00 PM', value: '15:00' },
-      { display: '3:30 PM', value: '15:30' },
-      { display: '4:00 PM', value: '16:00' },
-      { display: '4:30 PM', value: '16:30' },
-      { display: '5:00 PM', value: '17:00' },
-      { display: '5:30 PM', value: '17:30' },
-      { display: '6:00 PM', value: '18:00' },
-      { display: '6:30 PM', value: '18:30' },
-      { display: '7:00 PM', value: '19:00' }
-    ];
-
-    // Function to generate time dropdown HTML
-    function generateTimeDropdown(id, className, labelText, selectedValue = '') {
-      const options = timeOptions.map(time => 
-        `<option value="${time.value}" ${time.value === selectedValue ? 'selected' : ''}>${time.display}</option>`
-      ).join('');
-      
-      return `
-        <div class="form-group">
-          <label for="${id}">${labelText}</label>
-          <select id="${id}" class="${className}" required>
-            <option value="" disabled ${!selectedValue ? 'selected' : ''}>${labelText}</option>
-            ${options}
-          </select>
-        </div>
-      `;
-    }
-
     // Subject Management HTML Content
     const subjectManagementHTML = `
       <div class="header">
@@ -1075,8 +1034,6 @@
                   <th>Subject Code</th>
                   <th>Subject Name</th>
                   <th>Class Type</th>
-                  <th>Time</th>
-                  <th>Day</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1099,6 +1056,10 @@
             <span class="close" onclick="hideAddSubjectModal()">&times;</span>
           </div>
           <form id="addSubjectForm">
+            <div id="duplicateWarning" class="duplicate-warning" style="display: none;">
+              <i class="fas fa-exclamation-triangle"></i>
+              Subject code already exists. Changes will update the existing subject.
+            </div>
             <div class="form-group">
               <label for="subject-code">Subject Code *</label>
               <input type="text" id="subject-code" placeholder="e.g., IT101" required>
@@ -1108,53 +1069,25 @@
               <input type="text" id="subject-name" placeholder="e.g., Introduction to Computing" required>
             </div>
             <div class="form-group">
-              <label for="class-type">Class Type *</label>
-              <select id="class-type" required>
-                <option value="" disabled selected>Select Class Type</option>
-                <option value="Lecture">Lecture</option>
-                <option value="Lab">Lab</option>
-              </select>
-            </div>
-            <div class="form-row">
-              ${generateTimeDropdown('start-time', 'start-time', 'Start Time')}
-              ${generateTimeDropdown('end-time', 'end-time', 'End Time')}
-            </div>
-            <div class="form-group">
-              <label for="subject-day">Day *</label>
-              <select id="subject-day" required>
-                <option value="">Select Day</option>
-                <option value="Monday">Monday</option>
-                <option value="Tuesday">Tuesday</option>
-                <option value="Wednesday">Wednesday</option>
-                <option value="Thursday">Thursday</option>
-                <option value="Friday">Friday</option>
-                <option value="Saturday">Saturday</option>
-              </select>
+              <label>Class Type * (Select one or both)</label>
+              <div class="checkbox-group">
+                <label class="checkbox-label" onclick="toggleClassType('lecture')">
+                  <input type="checkbox" id="class-type-lecture" value="Lecture">
+                  <span>Lecture</span>
+                  <span class="class-type-badge class-type-lecture">LEC</span>
+                </label>
+                <label class="checkbox-label" onclick="toggleClassType('lab')">
+                  <input type="checkbox" id="class-type-lab" value="Lab">
+                  <span>Lab</span>
+                  <span class="class-type-badge class-type-lab">LAB</span>
+                </label>
+              </div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" onclick="hideAddSubjectModal()">Cancel</button>
-              <button type="button" id="submitBtn" class="btn btn-success" disabled onclick="handleSubmit()">Add Subject</button>
+              <button type="button" id="submitBtn" class="btn btn-success" onclick="handleSubmit()">Add Subject</button>
             </div>
           </form>
-        </div>
-      </div>
-
-      <!-- Conflict Warning Modal -->
-      <div class="modal" id="conflictModal">
-        <div class="modal-content" style="width: 600px; max-width: 90%;">
-          <div class="modal-header">
-            <h3><i class="fas fa-exclamation-triangle"></i> Schedule Conflict Detected</h3>
-            <span class="close" onclick="hideConflictModal()">&times;</span>
-          </div>
-          <div class="modal-body">
-            <div class="conflict-details" id="conflictDetails">
-              <!-- Conflict details will be populated here -->
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" onclick="hideConflictModal()">Cancel</button>
-              <button type="button" class="btn btn-warning" id="proceedBtn" onclick="proceedWithConflict()">Proceed Anyway</button>
-            </div>
-          </div>
         </div>
       </div>
     `;
@@ -1163,180 +1096,32 @@
     let subjectsData = {};
     let currentProgramCode = '';
     let editingSubject = null;
-    let currentValidateTimes = null;
-    let pendingSubjectData = null;
 
-    // Function to convert time string to minutes since midnight
-    function timeToMinutes(timeStr) {
-      if (!timeStr || timeStr === '') return 0;
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      return hours * 60 + minutes;
-    }
-
-    // Function to calculate duration between two times
-    function calculateDuration(startTime, endTime) {
-      if (!startTime || !endTime) return 'Not selected';
+    // Function to toggle class type selection
+    function toggleClassType(type) {
+      const checkbox = document.getElementById(`class-type-${type}`);
+      const label = checkbox.closest('.checkbox-label');
       
-      const startMinutes = timeToMinutes(startTime);
-      const endMinutes = timeToMinutes(endTime);
-      let duration = endMinutes - startMinutes;
-      
-      if (duration <= 0) {
-        return 'Invalid';
-      }
-      
-      const hours = Math.floor(duration / 60);
-      const minutes = duration % 60;
-      return `${hours}h ${minutes}m`;
-    }
-
-    // Function to format time for display
-    function formatTimeForDisplay(timeValue) {
-      const time = timeOptions.find(t => t.value === timeValue);
-      return time ? time.display : timeValue;
-    }
-
-    // Function to validate time selection - STRICT VALIDATION
-    function validateTimeSelection(startTime, endTime) {
-      console.log('=== TIME VALIDATION START ===');
-      console.log('Validating times:', startTime, endTime);
-      
-      // Check if both times are selected
-      if (!startTime || !endTime || startTime === '' || endTime === '') {
-        console.log('❌ Validation failed: Times not selected');
-        return false;
-      }
-      
-      const startMinutes = timeToMinutes(startTime);
-      const endMinutes = timeToMinutes(endTime);
-      
-      console.log('Start time:', startTime, '(', startMinutes, 'minutes)');
-      console.log('End time:', endTime, '(', endMinutes, 'minutes)');
-      
-      // Calculate duration in minutes
-      const duration = endMinutes - startMinutes;
-      
-      console.log('Calculated duration:', duration, 'minutes');
-      
-      // Check if end time is before or same as start time
-      if (duration <= 0) {
-        console.log('❌ Validation failed: End time is not after start time');
-        return false;
-      }
-      
-      // STRICT Check duration limits: 60 to 180 minutes (1h to exactly 3h)
-      const isValidDuration = duration >= 60 && duration <= 180;
-      
-      console.log('Duration check - Min(60):', duration >= 60);
-      console.log('Duration check - Max(180):', duration <= 180);
-      console.log('Duration valid:', isValidDuration);
-      console.log('=== TIME VALIDATION END ===');
-      
-      return isValidDuration;
-    }
-
-    // Function to check for schedule conflicts
-    function checkScheduleConflicts(newSubject, key) {
-      if (!subjectsData[key]) return null;
-      
-      const conflicts = [];
-      const newStart = timeToMinutes(newSubject.startTime);
-      const newEnd = timeToMinutes(newSubject.endTime);
-      
-      subjectsData[key].forEach((existingSubject, index) => {
-        if (existingSubject.day !== newSubject.day) return;
-        
-        const existingStart = timeToMinutes(existingSubject.startTime);
-        const existingEnd = timeToMinutes(existingSubject.endTime);
-        
-        // Check for time overlap
-        const hasOverlap = (newStart < existingEnd && newEnd > existingStart);
-        
-        if (hasOverlap) {
-          conflicts.push({
-            index: index,
-            subject: existingSubject,
-            overlap: {
-              newStart: newStart,
-              newEnd: newEnd,
-              existingStart: existingStart,
-              existingEnd: existingEnd
-            }
-          });
-        }
-      });
-      
-      return conflicts.length > 0 ? conflicts : null;
-    }
-
-    // Function to show conflict modal
-    function showConflictModal(conflicts, subjectData) {
-      pendingSubjectData = subjectData;
-      const modal = document.getElementById('conflictModal');
-      const conflictDetails = document.getElementById('conflictDetails');
-      
-      if (!modal || !conflictDetails) return;
-      
-      let detailsHTML = '<h4>⚠️ The following conflicts were detected:</h4><ul>';
-      
-      conflicts.forEach(conflict => {
-        const existingSubject = conflict.subject;
-        const overlap = conflict.overlap;
-        
-        detailsHTML += `
-          <li>
-            <strong>${existingSubject.code} - ${existingSubject.name}</strong> 
-            <br><small>Current: ${formatTimeForDisplay(existingSubject.startTime)} - ${formatTimeForDisplay(existingSubject.endTime)} (${existingSubject.classType})</small>
-            <br><small>New: ${formatTimeForDisplay(subjectData.startTime)} - ${formatTimeForDisplay(subjectData.endTime)} (${subjectData.classType}) on ${subjectData.day}</small>
-          </li>
-        `;
-      });
-      
-      detailsHTML += '</ul><p><em>Do you want to proceed with adding this subject anyway?</em></p>';
-      
-      conflictDetails.innerHTML = detailsHTML;
-      modal.style.display = 'flex';
-    }
-
-    // Function to hide conflict modal
-    function hideConflictModal() {
-      const modal = document.getElementById('conflictModal');
-      if (modal) modal.style.display = 'none';
-      pendingSubjectData = null;
-    }
-
-    // Function to proceed with conflict
-    function proceedWithConflict() {
-      if (pendingSubjectData) {
-        saveSubjectWithData(pendingSubjectData);
-      }
-      hideConflictModal();
-    }
-
-    // Function to save subject with data (bypassing conflict check)
-    function saveSubjectWithData(subjectData) {
-      const yearLevel = document.getElementById('select-year')?.value;
-      const section = document.getElementById('select-section')?.value;
-      const key = `${currentProgramCode}-${yearLevel}-${section}`;
-      
-      if (!subjectsData[key]) {
-        subjectsData[key] = [];
-      }
-      
-      if (editingSubject !== null) {
-        // Update existing subject
-        subjectsData[key][editingSubject.index] = subjectData;
-        showAlertModal('Success', 'Subject updated successfully!', false);
+      if (checkbox.checked) {
+        label.classList.add('checked');
       } else {
-        subjectsData[key].push(subjectData);
-        showAlertModal('Success', 'Subject added successfully!', false);
+        label.classList.remove('checked');
       }
       
-      hideAddSubjectModal();
-      loadSubjects();
+      // Validate if at least one is selected
+      validateClassTypeSelection();
+    }
+
+    // Function to validate class type selection
+    function validateClassTypeSelection() {
+      const lectureCheckbox = document.getElementById('class-type-lecture');
+      const labCheckbox = document.getElementById('class-type-lab');
+      const submitBtn = document.getElementById('submitBtn');
       
-      console.log('✅ Subjects saved for', key, subjectsData[key]);
-      editingSubject = null;
+      if (lectureCheckbox && labCheckbox && submitBtn) {
+        const isValid = lectureCheckbox.checked || labCheckbox.checked;
+        submitBtn.disabled = !isValid;
+      }
     }
 
     function updateAddButton() {
@@ -1346,6 +1131,28 @@
       if (addBtn) {
         addBtn.disabled = !(yearLevel && section);
       }
+    }
+
+    // Function to check if subject code already exists
+    function checkSubjectExists(key, subjectCode) {
+      if (!subjectsData[key]) return null;
+      return subjectsData[key].find(subject => subject.code.toUpperCase() === subjectCode.toUpperCase());
+    }
+
+    // Function to get class types from checkboxes
+    function getSelectedClassTypes() {
+      const lectureCheckbox = document.getElementById('class-type-lecture');
+      const labCheckbox = document.getElementById('class-type-lab');
+      const classTypes = [];
+      
+      if (lectureCheckbox && lectureCheckbox.checked) {
+        classTypes.push('Lecture');
+      }
+      if (labCheckbox && labCheckbox.checked) {
+        classTypes.push('Lab');
+      }
+      
+      return classTypes;
     }
 
     function loadSubjects() {
@@ -1386,12 +1193,12 @@
           <td class="subject-code">${subject.code}</td>
           <td>${subject.name}</td>
           <td>
-            <span class="class-type-badge class-type-${subject.classType.toLowerCase()}">
-              ${subject.classType}
-            </span>
+            ${subject.classTypes.map(classType => `
+              <span class="class-type-badge class-type-${classType.toLowerCase()}">
+                ${classType}
+              </span>
+            `).join('')}
           </td>
-          <td class="subject-time">${formatTimeForDisplay(subject.startTime)} - ${formatTimeForDisplay(subject.endTime)}</td>
-          <td class="subject-day">${subject.day}</td>
           <td class="action-buttons">
             <button class="btn btn-edit" onclick="editSubject(${index}, '${key}')">
               <i class="fas fa-edit"></i> Edit
@@ -1410,8 +1217,13 @@
       const form = document.getElementById('addSubjectForm');
       const modalTitle = document.getElementById('modalTitle');
       const submitBtn = document.getElementById('submitBtn');
+      const duplicateWarning = document.getElementById('duplicateWarning');
       
       if (!modal || !form || !modalTitle || !submitBtn) return;
+      
+      // Reset form
+      form.reset();
+      duplicateWarning.style.display = 'none';
       
       if (subject) {
         // Edit mode
@@ -1420,34 +1232,65 @@
         
         document.getElementById('subject-code').value = subject.code;
         document.getElementById('subject-name').value = subject.name;
-        document.getElementById('class-type').value = subject.classType;
-        document.getElementById('start-time').value = subject.startTime;
-        document.getElementById('end-time').value = subject.endTime;
-        document.getElementById('subject-day').value = subject.day;
+        
+        // Set class type checkboxes
+        subject.classTypes.forEach(classType => {
+          if (classType === 'Lecture') {
+            document.getElementById('class-type-lecture').checked = true;
+            document.querySelector('[onclick="toggleClassType(\'lecture\')"]').classList.add('checked');
+          } else if (classType === 'Lab') {
+            document.getElementById('class-type-lab').checked = true;
+            document.querySelector('[onclick="toggleClassType(\'lab\')"]').classList.add('checked');
+          }
+        });
+        
+        // Enable submit button
+        submitBtn.disabled = false;
       } else {
         // Add mode
         modalTitle.textContent = 'Add New Subject Schedule';
         submitBtn.textContent = 'Add Subject';
-        form.reset();
+        submitBtn.disabled = true;
+        
+        // Listen for subject code changes to check duplicates
+        const subjectCodeInput = document.getElementById('subject-code');
+        subjectCodeInput.addEventListener('input', function() {
+          checkForDuplicate(this.value);
+        });
       }
-      
-      // Clear any previous validation styling
-      clearTimeValidation();
-      
-      // Reset submit button
-      submitBtn.disabled = true;
       
       modal.style.display = 'flex';
       
-      // Remove any existing event listeners
-      removeTimeValidationListeners();
+      // Add event listeners for checkboxes
+      const lectureCheckbox = document.getElementById('class-type-lecture');
+      const labCheckbox = document.getElementById('class-type-lab');
       
-      // Setup new validation
-      setupTimeValidation();
+      if (lectureCheckbox) lectureCheckbox.addEventListener('change', toggleClassType.bind(null, 'lecture'));
+      if (labCheckbox) labCheckbox.addEventListener('change', toggleClassType.bind(null, 'lab'));
       
-      // Initial validation if editing
-      if (subject) {
-        setTimeout(validateTimeSelectionOnChange, 100);
+      // Initial validation
+      validateClassTypeSelection();
+    }
+
+    function checkForDuplicate(subjectCode) {
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      const duplicateWarning = document.getElementById('duplicateWarning');
+      
+      if (!yearLevel || !section || !subjectCode.trim()) {
+        if (duplicateWarning) duplicateWarning.style.display = 'none';
+        return;
+      }
+      
+      const key = `${currentProgramCode}-${yearLevel}-${section}`;
+      const existingSubject = checkSubjectExists(key, subjectCode.trim());
+      
+      if (duplicateWarning) {
+        if (existingSubject) {
+          duplicateWarning.style.display = 'block';
+        } else {
+          duplicateWarning.style.display = 'none';
+        }
       }
     }
 
@@ -1458,129 +1301,18 @@
       if (form) form.reset();
       editingSubject = null;
       
-      // Clean up
-      removeTimeValidationListeners();
-      clearTimeValidation();
-    }
-
-    // Time validation helper functions
-    function setupTimeValidation() {
-      const startTimeSelect = document.getElementById('start-time');
-      const endTimeSelect = document.getElementById('end-time');
-      const submitBtn = document.getElementById('submitBtn');
-      
-      if (!startTimeSelect || !endTimeSelect || !submitBtn) return;
-      
-      // Create validation function
-      currentValidateTimes = function() {
-        const startTime = startTimeSelect.value;
-        const endTime = endTimeSelect.value;
-        
-        console.log('Real-time validation triggered:', startTime, endTime);
-        
-        clearTimeValidation();
-        
-        // Only validate if both times are selected
-        if (startTime && endTime) {
-          if (!validateTimeSelection(startTime, endTime)) {
-            // Show inline validation error
-            showInlineTimeError(startTime, endTime);
-            submitBtn.disabled = true;
-            console.log('❌ Real-time validation failed');
-            return false;
-          } else {
-            console.log('✅ Real-time validation passed');
-            submitBtn.disabled = false;
-            return true;
-          }
-        } else {
-          submitBtn.disabled = true;
-          console.log('⚠️ Real-time validation: Not all fields filled');
-          return false;
-        }
-      };
-      
-      // Add event listeners
-      startTimeSelect.addEventListener('change', currentValidateTimes);
-      endTimeSelect.addEventListener('change', currentValidateTimes);
-      
-      // Also validate on blur for better UX
-      startTimeSelect.addEventListener('blur', currentValidateTimes);
-      endTimeSelect.addEventListener('blur', currentValidateTimes);
-    }
-
-    function removeTimeValidationListeners() {
-      const startTimeSelect = document.getElementById('start-time');
-      const endTimeSelect = document.getElementById('end-time');
-      
-      if (currentValidateTimes) {
-        if (startTimeSelect) {
-          startTimeSelect.removeEventListener('change', currentValidateTimes);
-          startTimeSelect.removeEventListener('blur', currentValidateTimes);
-        }
-        if (endTimeSelect) {
-          endTimeSelect.removeEventListener('change', currentValidateTimes);
-          endTimeSelect.removeEventListener('blur', currentValidateTimes);
-        }
-        currentValidateTimes = null;
-      }
-    }
-
-    function clearTimeValidation() {
-      const startTimeSelect = document.getElementById('start-time');
-      const endTimeSelect = document.getElementById('end-time');
-      const warning = document.querySelector('.time-warning');
-      
-      if (startTimeSelect) startTimeSelect.classList.remove('time-invalid');
-      if (endTimeSelect) endTimeSelect.classList.remove('time-invalid');
-      if (warning) warning.remove();
-    }
-
-    function showInlineTimeError(startTime, endTime) {
-      const startTimeSelect = document.getElementById('start-time');
-      const endTimeSelect = document.getElementById('end-time');
-      const timeRow = document.querySelector('.form-row');
-      
-      // Add error styling
-      if (startTimeSelect) startTimeSelect.classList.add('time-invalid');
-      if (endTimeSelect) endTimeSelect.classList.add('time-invalid');
-      
-      // Create warning message
-      const warningDiv = document.createElement('div');
-      warningDiv.className = 'time-warning';
-      
-      const startMinutes = timeToMinutes(startTime);
-      const endMinutes = timeToMinutes(endTime);
-      const duration = endMinutes - startMinutes;
-      
-      let errorMessage = '⚠️ ';
-      if (duration < 60) {
-        errorMessage += `Duration is only ${Math.floor(duration/60)}h ${duration%60}m. Minimum duration is 1 hour.`;
-      } else if (duration > 180) {
-        errorMessage += `Duration is ${Math.floor(duration/60)}h ${duration%60}m. Maximum duration is 3 hours.`;
-      } else {
-        errorMessage += 'End time must be after start time.';
+      // Remove event listeners
+      const subjectCodeInput = document.getElementById('subject-code');
+      if (subjectCodeInput) {
+        subjectCodeInput.removeEventListener('input', checkForDuplicate);
       }
       
-      warningDiv.innerHTML = errorMessage;
-      
-      if (timeRow && timeRow.parentNode) {
-        // Remove any existing warning
-        const existingWarning = timeRow.parentNode.querySelector('.time-warning');
-        if (existingWarning) existingWarning.remove();
-        
-        // Add new warning
-        timeRow.parentNode.insertBefore(warningDiv, timeRow.nextSibling);
-      }
+      // Reset checkbox styling
+      const labels = document.querySelectorAll('.checkbox-label');
+      labels.forEach(label => label.classList.remove('checked'));
     }
 
-    function validateTimeSelectionOnChange() {
-      if (currentValidateTimes) {
-        currentValidateTimes();
-      }
-    }
-
-    // NEW: Separate handler for form submission
+    // Updated handler for form submission with duplicate checking
     function handleSubmit() {
       console.log('=== FORM SUBMISSION START ===');
       
@@ -1592,62 +1324,52 @@
         return;
       }
       
-      const key = `${currentProgramCode}-${yearLevel}-${section}`;
-      
-      const startTime = document.getElementById('start-time')?.value;
-      const endTime = document.getElementById('end-time')?.value;
-      
-      console.log('Form submission - Start:', startTime, 'End:', endTime);
-      
-      // CRITICAL: Final time validation - This MUST block submission
-      if (!validateTimeSelection(startTime, endTime)) {
-        const duration = calculateDuration(startTime, endTime);
-        showAlertModal(
-          'Invalid Time Selection', 
-          `Please select valid start and end times. Duration must be between 1 and 3 hours.\n\nSelected: ${formatTimeForDisplay(startTime)} - ${formatTimeForDisplay(endTime)} (${duration})`, 
-          true
-        );
-        console.log('❌ FINAL VALIDATION FAILED - Submission blocked');
-        return;
-      }
-      
-      console.log('✅ FINAL TIME VALIDATION PASSED');
-      
       const subjectCode = document.getElementById('subject-code')?.value?.toUpperCase().trim();
       const subjectName = document.getElementById('subject-name')?.value?.trim();
-      const classType = document.getElementById('class-type')?.value;
-      const subjectDay = document.getElementById('subject-day')?.value;
+      const classTypes = getSelectedClassTypes();
       
       // Validation
-      if (!subjectCode || !subjectName || !classType || !subjectDay) {
-        showAlertModal('Incomplete Form', 'Please fill in all required fields.', true);
+      if (!subjectCode || !subjectName || classTypes.length === 0) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields and select at least one class type.', true);
         console.log('❌ Submission failed: Form incomplete');
         return;
       }
 
+      const key = `${currentProgramCode}-${yearLevel}-${section}`;
+      const existingSubject = checkSubjectExists(key, subjectCode);
+      
       const subject = {
         code: subjectCode,
         name: subjectName,
-        classType: classType,
-        startTime: startTime,
-        endTime: endTime,
-        day: subjectDay
+        classTypes: classTypes
       };
 
       console.log('Subject data prepared:', subject);
 
-      // Check for schedule conflicts
-      const conflicts = checkScheduleConflicts(subject, key);
-      
-      if (conflicts) {
-        // Show conflict modal
-        showConflictModal(conflicts, subject);
-        console.log('⚠️ Conflicts detected, showing modal');
-      } else {
-        // No conflicts, save directly
-        console.log('✅ No conflicts, saving subject');
-        saveSubjectWithData(subject);
+      if (!subjectsData[key]) {
+        subjectsData[key] = [];
       }
+      
+      if (editingSubject !== null) {
+        // Update existing subject
+        subjectsData[key][editingSubject.index] = subject;
+        showAlertModal('Success', 'Subject updated successfully!', false);
+      } else if (existingSubject) {
+        // Update existing subject (duplicate found)
+        const existingIndex = subjectsData[key].indexOf(existingSubject);
+        subjectsData[key][existingIndex] = subject;
+        showAlertModal('Updated', `Subject "${subjectCode}" has been updated successfully!`, false);
+      } else {
+        // Add new subject
+        subjectsData[key].push(subject);
+        showAlertModal('Success', 'Subject added successfully!', false);
+      }
+      
+      hideAddSubjectModal();
+      loadSubjects();
+      
+      console.log('✅ Subjects saved for', key, subjectsData[key]);
+      editingSubject = null;
       
       console.log('=== FORM SUBMISSION END ===');
     }
@@ -1729,12 +1451,8 @@
         
         // Modal close events
         const addModalCloseBtn = document.querySelector('#addSubjectModal .close');
-        const conflictModalCloseBtn = document.querySelector('#conflictModal .close');
         if (addModalCloseBtn) {
           addModalCloseBtn.addEventListener('click', hideAddSubjectModal);
-        }
-        if (conflictModalCloseBtn) {
-          conflictModalCloseBtn.addEventListener('click', hideConflictModal);
         }
         
         // Initialize subjects data for this program if not exists
@@ -1750,16 +1468,11 @@
     // Close modals when clicking outside
     document.addEventListener('click', function(e) {
       const addModal = document.getElementById('addSubjectModal');
-      const conflictModal = document.getElementById('conflictModal');
       const alertModal = document.getElementById('alertModal');
       const confirmModal = document.getElementById('confirmModal');
       
       if (addModal && e.target === addModal) {
         hideAddSubjectModal();
-      }
-      
-      if (conflictModal && e.target === conflictModal) {
-        hideConflictModal();
       }
       
       if (alertModal && e.target === alertModal) {
@@ -1777,7 +1490,6 @@
         hideAlertModal();
         hideConfirmModal();
         hideAddSubjectModal();
-        hideConflictModal();
       }
     });
   </script>

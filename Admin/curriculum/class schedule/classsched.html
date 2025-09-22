@@ -224,11 +224,11 @@
       padding-left: 1rem;
     }
 
-    /* Horizontal Form Group Styles */
+    /* Horizontal Form Group Styles - Two rows */
     .horizontal-form-group {
-      display: flex;
-      align-items: flex-end;
-      gap: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
       background: white;
       padding: 15px;
       border-radius: 6px;
@@ -236,12 +236,27 @@
       margin-bottom: 18px;
     }
 
+    .form-row-1 {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 10px;
+    }
+
+    .form-row-2 {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
     .form-field {
-      flex: 1;
+      display: flex;
+      flex-direction: column;
     }
 
     .form-field label {
-      display: block;
       margin-bottom: 8px;
       font-weight: 600;
       color: #2c3e50;
@@ -271,23 +286,6 @@
       background: #f8f9fa;
       color: #6c757d;
       cursor: not-allowed;
-    }
-
-    /* Auto-populated fields styling */
-    .auto-populated {
-      background: #f8f9fa !important;
-      color: #6c757d !important;
-      cursor: not-allowed !important;
-      border-color: #e9ecef !important;
-    }
-
-    .auto-populated:focus {
-      box-shadow: none !important;
-      border-color: #e9ecef !important;
-    }
-
-    .auto-populated option:not([disabled]) {
-      color: #333 !important;
     }
 
     /* Form Grid Layout - Slightly Reduced */
@@ -348,7 +346,7 @@
       100% { background-position: -200% 0; }
     }
 
-    /* Schedule Section - Auto-populated */
+    /* Schedule Section */
     .schedule-section {
       grid-column: 1 / -1;
       background: white;
@@ -412,79 +410,6 @@
       margin-bottom: 2px;
     }
 
-    .schedule-items {
-      min-height: 70px;
-    }
-
-    .schedule-item {
-      display: grid;
-      grid-template-columns: 110px 90px 90px auto;
-      gap: 10px;
-      align-items: center;
-      padding: 10px;
-      margin-bottom: 10px;
-      background: #f8f9fa;
-      border-radius: 5px;
-      border: 1px solid #e9ecef;
-      transition: all 0.2s ease;
-    }
-
-    .schedule-item:last-child {
-      margin-bottom: 0;
-    }
-
-    .schedule-item:hover {
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-      border-color: #dee2e6;
-    }
-
-    .schedule-item select {
-      padding: 6px 8px;
-      border: 1px solid #ced4da;
-      border-radius: 4px;
-      font-size: 12px;
-      background: white;
-      transition: all 0.2s ease;
-      padding-right: 8px;
-    }
-
-    .schedule-item select:focus {
-      outline: none;
-      border-color: #4a6fa9;
-      box-shadow: 0 0 0 2px rgba(74, 111, 169, 0.1);
-    }
-
-    .schedule-item select:disabled {
-      background: #e9ecef;
-      color: #6c757d;
-      cursor: not-allowed;
-    }
-
-    .remove-schedule-btn {
-      width: 28px;
-      height: 28px;
-      border: none;
-      border-radius: 50%;
-      background: #dc3545;
-      color: white;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      transition: all 0.2s ease;
-    }
-
-    .remove-schedule-btn:hover:not(:disabled) {
-      background: #c82333;
-      transform: scale(1.05);
-    }
-
-    .remove-schedule-btn:disabled {
-      background: #6c757d;
-      cursor: not-allowed;
-    }
-
     /* Form Actions - Reduced */
     .form-actions {
       display: flex;
@@ -529,7 +454,19 @@
       box-shadow: none;
     }
 
-    /* Table Styling - Reduced */
+    .btn-success {
+      background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+      color: #fff;
+      box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
+    }
+
+    .btn-success:hover:not(:disabled) {
+      background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+    }
+
+    /* Table Styling - Enhanced for merged rows */
     table {
       width: 100%;
       border-collapse: collapse;
@@ -541,16 +478,98 @@
       border: 1px solid #ddd;
       text-align: center;
       font-size: 0.9rem;
+      vertical-align: top;
     }
 
     th {
       background: #f0f2f5;
       font-weight: 600;
       color: #2c3e50;
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
 
     tr:hover {
       background: #f9fafb;
+    }
+
+    /* Merged row styling */
+    .merged-row {
+      background: #f8f9fa;
+      border: 2px solid #e9ecef;
+    }
+
+    .merged-row:hover {
+      background: #f0f2f5;
+    }
+
+    .merged-content {
+      padding: 8px;
+      text-align: left;
+    }
+
+    .schedule-type {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-right: 5px;
+      margin-bottom: 3px;
+    }
+
+    .schedule-type.lecture {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+
+    .schedule-type.laboratory {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .schedule-type.discussion {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .schedule-item {
+      margin-bottom: 6px;
+      padding: 4px 0;
+      border-left: 3px solid #dee2e6;
+      padding-left: 8px;
+    }
+
+    .schedule-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .schedule-item.lecture {
+      border-left-color: #17a2b8;
+    }
+
+    .schedule-item.laboratory {
+      border-left-color: #28a745;
+    }
+
+    .schedule-item.discussion {
+      border-left-color: #ffc107;
+    }
+
+    .class-types-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      justify-content: center;
+      margin-bottom: 4px;
+    }
+
+    .rooms-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      justify-content: center;
     }
 
     /* Action Buttons - Reduced */
@@ -714,6 +733,15 @@
       .main-content {
         margin-left: 80px;
       }
+      
+      .horizontal-form-group {
+        grid-template-columns: 1fr;
+      }
+      
+      .form-row-1, .form-row-2 {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
     }
 
     @media (max-width: 768px) {
@@ -726,29 +754,9 @@
         width: 100%;
       }
       
-      .horizontal-form-group {
-        flex-direction: column;
-        gap: 15px;
-      }
-      
-      .form-field {
-        width: 100%;
-      }
-      
       .form-grid {
         grid-template-columns: 1fr;
         gap: 12px;
-      }
-      
-      .schedule-item {
-        grid-template-columns: 1fr;
-        gap: 8px;
-        text-align: center;
-      }
-      
-      .schedule-item select {
-        justify-self: center;
-        max-width: 150px;
       }
       
       .form-actions {
@@ -767,6 +775,21 @@
       
       .schedule-details {
         grid-template-columns: 1fr;
+      }
+      
+      .schedule-item {
+        padding: 6px 0;
+        margin-bottom: 4px;
+      }
+      
+      .schedule-type {
+        display: block;
+        margin: 2px 0;
+      }
+      
+      .class-types-list, .rooms-list {
+        flex-direction: column;
+        align-items: center;
       }
     }
 
@@ -833,122 +856,171 @@
     <!-- Complete Schedule Form -->
     <div class="schedule-form">
       <form id="classScheduleForm">
-        <!-- Horizontal Form Group for 3 inputs -->
+        <!-- Horizontal Form Group with two rows -->
         <div class="horizontal-form-group">
-          <div class="form-field">
-            <label for="yearSection">
-              <i class="fas fa-layer-group"></i> Year & Section *
-            </label>
-            <select id="yearSection" required>
-              <option value="" disabled selected>-- Choose Year & Section --</option>
-              <option>1st Year - Section A</option>
-              <option>1st Year - Section B</option>
-              <option>2nd Year - Section A</option>
-              <option>2nd Year - Section B</option>
-              <option>3rd Year - Section A</option>
-              <option>3rd Year - Section B</option>
-              <option>4th Year - Section A</option>
-              <option>4th Year - Section B</option>
-            </select>
+          <!-- First Row: Year & Section, Subject Code, Class Type -->
+          <div class="form-row-1">
+            <div class="form-field">
+              <label for="yearSection">
+                <i class="fas fa-layer-group"></i> Year & Section *
+              </label>
+              <select id="yearSection" required>
+                <option value="" disabled selected>-- Choose Year & Section --</option>
+                <option>1st Year - Section A</option>
+                <option>1st Year - Section B</option>
+                <option>2nd Year - Section A</option>
+                <option>2nd Year - Section B</option>
+                <option>3rd Year - Section A</option>
+                <option>3rd Year - Section B</option>
+                <option>4th Year - Section A</option>
+                <option>4th Year - Section B</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="subjectCode">
+                <i class="fas fa-tag"></i> Subject Code *
+              </label>
+              <select id="subjectCode" required>
+                <option value="" disabled selected>-- Select Subject Code --</option>
+                <option value="CS-101">CS-101 - Introduction to Programming</option>
+                <option value="IT-202">IT-202 - Database Systems</option>
+                <option value="ENG-303">ENG-303 - Technical Writing</option>
+                <option value="MATH-404">MATH-404 - Calculus III</option>
+                <option value="PHYS-205">PHYS-205 - General Physics</option>
+                <option value="CHEM-306">CHEM-306 - Organic Chemistry</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="classType">
+                <i class="fas fa-book-open"></i> Class Type *
+              </label>
+              <select id="classType" required>
+                <option value="" disabled selected>-- Select Class Type --</option>
+                <option value="Lecture">Lecture</option>
+                <option value="Laboratory">Laboratory</option>
+                <option value="Discussion">Discussion</option>
+              </select>
+            </div>
           </div>
-          <div class="form-field">
-            <label for="subjectCode">
-              <i class="fas fa-tag"></i> Subject Code *
-            </label>
-            <select id="subjectCode" required disabled>
-              <option value="" disabled selected>-- Select Subject Code --</option>
-              <option>CS-101</option>
-              <option>IT-202</option>
-              <option>ENG-303</option>
-              <option>MATH-404</option>
-              <option>PHYS-205</option>
-              <option>CHEM-306</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="room">
-              <i class="fas fa-door-open"></i> Room *
-            </label>
-            <select id="room" disabled required>
-              <option value="" disabled selected>-- Select Room --</option>
-            </select>
+
+          <!-- Second Row: Day, Start Time, End Time, Room -->
+          <div class="form-row-2">
+            <div class="form-field">
+              <label for="scheduleDay">
+                <i class="fas fa-calendar-day"></i> Day *
+              </label>
+              <select id="scheduleDay" required>
+                <option value="" disabled selected>-- Select Day --</option>
+                <option value="Monday">Monday</option>
+                <option value="Tuesday">Tuesday</option>
+                <option value="Wednesday">Wednesday</option>
+                <option value="Thursday">Thursday</option>
+                <option value="Friday">Friday</option>
+                <option value="Saturday">Saturday</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="startTime">
+                <i class="fas fa-clock"></i> Start Time *
+              </label>
+              <select id="startTime" required>
+                <option value="" disabled selected>-- Start Time --</option>
+                <option value="7:00 AM">7:00 AM</option>
+                <option value="7:30 AM">7:30 AM</option>
+                <option value="8:00 AM">8:00 AM</option>
+                <option value="8:30 AM">8:30 AM</option>
+                <option value="9:00 AM">9:00 AM</option>
+                <option value="9:30 AM">9:30 AM</option>
+                <option value="10:00 AM">10:00 AM</option>
+                <option value="10:30 AM">10:30 AM</option>
+                <option value="11:00 AM">11:00 AM</option>
+                <option value="11:30 AM">11:30 AM</option>
+                <option value="12:00 PM">12:00 PM</option>
+                <option value="12:30 PM">12:30 PM</option>
+                <option value="1:00 PM">1:00 PM</option>
+                <option value="1:30 PM">1:30 PM</option>
+                <option value="2:00 PM">2:00 PM</option>
+                <option value="2:30 PM">2:30 PM</option>
+                <option value="3:00 PM">3:00 PM</option>
+                <option value="3:30 PM">3:30 PM</option>
+                <option value="4:00 PM">4:00 PM</option>
+                <option value="4:30 PM">4:30 PM</option>
+                <option value="5:00 PM">5:00 PM</option>
+                <option value="5:30 PM">5:30 PM</option>
+                <option value="6:00 PM">6:00 PM</option>
+                <option value="6:30 PM">6:30 PM</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="endTime">
+                <i class="fas fa-stopwatch"></i> End Time *
+              </label>
+              <select id="endTime" required>
+                <option value="" disabled selected>-- End Time --</option>
+                <option value="8:00 AM">8:00 AM</option>
+                <option value="8:30 AM">8:30 AM</option>
+                <option value="9:00 AM">9:00 AM</option>
+                <option value="9:30 AM">9:30 AM</option>
+                <option value="10:00 AM">10:00 AM</option>
+                <option value="10:30 AM">10:30 AM</option>
+                <option value="11:00 AM">11:00 AM</option>
+                <option value="11:30 AM">11:30 AM</option>
+                <option value="12:00 PM">12:00 PM</option>
+                <option value="12:30 PM">12:30 PM</option>
+                <option value="1:00 PM">1:00 PM</option>
+                <option value="1:30 PM">1:30 PM</option>
+                <option value="2:00 PM">2:00 PM</option>
+                <option value="2:30 PM">2:30 PM</option>
+                <option value="3:00 PM">3:00 PM</option>
+                <option value="3:30 PM">3:30 PM</option>
+                <option value="4:00 PM">4:00 PM</option>
+                <option value="4:30 PM">4:30 PM</option>
+                <option value="5:00 PM">5:00 PM</option>
+                <option value="5:30 PM">5:30 PM</option>
+                <option value="6:00 PM">6:00 PM</option>
+                <option value="6:30 PM">6:30 PM</option>
+                <option value="7:00 PM">7:00 PM</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="room">
+                <i class="fas fa-door-open"></i> Room *
+              </label>
+              <select id="room" required disabled>
+                <option value="" disabled selected>-- Select Class Type First --</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <!-- Compact Class Information Section -->
+        <!-- Schedule Summary Section -->
         <div class="form-section">
           <div class="form-grid">
-            <!-- Auto-populated Schedule Information -->
-            <div class="schedule-section" id="scheduleSection" style="display: none;">
+            <div class="schedule-section">
               <div class="schedule-header">
-                <h4><i class="fas fa-calendar-day"></i> Auto-populated Schedule</h4>
+                <h4><i class="fas fa-calendar-check"></i> Schedule Summary</h4>
               </div>
               
-              <div class="schedule-info" id="scheduleInfo">
+              <div class="schedule-info">
                 <h5><i class="fas fa-info-circle"></i> Schedule Information</h5>
-                <div class="schedule-details" id="scheduleDetails">
-                  <!-- Schedule details will be populated here -->
+                <div class="schedule-details" id="scheduleSummary">
+                  <div class="schedule-detail">
+                    <strong>Selected Schedule:</strong>
+                    <div id="selectedSchedule">No schedule selected</div>
+                  </div>
+                  <div class="schedule-detail">
+                    <strong>Duration:</strong>
+                    <div id="scheduleDuration">Not calculated</div>
+                  </div>
+                  <div class="schedule-detail">
+                    <strong>Class Type:</strong>
+                    <div id="summaryClassType">Not selected</div>
+                  </div>
+                  <div class="schedule-detail">
+                    <strong>Room:</strong>
+                    <div id="summaryRoom">Not selected</div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Manual Schedule Section (only visible if no predefined schedule) -->
-        <div class="form-section" id="manualScheduleSection" style="display: none;">
-          <div class="schedule-section">
-            <div class="schedule-header">
-              <h4><i class="fas fa-calendar-plus"></i> Manual Schedule Times</h4>
-              <button type="button" class="btn btn-primary add-schedule-btn" id="addScheduleBtn" disabled>
-                <i class="fas fa-plus"></i> Add Time Slot
-              </button>
-            </div>
-            
-            <div class="schedule-items" id="scheduleItems">
-              <div class="schedule-item" id="initialSchedule">
-                <select class="schedule-day" required disabled>
-                  <option value="" disabled selected>Select Day</option>
-                  <option>Monday</option>
-                  <option>Tuesday</option>
-                  <option>Wednesday</option>
-                  <option>Thursday</option>
-                  <option>Friday</option>
-                  <option>Saturday</option>
-                </select>
-                <select class="start-time" required disabled>
-                  <option value="" disabled selected>Start Time</option>
-                  <option>7:00 AM</option>
-                  <option>7:30 AM</option>
-                  <option>8:00 AM</option>
-                  <option>8:30 AM</option>
-                  <option>9:00 AM</option>
-                  <option>9:30 AM</option>
-                  <option>10:00 AM</option>
-                  <option>10:30 AM</option>
-                  <option>11:00 AM</option>
-                  <option>11:30 AM</option>
-                  <option>12:00 PM</option>
-                  <option>12:30 PM</option>
-                  <option>1:00 PM</option>
-                  <option>1:30 PM</option>
-                  <option>2:00 PM</option>
-                  <option>2:30 PM</option>
-                  <option>3:00 PM</option>
-                  <option>3:30 PM</option>
-                  <option>4:00 PM</option>
-                  <option>4:30 PM</option>
-                  <option>5:00 PM</option>
-                  <option>5:30 PM</option>
-                  <option>6:00 PM</option>
-                  <option>6:30 PM</option>
-                  <option>7:00 PM</option>
-                </select>
-                <select class="end-time" required disabled>
-                  <option value="" disabled selected>End Time</option>
-                </select>
-                <button type="button" class="remove-schedule-btn" disabled title="Remove schedule">
-                  <i class="fas fa-times"></i>
-                </button>
               </div>
             </div>
           </div>
@@ -975,9 +1047,9 @@
             <th>Year & Section</th>
             <th>Subject Code</th>
             <th>Subject</th>
-            <th>Class Type</th>
+            <th>Class Types</th>
             <th>Schedule</th>
-            <th>Room</th>
+            <th>Rooms</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -1074,82 +1146,72 @@
       document.getElementById('scheduleWarningModal').style.display = 'none';
     };
 
-    // Time configuration
-    const TIME_SLOTS = [
-      "7:00 AM", "7:30 AM", "8:00 AM", "8:30 AM", "9:00 AM", "9:30 AM",
-      "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM", "12:00 PM",
-      "12:30 PM", "1:00 PM", "1:30 PM", "2:00 PM", "2:30 PM",
-      "3:00 PM", "3:30 PM", "4:00 PM", "4:30 PM", "5:00 PM",
-      "5:30 PM", "6:00 PM", "6:30 PM", "7:00 PM"
-    ];
-
-    // Database simulation - Subject Code to course details mapping
-    const COURSE_DATABASE = {
-      'CS-101': {
-        subject: 'Introduction to Programming',
-        classType: 'Lecture',
-        schedules: [
-          { day: 'Monday', start: '9:00 AM', end: '10:30 AM' },
-          { day: 'Wednesday', start: '9:00 AM', end: '10:30 AM' },
-          { day: 'Friday', start: '9:00 AM', end: '10:30 AM' }
-        ]
-      },
-      'IT-202': {
-        subject: 'Database Systems',
-        classType: 'Lecture',
-        schedules: [
-          { day: 'Tuesday', start: '10:00 AM', end: '11:30 AM' },
-          { day: 'Thursday', start: '10:00 AM', end: '11:30 AM' }
-        ]
-      },
-      'ENG-303': {
-        subject: 'Technical Writing',
-        classType: 'Lecture',
-        schedules: [
-          { day: 'Monday', start: '2:00 PM', end: '3:30 PM' },
-          { day: 'Wednesday', start: '2:00 PM', end: '3:30 PM' },
-          { day: 'Friday', start: '2:00 PM', end: '3:30 PM' }
-        ]
-      },
-      'MATH-404': {
-        subject: 'Calculus III',
-        classType: 'Lecture',
-        schedules: [
-          { day: 'Tuesday', start: '8:00 AM', end: '9:30 AM' },
-          { day: 'Thursday', start: '8:00 AM', end: '9:30 AM' },
-          { day: 'Saturday', start: '8:00 AM', end: '9:30 AM' }
-        ]
-      },
-      'PHYS-205': {
-        subject: 'General Physics',
-        classType: 'Laboratory',
-        schedules: [
-          { day: 'Wednesday', start: '1:00 PM', end: '4:00 PM' }
-        ]
-      },
-      'CHEM-306': {
-        subject: 'Organic Chemistry',
-        classType: 'Laboratory',
-        schedules: [
-          { day: 'Thursday', start: '1:00 PM', end: '4:00 PM' }
-        ]
-      }
+    // Subject database for display purposes only
+    const SUBJECT_DATABASE = {
+      'CS-101': 'Introduction to Programming',
+      'IT-202': 'Database Systems',
+      'ENG-303': 'Technical Writing',
+      'MATH-404': 'Calculus III',
+      'PHYS-205': 'General Physics',
+      'CHEM-306': 'Organic Chemistry'
     };
 
-    // DOM Elements - Fixed to handle missing elements
+    // Room mapping based on class type
+    const ROOM_MAPPING = {
+      'Lecture': ['LR1', 'LR2', 'LR3', 'LR4', 'LR5', 'LR6'],
+      'Laboratory': ['LAB1', 'LAB2', 'LAB3', 'LAB4', 'CHEM-LAB', 'PHYS-LAB'],
+      'Discussion': ['LR1', 'LR2', 'LR3', 'LR4']
+    };
+
+    // Global storage for all schedules - grouped by subject code and year section
+    let scheduleGroups = {};
+
+    // DOM Elements
     const form = document.getElementById('classScheduleForm');
     const tableBody = document.querySelector('#classScheduleTable tbody');
-    const subjectCodeSelect = document.getElementById('subjectCode');
-    const roomSelect = document.getElementById('room');
     const yearSectionSelect = document.getElementById('yearSection');
+    const subjectCodeSelect = document.getElementById('subjectCode');
+    const classTypeSelect = document.getElementById('classType');
+    const scheduleDaySelect = document.getElementById('scheduleDay');
+    const startTimeSelect = document.getElementById('startTime');
+    const endTimeSelect = document.getElementById('endTime');
+    const roomSelect = document.getElementById('room');
     const saveBtn = document.getElementById('saveBtn');
-    const addScheduleBtn = document.getElementById('addScheduleBtn');
     const resetBtn = document.getElementById('resetBtn');
-    const scheduleItemsContainer = document.getElementById('scheduleItems');
-    const scheduleSection = document.getElementById('scheduleSection');
-    const manualScheduleSection = document.getElementById('manualScheduleSection');
-    const scheduleInfo = document.getElementById('scheduleInfo');
-    const scheduleDetails = document.getElementById('scheduleDetails');
+    const selectedScheduleDiv = document.getElementById('selectedSchedule');
+    const scheduleDurationDiv = document.getElementById('scheduleDuration');
+    const summaryClassTypeDiv = document.getElementById('summaryClassType');
+    const summaryRoomDiv = document.getElementById('summaryRoom');
+
+    // Function to populate rooms based on class type
+    function populateRooms(classType) {
+      roomSelect.innerHTML = '<option value="" disabled selected>-- Select Room --</option>';
+      
+      if (!classType || !ROOM_MAPPING[classType]) {
+        roomSelect.disabled = true;
+        roomSelect.classList.add('auto-populated');
+        return;
+      }
+
+      const availableRooms = ROOM_MAPPING[classType];
+      roomSelect.disabled = false;
+      roomSelect.classList.remove('auto-populated');
+
+      availableRooms.forEach(room => {
+        const option = document.createElement('option');
+        option.value = room;
+        option.textContent = room;
+        roomSelect.appendChild(option);
+      });
+
+      // If a room was previously selected, try to keep it if it's still valid
+      const currentRoom = roomSelect.value;
+      if (availableRooms.includes(currentRoom)) {
+        // Keep current selection
+      } else {
+        roomSelect.value = '';
+      }
+    }
 
     // Helper: convert time string to minutes since 00:00
     function timeToMinutes(timeStr) {
@@ -1161,398 +1223,58 @@
       return totalMinutes;
     }
 
-    // Helper: format minutes back to time string
-    function minutesToTime(minutes) {
-      const hours = Math.floor(minutes / 60);
-      const mins = minutes % 60;
-      const period = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      return `${displayHours}:${mins.toString().padStart(2, '0')} ${period}`;
-    }
-
-    // Function to populate form based on subject code
-    async function populateCourseDetails(subjectCode) {
-      // Show loading states for existing elements
-      if (roomSelect) {
-        roomSelect.classList.add('loading-field');
-        roomSelect.disabled = true;
-      }
-      if (scheduleSection) scheduleSection.classList.add('loading-field');
-      if (manualScheduleSection) manualScheduleSection.classList.add('loading-field');
-
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      // Get course details from database
-      const courseDetails = COURSE_DATABASE[subjectCode];
-      
-      if (courseDetails) {
-        // Populate room options based on class type
-        if (roomSelect) {
-          populateRoomOptions(courseDetails.classType);
-        }
-
-        // Show auto-populated schedule if available
-        if (courseDetails.schedules && courseDetails.schedules.length > 0 && scheduleSection && scheduleDetails) {
-          displayAutoPopulatedSchedule(courseDetails);
-          scheduleSection.style.display = 'block';
-          if (manualScheduleSection) manualScheduleSection.style.display = 'none';
-          
-          // Enable save button if it exists
-          if (saveBtn) saveBtn.disabled = false;
-        } else {
-          // No predefined schedule - show manual schedule section
-          if (scheduleSection) scheduleSection.style.display = 'none';
-          if (manualScheduleSection) manualScheduleSection.style.display = 'block';
-          if (typeof enableManualSchedule === 'function') enableManualSchedule();
-        }
-
-        // Remove loading states
-        if (roomSelect) {
-          roomSelect.classList.remove('loading-field');
-        }
-        if (scheduleSection) scheduleSection.classList.remove('loading-field');
-        if (manualScheduleSection) manualScheduleSection.classList.remove('loading-field');
-
-        showModal(`Successfully loaded details for ${courseDetails.subject}`, "Data Loaded");
-      } else {
-        // Clear and reset
-        if (typeof clearAutoPopulatedFields === 'function') clearAutoPopulatedFields();
-        showModal("Subject code not found in database. Please select a valid code.", "Error");
+    // Function to get class type class name
+    function getClassTypeClass(type) {
+      switch(type.toLowerCase()) {
+        case 'lecture': return 'lecture';
+        case 'laboratory': return 'laboratory';
+        case 'discussion': return 'discussion';
+        default: return 'lecture';
       }
     }
 
-    // Function to populate room options based on class type
-    function populateRoomOptions(classType) {
-      if (!roomSelect) return;
-      
-      roomSelect.innerHTML = '<option value="" disabled selected>-- Select Room --</option>';
-      roomSelect.disabled = false;
-      roomSelect.classList.remove('auto-populated', 'loading-field');
-      
-      const roomMap = {
-        'Lecture': ['LR1', 'LR2', 'LR3', 'LR4', 'LR5', 'LR6'],
-        'Laboratory': ['LAB1', 'LAB2', 'LAB3', 'LAB4', 'CHEM-LAB', 'PHYS-LAB']
-      };
-      
-      const availableRooms = roomMap[classType] || ['R101', 'R102', 'R103'];
-      
-      availableRooms.forEach(room => {
-        const option = document.createElement('option');
-        option.value = room;
-        option.textContent = room;
-        roomSelect.appendChild(option);
-      });
-    }
-
-    // Function to display auto-populated schedule
-    function displayAutoPopulatedSchedule(courseDetails) {
-      if (!scheduleDetails) return;
-      
-      scheduleDetails.innerHTML = '';
-      
-      // Add subject and class type info
-      const infoDetail = document.createElement('div');
-      infoDetail.className = 'schedule-detail';
-      infoDetail.innerHTML = `
-        <strong>Course Info:</strong>
-        <div>${courseDetails.subject} (${courseDetails.classType})</div>
-      `;
-      scheduleDetails.appendChild(infoDetail);
-
-      // Add schedule details
-      courseDetails.schedules.forEach((schedule, index) => {
-        const scheduleDetail = document.createElement('div');
-        scheduleDetail.className = 'schedule-detail';
-        scheduleDetail.innerHTML = `
-          <strong>Slot ${index + 1}:</strong>
-          <div>${schedule.day}<br>
-          ${schedule.start} - ${schedule.end}</div>
-        `;
-        scheduleDetails.appendChild(scheduleDetail);
-      });
-
-      // Add total sessions info
-      const totalDetail = document.createElement('div');
-      totalDetail.className = 'schedule-detail';
-      totalDetail.innerHTML = `
-        <strong>Total Sessions:</strong>
-        <div>${courseDetails.schedules.length} sessions per week</div>
-      `;
-      scheduleDetails.appendChild(totalDetail);
-    }
-
-    // Function to enable manual schedule input
-    function enableManualSchedule() {
-      const scheduleElements = document.querySelectorAll('.schedule-day, .start-time, .end-time, .remove-schedule-btn');
-      const addBtn = document.getElementById('addScheduleBtn');
-      
-      scheduleElements.forEach(el => {
-        if (el) {
-          el.disabled = false;
-          el.classList.remove('auto-populated');
-        }
-      });
-      
-      if (addBtn) {
-        addBtn.disabled = false;
-        addBtn.style.opacity = '1';
-      }
-      
-      attachScheduleValidation();
-      updateAddButtonState();
-    }
-
-    // Function to clear auto-populated fields
-    function clearAutoPopulatedFields() {
-      if (roomSelect) {
-        roomSelect.innerHTML = '';
-        roomSelect.classList.remove('auto-populated', 'loading-field');
-        roomSelect.disabled = true;
-      }
-      
-      if (scheduleSection) scheduleSection.style.display = 'none';
-      if (manualScheduleSection) manualScheduleSection.style.display = 'none';
-      if (scheduleDetails) scheduleDetails.innerHTML = '';
-      
-      // Reset manual schedule if elements exist
-      if (scheduleItemsContainer) {
-        scheduleItemsContainer.innerHTML = `
-          <div class="schedule-item" id="initialSchedule">
-            <select class="schedule-day" required disabled>
-              <option value="" disabled selected>Select Day</option>
-              <option>Monday</option>
-              <option>Tuesday</option>
-              <option>Wednesday</option>
-              <option>Thursday</option>
-              <option>Friday</option>
-              <option>Saturday</option>
-            </select>
-            <select class="start-time" required disabled>
-              <option value="" disabled selected>Start Time</option>
-              ${TIME_SLOTS.map(time => `<option value="${time}">${time}</option>`).join('')}
-            </select>
-            <select class="end-time" required disabled>
-              <option value="" disabled selected>End Time</option>
-            </select>
-            <button type="button" class="remove-schedule-btn" disabled title="Remove schedule">
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-        `;
-      }
-    }
-
-    // Function to toggle form elements
-    function toggleForm(disabled) {
-      const scheduleElements = document.querySelectorAll('.schedule-day, .start-time, .end-time, .remove-schedule-btn');
-      const addBtn = document.getElementById('addScheduleBtn');
-      const saveButton = document.getElementById('saveBtn');
-      
-      scheduleElements.forEach(el => {
-        if (el) el.disabled = disabled;
-      });
-      
-      if (addBtn) addBtn.disabled = disabled;
-      if (saveButton) saveButton.disabled = disabled;
-      
-      if (disabled) {
-        if (saveButton) saveButton.style.opacity = '0.6';
-        if (addBtn) addBtn.style.opacity = '0.6';
-      } else {
-        if (saveButton) saveButton.style.opacity = '1';
-        if (addBtn) addBtn.style.opacity = '1';
-      }
-    }
-
-    // Function to reset form
-    function resetForm() {
-      if (form) form.reset();
-      toggleForm(true);
-      if (subjectCodeSelect) subjectCodeSelect.disabled = true;
-      if (roomSelect) roomSelect.disabled = true;
-      clearAutoPopulatedFields();
-      
-      // Re-attach event listeners
-      attachScheduleValidation();
-    }
-
-    // Initially disable all form elements except yearSection
-    if (subjectCodeSelect) subjectCodeSelect.disabled = true;
-    if (roomSelect) roomSelect.disabled = true;
-    toggleForm(true);
-
-    // Enable subjectCode dropdown when yearSection is selected
-    if (yearSectionSelect) {
-      yearSectionSelect.addEventListener('change', () => {
-        const selectedYearSection = yearSectionSelect.value;
-        if (selectedYearSection) {
-          if (subjectCodeSelect) {
-            subjectCodeSelect.disabled = false;
-            subjectCodeSelect.focus();
-          }
-        } else {
-          if (subjectCodeSelect) subjectCodeSelect.disabled = true;
-          if (roomSelect) roomSelect.disabled = true;
-          toggleForm(true);
-          resetForm();
-        }
-      });
-    }
-
-    // Handle subject code selection - Main functionality
-    if (subjectCodeSelect) {
-      subjectCodeSelect.addEventListener('change', async () => {
-        const selectedCode = subjectCodeSelect.value;
-        if (selectedCode) {
-          await populateCourseDetails(selectedCode);
-        } else {
-          if (roomSelect) roomSelect.disabled = true;
-          clearAutoPopulatedFields();
-          toggleForm(true);
-        }
-      });
-    }
-
-    // Handle room selection
-    if (roomSelect) {
-      roomSelect.addEventListener('change', () => {
-        if (roomSelect.value) {
-          // Enable save button if all required fields are filled
-          if (yearSectionSelect && yearSectionSelect.value && 
-              subjectCodeSelect && subjectCodeSelect.value && 
-              saveBtn) {
-            saveBtn.disabled = false;
-          }
-        }
-      });
-    }
-
-    // Function to attach validation and time dropdown functionality to schedule items
-    function attachScheduleValidation() {
-      const scheduleItems = document.querySelectorAll('.schedule-item');
-      scheduleItems.forEach(item => {
-        const daySelect = item.querySelector('.schedule-day');
-        const startTime = item.querySelector('.start-time');
-        const endTime = item.querySelector('.end-time');
-        const removeBtn = item.querySelector('.remove-schedule-btn');
-
-        if (!daySelect || !startTime || !endTime) return;
-
-        const validateThisSchedule = () => {
-          if (daySelect.value && startTime.value && endTime.value) {
-            validateSchedule(startTime, endTime, daySelect.value, scheduleItemsContainer);
-          } else {
-            startTime.classList.remove('time-conflict', 'duplicate-schedule');
-            endTime.classList.remove('time-conflict', 'duplicate-schedule');
-          }
-        };
-
-        const updateEndTimes = () => {
-          if (startTime.value) {
-            populateEndTimes(startTime, endTime, true);
-            endTime.value = '';
-          } else {
-            endTime.innerHTML = '<option value="" disabled selected>End Time</option>';
-          }
-        };
-
-        // Remove existing listeners to prevent duplicates
-        daySelect.removeEventListener('change', validateThisSchedule);
-        startTime.removeEventListener('change', updateEndTimes);
-        endTime.removeEventListener('change', validateThisSchedule);
-        if (removeBtn) removeBtn.removeEventListener('click', removeBtn.onclick);
-
-        daySelect.addEventListener('change', validateThisSchedule);
-        startTime.addEventListener('change', () => {
-          updateEndTimes();
-          validateThisSchedule();
-        });
-        endTime.addEventListener('change', validateThisSchedule);
-
-        if (removeBtn) {
-          removeBtn.addEventListener('click', () => {
-            const itemCount = document.querySelectorAll('.schedule-item').length;
-            if (itemCount > 1) {
-              item.remove();
-              updateAddButtonState();
-            } else {
-              showModal("At least one schedule time slot is required.", "Cannot Remove");
-            }
-          });
-        }
-
-        if (startTime.value) {
-          updateEndTimes();
-        }
-      });
-    }
-
-    // Function to populate end time dropdown based on start time
-    function populateEndTimes(startTimeSelect, endTimeSelect, showLoading = false) {
-      if (showLoading) {
-        endTimeSelect.classList.add('time-loading');
-      }
-
-      setTimeout(() => {
-        endTimeSelect.innerHTML = '<option value="" disabled selected>End Time</option>';
+    // Function to update schedule summary
+    function updateScheduleSummary() {
+      if (yearSectionSelect.value && subjectCodeSelect.value && classTypeSelect.value && 
+          scheduleDaySelect.value && startTimeSelect.value && endTimeSelect.value && roomSelect.value) {
         
-        const startTime = startTimeSelect.value;
-        if (!startTime) {
-          endTimeSelect.classList.remove('time-loading');
-          return;
-        }
-
-        const startMinutes = timeToMinutes(startTime);
-        let validEndTimes = [];
-
-        for (let duration = 1; duration <= 3; duration++) {
-          const endMinutes = startMinutes + (duration * 60);
-          if (endMinutes <= timeToMinutes(TIME_SLOTS[TIME_SLOTS.length - 1])) {
-            const endTimeStr = minutesToTime(endMinutes);
-            
-            const closestTimeSlot = TIME_SLOTS.find(slot => {
-              return Math.abs(timeToMinutes(slot) - endMinutes) <= 30;
-            });
-            
-            if (closestTimeSlot && timeToMinutes(closestTimeSlot) > startMinutes) {
-              validEndTimes.push(closestTimeSlot);
-            }
-          }
-        }
-
-        if (validEndTimes.length === 0) {
-          for (let i = 0; i < TIME_SLOTS.length; i++) {
-            const slotMinutes = timeToMinutes(TIME_SLOTS[i]);
-            if (slotMinutes > startMinutes && slotMinutes - startMinutes >= 60) {
-              validEndTimes.push(TIME_SLOTS[i]);
-              if (validEndTimes.length >= 6) break;
-            }
-          }
-        }
-
-        validEndTimes.forEach(time => {
-          const option = document.createElement('option');
-          option.value = time;
-          option.textContent = time;
-          endTimeSelect.appendChild(option);
-        });
-
-        endTimeSelect.classList.remove('time-loading');
+        const subjectName = SUBJECT_DATABASE[subjectCodeSelect.value] || 'Unknown Subject';
+        const scheduleText = `${scheduleDaySelect.value}, ${startTimeSelect.value} - ${endTimeSelect.value}`;
+        const durationMinutes = timeToMinutes(endTimeSelect.value) - timeToMinutes(startTimeSelect.value);
+        const durationHours = (durationMinutes / 60).toFixed(1);
         
-        if (validEndTimes.length > 0 && !endTimeSelect.value) {
-          endTimeSelect.value = validEndTimes[0];
+        if (selectedScheduleDiv) selectedScheduleDiv.textContent = scheduleText;
+        if (scheduleDurationDiv) scheduleDurationDiv.textContent = `${durationHours} hours`;
+        if (summaryClassTypeDiv) summaryClassTypeDiv.textContent = classTypeSelect.value;
+        if (summaryRoomDiv) summaryRoomDiv.textContent = roomSelect.value;
+        
+        // Enable save button
+        if (saveBtn) saveBtn.disabled = false;
+        if (saveBtn.classList.contains('btn-primary')) {
+          saveBtn.classList.remove('btn-primary');
+          saveBtn.classList.add('btn-success');
         }
-      }, showLoading ? 300 : 0);
+      } else {
+        if (selectedScheduleDiv) selectedScheduleDiv.textContent = 'No schedule selected';
+        if (scheduleDurationDiv) scheduleDurationDiv.textContent = 'Not calculated';
+        if (summaryClassTypeDiv) summaryClassTypeDiv.textContent = 'Not selected';
+        if (summaryRoomDiv) summaryRoomDiv.textContent = 'Not selected';
+        
+        if (saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.classList.remove('btn-success');
+          saveBtn.classList.add('btn-primary');
+        }
+      }
     }
 
-    // Function to validate time duration and conflicts
-    function validateSchedule(startTimeEl, endTimeEl, day, allScheduleItems) {
-      startTimeEl.classList.remove('time-conflict', 'duplicate-schedule');
-      endTimeEl.classList.remove('time-conflict', 'duplicate-schedule');
-
+    // Function to validate time duration
+    function validateSchedule(startTimeEl, endTimeEl, day) {
       const startMins = timeToMinutes(startTimeEl.value);
       const endMins = timeToMinutes(endTimeEl.value);
+
+      startTimeEl.classList.remove('time-conflict');
+      endTimeEl.classList.remove('time-conflict');
 
       if (startMins >= endMins) {
         startTimeEl.classList.add('time-conflict');
@@ -1573,97 +1295,154 @@
         return false;
       }
 
-      if (allScheduleItems) {
-        const scheduleItems = allScheduleItems.querySelectorAll('.schedule-item');
-        for (const schedule of scheduleItems) {
-          if (schedule.contains(startTimeEl)) continue;
-
-          const otherDaySelect = schedule.querySelector('.schedule-day');
-          const otherStartSelect = schedule.querySelector('.start-time');
-          const otherEndSelect = schedule.querySelector('.end-time');
-
-          if (otherDaySelect && otherStartSelect && otherEndSelect &&
-              otherDaySelect.value && otherStartSelect.value && otherEndSelect.value) {
-            const otherDay = otherDaySelect.value;
-            const otherStart = timeToMinutes(otherStartSelect.value);
-            const otherEnd = timeToMinutes(otherEndSelect.value);
-
-            if (day === otherDay &&
-                ((startMins >= otherStart && startMins < otherEnd) ||
-                (endMins > otherStart && endMins <= otherEnd) ||
-                (startMins <= otherStart && endMins >= otherEnd))) {
-              startTimeEl.classList.add('duplicate-schedule');
-              endTimeEl.classList.add('duplicate-schedule');
-              document.getElementById('warningTitle').textContent = 'Schedule Conflict';
-              document.getElementById('scheduleErrorMessage').textContent = "This schedule conflicts with another class time slot on the same day.";
-              document.getElementById('scheduleWarningModal').style.display = 'flex';
-              return false;
-            }
-          }
-        }
-      }
-
       return true;
     }
 
-    // Function to update add button state
-    function updateAddButtonState() {
-      const addBtn = document.getElementById('addScheduleBtn');
-      if (!addBtn) return;
+    // Function to check for duplicate schedule in the same group
+    function isDuplicateSchedule(groupKey, newSchedule) {
+      if (!scheduleGroups[groupKey]) return false;
       
-      const itemCount = document.querySelectorAll('.schedule-item').length;
-      addBtn.disabled = itemCount >= 5;
+      return scheduleGroups[groupKey].schedules.some(existing => 
+        existing.day === newSchedule.day &&
+        existing.startTime === newSchedule.startTime &&
+        existing.endTime === newSchedule.endTime &&
+        existing.room === newSchedule.room &&
+        existing.classType === newSchedule.classType
+      );
     }
 
-    // Add schedule item
-    if (addScheduleBtn) {
-      addScheduleBtn.addEventListener('click', () => {
-        const itemCount = document.querySelectorAll('.schedule-item').length;
-        if (itemCount < 5 && scheduleItemsContainer) {
-          const newSchedule = document.createElement('div');
-          newSchedule.className = 'schedule-item';
-          newSchedule.innerHTML = `
-            <select class="schedule-day" required>
-              <option value="" disabled selected>Select Day</option>
-              <option>Monday</option>
-              <option>Tuesday</option>
-              <option>Wednesday</option>
-              <option>Thursday</option>
-              <option>Friday</option>
-              <option>Saturday</option>
-            </select>
-            <select class="start-time" required>
-              <option value="" disabled selected>Start Time</option>
-              ${TIME_SLOTS.map(time => `<option value="${time}">${time}</option>`).join('')}
-            </select>
-            <select class="end-time" required>
-              <option value="" disabled selected>End Time</option>
-            </select>
-            <button type="button" class="remove-schedule-btn" title="Remove schedule">
-              <i class="fas fa-times"></i>
-            </button>
+    // Function to render all schedules in table
+    function renderSchedules() {
+      tableBody.innerHTML = '';
+      
+      // Convert scheduleGroups to array and sort by subject code
+      const groupsArray = Object.entries(scheduleGroups)
+        .map(([key, group]) => ({ key, ...group }))
+        .sort((a, b) => a.subjectCode.localeCompare(b.subjectCode));
+      
+      groupsArray.forEach(group => {
+        const subjectName = SUBJECT_DATABASE[group.subjectCode] || 'Unknown Subject';
+        const classTypeClass = getClassTypeClass(group.classType || 'lecture');
+        
+        const row = document.createElement('tr');
+        row.className = group.schedules.length > 1 ? 'merged-row' : '';
+        
+        // Create merged content
+        let mergedScheduleContent = '';
+        let classTypesContent = '';
+        let roomsContent = '';
+        
+        // Track unique class types and rooms
+        const uniqueClassTypes = new Set();
+        const uniqueRooms = new Set();
+        
+        group.schedules.forEach(schedule => {
+          const scheduleText = `${schedule.day} ${schedule.startTime} - ${schedule.endTime}`;
+          const scheduleClassType = getClassTypeClass(schedule.classType);
+          
+          uniqueClassTypes.add(schedule.classType);
+          uniqueRooms.add(schedule.room);
+          
+          mergedScheduleContent += `
+            <div class="schedule-item ${scheduleClassType}">
+              <span class="schedule-type ${scheduleClassType}">${schedule.classType}</span>
+              ${scheduleText} (${schedule.room})
+            </div>
           `;
-          
-          scheduleItemsContainer.appendChild(newSchedule);
-          attachScheduleValidation();
-          updateAddButtonState();
-          
-          const newDaySelect = newSchedule.querySelector('.schedule-day');
-          if (newDaySelect) newDaySelect.focus();
+        });
+        
+        // Create class types and rooms display
+        Array.from(uniqueClassTypes).forEach(classType => {
+          const classTypeClass = getClassTypeClass(classType);
+          if (classTypesContent) classTypesContent += ', ';
+          classTypesContent += `<span class="schedule-type ${classTypeClass}">${classType}</span>`;
+        });
+        
+        Array.from(uniqueRooms).forEach((room, index) => {
+          if (index > 0) roomsContent += ', ';
+          roomsContent += room;
+        });
+
+        row.innerHTML = `
+          <td>${group.yearSection}</td>
+          <td>${group.subjectCode}</td>
+          <td>${subjectName}</td>
+          <td class="class-types-list">${classTypesContent}</td>
+          <td class="merged-content">${mergedScheduleContent}</td>
+          <td class="rooms-list">${roomsContent}</td>
+          <td class="action-btns">
+            <button class="action-btns delete" title="Delete all schedules for this subject">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </td>`;
+
+        // Add delete functionality for the entire group
+        const deleteBtn = row.querySelector('.delete');
+        if (deleteBtn) {
+          deleteBtn.addEventListener('click', () => {
+            if (confirm(`Are you sure you want to delete all schedules for ${subjectName} in ${group.yearSection}?`)) {
+              // Remove the entire group
+              delete scheduleGroups[group.key];
+              renderSchedules();
+              showModal(`Deleted all schedules for ${subjectName}`, "Schedule Deleted");
+            }
+          });
         }
+        
+        tableBody.appendChild(row);
       });
     }
 
-    // Initial validation attachment
-    attachScheduleValidation();
-    updateAddButtonState();
+    // Event Listeners
+    if (yearSectionSelect) {
+      yearSectionSelect.addEventListener('change', updateScheduleSummary);
+    }
+
+    if (subjectCodeSelect) {
+      subjectCodeSelect.addEventListener('change', updateScheduleSummary);
+    }
+
+    if (classTypeSelect) {
+      classTypeSelect.addEventListener('change', (e) => {
+        const selectedClassType = e.target.value;
+        populateRooms(selectedClassType);
+        updateScheduleSummary();
+      });
+    }
+
+    if (scheduleDaySelect) {
+      scheduleDaySelect.addEventListener('change', updateScheduleSummary);
+    }
+
+    if (startTimeSelect) {
+      startTimeSelect.addEventListener('change', () => {
+        updateScheduleSummary();
+      });
+    }
+
+    if (endTimeSelect) {
+      endTimeSelect.addEventListener('change', () => {
+        if (startTimeSelect.value && endTimeSelect.value) {
+          validateSchedule(startTimeSelect, endTimeSelect, scheduleDaySelect.value);
+        }
+        updateScheduleSummary();
+      });
+    }
+
+    if (roomSelect) {
+      roomSelect.addEventListener('change', updateScheduleSummary);
+    }
 
     // Reset button functionality
     if (resetBtn) {
       resetBtn.addEventListener('click', (e) => {
         e.preventDefault();
         if (confirm('Are you sure you want to reset the entire form?')) {
-          resetForm();
+          form.reset();
+          roomSelect.innerHTML = '<option value="" disabled selected>-- Select Class Type First --</option>';
+          roomSelect.disabled = true;
+          roomSelect.classList.add('auto-populated');
+          updateScheduleSummary();
         }
       });
     }
@@ -1673,100 +1452,66 @@
       form.addEventListener('submit', (e) => {
         e.preventDefault();
         
-        // Validate all required fields
-        if (!yearSectionSelect || !yearSectionSelect.value) {
-          showModal("Please select a Year & Section.", "Missing Information");
-          if (yearSectionSelect) yearSectionSelect.focus();
-          return;
-        }
-        
-        if (!subjectCodeSelect || !subjectCodeSelect.value) {
-          showModal("Please select a Subject Code.", "Missing Information");
-          if (subjectCodeSelect) subjectCodeSelect.focus();
-          return;
-        }
-        
-        if (!roomSelect || !roomSelect.value) {
-          showModal("Please select a Room.", "Missing Information");
-          if (roomSelect) roomSelect.focus();
+        // Validate main schedule
+        if (!yearSectionSelect.value || !subjectCodeSelect.value || !classTypeSelect.value || 
+            !scheduleDaySelect.value || !startTimeSelect.value || !endTimeSelect.value || !roomSelect.value) {
+          showModal("Please complete all required fields.", "Missing Information");
           return;
         }
 
-        // Get schedule data
-        let scheduleData = [];
-        let scheduleType = 'Manual';
-        
-        // Check if using auto-populated schedule
-        const courseDetails = COURSE_DATABASE[subjectCodeSelect.value];
-        if (courseDetails && courseDetails.schedules && courseDetails.schedules.length > 0) {
-          scheduleType = 'Auto-populated';
-          scheduleData = courseDetails.schedules.map(s => `${s.day} ${s.start} - ${s.end}`);
-        } else {
-          // Validate manual schedule items
-          const scheduleItems = document.querySelectorAll('.schedule-item');
-          let allValid = true;
-          
-          scheduleItems.forEach((item, index) => {
-            const day = item.querySelector('.schedule-day');
-            const start = item.querySelector('.start-time');
-            const end = item.querySelector('.end-time');
-            
-            if (!day || !start || !end || !day.value || !start.value || !end.value) {
-              allValid = false;
-              showModal(`Please complete all fields for schedule slot ${index + 1}.`, "Incomplete Schedule");
-              item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              return;
-            }
-            
-            if (!validateSchedule(start, end, day.value, scheduleItemsContainer)) {
-              allValid = false;
-              item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              return;
-            }
-            
-            scheduleData.push(`${day.value} ${start.value} - ${end.value}`);
-          });
-          
-          if (!allValid) return;
+        if (!validateSchedule(startTimeSelect, endTimeSelect, scheduleDaySelect.value)) {
+          return;
         }
+
+        const subjectName = SUBJECT_DATABASE[subjectCodeSelect.value] || 'Unknown Subject';
+        const newScheduleEntry = {
+          classType: classTypeSelect.value,
+          day: scheduleDaySelect.value,
+          startTime: startTimeSelect.value,
+          endTime: endTimeSelect.value,
+          room: roomSelect.value
+        };
+
+        // Create group key
+        const groupKey = `${subjectCodeSelect.value}-${yearSectionSelect.value}`;
         
-        // Add to table
-        if (tableBody) {
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td>${yearSectionSelect.value}</td>
-            <td>${subjectCodeSelect.value}</td>
-            <td>${courseDetails ? courseDetails.subject : ''}</td>
-            <td>${courseDetails ? courseDetails.classType : ''}</td>
-            <td>${scheduleData.join('<br>')}<br><small style="color: #6c757d;">(${scheduleType})</small></td>
-            <td>${roomSelect.value}</td>
-            <td class="action-btns">
-              <button class="action-btns delete" title="Delete schedule">
-                <i class="fas fa-trash-alt"></i>
-              </button>
-            </td>`;
-          
-          // Add delete functionality
-          const deleteBtn = row.querySelector('.delete');
-          if (deleteBtn) {
-            deleteBtn.addEventListener('click', () => {
-              if (confirm('Are you sure you want to delete this schedule?')) {
-                row.remove();
-              }
-            });
-          }
-          
-          tableBody.appendChild(row);
+        // Check for duplicate schedule
+        if (isDuplicateSchedule(groupKey, newScheduleEntry)) {
+          showModal("This exact schedule already exists for the selected subject.", "Duplicate Schedule");
+          return;
         }
+
+        // Initialize group if it doesn't exist
+        if (!scheduleGroups[groupKey]) {
+          scheduleGroups[groupKey] = {
+            yearSection: yearSectionSelect.value,
+            subjectCode: subjectCodeSelect.value,
+            subjectName: subjectName,
+            classType: classTypeSelect.value, // Default to first class type
+            schedules: []
+          };
+        }
+
+        // Add the new schedule entry to the group
+        scheduleGroups[groupKey].schedules.push(newScheduleEntry);
         
-        // Show success message
-        showModal(`Class schedule for ${courseDetails ? courseDetails.subject : 'selected course'} has been successfully added!`, "Success");
+        const totalSessions = scheduleGroups[groupKey].schedules.length;
+        const message = totalSessions === 1 
+          ? `Class schedule for ${subjectName} has been successfully added!`
+          : `Added ${classTypeSelect.value} session for ${subjectName}. Total: ${totalSessions} sessions`;
         
-        // Reset form
+        showModal(message, "Success");
+        
+        // Re-render the table
+        renderSchedules();
+        
+        // Update summary to reflect current selection (no form reset)
+        updateScheduleSummary();
+        
+        // Focus back to year section for next entry
         setTimeout(() => {
-          resetForm();
-          if (yearSectionSelect) yearSectionSelect.focus();
-        }, 1500);
+          yearSectionSelect.focus();
+        }, 500);
       });
     }
 
@@ -1804,6 +1549,9 @@
         form.dispatchEvent(new Event('submit'));
       }
     });
+
+    // Initialize
+    updateScheduleSummary();
   </script>
 </body>
 </html>
