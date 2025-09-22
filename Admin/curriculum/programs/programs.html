@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Curriculum Management System</title>
+  <title>Curriculum - Courses</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     * {
@@ -20,7 +20,18 @@
       min-height: 100vh;
     }
 
-    /* Sidebar Styles - Updated to light theme */
+    .nav-items .timer-item a {
+      background-color: #ff4747;
+      color: white;
+      font-weight: 600;
+    }
+
+    .nav-items .timer-item a:hover {
+      background-color: #e63e3e;
+      color: white;
+    }
+
+    /* Sidebar Styles */
     .sidebar {
       width: 250px;
       background: white;
@@ -97,12 +108,20 @@
       transition: all 0.3s ease;
     }
 
-
     .nav-items a i {
       margin-right: 10px;
       font-size: 18px;
       width: 24px;
       text-align: center;
+    }
+
+    .nav-items a:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .nav-items a.active {
+      background-color: #4a6fa9;
+      color: white;
     }
 
     /* Dropdown Styles */
@@ -115,6 +134,7 @@
       border-radius: 5px;
       cursor: pointer;
       transition: all 0.3s ease;
+      justify-content: space-between;
     }
 
     .dropdown .dropdown-btn:hover {
@@ -125,6 +145,8 @@
       display: none;
       list-style: none;
       padding-left: 20px;
+      border-radius: 5px;
+      margin-top: 5px;
     }
 
     .dropdown-content li a {
@@ -138,6 +160,10 @@
 
     .dropdown-content li a:hover {
       background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .dropdown.open .dropdown-content {
+      display: block;
     }
 
     /* Main Content */
@@ -164,7 +190,7 @@
       color: #2c3e50;
     }
 
-    .courses-table, .curriculum-form, .curriculum-table {
+    .courses-table {
       background: #fff;
       border-radius: 8px;
       padding: 20px;
@@ -172,63 +198,12 @@
       margin-bottom: 25px;
     }
 
-    .courses-table h3, .curriculum-form h3, .curriculum-table h3 {
+    .courses-table h3 {
       margin-bottom: 15px;
       color: #2c3e50;
       border-bottom: 1px solid #eee;
       padding-bottom: 10px;
     }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
-      margin-bottom: 15px;
-    }
-
-    .form-grid label {
-      font-weight: 500;
-      font-size: 14px;
-      margin-bottom: 5px;
-      display: block;
-    }
-
-    .form-grid input, .form-grid select {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 14px;
-    }
-
-    .form-actions {
-      text-align: right;
-      margin-top: 20px;
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-
-    .btn {
-      padding: 8px 15px;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      cursor: pointer;
-      transition: all 0.3s;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .btn-primary { background: #4a6fa9; color: #fff; }
-    .btn-primary:hover { background: #3b5b8d; }
-
-    .btn-secondary { background: #95a5a6; color: #fff; }
-    .btn-secondary:hover { background: #7f8c8d; }
-
-    .btn-success { background: #27ae60; color: #fff; }
-    .btn-success:hover { background: #219653; }
 
     .btn-view {
       background: #4a6fa9;
@@ -237,8 +212,13 @@
       border-radius: 4px;
       text-decoration: none;
       display: inline-block;
+      transition: background 0.3s;
     }
-    .btn-view:hover { background: #3b5b8d; }
+
+    .btn-view:hover {
+      background: #3b5b8d;
+      color: white;
+    }
 
     table {
       width: 100%;
@@ -249,104 +229,189 @@
     table th, table td {
       padding: 12px;
       border: 1px solid #ddd;
-      text-align: center;
+      text-align: left;
       font-size: 14px;
     }
 
-    table th { background: #f0f2f5; font-weight: 600; }
-    table tr:hover { background: #f9fafb; }
-
-    .action-btns button {
-      background: none;
-      border: none;
-      cursor: pointer;
-      margin: 0 5px;
-      font-size: 16px;
+    table th { 
+      background: #f0f2f5; 
+      font-weight: 600; 
+      text-align: center;
     }
 
-    .action-btns .edit { color: #4a6fa9; }
-    .action-btns .delete { color: #e74c3c; }
-
-    .page-container { display: block; }
-    .curriculum-page { display: none; }
+    table tr:hover { 
+      background: #f9fafb; 
+    }
 
     .back-btn {
       background: #95a5a6;
       color: white;
-      margin-right: 10px;
-    }
-    .back-btn:hover { background: #7f8c8d; }
-
-    .subject-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
-      padding: 10px;
-      background: #f9f9f9;
-      border-radius: 6px;
-    }
-
-    .subject-item input, .subject-item select {
-      flex: 1;
-      padding: 8px 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-    }
-
-    .remove-subject {
-      background: #e74c3c;
-      color: white;
+      padding: 8px 15px;
       border: none;
-      border-radius: 4px;
-      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 14px;
       cursor: pointer;
+      transition: all 0.3s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      text-decoration: none;
     }
 
-    .warning-modal {
+    .back-btn:hover { 
+      background: #7f8c8d; 
+    }
+
+    /* Modal Styles */
+    .modal {
       display: none;
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0,0,0,0.5);
-      backdrop-filter: blur(3px);
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
       justify-content: center;
       align-items: center;
-      z-index: 1000;
-      animation: fadeIn 0.2s ease-in-out forwards;
+      overflow-y: auto;
+      padding: 20px 0;
     }
 
-    .warning-modal-content {
-      background: #fff;
-      padding: 25px 20px;
-      border-radius: 16px;
-      max-width: 400px;
-      text-align: center;
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-      animation: scaleUp 0.25s ease-out;
-    }
-
-    .warning-icon { font-size: 56px; color: #f59f00; margin-bottom: 10px; display: block; }
-    .warning-modal-content h3 { margin-bottom: 8px; font-size: 1.4rem; color: #333; }
-    .warning-modal-content p { margin-bottom: 15px; font-size: 0.95rem; color: #555; }
-
-    .btn-close {
-      background: #f59f00;
-      color: white;
-      border: none;
-      padding: 10px 20px;
+    .modal-content {
+      background-color: white;
+      padding: 30px;
       border-radius: 8px;
-      cursor: pointer;
-      font-weight: bold;
-      transition: background 0.2s ease;
+      width: 500px;
+      max-width: 90%;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+      max-height: 90vh;
+      overflow-y: auto;
     }
 
-    .btn-close:hover { background: #d88a00; }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
 
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes scaleUp { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .modal-header h3 {
+      color: #2c3e50;
+      margin: 0;
+    }
+
+    .close {
+      color: #aaa;
+      font-size: 24px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .close:hover {
+      color: #333;
+    }
+
+    .modal-body {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .modal-body p {
+      color: #666;
+      line-height: 1.6;
+      margin: 0 0 20px 0;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #eee;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      text-decoration: none;
+    }
+
+    .btn-primary { 
+      background: #4a6fa9; 
+      color: #fff; 
+    }
+
+    .btn-primary:hover { 
+      background: #3b5b8d; 
+    }
+
+    .btn-secondary { 
+      background: #6c757d; 
+      color: #fff; 
+    }
+
+    .btn-secondary:hover { 
+      background: #545b62; 
+    }
+
+    .btn-success {
+      background: #28a745;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #218838;
+    }
+
+    .btn-success:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+    }
+
+    .btn-warning {
+      background: #ffc107;
+      color: #212529;
+    }
+
+    .btn-warning:hover {
+      background: #e0a800;
+    }
+
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c82333;
+    }
+
+    .error-modal .modal-header h3 {
+      color: #dc3545;
+    }
+
+    .error-modal .modal-content {
+      border-left: 4px solid #dc3545;
+    }
+
+    .success-modal .modal-header h3 {
+      color: #28a745;
+    }
+
+    .success-modal .modal-content {
+      border-left: 4px solid #28a745;
+    }
 
     @media (max-width: 992px) {
       .sidebar { width: 80px; }
@@ -361,91 +426,312 @@
     }
 
     @media (max-width: 768px) {
-      .form-grid { grid-template-columns: 1fr; }
       .sidebar { width: 0; display: none; }
       .main-content { margin-left: 0; }
-      .subject-item { flex-direction: column; align-items: stretch; }
       .header { flex-direction: column; gap: 15px; }
-      .form-actions { flex-direction: column; }
+      .modal-content {
+        width: 95%;
+        padding: 20px;
+      }
     }
 
-    .course-details {
-      background: #f8f9fa;
-      padding: 15px;
+    /* Subject Management Specific Styles */
+    .dashboard-content {
+      background: white;
       border-radius: 8px;
-      margin-bottom: 15px;
+      padding: 25px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      margin-bottom: 25px;
     }
 
-    .schedule-items {
+    .dashboard-content h3 {
+      color: #2c3e50;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .selection-controls {
+      display: flex;
+      gap: 20px;
+      align-items: flex-end;
+      margin-bottom: 30px;
+    }
+
+    .control-group {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      margin-bottom: 10px;
+      min-width: 200px;
+      flex: 1;
+      max-width: 250px;
     }
 
-    .schedule-item {
-      display: flex;
-      gap: 10px;
-      align-items: center;
+    .control-group label {
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #2c3e50;
     }
 
-    .schedule-item select {
-      padding: 8px;
+    .control-group select, .control-group input {
+      padding: 10px 15px;
       border: 1px solid #ddd;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 15px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .subjects-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 700px;
+    }
+
+    .subjects-table th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+      color: #2c3e50;
+      padding: 12px 15px;
+      border-bottom: 2px solid #dee2e6;
+    }
+
+    .subjects-table td {
+      padding: 12px 15px;
+      border-bottom: 1px solid #dee2e6;
+      vertical-align: middle;
+    }
+
+    .subjects-table tr:hover {
+      background-color: #f8f9fa;
+    }
+
+    .subjects-table .subject-code {
+      font-weight: bold;
+      color: #2c3e50;
+      font-family: 'Courier New', monospace;
+    }
+
+    .subjects-table .subject-time {
+      font-weight: 500;
+      color: #495057;
+      background: #f8f9fa;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .subjects-table .subject-day {
+      text-transform: capitalize;
+      color: #6c757d;
+      font-weight: 500;
+      background: #e9ecef;
+      padding: 4px 8px;
       border-radius: 4px;
     }
 
-    .btn-icon {
-      width: 32px;
-      height: 32px;
-      border: none;
-      border-radius: 50%;
-      background: #4a6fa9;
+    .class-type-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .class-type-lecture {
+      background-color: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+
+    .class-type-lab {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .btn-edit {
+      background: #17a2b8;
       color: white;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      padding: 6px 10px;
     }
 
-    .btn-icon:hover { background: #3b5b8d; }
-    .remove-schedule { background: #dc3545; }
-    .remove-schedule:hover { background: #c82333; }
+    .btn-edit:hover {
+      background: #138496;
+    }
 
-    .course-container {
-      margin-bottom: 20px;
-      border: 1px solid #ddd;
+    #addSubjectBtn {
+      height: 40px;
+      white-space: nowrap;
+    }
+
+    #addSubjectBtn:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+    }
+
+    .no-data {
+      text-align: center;
+      padding: 40px 20px;
+      color: #6c757d;
+    }
+
+    .no-data i {
+      font-size: 48px;
+      margin-bottom: 15px;
+      opacity: 0.5;
+    }
+
+    .time-invalid {
+      border-color: #dc3545 !important;
+      background-color: #f8d7da !important;
+    }
+
+    .time-warning {
+      font-size: 12px;
+      color: #856404;
+      background-color: #fff3cd;
+      border: 1px solid #ffeaa7;
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 5px;
+    }
+
+    .selection-prompt {
+      background: #e3f2fd;
+      border: 1px solid #bbdefb;
       border-radius: 8px;
-      padding: 15px;
-      background: #f9f9f9;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
     }
 
-    .course-header {
+    .selection-prompt i {
+      font-size: 48px;
+      color: #1976d2;
+      margin-bottom: 15px;
+      display: block;
+    }
+
+    .selection-prompt h4 {
+      color: #1976d2;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .selection-prompt p {
+      color: #666;
+      margin: 0;
+    }
+
+    @media (max-width: 768px) {
+      .selection-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 15px;
+      }
+      .control-group {
+        min-width: auto;
+      }
+      .subjects-table {
+        font-size: 12px;
+      }
+      .subjects-table th,
+      .subjects-table td {
+        padding: 8px 6px;
+      }
+      .action-buttons {
+        flex-direction: column;
+      }
+      .form-row {
+        flex-direction: column;
+        gap: 0;
+      }
+      .header {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+      }
+    }
+
+    /* Form Styles for Subject Management */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-row {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .form-row .form-group {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #2c3e50;
+    }
+
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 10px 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+      font-size: 14px;
+    }
+
+    .start-time, .end-time {
+      padding: 12px 15px;
+      font-size: 14px;
+      min-height: 45px;
+    }
+
+    .start-time:focus, .end-time:focus {
+      outline: none;
+      border-color: #4a6fa9;
+      box-shadow: 0 0 0 2px rgba(74, 111, 169, 0.2);
+    }
+
+    .conflict-details {
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 6px;
+      padding: 15px;
       margin-bottom: 15px;
     }
 
-    .course-title { font-weight: bold; color: #2c3e50; }
-
-    .remove-course {
-      background: #e74c3c;
-      color: white;
-      border: none;
-      padding: 5px 10px;
-      border-radius: 4px;
-      cursor: pointer;
+    .conflict-details h4 {
+      color: #856404;
+      margin-bottom: 10px;
+      margin-top: 0;
     }
 
-    .time-conflict {
-      border: 2px solid #e74c3c !important;
-      background-color: #ffe6e6 !important;
+    .conflict-details ul {
+      margin: 0;
+      padding-left: 20px;
+      color: #856404;
     }
 
-    .duplicate-schedule {
-      border: 2px solid #ff9900 !important;
-      background-color: #fff5e6 !important;
+    .conflict-details li {
+      margin-bottom: 5px;
     }
   </style>
 </head>
@@ -466,6 +752,9 @@
     </div>
 
     <ul class="nav-items">
+      <li class="timer-item">
+        <a href="../Timer/timer.html"><i class="fas fa-stopwatch"></i> <span>Go to Timer</span></a>
+      </li>
       <li><a href="../Admin/dashboard/dashboard.html"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
       <li class="dropdown">
         <a href="#" class="dropdown-btn">
@@ -491,7 +780,7 @@
     <!-- Courses Page -->
     <div class="page-container" id="coursesPage">
       <div class="header">
-        <h2><i class="fas fa-book"></i> Curriculum Management</h2>
+        <h2><i class="fas fa-book"></i> Course Management</h2>
       </div>
 
       <div class="courses-table">
@@ -515,7 +804,7 @@
               <td>45</td>
               <td><span style="color: green;">Active</span></td>
               <td>
-                <a href="#" class="btn-view view-course" data-course="IT" data-name="Information Technology">Edit</a>
+                <a href="#" class="btn-view view-course" data-course="IT" data-name="Information Technology">View</a>
               </td>
             </tr>
             <tr>
@@ -525,7 +814,7 @@
               <td>48</td>
               <td><span style="color: green;">Active</span></td>
               <td>
-                <a href="#" class="btn-view view-course" data-course="CS" data-name="Computer Science">Edit</a>
+                <a href="#" class="btn-view view-course" data-course="CS" data-name="Computer Science">View</a>
               </td>
             </tr>
             <tr>
@@ -535,7 +824,7 @@
               <td>40</td>
               <td><span style="color: green;">Active</span></td>
               <td>
-                <a href="#" class="btn-view view-course" data-course="ACT" data-name="Associate in Computer Technology">Edit</a>
+                <a href="#" class="btn-view view-course" data-course="ACT" data-name="Associate in Computer Technology">View</a>
               </td>
             </tr>
           </tbody>
@@ -543,99 +832,78 @@
       </div>
     </div>
 
-    <!-- Curriculum Page (Initially Hidden) -->
-    <div class="page-container curriculum-page" id="curriculumPage">
-      <div class="header">
-        <div style="display: flex; align-items: center;">
-          <h2><i class="fas fa-book"></i> <span id="courseTitle">Curriculum Management</span></h2>
-        </div>
-        <div>
-          <button class="btn back-btn" id="backToCourses" style="margin: 0;"><i class="fas fa-arrow-left"></i> Back to Courses</button>
-        </div>
+    <!-- Subject Management Page - Loaded via JavaScript -->
+    <div class="page-container" id="subjectManagementPage" style="display: none;">
+      <!-- Content will be loaded here -->
+    </div>
+  </div>
+
+  <!-- Generic Alert Modal -->
+  <div class="modal" id="alertModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="alertModalTitle"><i class="fas fa-info-circle"></i> Notice</h3>
+        <span class="close" onclick="hideAlertModal()">&times;</span>
       </div>
-
-      <!-- Curriculum Form -->
-      <div class="curriculum-form">
-        <h3>Add New Curriculum</h3>
-        <form id="curriculumForm">
-          <div class="form-grid">
-            <div>
-              <label for="programCode">Program Code</label>
-              <input type="text" id="programCode" placeholder="Enter program code" readonly style="background-color: #f5f5f5;">
-            </div>
-          </div>
-
-          <h4 style="margin: 20px 0 10px 0;">Course Details</h4>
-
-          <div id="coursesContainer">
-            <!-- Course containers will be added here -->
-          </div>
-
-          <button type="button" class="btn btn-secondary" id="addCourseBtn" style="margin-top: 15px;">
-            <i class="fas fa-plus"></i> Add Subject
-          </button>
-
-          <div class="form-actions" style="margin-top: 20px; text-align: right;">
-            <button type="button" class="btn btn-primary" id="saveCurriculumBtn"><i class="fas fa-save"></i> Save Curriculum</button>
-          </div>
-        </form>
+      <div class="modal-body">
+        <p id="alertModalMessage"></p>
       </div>
-
-      <!-- Curriculum Table -->
-      <div class="curriculum-table">
-        <h3>Curriculum List</h3>
-        <table id="curriculumTable">
-          <thead>
-            <tr>
-              <th>Program Code</th>
-              <th>Day</th>
-              <th>Time</th>
-              <th>Course Code</th>
-              <th>Course Name</th>
-              <th>Type</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Dynamic rows will appear here -->
-          </tbody>
-        </table>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" onclick="hideAlertModal()">OK</button>
       </div>
     </div>
+  </div>
 
-    <div class="warning-modal" id="scheduleWarningModal">
-      <div class="warning-modal-content">
-        <i class="fas fa-exclamation-triangle warning-icon"></i>
-        <h3>Schedule Duration Error</h3>
-        <p id="scheduleErrorMessage">Class duration must be between 1 to 3 hours.</p>
-        <button class="btn-close" onclick="document.getElementById('scheduleWarningModal').style.display='none'">
-          Adjust Schedule
-        </button>
+  <!-- Generic Confirm Modal -->
+  <div class="modal" id="confirmModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3><i class="fas fa-question-circle"></i> Confirm Action</h3>
+        <span class="close" onclick="hideConfirmModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p id="confirmModalMessage"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="hideConfirmModal()">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmBtn" onclick="handleConfirmAction()">Confirm</button>
       </div>
     </div>
   </div>
 
   <script>
+    // Global variables for modal callbacks
+    let confirmCallback = null;
+    let confirmData = null;
+
     // Initialize sidebar functionality
     function initSidebar() {
       // Toggle dropdown
       document.querySelectorAll(".dropdown-btn").forEach(btn => {
         btn.addEventListener("click", function(e) {
           e.preventDefault();
-          const content = this.nextElementSibling;
-          content.style.display = (content.style.display === 'block') ? 'none' : 'block';
+          const dropdown = this.closest('.dropdown');
+          const isOpen = dropdown.classList.contains('open');
+          
+          // Close all dropdowns
+          document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
+          
+          // Toggle current dropdown
+          if (!isOpen) {
+            dropdown.classList.add('open');
+          }
         });
       });
 
       // Set active state based on current page
       const currentPath = window.location.pathname;
       document.querySelectorAll('.nav-items a').forEach(link => {
-        if (link.textContent.includes('Curriculum Management') || (link.getAttribute('href') && link.getAttribute('href').includes('curriculum'))) {
+        if (link.textContent.includes('Class Schedules') || (link.getAttribute('href') && link.getAttribute('href').includes('classsched'))) {
           link.classList.add('active');
           // If link is in dropdown, show the dropdown
           const dropdown = link.closest('.dropdown-content');
           if (dropdown) {
-            dropdown.style.display = 'block';
+            dropdown.parentElement.classList.add('open');
           }
         }
       });
@@ -648,536 +916,870 @@
       document.addEventListener('DOMContentLoaded', initSidebar);
     }
 
-    // DOM Elements
-    const coursesPage = document.getElementById('coursesPage');
-    const curriculumPage = document.getElementById('curriculumPage');
-    const courseTitle = document.getElementById('courseTitle');
-    const backToCoursesBtn = document.getElementById('backToCourses');
-    const viewCourseButtons = document.querySelectorAll('.view-course');
-    const curriculumForm = document.getElementById('curriculumForm');
-    const addCourseBtn = document.getElementById('addCourseBtn');
-    const coursesContainer = document.getElementById('coursesContainer');
-    const curriculumTableBody = document.querySelector('#curriculumTable tbody');
-    const saveCurriculumBtn = document.getElementById('saveCurriculumBtn');
-
-    // Helper: convert time string (e.g. "7:30 AM") to minutes since 00:00
-    function timeToMinutes(timeStr) {
-      if (!timeStr) return 0;
-      const [time, period] = timeStr.split(' ');
-      const [hours, minutes] = time.split(':').map(Number);
-      let totalMinutes = (hours % 12) * 60 + minutes;
-      if (period === 'PM') totalMinutes += 12 * 60;
-      return totalMinutes;
-    }
-
-    // Function to validate time duration and conflicts
-    function validateSchedule(startTimeEl, endTimeEl, day, courseCode, scheduleItems) {
-      // Reset any previous validation styles
-      startTimeEl.classList.remove('time-conflict', 'duplicate-schedule');
-      endTimeEl.classList.remove('time-conflict', 'duplicate-schedule');
-
-      const startMins = timeToMinutes(startTimeEl.value);
-      const endMins = timeToMinutes(endTimeEl.value);
-
-      // Check if start time is before end time
-      if (startMins >= endMins) {
-        startTimeEl.classList.add('time-conflict');
-        endTimeEl.classList.add('time-conflict');
-        document.getElementById('scheduleErrorMessage').textContent = "Start time must be before end time.";
-        document.getElementById('scheduleWarningModal').style.display = 'flex';
-        return false;
-      }
-
-      // Check if duration is between 1-3 hours
-      const duration = (endMins - startMins) / 60;
-      if (duration < 1 || duration > 3) {
-        startTimeEl.classList.add('time-conflict');
-        endTimeEl.classList.add('time-conflict');
-        document.getElementById('scheduleErrorMessage').textContent = "Class duration must be between 1 to 3 hours.";
-        document.getElementById('scheduleWarningModal').style.display = 'flex';
-        return false;
-      }
-
-      // Check for duplicate schedules (same day and overlapping time)
-      const schedules = scheduleItems.querySelectorAll('.schedule-item');
-      for (const schedule of schedules) {
-        if (schedule.contains(startTimeEl)) continue; // Skip current schedule
-
-        const otherDay = schedule.querySelector('.schedule-day').value;
-        const otherStart = timeToMinutes(schedule.querySelector('.start-time').value);
-        const otherEnd = timeToMinutes(schedule.querySelector('.end-time').value);
-
-        // Only check if the other schedule has all values
-        if (otherDay && otherStart && otherEnd) {
-          if (day === otherDay &&
-              ((startMins >= otherStart && startMins < otherEnd) ||
-               (endMins > otherStart && endMins <= otherEnd) ||
-               (startMins <= otherStart && endMins >= otherEnd))) {
-            startTimeEl.classList.add('duplicate-schedule');
-            endTimeEl.classList.add('duplicate-schedule');
-            document.getElementById('scheduleErrorMessage').textContent = "Schedule conflict with another class at the same time.";
-            document.getElementById('scheduleWarningModal').style.display = 'flex';
-            return false;
-          }
+    // Generic Alert Modal Functions
+    function showAlertModal(title, message, isError = false) {
+      const modal = document.getElementById('alertModal');
+      const titleEl = document.getElementById('alertModalTitle');
+      const messageEl = document.getElementById('alertModalMessage');
+      
+      if (modal && titleEl && messageEl) {
+        titleEl.innerHTML = isError ? `<i class="fas fa-exclamation-triangle"></i> ${title}` : `<i class="fas fa-info-circle"></i> ${title}`;
+        messageEl.textContent = message;
+        modal.style.display = 'flex';
+        
+        // Add appropriate class for styling
+        if (isError) {
+          modal.classList.add('error-modal');
+        } else {
+          modal.classList.add('success-modal');
         }
       }
-
-      return true;
     }
 
-    // Add new course function
-    function addNewCourse() {
-      const courseId = Date.now(); // Unique ID for the course
-      const courseDiv = document.createElement('div');
-      courseDiv.className = 'course-container';
-      courseDiv.id = `course-${courseId}`;
-      courseDiv.innerHTML = `
-        <div class="course-header">
-          <div class="course-title">Subject Details</div>
-          <button type="button" class="remove-course" data-course-id="${courseId}">
-            <i class="fas fa-times"></i> Remove Subject
-          </button>
-        </div>
-        <div class="form-grid">
-          <div>
-            <label>Course Code</label>
-            <input type="text" class="course-code" placeholder="Enter course code" required>
-          </div>
-          <div>
-            <label>Course Name</label>
-            <input type="text" class="course-name" placeholder="Enter course name" required>
-          </div>
-          <div>
-            <label>Course Type</label>
-            <select class="course-type" required>
-              <option value="" disabled selected>-- Select Type --</option>
-              <option>Lecture</option>
-              <option>Laboratory</option>
-              <option>Lecture/Lab</option>
-            </select>
-          </div>
-        </div>
+    function hideAlertModal() {
+      const modal = document.getElementById('alertModal');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('error-modal', 'success-modal');
+      }
+    }
 
-        <div class="schedule-container">
-          <h5 style="margin: 10px 0;">Class Schedule</h5>
-          <div class="schedule-items" id="schedule-items-${courseId}">
-            <div class="schedule-item">
-              <select class="schedule-day" required>
-                <option value="" disabled selected>Day</option>
-                <option>Monday</option>
-                <option>Tuesday</option>
-                <option>Wednesday</option>
-                <option>Thursday</option>
-                <option>Friday</option>
-                <option>Saturday</option>
-              </select>
-              <select class="start-time" required>
-                <option value="" disabled selected>Start</option>
-                <option>7:00 AM</option>
-                <option>7:30 AM</option>
-                <option>8:00 AM</option>
-                <option>8:30 AM</option>
-                <option>9:00 AM</option>
-                <option>9:30 AM</option>
-                <option>10:00 AM</option>
-                <option>10:30 AM</option>
-                <option>11:00 AM</option>
-                <option>11:30 AM</option>
-                <option>12:00 PM</option>
-                <option>12:30 PM</option>
-                <option>1:00 PM</option>
-                <option>1:30 PM</option>
-                <option>2:00 PM</option>
-                <option>2:30 PM</option>
-                <option>3:00 PM</option>
-                <option>3:30 PM</option>
-                <option>4:00 PM</option>
-                <option>4:30 PM</option>
-                <option>5:00 PM</option>
-                <option>5:30 PM</option>
-                <option>6:00 PM</option>
-                <option>6:30 PM</option>
-                <option>7:00 PM</option>
-              </select>
-              <select class="end-time" required>
-                <option value="" disabled selected>End</option>
-                <option>8:00 AM</option>
-                <option>8:30 AM</option>
-                <option>9:00 AM</option>
-                <option>9:30 AM</option>
-                <option>10:00 AM</option>
-                <option>10:30 AM</option>
-                <option>11:00 AM</option>
-                <option>11:30 AM</option>
-                <option>12:00 PM</option>
-                <option>12:30 PM</option>
-                <option>1:00 PM</option>
-                <option>1:30 PM</option>
-                <option>2:00 PM</option>
-                <option>2:30 PM</option>
-                <option>3:00 PM</option>
-                <option>3:30 PM</option>
-                <option>4:00 PM</option>
-                <option>4:30 PM</option>
-                <option>5:00 PM</option>
-                <option>5:30 PM</option>
-                <option>6:00 PM</option>
-                <option>6:30 PM</option>
-                <option>7:00 PM</option>
-                <option>7:30 PM</option>
-                <option>8:00 PM</option>
-              </select>
-              <button type="button" class="btn-icon remove-schedule"><i class="fas fa-times"></i></button>
-            </div>
-          </div>
-          <button type="button" class="btn-icon add-schedule" data-course-id="${courseId}">
-            <i class="fas fa-plus"></i>
-          </button>
+    // Generic Confirm Modal Functions
+    function showConfirmModal(title, message, callback, data = null) {
+      const modal = document.getElementById('confirmModal');
+      const titleEl = modal.querySelector('.modal-header h3');
+      const messageEl = document.getElementById('confirmModalMessage');
+      
+      if (modal && titleEl && messageEl) {
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        confirmCallback = callback;
+        confirmData = data;
+        modal.style.display = 'flex';
+      }
+    }
+
+    function hideConfirmModal() {
+      const modal = document.getElementById('confirmModal');
+      if (modal) {
+        modal.style.display = 'none';
+        confirmCallback = null;
+        confirmData = null;
+      }
+    }
+
+    function handleConfirmAction() {
+      if (confirmCallback && confirmData) {
+        confirmCallback(confirmData);
+      } else if (confirmCallback) {
+        confirmCallback();
+      }
+      hideConfirmModal();
+    }
+
+    // Time options for dropdowns
+    const timeOptions = [
+      { display: '7:00 AM', value: '07:00' },
+      { display: '7:30 AM', value: '07:30' },
+      { display: '8:00 AM', value: '08:00' },
+      { display: '8:30 AM', value: '08:30' },
+      { display: '9:00 AM', value: '09:00' },
+      { display: '9:30 AM', value: '09:30' },
+      { display: '10:00 AM', value: '10:00' },
+      { display: '10:30 AM', value: '10:30' },
+      { display: '11:00 AM', value: '11:00' },
+      { display: '11:30 AM', value: '11:30' },
+      { display: '12:00 PM', value: '12:00' },
+      { display: '12:30 PM', value: '12:30' },
+      { display: '1:00 PM', value: '13:00' },
+      { display: '1:30 PM', value: '13:30' },
+      { display: '2:00 PM', value: '14:00' },
+      { display: '2:30 PM', value: '14:30' },
+      { display: '3:00 PM', value: '15:00' },
+      { display: '3:30 PM', value: '15:30' },
+      { display: '4:00 PM', value: '16:00' },
+      { display: '4:30 PM', value: '16:30' },
+      { display: '5:00 PM', value: '17:00' },
+      { display: '5:30 PM', value: '17:30' },
+      { display: '6:00 PM', value: '18:00' },
+      { display: '6:30 PM', value: '18:30' },
+      { display: '7:00 PM', value: '19:00' }
+    ];
+
+    // Function to generate time dropdown HTML
+    function generateTimeDropdown(id, className, labelText, selectedValue = '') {
+      const options = timeOptions.map(time => 
+        `<option value="${time.value}" ${time.value === selectedValue ? 'selected' : ''}>${time.display}</option>`
+      ).join('');
+      
+      return `
+        <div class="form-group">
+          <label for="${id}">${labelText}</label>
+          <select id="${id}" class="${className}" required>
+            <option value="" disabled ${!selectedValue ? 'selected' : ''}>${labelText}</option>
+            ${options}
+          </select>
         </div>
       `;
-
-      coursesContainer.appendChild(courseDiv);
-
-      // Add event listeners for the new course
-      const removeCourseBtn = courseDiv.querySelector('.remove-course');
-      removeCourseBtn.addEventListener('click', function() {
-        if (document.querySelectorAll('.course-container').length > 1) {
-          document.getElementById(`course-${this.getAttribute('data-course-id')}`).remove();
-        } else {
-          alert("You need to have at least one subject.");
-        }
-      });
-
-      const addScheduleBtn = courseDiv.querySelector('.add-schedule');
-      addScheduleBtn.addEventListener('click', function() {
-        const courseId = this.getAttribute('data-course-id');
-        const scheduleItems = document.getElementById(`schedule-items-${courseId}`);
-        const newSchedule = document.createElement('div');
-        newSchedule.className = 'schedule-item';
-        newSchedule.innerHTML = `
-          <select class="schedule-day" required>
-            <option value="" disabled selected>Day</option>
-            <option>Monday</option>
-            <option>Tuesday</option>
-            <option>Wednesday</option>
-            <option>Thursday</option>
-            <option>Friday</option>
-            <option>Saturday</option>
-          </select>
-          <select class="start-time" required>
-            <option value="" disabled selected>Start</option>
-            <option>7:00 AM</option>
-            <option>7:30 AM</option>
-            <option>8:00 AM</option>
-            <option>8:30 AM</option>
-            <option>9:00 AM</option>
-            <option>9:30 AM</option>
-            <option>10:00 AM</option>
-            <option>10:30 AM</option>
-            <option>11:00 AM</option>
-            <option>11:30 AM</option>
-            <option>12:00 PM</option>
-            <option>12:30 PM</option>
-            <option>1:00 PM</option>
-            <option>1:30 PM</option>
-            <option>2:00 PM</option>
-            <option>2:30 PM</option>
-            <option>3:00 PM</option>
-            <option>3:30 PM</option>
-            <option>4:00 PM</option>
-            <option>4:30 PM</option>
-            <option>5:00 PM</option>
-            <option>5:30 PM</option>
-            <option>6:00 PM</option>
-            <option>6:30 PM</option>
-            <option>7:00 PM</option>
-          </select>
-          <select class="end-time" required>
-            <option value="" disabled selected>End</option>
-            <option>8:00 AM</option>
-            <option>8:30 AM</option>
-            <option>9:00 AM</option>
-            <option>9:30 AM</option>
-            <option>10:00 AM</option>
-            <option>10:30 AM</option>
-            <option>11:00 AM</option>
-            <option>11:30 AM</option>
-            <option>12:00 PM</option>
-            <option>12:30 PM</option>
-            <option>1:00 PM</option>
-            <option>1:30 PM</option>
-            <option>2:00 PM</option>
-            <option>2:30 PM</option>
-            <option>3:00 PM</option>
-            <option>3:30 PM</option>
-            <option>4:00 PM</option>
-            <option>4:30 PM</option>
-            <option>5:00 PM</option>
-            <option>5:30 PM</option>
-            <option>6:00 PM</option>
-            <option>6:30 PM</option>
-            <option>7:00 PM</option>
-            <option>7:30 PM</option>
-            <option>8:00 PM</option>
-          </select>
-          <button type="button" class="btn-icon remove-schedule"><i class="fas fa-times"></i></button>
-        `;
-        scheduleItems.appendChild(newSchedule);
-
-        // Add event listener to remove button
-        newSchedule.querySelector('.remove-schedule').addEventListener('click', function() {
-          if (scheduleItems.querySelectorAll('.schedule-item').length > 1) {
-            this.closest('.schedule-item').remove();
-          } else {
-            alert("Each course must have at least one schedule.");
-          }
-        });
-
-        // Add validation to time selects
-        const startTime = newSchedule.querySelector('.start-time');
-        const endTime = newSchedule.querySelector('.end-time');
-        const daySelect = newSchedule.querySelector('.schedule-day');
-
-        const validateNewTime = () => {
-          if (startTime.value && endTime.value && daySelect.value) {
-            validateSchedule(startTime, endTime, daySelect.value, '', scheduleItems);
-          } else {
-            startTime.classList.remove('time-conflict', 'duplicate-schedule');
-            endTime.classList.remove('time-conflict', 'duplicate-schedule');
-          }
-        };
-
-        startTime.addEventListener('change', validateNewTime);
-        endTime.addEventListener('change', validateNewTime);
-        daySelect.addEventListener('change', validateNewTime);
-      });
-
-      // Add event listeners to remove schedule buttons
-      courseDiv.querySelectorAll('.remove-schedule').forEach(button => {
-        button.addEventListener('click', function() {
-          const scheduleItems = this.closest('.schedule-items');
-          if (scheduleItems.querySelectorAll('.schedule-item').length > 1) {
-            this.closest('.schedule-item').remove();
-          } else {
-            alert("Each course must have at least one schedule.");
-          }
-        });
-      });
-
-      // Add validation to time selects for the first schedule
-      const firstSchedule = courseDiv.querySelector('.schedule-item');
-      const startTime = firstSchedule.querySelector('.start-time');
-      const endTime = firstSchedule.querySelector('.end-time');
-      const daySelect = firstSchedule.querySelector('.schedule-day');
-
-      const validateTime = () => {
-        if (startTime.value && endTime.value && daySelect.value) {
-          validateSchedule(startTime, endTime, daySelect.value, '', courseDiv.querySelector('.schedule-items'));
-        } else {
-          startTime.classList.remove('time-conflict', 'duplicate-schedule');
-          endTime.classList.remove('time-conflict', 'duplicate-schedule');
-        }
-      };
-
-      startTime.addEventListener('change', validateTime);
-      endTime.addEventListener('change', validateTime);
-      daySelect.addEventListener('change', validateTime);
     }
 
-    // Add course button
-    addCourseBtn.addEventListener('click', function() {
-      addNewCourse();
-    });
+    // Subject Management HTML Content
+    const subjectManagementHTML = `
+      <div class="header">
+        <h2><i class="fas fa-book"></i> Subject Management - PROGRAM_NAME</h2>
+        <a href="#" id="backToCourses" class="back-btn">
+          <i class="fas fa-arrow-left"></i> Back to Courses
+        </a>
+      </div>
 
-    // Save curriculum button
-    saveCurriculumBtn.addEventListener('click', function() {
-      const programCode = document.getElementById('programCode').value;
+      <div class="dashboard-content">
+        <div class="selection-controls">
+          <div class="control-group">
+            <label for="select-year">Year Level</label>
+            <select id="select-year" onchange="loadSubjects()">
+              <option value="" disabled selected>Select Year Level</option>
+              <option value="1">1st Year</option>
+              <option value="2">2nd Year</option>
+              <option value="3">3rd Year</option>
+              <option value="4">4th Year</option>
+            </select>
+          </div>
+          
+          <div class="control-group">
+            <label for="select-section">Section</label>
+            <select id="select-section" onchange="loadSubjects()">
+              <option value="" disabled selected>Select Section</option>
+              <option value="A">Section A</option>
+              <option value="B">Section B</option>
+              <option value="C">Section C</option>
+            </select>
+          </div>
 
-      // Get all courses
-      const courses = [];
-      let hasErrors = false;
+          <button id="addSubjectBtn" class="btn btn-primary" disabled onclick="showAddSubjectModal()">
+            <i class="fas fa-plus"></i> Add Subject
+          </button>
+        </div>
 
-      document.querySelectorAll('.course-container').forEach(course => {
-        const courseCode = course.querySelector('.course-code').value;
-        const courseName = course.querySelector('.course-name').value;
-        const courseType = course.querySelector('.course-type').value;
+        <div class="selection-prompt">
+          <i class="fas fa-calendar-alt"></i>
+          <h4>Select Year and Section</h4>
+          <p>Please select a year level and section from the dropdowns above to view and manage subject schedules.</p>
+        </div>
 
-        // Validate course fields
-        if (!courseCode || !courseName || !courseType) {
-          alert('Please fill in all course fields');
-          hasErrors = true;
-          return;
-        }
+        <div class="subjects-list" id="subjectsList" style="display: none;">
+          <h3>Subjects Schedule</h3>
+          <div class="table-container">
+            <table id="subjectsTable" class="subjects-table">
+              <thead>
+                <tr>
+                  <th>Subject Code</th>
+                  <th>Subject Name</th>
+                  <th>Class Type</th>
+                  <th>Time</th>
+                  <th>Day</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="subjectsTableBody">
+                <!-- Subjects will be listed here -->
+              </tbody>
+            </table>
+          </div>
+          <div id="noSubjectsMessage" style="text-align: center; padding: 20px; color: #666; display: none;">
+            No subjects added yet for this year and section.
+          </div>
+        </div>
+      </div>
 
-        // Get all schedules for this course
-        const schedules = [];
-        const scheduleItems = course.querySelector('.schedule-items');
+      <!-- Add Subject Modal -->
+      <div class="modal" id="addSubjectModal">
+        <div class="modal-content" style="width: 600px; max-width: 90%;">
+          <div class="modal-header">
+            <h3 id="modalTitle">Add New Subject Schedule</h3>
+            <span class="close" onclick="hideAddSubjectModal()">&times;</span>
+          </div>
+          <form id="addSubjectForm">
+            <div class="form-group">
+              <label for="subject-code">Subject Code *</label>
+              <input type="text" id="subject-code" placeholder="e.g., IT101" required>
+            </div>
+            <div class="form-group">
+              <label for="subject-name">Subject Name *</label>
+              <input type="text" id="subject-name" placeholder="e.g., Introduction to Computing" required>
+            </div>
+            <div class="form-group">
+              <label for="class-type">Class Type *</label>
+              <select id="class-type" required>
+                <option value="" disabled selected>Select Class Type</option>
+                <option value="Lecture">Lecture</option>
+                <option value="Lab">Lab</option>
+              </select>
+            </div>
+            <div class="form-row">
+              ${generateTimeDropdown('start-time', 'start-time', 'Start Time')}
+              ${generateTimeDropdown('end-time', 'end-time', 'End Time')}
+            </div>
+            <div class="form-group">
+              <label for="subject-day">Day *</label>
+              <select id="subject-day" required>
+                <option value="">Select Day</option>
+                <option value="Monday">Monday</option>
+                <option value="Tuesday">Tuesday</option>
+                <option value="Wednesday">Wednesday</option>
+                <option value="Thursday">Thursday</option>
+                <option value="Friday">Friday</option>
+                <option value="Saturday">Saturday</option>
+              </select>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="hideAddSubjectModal()">Cancel</button>
+              <button type="button" id="submitBtn" class="btn btn-success" disabled onclick="handleSubmit()">Add Subject</button>
+            </div>
+          </form>
+        </div>
+      </div>
 
-        course.querySelectorAll('.schedule-item').forEach(schedule => {
-          const day = schedule.querySelector('.schedule-day').value;
-          const startTime = schedule.querySelector('.start-time');
-          const endTime = schedule.querySelector('.end-time');
+      <!-- Conflict Warning Modal -->
+      <div class="modal" id="conflictModal">
+        <div class="modal-content" style="width: 600px; max-width: 90%;">
+          <div class="modal-header">
+            <h3><i class="fas fa-exclamation-triangle"></i> Schedule Conflict Detected</h3>
+            <span class="close" onclick="hideConflictModal()">&times;</span>
+          </div>
+          <div class="modal-body">
+            <div class="conflict-details" id="conflictDetails">
+              <!-- Conflict details will be populated here -->
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="hideConflictModal()">Cancel</button>
+              <button type="button" class="btn btn-warning" id="proceedBtn" onclick="proceedWithConflict()">Proceed Anyway</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
 
-          if (!day || !startTime.value || !endTime.value) {
-            alert('Please fill in all schedule fields');
-            hasErrors = true;
-            return;
-          }
+    // Subject Management JavaScript
+    let subjectsData = {};
+    let currentProgramCode = '';
+    let editingSubject = null;
+    let currentValidateTimes = null;
+    let pendingSubjectData = null;
 
-          // Validate schedule duration and conflicts
-          if (!validateSchedule(startTime, endTime, day, courseCode, scheduleItems)) {
-            hasErrors = true;
-            return;
-          }
+    // Function to convert time string to minutes since midnight
+    function timeToMinutes(timeStr) {
+      if (!timeStr || timeStr === '') return 0;
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    }
 
-          schedules.push({
-            day: day,
-            startTime: startTime.value,
-            endTime: endTime.value
+    // Function to calculate duration between two times
+    function calculateDuration(startTime, endTime) {
+      if (!startTime || !endTime) return 'Not selected';
+      
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+      let duration = endMinutes - startMinutes;
+      
+      if (duration <= 0) {
+        return 'Invalid';
+      }
+      
+      const hours = Math.floor(duration / 60);
+      const minutes = duration % 60;
+      return `${hours}h ${minutes}m`;
+    }
+
+    // Function to format time for display
+    function formatTimeForDisplay(timeValue) {
+      const time = timeOptions.find(t => t.value === timeValue);
+      return time ? time.display : timeValue;
+    }
+
+    // Function to validate time selection - STRICT VALIDATION
+    function validateTimeSelection(startTime, endTime) {
+      console.log('=== TIME VALIDATION START ===');
+      console.log('Validating times:', startTime, endTime);
+      
+      // Check if both times are selected
+      if (!startTime || !endTime || startTime === '' || endTime === '') {
+        console.log('❌ Validation failed: Times not selected');
+        return false;
+      }
+      
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+      
+      console.log('Start time:', startTime, '(', startMinutes, 'minutes)');
+      console.log('End time:', endTime, '(', endMinutes, 'minutes)');
+      
+      // Calculate duration in minutes
+      const duration = endMinutes - startMinutes;
+      
+      console.log('Calculated duration:', duration, 'minutes');
+      
+      // Check if end time is before or same as start time
+      if (duration <= 0) {
+        console.log('❌ Validation failed: End time is not after start time');
+        return false;
+      }
+      
+      // STRICT Check duration limits: 60 to 180 minutes (1h to exactly 3h)
+      const isValidDuration = duration >= 60 && duration <= 180;
+      
+      console.log('Duration check - Min(60):', duration >= 60);
+      console.log('Duration check - Max(180):', duration <= 180);
+      console.log('Duration valid:', isValidDuration);
+      console.log('=== TIME VALIDATION END ===');
+      
+      return isValidDuration;
+    }
+
+    // Function to check for schedule conflicts
+    function checkScheduleConflicts(newSubject, key) {
+      if (!subjectsData[key]) return null;
+      
+      const conflicts = [];
+      const newStart = timeToMinutes(newSubject.startTime);
+      const newEnd = timeToMinutes(newSubject.endTime);
+      
+      subjectsData[key].forEach((existingSubject, index) => {
+        if (existingSubject.day !== newSubject.day) return;
+        
+        const existingStart = timeToMinutes(existingSubject.startTime);
+        const existingEnd = timeToMinutes(existingSubject.endTime);
+        
+        // Check for time overlap
+        const hasOverlap = (newStart < existingEnd && newEnd > existingStart);
+        
+        if (hasOverlap) {
+          conflicts.push({
+            index: index,
+            subject: existingSubject,
+            overlap: {
+              newStart: newStart,
+              newEnd: newEnd,
+              existingStart: existingStart,
+              existingEnd: existingEnd
+            }
           });
-        });
-
-        if (schedules.length === 0) {
-          alert('Each course must have at least one schedule');
-          hasErrors = true;
-          return;
         }
-
-        courses.push({
-          courseCode: courseCode,
-          courseName: courseName,
-          courseType: courseType,
-          schedules: schedules
-        });
       });
+      
+      return conflicts.length > 0 ? conflicts : null;
+    }
 
-      if (hasErrors || courses.length === 0) {
+    // Function to show conflict modal
+    function showConflictModal(conflicts, subjectData) {
+      pendingSubjectData = subjectData;
+      const modal = document.getElementById('conflictModal');
+      const conflictDetails = document.getElementById('conflictDetails');
+      
+      if (!modal || !conflictDetails) return;
+      
+      let detailsHTML = '<h4>⚠️ The following conflicts were detected:</h4><ul>';
+      
+      conflicts.forEach(conflict => {
+        const existingSubject = conflict.subject;
+        const overlap = conflict.overlap;
+        
+        detailsHTML += `
+          <li>
+            <strong>${existingSubject.code} - ${existingSubject.name}</strong> 
+            <br><small>Current: ${formatTimeForDisplay(existingSubject.startTime)} - ${formatTimeForDisplay(existingSubject.endTime)} (${existingSubject.classType})</small>
+            <br><small>New: ${formatTimeForDisplay(subjectData.startTime)} - ${formatTimeForDisplay(subjectData.endTime)} (${subjectData.classType}) on ${subjectData.day}</small>
+          </li>
+        `;
+      });
+      
+      detailsHTML += '</ul><p><em>Do you want to proceed with adding this subject anyway?</em></p>';
+      
+      conflictDetails.innerHTML = detailsHTML;
+      modal.style.display = 'flex';
+    }
+
+    // Function to hide conflict modal
+    function hideConflictModal() {
+      const modal = document.getElementById('conflictModal');
+      if (modal) modal.style.display = 'none';
+      pendingSubjectData = null;
+    }
+
+    // Function to proceed with conflict
+    function proceedWithConflict() {
+      if (pendingSubjectData) {
+        saveSubjectWithData(pendingSubjectData);
+      }
+      hideConflictModal();
+    }
+
+    // Function to save subject with data (bypassing conflict check)
+    function saveSubjectWithData(subjectData) {
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      const key = `${currentProgramCode}-${yearLevel}-${section}`;
+      
+      if (!subjectsData[key]) {
+        subjectsData[key] = [];
+      }
+      
+      if (editingSubject !== null) {
+        // Update existing subject
+        subjectsData[key][editingSubject.index] = subjectData;
+        showAlertModal('Success', 'Subject updated successfully!', false);
+      } else {
+        subjectsData[key].push(subjectData);
+        showAlertModal('Success', 'Subject added successfully!', false);
+      }
+      
+      hideAddSubjectModal();
+      loadSubjects();
+      
+      console.log('✅ Subjects saved for', key, subjectsData[key]);
+      editingSubject = null;
+    }
+
+    function updateAddButton() {
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      const addBtn = document.getElementById('addSubjectBtn');
+      if (addBtn) {
+        addBtn.disabled = !(yearLevel && section);
+      }
+    }
+
+    function loadSubjects() {
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      updateAddButton();
+      
+      const subjectsList = document.getElementById('subjectsList');
+      const promptDiv = document.querySelector('.selection-prompt');
+      
+      if (!yearLevel || !section) {
+        // Hide table and show prompt
+        if (subjectsList) subjectsList.style.display = 'none';
+        if (promptDiv) promptDiv.style.display = 'block';
         return;
       }
 
-      // Create a row for each course and schedule combination
-      courses.forEach(course => {
-        course.schedules.forEach(schedule => {
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td>${programCode}</td>
-            <td>${schedule.day}</td>
-            <td>${schedule.startTime} - ${schedule.endTime}</td>
-            <td>${course.courseCode}</td>
-            <td>${course.courseName}</td>
-            <td>${course.courseType}</td>
-            <td class="action-btns">
-              <button class="edit" title="Edit"><i class="fas fa-edit"></i></button>
-              <button class="delete" title="Delete"><i class="fas fa-trash-alt"></i></button>
-            </td>
-          `;
+      // Show table and hide prompt
+      if (subjectsList) subjectsList.style.display = 'block';
+      if (promptDiv) promptDiv.style.display = 'none';
 
-          // Add event listener to delete button
-          row.querySelector('.delete').addEventListener('click', function() {
-            row.remove();
-          });
+      const key = `${currentProgramCode}-${yearLevel}-${section}`;
+      const subjects = subjectsData[key] || [];
+      const tbody = document.getElementById('subjectsTableBody');
+      const noSubjectsMessage = document.getElementById('noSubjectsMessage');
+      
+      if (!tbody || !noSubjectsMessage) return;
+      
+      if (subjects.length === 0) {
+        tbody.innerHTML = '';
+        noSubjectsMessage.style.display = 'block';
+        return;
+      }
 
-          curriculumTableBody.appendChild(row);
+      noSubjectsMessage.style.display = 'none';
+      tbody.innerHTML = subjects.map((subject, index) => `
+        <tr>
+          <td class="subject-code">${subject.code}</td>
+          <td>${subject.name}</td>
+          <td>
+            <span class="class-type-badge class-type-${subject.classType.toLowerCase()}">
+              ${subject.classType}
+            </span>
+          </td>
+          <td class="subject-time">${formatTimeForDisplay(subject.startTime)} - ${formatTimeForDisplay(subject.endTime)}</td>
+          <td class="subject-day">${subject.day}</td>
+          <td class="action-buttons">
+            <button class="btn btn-edit" onclick="editSubject(${index}, '${key}')">
+              <i class="fas fa-edit"></i> Edit
+            </button>
+            <button class="btn btn-danger" onclick="deleteSubject(${index}, '${key}')">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function showAddSubjectModal(subject = null) {
+      editingSubject = subject;
+      const modal = document.getElementById('addSubjectModal');
+      const form = document.getElementById('addSubjectForm');
+      const modalTitle = document.getElementById('modalTitle');
+      const submitBtn = document.getElementById('submitBtn');
+      
+      if (!modal || !form || !modalTitle || !submitBtn) return;
+      
+      if (subject) {
+        // Edit mode
+        modalTitle.textContent = 'Edit Subject Schedule';
+        submitBtn.textContent = 'Update Subject';
+        
+        document.getElementById('subject-code').value = subject.code;
+        document.getElementById('subject-name').value = subject.name;
+        document.getElementById('class-type').value = subject.classType;
+        document.getElementById('start-time').value = subject.startTime;
+        document.getElementById('end-time').value = subject.endTime;
+        document.getElementById('subject-day').value = subject.day;
+      } else {
+        // Add mode
+        modalTitle.textContent = 'Add New Subject Schedule';
+        submitBtn.textContent = 'Add Subject';
+        form.reset();
+      }
+      
+      // Clear any previous validation styling
+      clearTimeValidation();
+      
+      // Reset submit button
+      submitBtn.disabled = true;
+      
+      modal.style.display = 'flex';
+      
+      // Remove any existing event listeners
+      removeTimeValidationListeners();
+      
+      // Setup new validation
+      setupTimeValidation();
+      
+      // Initial validation if editing
+      if (subject) {
+        setTimeout(validateTimeSelectionOnChange, 100);
+      }
+    }
+
+    function hideAddSubjectModal() {
+      const modal = document.getElementById('addSubjectModal');
+      const form = document.getElementById('addSubjectForm');
+      if (modal) modal.style.display = 'none';
+      if (form) form.reset();
+      editingSubject = null;
+      
+      // Clean up
+      removeTimeValidationListeners();
+      clearTimeValidation();
+    }
+
+    // Time validation helper functions
+    function setupTimeValidation() {
+      const startTimeSelect = document.getElementById('start-time');
+      const endTimeSelect = document.getElementById('end-time');
+      const submitBtn = document.getElementById('submitBtn');
+      
+      if (!startTimeSelect || !endTimeSelect || !submitBtn) return;
+      
+      // Create validation function
+      currentValidateTimes = function() {
+        const startTime = startTimeSelect.value;
+        const endTime = endTimeSelect.value;
+        
+        console.log('Real-time validation triggered:', startTime, endTime);
+        
+        clearTimeValidation();
+        
+        // Only validate if both times are selected
+        if (startTime && endTime) {
+          if (!validateTimeSelection(startTime, endTime)) {
+            // Show inline validation error
+            showInlineTimeError(startTime, endTime);
+            submitBtn.disabled = true;
+            console.log('❌ Real-time validation failed');
+            return false;
+          } else {
+            console.log('✅ Real-time validation passed');
+            submitBtn.disabled = false;
+            return true;
+          }
+        } else {
+          submitBtn.disabled = true;
+          console.log('⚠️ Real-time validation: Not all fields filled');
+          return false;
+        }
+      };
+      
+      // Add event listeners
+      startTimeSelect.addEventListener('change', currentValidateTimes);
+      endTimeSelect.addEventListener('change', currentValidateTimes);
+      
+      // Also validate on blur for better UX
+      startTimeSelect.addEventListener('blur', currentValidateTimes);
+      endTimeSelect.addEventListener('blur', currentValidateTimes);
+    }
+
+    function removeTimeValidationListeners() {
+      const startTimeSelect = document.getElementById('start-time');
+      const endTimeSelect = document.getElementById('end-time');
+      
+      if (currentValidateTimes) {
+        if (startTimeSelect) {
+          startTimeSelect.removeEventListener('change', currentValidateTimes);
+          startTimeSelect.removeEventListener('blur', currentValidateTimes);
+        }
+        if (endTimeSelect) {
+          endTimeSelect.removeEventListener('change', currentValidateTimes);
+          endTimeSelect.removeEventListener('blur', currentValidateTimes);
+        }
+        currentValidateTimes = null;
+      }
+    }
+
+    function clearTimeValidation() {
+      const startTimeSelect = document.getElementById('start-time');
+      const endTimeSelect = document.getElementById('end-time');
+      const warning = document.querySelector('.time-warning');
+      
+      if (startTimeSelect) startTimeSelect.classList.remove('time-invalid');
+      if (endTimeSelect) endTimeSelect.classList.remove('time-invalid');
+      if (warning) warning.remove();
+    }
+
+    function showInlineTimeError(startTime, endTime) {
+      const startTimeSelect = document.getElementById('start-time');
+      const endTimeSelect = document.getElementById('end-time');
+      const timeRow = document.querySelector('.form-row');
+      
+      // Add error styling
+      if (startTimeSelect) startTimeSelect.classList.add('time-invalid');
+      if (endTimeSelect) endTimeSelect.classList.add('time-invalid');
+      
+      // Create warning message
+      const warningDiv = document.createElement('div');
+      warningDiv.className = 'time-warning';
+      
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+      const duration = endMinutes - startMinutes;
+      
+      let errorMessage = '⚠️ ';
+      if (duration < 60) {
+        errorMessage += `Duration is only ${Math.floor(duration/60)}h ${duration%60}m. Minimum duration is 1 hour.`;
+      } else if (duration > 180) {
+        errorMessage += `Duration is ${Math.floor(duration/60)}h ${duration%60}m. Maximum duration is 3 hours.`;
+      } else {
+        errorMessage += 'End time must be after start time.';
+      }
+      
+      warningDiv.innerHTML = errorMessage;
+      
+      if (timeRow && timeRow.parentNode) {
+        // Remove any existing warning
+        const existingWarning = timeRow.parentNode.querySelector('.time-warning');
+        if (existingWarning) existingWarning.remove();
+        
+        // Add new warning
+        timeRow.parentNode.insertBefore(warningDiv, timeRow.nextSibling);
+      }
+    }
+
+    function validateTimeSelectionOnChange() {
+      if (currentValidateTimes) {
+        currentValidateTimes();
+      }
+    }
+
+    // NEW: Separate handler for form submission
+    function handleSubmit() {
+      console.log('=== FORM SUBMISSION START ===');
+      
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      if (!yearLevel || !section) {
+        showAlertModal('Selection Required', 'Please select both year level and section first.', true);
+        console.log('❌ Submission failed: Year/Section not selected');
+        return;
+      }
+      
+      const key = `${currentProgramCode}-${yearLevel}-${section}`;
+      
+      const startTime = document.getElementById('start-time')?.value;
+      const endTime = document.getElementById('end-time')?.value;
+      
+      console.log('Form submission - Start:', startTime, 'End:', endTime);
+      
+      // CRITICAL: Final time validation - This MUST block submission
+      if (!validateTimeSelection(startTime, endTime)) {
+        const duration = calculateDuration(startTime, endTime);
+        showAlertModal(
+          'Invalid Time Selection', 
+          `Please select valid start and end times. Duration must be between 1 and 3 hours.\n\nSelected: ${formatTimeForDisplay(startTime)} - ${formatTimeForDisplay(endTime)} (${duration})`, 
+          true
+        );
+        console.log('❌ FINAL VALIDATION FAILED - Submission blocked');
+        return;
+      }
+      
+      console.log('✅ FINAL TIME VALIDATION PASSED');
+      
+      const subjectCode = document.getElementById('subject-code')?.value?.toUpperCase().trim();
+      const subjectName = document.getElementById('subject-name')?.value?.trim();
+      const classType = document.getElementById('class-type')?.value;
+      const subjectDay = document.getElementById('subject-day')?.value;
+      
+      // Validation
+      if (!subjectCode || !subjectName || !classType || !subjectDay) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields.', true);
+        console.log('❌ Submission failed: Form incomplete');
+        return;
+      }
+
+      const subject = {
+        code: subjectCode,
+        name: subjectName,
+        classType: classType,
+        startTime: startTime,
+        endTime: endTime,
+        day: subjectDay
+      };
+
+      console.log('Subject data prepared:', subject);
+
+      // Check for schedule conflicts
+      const conflicts = checkScheduleConflicts(subject, key);
+      
+      if (conflicts) {
+        // Show conflict modal
+        showConflictModal(conflicts, subject);
+        console.log('⚠️ Conflicts detected, showing modal');
+      } else {
+        // No conflicts, save directly
+        console.log('✅ No conflicts, saving subject');
+        saveSubjectWithData(subject);
+      }
+      
+      console.log('=== FORM SUBMISSION END ===');
+    }
+
+    function editSubject(index, key) {
+      if (!subjectsData[key] || index >= subjectsData[key].length) return;
+      
+      const subject = subjectsData[key][index];
+      subject.index = index;
+      showAddSubjectModal(subject);
+    }
+
+    function deleteSubject(index, key) {
+      if (!subjectsData[key] || index >= subjectsData[key].length) return;
+      
+      const subject = subjectsData[key][index];
+      showConfirmModal(
+        'Delete Subject',
+        `Are you sure you want to delete "${subject.code} - ${subject.name}"? This action cannot be undone.`,
+        function() {
+          subjectsData[key].splice(index, 1);
+          loadSubjects();
+          showAlertModal('Deleted', 'Subject deleted successfully!', false);
+        }
+      );
+    }
+
+    // View Course Button Event Listeners
+    document.addEventListener('DOMContentLoaded', function() {
+      const viewCourseButtons = document.querySelectorAll('.view-course');
+      
+      viewCourseButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+          e.preventDefault();
+          const programCode = this.getAttribute('data-course');
+          const programName = this.getAttribute('data-name');
+          currentProgramCode = programCode;
+          
+          // Hide courses page
+          document.getElementById('coursesPage').style.display = 'none';
+          
+          // Load subject management page
+          loadSubjectManagementPage(programCode, programName);
         });
       });
-
-      alert('Curriculum saved successfully!');
     });
 
-    // View Course Button Event Listeners & Back Button
-    viewCourseButtons.forEach(button => {
-      button.addEventListener('click', function(e) {
-        e.preventDefault();
-        const courseCode = this.getAttribute('data-course');
-        const courseName = this.getAttribute('data-name');
-        courseTitle.textContent = `${courseCode} - ${courseName} Curriculum`;
-
-        // Set the program code to the course code
-        document.getElementById('programCode').value = courseCode;
-
-        coursesPage.style.display = 'none';
-        curriculumPage.style.display = 'block';
-
-        // Clear any existing courses
-        coursesContainer.innerHTML = '';
-
-        // Add the first course
-        addNewCourse();
-      });
-    });
-
-    backToCoursesBtn.addEventListener('click', function() {
-      curriculumPage.style.display = 'none';
-      coursesPage.style.display = 'block';
-    });
-
-    // Initialize the first course when page loads (optional: adds an empty course on initial load)
-    document.addEventListener('DOMContentLoaded', function() {
-      // (No additional action required; view-course click will add the course)
-    });
-     function loadSidebar() {
-      fetch('../../sidebar.html')
-        .then(response => response.text())
-        .then(html => {
-          document.querySelector('.sidebar').innerHTML = html;
-
-          // Fix navigation paths after sidebar loads
-          document.querySelectorAll('.sidebar .nav-items a').forEach(link => {
-            const href = link.getAttribute('href');
-            if (href && !href.startsWith('http') && !href.startsWith('#')) {
-              link.href = '../../' + href;
-            }
+    function loadSubjectManagementPage(programCode, programName) {
+      // Inject HTML
+      const subjectManagementPage = document.getElementById('subjectManagementPage');
+      subjectManagementPage.innerHTML = subjectManagementHTML.replace(
+        'PROGRAM_NAME', programName
+      );
+      subjectManagementPage.style.display = 'block';
+      
+      // Add event listeners for the new content
+      setTimeout(() => {
+        // Back button
+        const backBtn = document.getElementById('backToCourses');
+        if (backBtn) {
+          backBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            subjectManagementPage.style.display = 'none';
+            document.getElementById('coursesPage').style.display = 'block';
+            
+            // Reset selections
+            const yearSelect = document.getElementById('select-year');
+            const sectionSelect = document.getElementById('select-section');
+            if (yearSelect) yearSelect.value = '';
+            if (sectionSelect) sectionSelect.value = '';
           });
-
-          // Initialize dropdown buttons
-          document.querySelectorAll(".dropdown-btn").forEach(btn => {
-            btn.addEventListener("click", function (e) {
-              e.preventDefault();
-              e.stopPropagation();
-
-              // Close other dropdowns
-              document.querySelectorAll('.dropdown-content').forEach(content => {
-                if (content !== this.nextElementSibling) {
-                  content.style.display = 'none';
-                }
-              });
-
-              // Toggle this dropdown
-              const content = this.nextElementSibling;
-              if (content) {
-                content.style.display = content.style.display === 'block' ? 'none' : 'block';
-              }
-            });
-          });
-
-          // Close dropdowns when clicking outside
-          document.addEventListener('click', function (e) {
-            if (!e.target.closest('.dropdown')) {
-              document.querySelectorAll('.dropdown-content').forEach(content => {
-                content.style.display = 'none';
-              });
-            }
-          });
-
-          // Highlight active link
-          const currentPath = window.location.pathname;
-          document.querySelectorAll('.nav-items a').forEach(link => {
-            const linkPath = link.getAttribute('href');
-            if (linkPath && currentPath.includes(linkPath) && linkPath !== '#') {
-              link.classList.add('active');
-              const dropdown = link.closest('.dropdown-content');
-              if (dropdown) dropdown.style.display = 'block';
-            }
-          });
-        })
-        .catch(error => console.error("Failed to load sidebar:", error));
+        }
+        
+        // Select event listeners
+        const yearSelect = document.getElementById('select-year');
+        const sectionSelect = document.getElementById('select-section');
+        if (yearSelect) yearSelect.addEventListener('change', loadSubjects);
+        if (sectionSelect) sectionSelect.addEventListener('change', loadSubjects);
+        
+        // Modal close events
+        const addModalCloseBtn = document.querySelector('#addSubjectModal .close');
+        const conflictModalCloseBtn = document.querySelector('#conflictModal .close');
+        if (addModalCloseBtn) {
+          addModalCloseBtn.addEventListener('click', hideAddSubjectModal);
+        }
+        if (conflictModalCloseBtn) {
+          conflictModalCloseBtn.addEventListener('click', hideConflictModal);
+        }
+        
+        // Initialize subjects data for this program if not exists
+        if (!subjectsData[programCode]) {
+          subjectsData[programCode] = {};
+        }
+        
+        // Initialize with prompt visible and table hidden
+        loadSubjects();
+      }, 100);
     }
 
-    if (document.readyState !== 'loading') {
-      loadSidebar();
-    } else {
-      document.addEventListener('DOMContentLoaded', loadSidebar);
-    }
+    // Close modals when clicking outside
+    document.addEventListener('click', function(e) {
+      const addModal = document.getElementById('addSubjectModal');
+      const conflictModal = document.getElementById('conflictModal');
+      const alertModal = document.getElementById('alertModal');
+      const confirmModal = document.getElementById('confirmModal');
+      
+      if (addModal && e.target === addModal) {
+        hideAddSubjectModal();
+      }
+      
+      if (conflictModal && e.target === conflictModal) {
+        hideConflictModal();
+      }
+      
+      if (alertModal && e.target === alertModal) {
+        hideAlertModal();
+      }
+      
+      if (confirmModal && e.target === confirmModal) {
+        hideConfirmModal();
+      }
+    });
+
+    // Close modals with Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        hideAlertModal();
+        hideConfirmModal();
+        hideAddSubjectModal();
+        hideConflictModal();
+      }
+    });
   </script>
 </body>
 </html>
