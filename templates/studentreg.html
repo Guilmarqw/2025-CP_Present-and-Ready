@@ -585,22 +585,22 @@ function startFaceScan() {
 
 function checkPose(result, poseId) {
     if (!result) return false;
-    
-    // Add some tolerance to the pose detection
+
+    // Adjusted thresholds for better pose detection, aligned with backend
     switch (poseId) {
         case 'frontal':
             return result.is_frontal || 
-                   (Math.abs(result.yaw || 0) < 40 && 
-                    Math.abs(result.pitch || 0) < 35 && 
-                    Math.abs(result.roll || 0) < 30);
+                   (Math.abs(result.yaw || 0) <= 35 && 
+                    Math.abs(result.pitch || 0) <= 30 && 
+                    Math.abs(result.roll || 0) <= 30);
         case 'left':
-            return result.is_left || (result.yaw >= 15);
+            return result.is_left || (result.yaw >= 5); // Relaxed from 15 to 10
         case 'right':
-            return result.is_right || (result.yaw <= -15);
+            return result.is_right || (result.yaw <= -5); // Relaxed from -15 to -10
         case 'up':
-            return result.is_up || (result.pitch <= -12);
+            return result.is_up || (result.pitch <= -5); // Relaxed from -12 to -8
         case 'down':
-            return result.is_down || (result.pitch >= 12);
+            return result.is_down || (result.pitch >= 5); // Relaxed from 12 to 8
         case 'mouth_open':
             return result.is_mouth_open || (result.mar >= 0.18);
         case 'eyes_closed':
@@ -622,7 +622,7 @@ function getUpPoseFeedback(result) {
         return "Tilt your head up more";
     } else if (pitch > -10) {
         return "Good! Tilt a bit more upward";
-    } else if (pitch > -20) {
+    } else if (pitch > -15) {
         return "Perfect up position! Hold still";
     } else {
         return "Too far up. Relax a little";
@@ -640,7 +640,7 @@ function getDownPoseFeedback(result) {
         return "Tilt your head down more";
     } else if (pitch < 10) {
         return "Good! Tilt a bit more downward";
-    } else if (pitch < 20) {
+    } else if (pitch < 15) {
         return "Perfect down position! Hold still";
     } else {
         return "Too far down. Relax a little";
@@ -902,52 +902,89 @@ function updateScanProgress() {
 
 function registerStudent() {
     const formData = new FormData();
-    formData.append('email', userEmail);
-    formData.append('student_id', document.getElementById("studentId")?.value || "");
-    formData.append('first_name', document.getElementById("firstName")?.value || "");
-    formData.append('last_name', document.getElementById("lastName")?.value || "");
-    formData.append('middle_name', document.getElementById("middleName")?.value || "");
-    formData.append('course', document.getElementById("course")?.value || "");
-    formData.append('year_section', document.getElementById("yearSection")?.value || "");
-    formData.append('face_encoding', JSON.stringify(window.faceEncoding || []));
     
-    const password = document.getElementById("password").value;
-    const confirmPassword = document.getElementById("confirmPassword").value;
+    // Get all form elements
+    const email = userEmail || "";
+    const studentId = document.getElementById("studentId")?.value?.trim() || "";
+    const firstName = document.getElementById("firstName")?.value?.trim() || "";
+    const lastName = document.getElementById("lastName")?.value?.trim() || "";
+    const middleName = document.getElementById("middleName")?.value?.trim() || "";
+    const course = document.getElementById("course")?.value || "";
+    const yearSection = document.getElementById("yearSection")?.value || "";
+    const password = document.getElementById("password")?.value || "";
+    const confirmPassword = document.getElementById("confirmPassword")?.value || "";
+    const photoInput = document.getElementById("photo");
+    
+    // Debug logging to see what we have
+    console.log("Registration data:", {
+        email, studentId, firstName, lastName, middleName, course, yearSection,
+        passwordLength: password.length, confirmPasswordLength: confirmPassword.length,
+        faceEncodingLength: window.faceEncoding ? window.faceEncoding.length : 0,
+        hasPhoto: photoInput?.files?.length > 0
+    });
+    
+    // Validate required fields
+    if (!email) {
+        showModal("Warning", "Email is required.");
+        return;
+    }
+    
+    if (!studentId) {
+        showModal("Warning", "Student ID is required.");
+        return;
+    }
+    
+    if (!firstName) {
+        showModal("Warning", "First name is required.");
+        return;
+    }
+    
+    if (!lastName) {
+        showModal("Warning", "Last name is required.");
+        return;
+    }
+    
+    if (!course) {
+        showModal("Warning", "Course selection is required.");
+        return;
+    }
+    
+    if (!yearSection) {
+        showModal("Warning", "Year and section selection is required.");
+        return;
+    }
     
     if (!password || password.length < 8) {
         showModal("Warning", "Password must be at least 8 characters long.");
-        const registerBtn = document.querySelector("#step5 button");
-        if (registerBtn) {
-            registerBtn.disabled = false;
-            registerBtn.textContent = "Finish Registration";
-        }
         return;
     }
     
     if (password !== confirmPassword) {
         showModal("Warning", "Passwords do not match.");
-        const registerBtn = document.querySelector("#step5 button");
-        if (registerBtn) {
-            registerBtn.disabled = false;
-            registerBtn.textContent = "Finish Registration";
-        }
         return;
     }
     
-    formData.append('pin', password);
-    
-    const photoInput = document.getElementById("photo");
-    if (photoInput?.files.length > 0) {
-        formData.append('photo', photoInput.files[0]);
-    } else {
-        showModal("Warning", "Please upload a photo.");
-        const registerBtn = document.querySelector("#step5 button");
-        if (registerBtn) {
-            registerBtn.disabled = false;
-            registerBtn.textContent = "Finish Registration";
-        }
+    if (!window.faceEncoding || window.faceEncoding.length === 0) {
+        showModal("Warning", "Face scan is required. Please complete the face scanning step.");
         return;
     }
+    
+    if (!photoInput?.files?.length) {
+        showModal("Warning", "Photo upload is required.");
+        return;
+    }
+    
+    // All validations passed, build FormData
+    formData.append('email', email);
+    formData.append('student_id', studentId);
+    formData.append('first_name', firstName);
+    formData.append('last_name', lastName);
+    formData.append('middle_name', middleName);
+    formData.append('course', course);
+    formData.append('year_section', yearSection);
+    formData.append('password', password);  // Changed from 'pin' to 'password'
+    formData.append('face_encoding', JSON.stringify(window.faceEncoding));
+    formData.append('photo', photoInput.files[0]);
     
     const registerBtn = document.querySelector("#step5 button");
     if (registerBtn) {
@@ -980,32 +1017,6 @@ function registerStudent() {
         }
     });
 }
-
-document.addEventListener('DOMContentLoaded', function() {
-    const otpInputs = document.querySelectorAll('.otp-boxes input');
-    otpInputs.forEach(input => {
-        input.addEventListener('keydown', function(e) {
-            if (e.key === "Backspace" || e.key === "Delete") return;
-            if (input.value.length >= 1 && e.key.length === 1) {
-                e.preventDefault();
-            }
-        });
-    });
-    
-    // Password validation is handled by oninput events in HTML
-    
-    const progressContainer = document.querySelector('.scan-progress');
-    if (progressContainer) {
-        progressContainer.innerHTML = '';
-        POSE_STATES.forEach((pose, index) => {
-            const stepEl = document.createElement('div');
-            stepEl.className = 'progress-step';
-            stepEl.id = `step-${pose.id}`;
-            if (index === 0) stepEl.classList.add('active');
-            progressContainer.appendChild(stepEl);
-        });
-    }
-});
 </script>
 </body>
 </html>

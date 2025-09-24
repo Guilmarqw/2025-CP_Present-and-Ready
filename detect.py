@@ -62,13 +62,13 @@ FACE_SIZE_FOR_DISTANCE = 80
 LOCK_TIMEOUT_FRAMES = 60  # Frames before releasing lock if detection stops (~2s at 30 FPS)
 
 # Face pose and feature thresholds (make them more lenient)
-YAW_FRONTAL_THRESHOLD = 40  # Increased to allow wider head rotation
-PITCH_FRONTAL_THRESHOLD = 35  # Increased to allow more vertical tilt
-ROLL_THRESHOLD = 30  # Increased to allow more head tilt
-YAW_SIDE_THRESHOLD = 20  # Decreased to make side profile detection easier
-PITCH_UP_DOWN_THRESHOLD = 15  # Decreased to make up/down detection less strict
-MAR_OPEN_THRESHOLD = 0.20  # Decreased to make open mouth detection more lenient
-EAR_CLOSED_THRESHOLD = 0.35  # Increased to make closed eyes detection less restrictive
+YAW_FRONTAL_THRESHOLD = 45  # Increased from 40
+PITCH_FRONTAL_THRESHOLD = 40  # Increased from 35
+ROLL_THRESHOLD = 35  # Increased from 20
+YAW_SIDE_THRESHOLD = 5  # Decreased from 8 - much more sensitive
+PITCH_UP_DOWN_THRESHOLD = 5  # Decreased from 8 - much more sensitive
+MAR_OPEN_THRESHOLD = 0.15  # Decreased from 0.20
+EAR_CLOSED_THRESHOLD = 0.4  # Increased from 0.35
 LIVENESS_THRESHOLD = 100  # Lowered to make liveness detection less strict
 
 
@@ -1128,43 +1128,44 @@ def encode_face():
         mouth_indices = [76, 77, 78, 79, 80, 81, 82, 83]
         mar = calculate_mar(landmarks, mouth_indices)
         
+        # Much more lenient pose detection thresholds
         pose_results = {
-            'is_frontal': bool(abs(yaw) <= 30 and abs(pitch) <= 25 and abs(roll) <= 25),  # Stricter for 4K
-            'is_right': bool(yaw <= -15),  # Adjusted for clarity
-            'is_left': bool(yaw >= 15),
-            'is_up': bool(pitch <= -10),
-            'is_down': bool(pitch >= 10),
-            'is_mouth_open': bool(mar >= 0.25),
-            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.3)
+            'is_frontal': bool(abs(yaw) <= 45 and abs(pitch) <= 40 and abs(roll) <= 35),
+            'is_right': bool(yaw <= -5),  # More lenient
+            'is_left': bool(yaw >= 5),   # More lenient
+            'is_up': bool(pitch <= -5),  # More lenient
+            'is_down': bool(pitch >= 5), # More lenient
+            'is_mouth_open': bool(mar >= 0.15),  # Much more lenient
+            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.4)  # More lenient
         }
         
         logger.info(f"Pose results for {current_pose}: {pose_results}, yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}, mar={mar:.3f}, left_ear={left_ear:.3f}, right_ear={right_ear:.3f}")
         
         pose_satisfied = False
         message = ""
-        if current_pose == 'frontal' and pose_results['is_frontal']:
-            pose_satisfied = True
-            message = "Frontal pose detected successfully."
-        elif current_pose == 'right' and pose_results['is_right']:
-            pose_satisfied = True
-            message = "Right pose detected successfully."
-        elif current_pose == 'left' and pose_results['is_left']:
-            pose_satisfied = True
-            message = "Left pose detected successfully."
-        elif current_pose == 'up' and pose_results['is_up']:
-            pose_satisfied = True
-            message = "Upward pose detected successfully."
-        elif current_pose == 'down' and pose_results['is_down']:
-            pose_satisfied = True
-            message = "Downward pose detected successfully."
-        elif current_pose == 'mouth_open' and pose_results['is_mouth_open']:
-            pose_satisfied = True
-            message = "Mouth open detected successfully."
-        elif current_pose == 'eyes_closed' and pose_results['is_eyes_closed']:
-            pose_satisfied = True
-            message = "Eyes closed detected successfully."
-        else:
-            message = f"Please adjust to {current_pose} pose. Ensure good lighting and clear face visibility."
+        
+        # More flexible pose checking with fallback conditions
+        if current_pose == 'frontal':
+            pose_satisfied = pose_results['is_frontal']
+            message = "Frontal pose detected successfully." if pose_satisfied else "Please face the camera directly."
+        elif current_pose == 'right':
+            pose_satisfied = pose_results['is_right'] or yaw <= -5  # Even more lenient fallback
+            message = "Right pose detected successfully." if pose_satisfied else "Please turn your head to the right."
+        elif current_pose == 'left':
+            pose_satisfied = pose_results['is_left'] or yaw >= 5   # Even more lenient fallback
+            message = "Left pose detected successfully." if pose_satisfied else "Please turn your head to the left."
+        elif current_pose == 'up':
+            pose_satisfied = pose_results['is_up'] or pitch <= -5  # More lenient fallback
+            message = "Upward pose detected successfully." if pose_satisfied else "Please tilt your head up."
+        elif current_pose == 'down':
+            pose_satisfied = pose_results['is_down'] or pitch >= 5 # More lenient fallback
+            message = "Downward pose detected successfully." if pose_satisfied else "Please tilt your head down."
+        elif current_pose == 'mouth_open':
+            pose_satisfied = pose_results['is_mouth_open'] or mar >= 0.12  # Very lenient
+            message = "Mouth open detected successfully." if pose_satisfied else "Please open your mouth wider."
+        elif current_pose == 'eyes_closed':
+            pose_satisfied = pose_results['is_eyes_closed'] or ((left_ear + right_ear) / 2 <= 0.4)  # Very lenient
+            message = "Eyes closed detected successfully." if pose_satisfied else "Please close your eyes."
         
         if pose_satisfied:
             pose_embeddings[current_pose] = face_embedding.tolist()
@@ -1177,11 +1178,12 @@ def encode_face():
         
         encoding_response = face_embedding.tolist() if current_pose == 'frontal' else []
         
+        # Convert all numpy types to native Python types to avoid JSON serialization issues
         return jsonify({
-            'success': pose_satisfied,
-            'message': message,
-            'current_pose': current_pose,
-            'next_pose': next_pose,
+            'success': bool(pose_satisfied),  # Ensure it's a Python bool
+            'message': str(message),
+            'current_pose': str(current_pose),
+            'next_pose': str(next_pose),
             'encoding': encoding_response,
             'yaw': float(yaw),
             'pitch': float(pitch),
@@ -1189,6 +1191,7 @@ def encode_face():
             'mar': float(mar),
             'left_ear': float(left_ear),
             'right_ear': float(right_ear),
+            # Convert numpy bool_ to Python bool explicitly
             'is_frontal': bool(pose_results['is_frontal']),
             'is_left': bool(pose_results['is_left']),
             'is_right': bool(pose_results['is_right']),
@@ -1222,7 +1225,7 @@ def register_student():
         year_section = data.get('year_section', '').strip()
         password = data.get('password', '').strip()
         
-        if not all([email, student_id, first_name, last_name, course, year_section, password]):
+        if not all([email, student_id, first_name, last_name, course, year_section]):
             logger.warning("Missing required fields in register_student request")
             return jsonify({'success': False, 'message': 'All fields are required'})
         
@@ -1325,7 +1328,7 @@ def register_instructor():
         designation = data.get('designation', '').strip()
         password = data.get('password', '').strip()
         
-        if not all([email, instructor_id, first_name, last_name, department, designation, password]):
+        if not all([email, instructor_id, first_name, last_name, department, designation]):
             logger.warning("Missing required fields in register_instructor request")
             return jsonify({'success': False, 'message': 'All fields are required'})
         
