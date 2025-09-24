@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Curriculum - Courses</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="../static/programs.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='programs.css') }}">
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <h1>Admin Side</h1>
+    </div>
+
+    <div class="user-info">
+      <div class="avatar">
+        <i class="fas fa-user"></i>
+      </div>
+      <div class="name">Admin User</div>
+      <div class="role">Administrator</div>
+    </div>
+
+    <ul class="nav-items">
+      <li class="timer-item">
+        <a href="../Timer/timer.html"><i class="fas fa-stopwatch"></i> <span>Go to Timer</span></a>
+      </li>
+      <li><a href="../Admin/dashboard/dashboard.html"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
+      <li class="dropdown">
+        <a href="#" class="dropdown-btn">
+          <i class="fas fa-graduation-cap"></i> <span>Curriculum</span>
+          <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
+        </a>
+        <ul class="dropdown-content">
+          <li><a href="../Admin/curriculum/programs/programs.html"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
+          <li><a href="../Admin/curriculum/courses/courses.html"><i class="fas fa-book"></i> <span>Courses</span></a></li>
+          <li><a href="../Admin/curriculum/schedule/schedule.html"><i class="fas fa-calendar-check"></i> <span>Instructor Schedules</span></a></li>
+          <li><a href="../Admin/curriculum/class schedule/classsched.html" class="active"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>
+        </ul>
+      </li>
+      <li><a href="../Admin/instructors/instructors.html"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
+      <li><a href="../Admin/students/student.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
+      <li><a href="../Admin/settings/settings.html"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
+      <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
+    </ul>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- Courses Page -->
+    <div class="page-container" id="coursesPage">
+      <div class="header">
+        <h2><i class="fas fa-book"></i> Course Management</h2>
+      </div>
+
+      <div class="courses-table">
+        <h3>Available Programs</h3>
+        <table id="coursesTable">
+          <thead>
+            <tr>
+              <th>Program Code</th>
+              <th>Program Name</th>
+              <th>Department</th>
+              <th>Total Courses</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>IT</td>
+              <td>Information Technology</td>
+              <td>College of Computer Studies</td>
+              <td>45</td>
+              <td><span style="color: green;">Active</span></td>
+              <td>
+                <a href="#" class="btn-view view-course" data-course="IT" data-name="Information Technology">View</a>
+              </td>
+            </tr>
+            <tr>
+              <td>CS</td>
+              <td>Computer Science</td>
+              <td>College of Computer Studies</td>
+              <td>48</td>
+              <td><span style="color: green;">Active</span></td>
+              <td>
+                <a href="#" class="btn-view view-course" data-course="CS" data-name="Computer Science">View</a>
+              </td>
+            </tr>
+            <tr>
+              <td>ACT</td>
+              <td>Associate in Computer Technology</td>
+              <td>College of Computer Studies</td>
+              <td>40</td>
+              <td><span style="color: green;">Active</span></td>
+              <td>
+                <a href="#" class="btn-view view-course" data-course="ACT" data-name="Associate in Computer Technology">View</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Subject Management Page - Loaded via JavaScript -->
+    <div class="page-container" id="subjectManagementPage" style="display: none;">
+      <!-- Content will be loaded here -->
+    </div>
+  </div>
+
+  <!-- Generic Alert Modal -->
+  <div class="modal" id="alertModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="alertModalTitle"><i class="fas fa-info-circle"></i> Notice</h3>
+        <span class="close" onclick="hideAlertModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p id="alertModalMessage"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" onclick="hideAlertModal()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generic Confirm Modal -->
+  <div class="modal" id="confirmModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3><i class="fas fa-question-circle"></i> Confirm Action</h3>
+        <span class="close" onclick="hideConfirmModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p id="confirmModalMessage"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="hideConfirmModal()">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmBtn" onclick="handleConfirmAction()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Global variables for modal callbacks
+    let confirmCallback = null;
+    let confirmData = null;
+
+    // Initialize sidebar functionality
+    function initSidebar() {
+      // Toggle dropdown
+      document.querySelectorAll(".dropdown-btn").forEach(btn => {
+        btn.addEventListener("click", function(e) {
+          e.preventDefault();
+          const dropdown = this.closest('.dropdown');
+          const isOpen = dropdown.classList.contains('open');
+          
+          // Close all dropdowns
+          document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
+          
+          // Toggle current dropdown
+          if (!isOpen) {
+            dropdown.classList.add('open');
+          }
+        });
+      });
+
+      // Set active state based on current page
+      const currentPath = window.location.pathname;
+      document.querySelectorAll('.nav-items a').forEach(link => {
+        if (link.textContent.includes('Class Schedules') || (link.getAttribute('href') && link.getAttribute('href').includes('classsched'))) {
+          link.classList.add('active');
+          // If link is in dropdown, show the dropdown
+          const dropdown = link.closest('.dropdown-content');
+          if (dropdown) {
+            dropdown.parentElement.classList.add('open');
+          }
+        }
+      });
+    }
+
+    // Initialize sidebar
+    if (document.readyState !== 'loading') {
+      initSidebar();
+    } else {
+      document.addEventListener('DOMContentLoaded', initSidebar);
+    }
+
+    // Generic Alert Modal Functions
+    function showAlertModal(title, message, isError = false) {
+      const modal = document.getElementById('alertModal');
+      const titleEl = document.getElementById('alertModalTitle');
+      const messageEl = document.getElementById('alertModalMessage');
+      
+      if (modal && titleEl && messageEl) {
+        titleEl.innerHTML = isError ? `<i class="fas fa-exclamation-triangle"></i> ${title}` : `<i class="fas fa-info-circle"></i> ${title}`;
+        messageEl.textContent = message;
+        modal.style.display = 'flex';
+        
+        // Add appropriate class for styling
+        if (isError) {
+          modal.classList.add('error-modal');
+        } else {
+          modal.classList.add('success-modal');
+        }
+      }
+    }
+
+    function hideAlertModal() {
+      const modal = document.getElementById('alertModal');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('error-modal', 'success-modal');
+      }
+    }
+
+    // Generic Confirm Modal Functions
+    function showConfirmModal(title, message, callback, data = null) {
+      const modal = document.getElementById('confirmModal');
+      const titleEl = modal.querySelector('.modal-header h3');
+      const messageEl = document.getElementById('confirmModalMessage');
+      
+      if (modal && titleEl && messageEl) {
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        confirmCallback = callback;
+        confirmData = data;
+        modal.style.display = 'flex';
+      }
+    }
+
+    function hideConfirmModal() {
+      const modal = document.getElementById('confirmModal');
+      if (modal) {
+        modal.style.display = 'none';
+        confirmCallback = null;
+        confirmData = null;
+      }
+    }
+
+    function handleConfirmAction() {
+      if (confirmCallback && confirmData) {
+        confirmCallback(confirmData);
+      } else if (confirmCallback) {
+        confirmCallback();
+      }
+      hideConfirmModal();
+    }
+
+    // Subject Management HTML Content
+    const subjectManagementHTML = `
+      <div class="header">
+        <h2><i class="fas fa-book"></i> Subject Management - PROGRAM_NAME</h2>
+        <a href="#" id="backToCourses" class="back-btn">
+          <i class="fas fa-arrow-left"></i> Back to Courses
+        </a>
+      </div>
+
+      <div class="dashboard-content">
+        <div class="selection-controls">
+          <div class="control-group">
+            <label for="select-year">Year Level</label>
+            <select id="select-year" onchange="loadSubjects()">
+              <option value="" disabled selected>Select Year Level</option>
+              <option value="1">1st Year</option>
+              <option value="2">2nd Year</option>
+              <option value="3">3rd Year</option>
+              <option value="4">4th Year</option>
+            </select>
+          </div>
+          
+          <div class="control-group">
+            <label for="select-section">Section</label>
+            <select id="select-section" onchange="loadSubjects()">
+              <option value="" disabled selected>Select Section</option>
+              <option value="A">Section A</option>
+              <option value="B">Section B</option>
+              <option value="C">Section C</option>
+            </select>
+          </div>
+
+          <button id="addSubjectBtn" class="btn btn-primary" disabled onclick="showAddSubjectModal()">
+            <i class="fas fa-plus"></i> Add Subject
+          </button>
+        </div>
+
+        <div class="selection-prompt">
+          <i class="fas fa-calendar-alt"></i>
+          <h4>Select Year and Section</h4>
+          <p>Please select a year level and section from the dropdowns above to view and manage subject schedules.</p>
+        </div>
+
+        <div class="subjects-list" id="subjectsList" style="display: none;">
+          <h3>Subjects Schedule</h3>
+          <div class="table-container">
+            <table id="subjectsTable" class="subjects-table">
+              <thead>
+                <tr>
+                  <th>Subject Code</th>
+                  <th>Subject Name</th>
+                  <th>Class Type</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="subjectsTableBody">
+                <!-- Subjects will be listed here -->
+              </tbody>
+            </table>
+          </div>
+          <div id="noSubjectsMessage" style="text-align: center; padding: 20px; color: #666; display: none;">
+            No subjects added yet for this year and section.
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Subject Modal -->
+      <div class="modal" id="addSubjectModal">
+        <div class="modal-content" style="width: 600px; max-width: 90%;">
+          <div class="modal-header">
+            <h3 id="modalTitle">Add New Subject Schedule</h3>
+            <span class="close" onclick="hideAddSubjectModal()">&times;</span>
+          </div>
+          <form id="addSubjectForm">
+            <div id="duplicateWarning" class="duplicate-warning" style="display: none;">
+              <i class="fas fa-exclamation-triangle"></i>
+              Subject code already exists. Changes will update the existing subject.
+            </div>
+            <div class="form-group">
+              <label for="subject-code">Subject Code *</label>
+              <input type="text" id="subject-code" placeholder="e.g., IT101" required>
+            </div>
+            <div class="form-group">
+              <label for="subject-name">Subject Name *</label>
+              <input type="text" id="subject-name" placeholder="e.g., Introduction to Computing" required>
+            </div>
+            <div class="form-group">
+              <label>Class Type * (Select one or both)</label>
+              <div class="checkbox-group">
+                <label class="checkbox-label" onclick="toggleClassType('lecture')">
+                  <input type="checkbox" id="class-type-lecture" value="Lecture">
+                  <span>Lecture</span>
+                  <span class="class-type-badge class-type-lecture">LEC</span>
+                </label>
+                <label class="checkbox-label" onclick="toggleClassType('lab')">
+                  <input type="checkbox" id="class-type-lab" value="Lab">
+                  <span>Lab</span>
+                  <span class="class-type-badge class-type-lab">LAB</span>
+                </label>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="hideAddSubjectModal()">Cancel</button>
+              <button type="button" id="submitBtn" class="btn btn-success" onclick="handleSubmit()">Add Subject</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+
+    // Subject Management JavaScript
+    let subjectsData = {};
+    let currentProgramCode = '';
+    let editingSubject = null;
+
+    // Function to toggle class type selection
+    function toggleClassType(type) {
+      const checkbox = document.getElementById(`class-type-${type}`);
+      const label = checkbox.closest('.checkbox-label');
+      
+      if (checkbox.checked) {
+        label.classList.add('checked');
+      } else {
+        label.classList.remove('checked');
+      }
+      
+      // Validate if at least one is selected
+      validateClassTypeSelection();
+    }
+
+    // Function to validate class type selection
+    function validateClassTypeSelection() {
+      const lectureCheckbox = document.getElementById('class-type-lecture');
+      const labCheckbox = document.getElementById('class-type-lab');
+      const submitBtn = document.getElementById('submitBtn');
+      
+      if (lectureCheckbox && labCheckbox && submitBtn) {
+        const isValid = lectureCheckbox.checked || labCheckbox.checked;
+        submitBtn.disabled = !isValid;
+      }
+    }
+
+    function updateAddButton() {
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      const addBtn = document.getElementById('addSubjectBtn');
+      if (addBtn) {
+        addBtn.disabled = !(yearLevel && section);
+      }
+    }
+
+    // Function to check if subject code already exists
+    function checkSubjectExists(key, subjectCode) {
+      if (!subjectsData[key]) return null;
+      return subjectsData[key].find(subject => subject.code.toUpperCase() === subjectCode.toUpperCase());
+    }
+
+    // Function to get class types from checkboxes
+    function getSelectedClassTypes() {
+      const lectureCheckbox = document.getElementById('class-type-lecture');
+      const labCheckbox = document.getElementById('class-type-lab');
+      const classTypes = [];
+      
+      if (lectureCheckbox && lectureCheckbox.checked) {
+        classTypes.push('Lecture');
+      }
+      if (labCheckbox && labCheckbox.checked) {
+        classTypes.push('Lab');
+      }
+      
+      return classTypes;
+    }
+
+    function loadSubjects() {
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      updateAddButton();
+      
+      const subjectsList = document.getElementById('subjectsList');
+      const promptDiv = document.querySelector('.selection-prompt');
+      
+      if (!yearLevel || !section) {
+        // Hide table and show prompt
+        if (subjectsList) subjectsList.style.display = 'none';
+        if (promptDiv) promptDiv.style.display = 'block';
+        return;
+      }
+
+      // Show table and hide prompt
+      if (subjectsList) subjectsList.style.display = 'block';
+      if (promptDiv) promptDiv.style.display = 'none';
+
+      const key = `${currentProgramCode}-${yearLevel}-${section}`;
+      const subjects = subjectsData[key] || [];
+      const tbody = document.getElementById('subjectsTableBody');
+      const noSubjectsMessage = document.getElementById('noSubjectsMessage');
+      
+      if (!tbody || !noSubjectsMessage) return;
+      
+      if (subjects.length === 0) {
+        tbody.innerHTML = '';
+        noSubjectsMessage.style.display = 'block';
+        return;
+      }
+
+      noSubjectsMessage.style.display = 'none';
+      tbody.innerHTML = subjects.map((subject, index) => `
+        <tr>
+          <td class="subject-code">${subject.code}</td>
+          <td>${subject.name}</td>
+          <td>
+            ${subject.classTypes.map(classType => `
+              <span class="class-type-badge class-type-${classType.toLowerCase()}">
+                ${classType}
+              </span>
+            `).join('')}
+          </td>
+          <td class="action-buttons">
+            <button class="btn btn-edit" onclick="editSubject(${index}, '${key}')">
+              <i class="fas fa-edit"></i> Edit
+            </button>
+            <button class="btn btn-danger" onclick="deleteSubject(${index}, '${key}')">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function showAddSubjectModal(subject = null) {
+      editingSubject = subject;
+      const modal = document.getElementById('addSubjectModal');
+      const form = document.getElementById('addSubjectForm');
+      const modalTitle = document.getElementById('modalTitle');
+      const submitBtn = document.getElementById('submitBtn');
+      const duplicateWarning = document.getElementById('duplicateWarning');
+      
+      if (!modal || !form || !modalTitle || !submitBtn) return;
+      
+      // Reset form
+      form.reset();
+      duplicateWarning.style.display = 'none';
+      
+      if (subject) {
+        // Edit mode
+        modalTitle.textContent = 'Edit Subject Schedule';
+        submitBtn.textContent = 'Update Subject';
+        
+        document.getElementById('subject-code').value = subject.code;
+        document.getElementById('subject-name').value = subject.name;
+        
+        // Set class type checkboxes
+        subject.classTypes.forEach(classType => {
+          if (classType === 'Lecture') {
+            document.getElementById('class-type-lecture').checked = true;
+            document.querySelector('[onclick="toggleClassType(\'lecture\')"]').classList.add('checked');
+          } else if (classType === 'Lab') {
+            document.getElementById('class-type-lab').checked = true;
+            document.querySelector('[onclick="toggleClassType(\'lab\')"]').classList.add('checked');
+          }
+        });
+        
+        // Enable submit button
+        submitBtn.disabled = false;
+      } else {
+        // Add mode
+        modalTitle.textContent = 'Add New Subject Schedule';
+        submitBtn.textContent = 'Add Subject';
+        submitBtn.disabled = true;
+        
+        // Listen for subject code changes to check duplicates
+        const subjectCodeInput = document.getElementById('subject-code');
+        subjectCodeInput.addEventListener('input', function() {
+          checkForDuplicate(this.value);
+        });
+      }
+      
+      modal.style.display = 'flex';
+      
+      // Add event listeners for checkboxes
+      const lectureCheckbox = document.getElementById('class-type-lecture');
+      const labCheckbox = document.getElementById('class-type-lab');
+      
+      if (lectureCheckbox) lectureCheckbox.addEventListener('change', toggleClassType.bind(null, 'lecture'));
+      if (labCheckbox) labCheckbox.addEventListener('change', toggleClassType.bind(null, 'lab'));
+      
+      // Initial validation
+      validateClassTypeSelection();
+    }
+
+    function checkForDuplicate(subjectCode) {
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      const duplicateWarning = document.getElementById('duplicateWarning');
+      
+      if (!yearLevel || !section || !subjectCode.trim()) {
+        if (duplicateWarning) duplicateWarning.style.display = 'none';
+        return;
+      }
+      
+      const key = `${currentProgramCode}-${yearLevel}-${section}`;
+      const existingSubject = checkSubjectExists(key, subjectCode.trim());
+      
+      if (duplicateWarning) {
+        if (existingSubject) {
+          duplicateWarning.style.display = 'block';
+        } else {
+          duplicateWarning.style.display = 'none';
+        }
+      }
+    }
+
+    function hideAddSubjectModal() {
+      const modal = document.getElementById('addSubjectModal');
+      const form = document.getElementById('addSubjectForm');
+      if (modal) modal.style.display = 'none';
+      if (form) form.reset();
+      editingSubject = null;
+      
+      // Remove event listeners
+      const subjectCodeInput = document.getElementById('subject-code');
+      if (subjectCodeInput) {
+        subjectCodeInput.removeEventListener('input', checkForDuplicate);
+      }
+      
+      // Reset checkbox styling
+      const labels = document.querySelectorAll('.checkbox-label');
+      labels.forEach(label => label.classList.remove('checked'));
+    }
+
+    // Updated handler for form submission with duplicate checking
+    function handleSubmit() {
+      console.log('=== FORM SUBMISSION START ===');
+      
+      const yearLevel = document.getElementById('select-year')?.value;
+      const section = document.getElementById('select-section')?.value;
+      if (!yearLevel || !section) {
+        showAlertModal('Selection Required', 'Please select both year level and section first.', true);
+        console.log('❌ Submission failed: Year/Section not selected');
+        return;
+      }
+      
+      const subjectCode = document.getElementById('subject-code')?.value?.toUpperCase().trim();
+      const subjectName = document.getElementById('subject-name')?.value?.trim();
+      const classTypes = getSelectedClassTypes();
+      
+      // Validation
+      if (!subjectCode || !subjectName || classTypes.length === 0) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields and select at least one class type.', true);
+        console.log('❌ Submission failed: Form incomplete');
+        return;
+      }
+
+      const key = `${currentProgramCode}-${yearLevel}-${section}`;
+      const existingSubject = checkSubjectExists(key, subjectCode);
+      
+      const subject = {
+        code: subjectCode,
+        name: subjectName,
+        classTypes: classTypes
+      };
+
+      console.log('Subject data prepared:', subject);
+
+      if (!subjectsData[key]) {
+        subjectsData[key] = [];
+      }
+      
+      if (editingSubject !== null) {
+        // Update existing subject
+        subjectsData[key][editingSubject.index] = subject;
+        showAlertModal('Success', 'Subject updated successfully!', false);
+      } else if (existingSubject) {
+        // Update existing subject (duplicate found)
+        const existingIndex = subjectsData[key].indexOf(existingSubject);
+        subjectsData[key][existingIndex] = subject;
+        showAlertModal('Updated', `Subject "${subjectCode}" has been updated successfully!`, false);
+      } else {
+        // Add new subject
+        subjectsData[key].push(subject);
+        showAlertModal('Success', 'Subject added successfully!', false);
+      }
+      
+      hideAddSubjectModal();
+      loadSubjects();
+      
+      console.log('✅ Subjects saved for', key, subjectsData[key]);
+      editingSubject = null;
+      
+      console.log('=== FORM SUBMISSION END ===');
+    }
+
+    function editSubject(index, key) {
+      if (!subjectsData[key] || index >= subjectsData[key].length) return;
+      
+      const subject = subjectsData[key][index];
+      subject.index = index;
+      showAddSubjectModal(subject);
+    }
+
+    function deleteSubject(index, key) {
+      if (!subjectsData[key] || index >= subjectsData[key].length) return;
+      
+      const subject = subjectsData[key][index];
+      showConfirmModal(
+        'Delete Subject',
+        `Are you sure you want to delete "${subject.code} - ${subject.name}"? This action cannot be undone.`,
+        function() {
+          subjectsData[key].splice(index, 1);
+          loadSubjects();
+          showAlertModal('Deleted', 'Subject deleted successfully!', false);
+        }
+      );
+    }
+
+    // View Course Button Event Listeners
+    document.addEventListener('DOMContentLoaded', function() {
+      const viewCourseButtons = document.querySelectorAll('.view-course');
+      
+      viewCourseButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+          e.preventDefault();
+          const programCode = this.getAttribute('data-course');
+          const programName = this.getAttribute('data-name');
+          currentProgramCode = programCode;
+          
+          // Hide courses page
+          document.getElementById('coursesPage').style.display = 'none';
+          
+          // Load subject management page
+          loadSubjectManagementPage(programCode, programName);
+        });
+      });
+    });
+
+    function loadSubjectManagementPage(programCode, programName) {
+      // Inject HTML
+      const subjectManagementPage = document.getElementById('subjectManagementPage');
+      subjectManagementPage.innerHTML = subjectManagementHTML.replace(
+        'PROGRAM_NAME', programName
+      );
+      subjectManagementPage.style.display = 'block';
+      
+      // Add event listeners for the new content
+      setTimeout(() => {
+        // Back button
+        const backBtn = document.getElementById('backToCourses');
+        if (backBtn) {
+          backBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            subjectManagementPage.style.display = 'none';
+            document.getElementById('coursesPage').style.display = 'block';
+            
+            // Reset selections
+            const yearSelect = document.getElementById('select-year');
+            const sectionSelect = document.getElementById('select-section');
+            if (yearSelect) yearSelect.value = '';
+            if (sectionSelect) sectionSelect.value = '';
+          });
+        }
+        
+        // Select event listeners
+        const yearSelect = document.getElementById('select-year');
+        const sectionSelect = document.getElementById('select-section');
+        if (yearSelect) yearSelect.addEventListener('change', loadSubjects);
+        if (sectionSelect) sectionSelect.addEventListener('change', loadSubjects);
+        
+        // Modal close events
+        const addModalCloseBtn = document.querySelector('#addSubjectModal .close');
+        if (addModalCloseBtn) {
+          addModalCloseBtn.addEventListener('click', hideAddSubjectModal);
+        }
+        
+        // Initialize subjects data for this program if not exists
+        if (!subjectsData[programCode]) {
+          subjectsData[programCode] = {};
+        }
+        
+        // Initialize with prompt visible and table hidden
+        loadSubjects();
+      }, 100);
+    }
+
+    // Close modals when clicking outside
+    document.addEventListener('click', function(e) {
+      const addModal = document.getElementById('addSubjectModal');
+      const alertModal = document.getElementById('alertModal');
+      const confirmModal = document.getElementById('confirmModal');
+      
+      if (addModal && e.target === addModal) {
+        hideAddSubjectModal();
+      }
+      
+      if (alertModal && e.target === alertModal) {
+        hideAlertModal();
+      }
+      
+      if (confirmModal && e.target === confirmModal) {
+        hideConfirmModal();
+      }
+    });
+
+    // Close modals with Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        hideAlertModal();
+        hideConfirmModal();
+        hideAddSubjectModal();
+      }
+    });
+  </script>
+</body>
+</html>

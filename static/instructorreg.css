@@ -1,0 +1,253 @@
+* {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      width: 100%;
+      max-width: 500px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+    .header {
+      background: #685A45;
+      color: white;
+      text-align: center;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    .content {
+      padding: 25px 20px;
+      text-align: center;
+    }
+    h2 {
+      font-size: 18px;
+      margin-bottom: 20px;
+      color: #333;
+    }
+    input[type="email"], input[type="text"], input[type="file"], select, input[type="password"] {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 15px;
+    }
+    .name-fields {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .name-fields input {
+      flex: 1;
+    }
+    .otp-boxes, .pin-boxes {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 15px 0;
+    }
+    .otp-boxes input, .pin-boxes input {
+      width: 45px;
+      height: 50px;
+      text-align: center;
+      font-size: 22px;
+    }
+    .resend-otp {
+      margin: 15px 0;
+      color: #685A45;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    button {
+      background: #685A45;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 15px;
+      width: 100%;
+    }
+    button:hover {
+      background: #3a2c16;
+    }
+    button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+    }
+    .hidden {
+      display: none;
+    }
+    .face-scan {
+      width: 220px;
+      height: 220px;
+      border: 4px solid #3a86ff;
+      border-radius: 50%;
+      margin: 20px auto;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .id-card {
+      border: 2px solid #900;
+      border-radius: 8px;
+      padding: 15px;
+      background: #f9f9f9;
+      text-align: left;
+    }
+    .id-header {
+      background: #900;
+      color: white;
+      padding: 8px;
+      border-radius: 6px 6px 0 0;
+      font-size: 14px;
+      text-align: center;
+    }
+    .id-photo {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: #ccc;
+      margin: 15px auto;
+      overflow: hidden;
+    }
+    .id-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .success {
+      font-size: 70px;
+      color: green;
+      margin-bottom: 10px;
+    }
+    .scan-instruction {
+      margin: 15px 0;
+      font-weight: bold;
+      color: #685A45;
+      min-height: 24px;
+    }
+    .scan-progress {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin: 15px 0;
+    }
+    .progress-step {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background-color: #ccc;
+    }
+    .progress-step.active {
+      background-color: #685A45;
+    }
+    .upload-container {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      margin: 10px auto;
+    }
+    .upload-preview {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 2px solid #685A45;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #f8f8f8;
+      cursor: pointer;
+    }
+    .upload-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .upload-preview span {
+      color: #888;
+      font-size: 14px;
+    }
+    .upload-input {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+      z-index: 10;
+    }
+    .pin-label {
+      display: block;
+      text-align: left;
+      margin: 15px 0 5px;
+      font-weight: bold;
+      color: #555;
+    }
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 350px;
+      text-align: center;
+    }
+    .modal-content h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      color: #900;
+    }
+    .modal-content button {
+      margin-top: 15px;
+      width: auto;
+    }
+    @media (max-width: 600px) {
+      .container {
+        margin: 0 10px;
+      }
+      .otp-boxes input, .pin-boxes input {
+        width: 40px;
+        height: 45px;
+        font-size: 20px;
+      }
+      .face-scan {
+        width: 180px;
+        height: 180px;
+      }
+      .name-fields {
+        flex-direction: column;
+        gap: 8px;
+      }
+    }

@@ -1,0 +1,732 @@
+* {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background: #f5f7f9;
+      color: #333;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .nav-items .timer-item a {
+      background-color: #ff4747;
+      color: white;
+      font-weight: 600;
+    }
+
+    .nav-items .timer-item a:hover {
+      background-color: #e63e3e;
+      color: white;
+    }
+
+    /* Sidebar Styles */
+    .sidebar {
+      width: 250px;
+      background: white;
+      color: black;
+      height: 100vh;
+      position: fixed;
+      padding: 20px 0;
+      box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .logo {
+      text-align: center;
+      padding: 20px 0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      margin-bottom: 20px;
+    }
+
+    .logo h1 {
+      font-size: 24px;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .user-info {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 15px 20px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .user-info .avatar {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background-color: #1a2530;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 15px;
+      font-size: 28px;
+      color: white;
+    }
+
+    .user-info .name {
+      font-weight: 600;
+      font-size: 18px;
+      margin-bottom: 5px;
+      color: #2c3e50;
+    }
+
+    .user-info .role {
+      color: #7f8c8d;
+      font-size: 14px;
+    }
+
+    .nav-items {
+      list-style: none;
+      padding: 0 15px;
+    }
+
+    .nav-items li {
+      margin-bottom: 5px;
+    }
+
+    .nav-items a {
+      display: flex;
+      align-items: center;
+      padding: 12px 15px;
+      color: black;
+      text-decoration: none;
+      border-radius: 5px;
+      transition: all 0.3s ease;
+    }
+
+    .nav-items a i {
+      margin-right: 10px;
+      font-size: 18px;
+      width: 24px;
+      text-align: center;
+    }
+
+    .nav-items a:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .nav-items a.active {
+      background-color: #4a6fa9;
+      color: white;
+    }
+
+    /* Dropdown Styles */
+    .dropdown .dropdown-btn {
+      display: flex;
+      align-items: center;
+      padding: 12px 15px;
+      color: black;
+      text-decoration: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      justify-content: space-between;
+    }
+
+    .dropdown .dropdown-btn:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .dropdown-content {
+      display: none;
+      list-style: none;
+      padding-left: 20px;
+      border-radius: 5px;
+      margin-top: 5px;
+    }
+
+    .dropdown-content li a {
+      display: flex;
+      align-items: center;
+      padding: 10px 15px;
+      color: #555;
+      font-size: 14px;
+      border-radius: 5px;
+    }
+
+    .dropdown-content li a:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .dropdown.open .dropdown-content {
+      display: block;
+    }
+
+    /* Main Content */
+    .main-content {
+      flex: 1;
+      margin-left: 250px;
+      padding: 20px;
+    }
+
+    .header {
+      background: #fff;
+      padding: 15px 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      margin-bottom: 25px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h2 {
+      margin: 0;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .courses-table {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      margin-bottom: 25px;
+    }
+
+    .courses-table h3 {
+      margin-bottom: 15px;
+      color: #2c3e50;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+
+    .btn-view {
+      background: #4a6fa9;
+      color: white;
+      padding: 5px 10px;
+      border-radius: 4px;
+      text-decoration: none;
+      display: inline-block;
+      transition: background 0.3s;
+    }
+
+    .btn-view:hover {
+      background: #3b5b8d;
+      color: white;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    table th, table td {
+      padding: 12px;
+      border: 1px solid #ddd;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    table th { 
+      background: #f0f2f5; 
+      font-weight: 600; 
+      text-align: center;
+    }
+
+    table tr:hover { 
+      background: #f9fafb; 
+    }
+
+    .back-btn {
+      background: #95a5a6;
+      color: white;
+      padding: 8px 15px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      text-decoration: none;
+    }
+
+    .back-btn:hover { 
+      background: #7f8c8d; 
+    }
+
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      overflow-y: auto;
+      padding: 20px 0;
+    }
+
+    .modal-content {
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      width: 500px;
+      max-width: 90%;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .modal-header h3 {
+      color: #2c3e50;
+      margin: 0;
+    }
+
+    .close {
+      color: #aaa;
+      font-size: 24px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .close:hover {
+      color: #333;
+    }
+
+    .modal-body {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .modal-body p {
+      color: #666;
+      line-height: 1.6;
+      margin: 0 0 20px 0;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #eee;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      text-decoration: none;
+    }
+
+    .btn-primary { 
+      background: #4a6fa9; 
+      color: #fff; 
+    }
+
+    .btn-primary:hover { 
+      background: #3b5b8d; 
+    }
+
+    .btn-secondary { 
+      background: #6c757d; 
+      color: #fff; 
+    }
+
+    .btn-secondary:hover { 
+      background: #545b62; 
+    }
+
+    .btn-success {
+      background: #28a745;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #218838;
+    }
+
+    .btn-success:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+    }
+
+    .btn-warning {
+      background: #ffc107;
+      color: #212529;
+    }
+
+    .btn-warning:hover {
+      background: #e0a800;
+    }
+
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c82333;
+    }
+
+    .error-modal .modal-header h3 {
+      color: #dc3545;
+    }
+
+    .error-modal .modal-content {
+      border-left: 4px solid #dc3545;
+    }
+
+    .success-modal .modal-header h3 {
+      color: #28a745;
+    }
+
+    .success-modal .modal-content {
+      border-left: 4px solid #28a745;
+    }
+
+    /* Checkbox Styles for Class Type */
+    .checkbox-group {
+      margin-bottom: 20px;
+    }
+
+    .checkbox-group label {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      font-weight: 500;
+      color: #2c3e50;
+      cursor: pointer;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      margin-right: 10px;
+      width: 18px;
+      height: 18px;
+      accent-color: #4a6fa9;
+    }
+
+    .checkbox-group .checkbox-label {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      margin: 5px 0;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      background: #f8f9fa;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .checkbox-group .checkbox-label:hover {
+      border-color: #4a6fa9;
+      background: #e8f0fe;
+    }
+
+    .checkbox-group .checkbox-label input[type="checkbox"] {
+      margin-right: 12px;
+    }
+
+    .checkbox-group .checkbox-label.checked {
+      border-color: #4a6fa9;
+      background: #e3f2fd;
+      color: #2c3e50;
+    }
+
+    .checkbox-group .class-type-badge {
+      margin-left: auto;
+      padding: 2px 6px;
+      font-size: 10px;
+      border-radius: 4px;
+    }
+
+    @media (max-width: 992px) {
+      .sidebar { width: 80px; }
+      .sidebar .logo h1, 
+      .sidebar .user-info .name, 
+      .sidebar .user-info .role,
+      .sidebar .nav-items a span { display: none; }
+      .sidebar .user-info { padding: 15px 5px; }
+      .sidebar .nav-items a { justify-content: center; padding: 15px; }
+      .sidebar .nav-items a i { margin-right: 0; font-size: 20px; }
+      .main-content { margin-left: 80px; }
+    }
+
+    @media (max-width: 768px) {
+      .sidebar { width: 0; display: none; }
+      .main-content { margin-left: 0; }
+      .header { flex-direction: column; gap: 15px; }
+      .modal-content {
+        width: 95%;
+        padding: 20px;
+      }
+    }
+
+    /* Subject Management Specific Styles */
+    .dashboard-content {
+      background: white;
+      border-radius: 8px;
+      padding: 25px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      margin-bottom: 25px;
+    }
+
+    .dashboard-content h3 {
+      color: #2c3e50;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .selection-controls {
+      display: flex;
+      gap: 20px;
+      align-items: flex-end;
+      margin-bottom: 30px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      min-width: 200px;
+      flex: 1;
+      max-width: 250px;
+    }
+
+    .control-group label {
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #2c3e50;
+    }
+
+    .control-group select, .control-group input {
+      padding: 10px 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 15px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .subjects-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 500px;
+    }
+
+    .subjects-table th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+      color: #2c3e50;
+      padding: 12px 15px;
+      border-bottom: 2px solid #dee2e6;
+    }
+
+    .subjects-table td {
+      padding: 12px 15px;
+      border-bottom: 1px solid #dee2e6;
+      vertical-align: middle;
+    }
+
+    .subjects-table tr:hover {
+      background-color: #f8f9fa;
+    }
+
+    .subjects-table .subject-code {
+      font-weight: bold;
+      color: #2c3e50;
+      font-family: 'Courier New', monospace;
+    }
+
+    .class-type-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-right: 5px;
+      margin-bottom: 2px;
+    }
+
+    .class-type-lecture {
+      background-color: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+
+    .class-type-lab {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .btn-edit {
+      background: #17a2b8;
+      color: white;
+      padding: 6px 10px;
+    }
+
+    .btn-edit:hover {
+      background: #138496;
+    }
+
+    #addSubjectBtn {
+      height: 40px;
+      white-space: nowrap;
+    }
+
+    #addSubjectBtn:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+    }
+
+    .no-data {
+      text-align: center;
+      padding: 40px 20px;
+      color: #6c757d;
+    }
+
+    .no-data i {
+      font-size: 48px;
+      margin-bottom: 15px;
+      opacity: 0.5;
+    }
+
+    .selection-prompt {
+      background: #e3f2fd;
+      border: 1px solid #bbdefb;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .selection-prompt i {
+      font-size: 48px;
+      color: #1976d2;
+      margin-bottom: 15px;
+      display: block;
+    }
+
+    .selection-prompt h4 {
+      color: #1976d2;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .selection-prompt p {
+      color: #666;
+      margin: 0;
+    }
+
+    .duplicate-warning {
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 15px;
+      color: #856404;
+      font-size: 14px;
+    }
+
+    .duplicate-warning i {
+      margin-right: 8px;
+    }
+
+    @media (max-width: 768px) {
+      .selection-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 15px;
+      }
+      .control-group {
+        min-width: auto;
+      }
+      .subjects-table {
+        font-size: 12px;
+      }
+      .subjects-table th,
+      .subjects-table td {
+        padding: 8px 6px;
+      }
+      .action-buttons {
+        flex-direction: column;
+      }
+      .form-row {
+        flex-direction: column;
+        gap: 0;
+      }
+      .header {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+      }
+      .checkbox-group .checkbox-label {
+        justify-content: space-between;
+      }
+    }
+
+    /* Form Styles for Subject Management */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .form-row .form-group {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #2c3e50;
+    }
+
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 10px 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+      font-size: 14px;
+    }

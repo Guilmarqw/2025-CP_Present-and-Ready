@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedules</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../static/schedule.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='schedule.css') }}">
+</head>
+<body>
+    <!-- Sidebar Container -->
+    <div id="sidebar-container"></div>
+
+    <div class="main-content">
+        <div class="header">
+            <h2><i class="fas fa-calendar-alt"></i> Instructor Schedules</h2>
+        </div>
+
+        <div class="phase active" id="phase1">
+            <div class="schedule-table">
+                <div class="phase-header">
+                    <h3>Unassigned Instructors Overview</h3>
+                    <button class="add-schedule-btn" onclick="showPhase2()">
+                        <i class="fas fa-plus"></i> Add Schedule
+                    </button>
+                </div>
+                <table id="unassignedTable">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Department</th>
+                            <th>Specialization</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="schedule-table">
+                <h3>Current Schedule List</h3>
+                <table id="scheduleTable">
+                    <thead>
+                        <tr>
+                            <th>Instructor</th>
+                            <th>Subject</th>
+                            <th>Meetings</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="phase" id="phase2">
+            <div class="phase-header">
+                <button class="back-button" onclick="showPhase1()">
+                    <i class="fas fa-arrow-left"></i> Back to Overview
+                </button>
+            </div>
+            
+            <div class="schedule-form">
+                <h3>Add Schedule</h3>
+                <form id="scheduleForm" onsubmit="return false;">
+                    <div class="course-selection">
+                        <div>
+                            <label for="course">Course</label>
+                            <select id="course" onchange="loadSections()">
+                                <option value="" disabled selected>Select Course</option>
+                                <option value="CS">BS Computer Science</option>
+                                <option value="IT">BS Information Technology</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="yearLevel">Year Level</label>
+                            <select id="yearLevel" onchange="loadSections()">
+                                <option value="" disabled selected>Select Year</option>
+                                <option value="1">1st Year</option>
+                                <option value="2">2nd Year</option>
+                                <option value="3">3rd Year</option>
+                                <option value="4">4th Year</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="section">Section</label>
+                            <select id="section" onchange="loadClassSchedule()" disabled>
+                                <option value="" disabled selected>Select Section</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="instructor">Instructor</label>
+                            <select id="instructor" onchange="checkConflicts()">
+                                <option value="" disabled selected>Select Instructor</option>
+                                <option value="1">Guilmar Quimba</option>
+                                <option value="2">Jane Smith</option>
+                                <option value="3">John Doe</option>
+                                <option value="4">Emily Davis</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="classSchedule" class="schedule-calendar" style="display: none;">
+                        <div class="calendar-header">Class Schedule</div>
+                        <div class="day-header">Time</div>
+                        <div class="day-header">Monday</div>
+                        <div class="day-header">Tuesday</div>
+                        <div class="day-header">Wednesday</div>
+                        <div class="day-header">Thursday</div>
+                        <div class="day-header">Friday</div>
+                        <div class="day-header">Saturday</div>
+                    </div>
+
+                    <div class="save-schedule-container">
+                        <button type="button" id="saveScheduleBtn" class="save-schedule-btn" disabled onclick="saveSchedule()">
+                            <i class="fas fa-save"></i> Save Schedule
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <h3 id="modalTitle">Warning</h3>
+            <p id="modalMessage"></p>
+            <button id="closeModal">Close</button>
+        </div>
+    </div>
+
+    <div class="schedule-overview-modal" id="scheduleOverviewModal">
+        <div class="schedule-overview-content">
+            <div class="schedule-overview-header">
+                <h3>Instructor Schedule Overview</h3>
+                <button class="schedule-overview-close" id="closeOverviewModal">&times;</button>
+            </div>
+            <div id="overviewContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // Load sidebar with navigation functionality
+        fetch('../../sidebar.html')  // Changed path to go up two levels to Admin folder
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Sidebar not found');
+                }
+                return response.text();
+            })
+            .then(html => {
+                document.getElementById('sidebar-container').innerHTML = html;
+                
+                // Fix navigation paths after sidebar loads
+                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+                    const href = link.getAttribute('href');
+                    if (!href.startsWith('http') && !href.startsWith('#')) {
+                        if (href === '../Timer/timer.html') {
+                            link.href = '../../../Timer/timer.html'; // Adjust Timer path
+                        } else {
+                            link.href = '../../' + href.replace('../Admin/', ''); // Fix other paths
+                        }
+                    }
+                });
+
+                // Initialize dropdown functionality
+                document.querySelectorAll("#sidebar-container .dropdown-btn").forEach(btn => {
+                    btn.addEventListener("click", function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        // Close all other dropdowns first
+                        document.querySelectorAll('#sidebar-container .dropdown-content').forEach(content => {
+                            if (content !== this.nextElementSibling) {
+                                content.style.display = 'none';
+                            }
+                        });
+
+                        // Toggle current dropdown
+                        const content = this.nextElementSibling;
+                        if (content) {
+                            content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                        }
+                    });
+                });
+
+                // Close dropdowns when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('#sidebar-container .dropdown')) {
+                        document.querySelectorAll('#sidebar-container .dropdown-content').forEach(content => {
+                            content.style.display = 'none';
+                        });
+                    }
+                });
+
+                // Handle active state
+                const currentPath = window.location.pathname;
+                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+                    const linkPath = link.getAttribute('href');
+                    if (currentPath.includes(linkPath.split('/').pop()) && linkPath !== '#') {
+                        link.classList.add('active');
+                        // If link is in dropdown, show parent dropdown and mark as active
+                        const dropdown = link.closest('.dropdown-content');
+                        if (dropdown) {
+                            dropdown.style.display = 'block';
+                            const parentBtn = dropdown.previousElementSibling;
+                            if (parentBtn) {
+                                parentBtn.classList.add('active');
+                            }
+                        }
+                    }
+                });
+
+                // Initialize your schedule functionality after sidebar loads
+                initializeScheduleApp();
+            })
+            .catch(error => {
+                console.error('Error loading sidebar:', error);
+                // Show basic sidebar as fallback
+                document.getElementById('sidebar-container').innerHTML = `
+                    <aside class="sidebar">
+                        <div class="logo">
+                            <h1>Admin Side</h1>
+                        </div>
+                        <div class="user-info">
+                            <div class="avatar">
+                                <i class="fas fa-user"></i>
+                            </div>
+                            <div class="name">Unknown User</div>
+                            <div class="role">Admin</div>
+                        </div>
+                        <ul class="nav-items">
+                            <li class="timer-item">
+                                <a href="../Timer/timer.html"><i class="fas fa-stopwatch"></i> <span>Go to Timer</span></a>
+                            </li>
+                            <li><a href="../Admin/dashboard/dashboard.html"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
+                            <li class="dropdown">
+                                <a href="#" class="dropdown-btn">
+                                    <i class="fas fa-graduation-cap"></i> <span>Management</span>
+                                    <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
+                                </a>
+                                <ul class="dropdown-content">
+                                    <li><a href="../Admin/curriculum/programs/programs.html"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
+                                    <li><a href="../Admin/curriculum/courses/courses.html"><i class="fas fa-book"></i> <span>Courses</span></a></li>
+                                    <li><a href="../Admin/curriculum/schedule/schedule.html"><i class="fas fa-calendar-check"></i> <span>Instructor Schedules</span></a></li>
+                                    <li><a href="../Admin/curriculum/class schedule/classsched.html"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
+                                </ul>
+                            </li>
+                            <li><a href="../Admin/instructors/instructors.html"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
+                            <li><a href="../Admin/students/student.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
+                            <li><a href="../Admin/settings/settings.html"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
+                            <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
+                        </ul>
+                    </aside>
+                `;
+                initializeScheduleApp();
+            });
+
+        // Initialize schedule functionality
+        function initializeScheduleApp() {
+            // Modal functionality
+            const modalOverlay = document.getElementById('modalOverlay');
+            const modalMessage = document.getElementById('modalMessage');
+            const closeModal = document.getElementById('closeModal');
+            
+            function showModal(message) {
+                modalMessage.textContent = message;
+                modalOverlay.style.display = 'flex';
+            }
+            
+            closeModal.addEventListener('click', () => {
+                modalOverlay.style.display = 'none';
+            });
+
+            // Schedule functionality
+            const form = document.getElementById('scheduleForm');
+            const tableBody = document.querySelector('#scheduleTable tbody');
+            const instructorSelect = document.getElementById('instructor');
+            const scheduleOverviewModal = document.getElementById('scheduleOverviewModal');
+            const closeOverviewModal = document.getElementById('closeOverviewModal');
+            const overviewContent = document.getElementById('overviewContent');
+
+            let allSchedules = [];
+
+            function timeToMinutes(timeStr) {
+                const [time, modifier] = timeStr.split(' ');
+                let [hours, minutes] = time.split(':').map(Number);
+                if (modifier === 'PM' && hours !== 12) hours += 12;
+                if (modifier === 'AM' && hours === 12) hours = 0;
+                return hours * 60 + minutes;
+            }
+
+            function hasConflict(instructor, day, start, end) {
+                const startMinutes = timeToMinutes(start);
+                const endMinutes = timeToMinutes(end);
+                
+                return allSchedules.some(schedule => {
+                    if (schedule.instructor !== instructor || schedule.day !== day) return false;
+                    const scheduleStart = timeToMinutes(schedule.start);
+                    const scheduleEnd = timeToMinutes(schedule.end);
+                    return (
+                        (startMinutes >= scheduleStart && startMinutes < scheduleEnd) ||
+                        (endMinutes > scheduleStart && endMinutes <= scheduleEnd) ||
+                        (startMinutes <= scheduleStart && endMinutes >= scheduleEnd)
+                    );
+                });
+            }
+
+            function checkConflicts() {
+                const instructor = instructorSelect.value;
+                const selectedSlots = document.querySelectorAll('.schedule-cell');
+                
+                selectedSlots.forEach(slot => {
+                    const day = slot.dataset.day;
+                    const [start, end] = slot.dataset.time.split(' - ');
+                    
+                    if (hasConflict(instructor, day, start, end)) {
+                        slot.classList.add('conflict');
+                        slot.classList.remove('selected');
+                    } else {
+                        slot.classList.remove('conflict');
+                    }
+                });
+
+                document.getElementById('saveScheduleBtn').disabled = 
+                    document.querySelectorAll('.schedule-cell.selected').length === 0;
+            }
+
+            function showInstructorSchedule(instructorName) {
+                overviewContent.innerHTML = '';
+                const schedules = allSchedules.filter(s => s.instructor === instructorName);
+                
+                const calendar = document.createElement('div');
+                calendar.className = 'weekly-calendar';
+                
+                const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                
+                days.forEach(day => {
+                    const dayCol = document.createElement('div');
+                    dayCol.className = 'day-column';
+                    
+                    const dayHeader = document.createElement('div');
+                    dayHeader.className = 'day-header';
+                    dayHeader.textContent = day;
+                    dayCol.appendChild(dayHeader);
+                    
+                    const daySchedules = schedules.filter(s => s.day === day);
+                    if (daySchedules.length > 0) {
+                        daySchedules.sort((a, b) => a.start.localeCompare(b.start));
+                        daySchedules.forEach(s => {
+                            const scheduleItem = document.createElement('div');
+                            scheduleItem.className = 'schedule-item';
+                            scheduleItem.innerHTML = `
+                                <strong>${s.subjectCode} - ${s.subjectName}</strong><br>
+                                ${s.course} ${s.yearLevel}-${s.section}<br>
+                                ${s.start} - ${s.end}<br>
+                                Room: ${s.room}
+                            `;
+                            dayCol.appendChild(scheduleItem);
+                        });
+                    }
+                    
+                    calendar.appendChild(dayCol);
+                });
+                
+                overviewContent.appendChild(calendar);
+                scheduleOverviewModal.style.display = 'block';
+            }
+            
+            closeOverviewModal.addEventListener('click', () => {
+                scheduleOverviewModal.style.display = 'none';
+            });
+
+            function updateUnassignedInstructors() {
+                const assignedInstructors = [...new Set(allSchedules.map(s => s.instructor))];
+                const instructors = [
+                    { id: '1', name: 'Guilmar Quimba', dept: 'Computer Science', specialization: 'Database Systems' },
+                    { id: '2', name: 'Jane Smith', dept: 'Computer Science', specialization: 'Web Development' },
+                    { id: '3', name: 'John Doe', dept: 'Information Technology', specialization: 'Network Security' },
+                    { id: '4', name: 'Emily Davis', dept: 'Computer Science', specialization: 'AI & Machine Learning' }
+                ];
+                
+                const unassigned = instructors.filter(i => !assignedInstructors.includes(i.name));
+                const unassignedTable = document.querySelector('#unassignedTable tbody');
+                unassignedTable.innerHTML = '';
+                
+                unassigned.forEach(instructor => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${instructor.name}</td>
+                        <td>${instructor.dept}</td>
+                        <td>${instructor.specialization}</td>
+                        <td>
+                            <button class="add-schedule-btn" onclick="assignInstructor('${instructor.id}')">
+                                <i class="fas fa-plus"></i> Assign
+                            </button>
+                        </td>
+                    `;
+                    unassignedTable.appendChild(tr);
+                });
+            }
+            
+            window.assignInstructor = function(instructorId) {
+                showPhase2();
+                instructorSelect.value = instructorId;
+                checkConflicts();
+            }
+            
+            function showPhase1() {
+                document.getElementById('phase1').classList.add('active');
+                document.getElementById('phase2').classList.remove('active');
+            }
+            
+            function showPhase2() {
+                document.getElementById('phase1').classList.remove('active');
+                document.getElementById('phase2').classList.add('active');
+                form.reset();
+                document.getElementById('classSchedule').style.display = 'none';
+            }
+
+            function loadSections() {
+                const course = document.getElementById('course').value;
+                const yearLevel = document.getElementById('yearLevel').value;
+                const sectionSelect = document.getElementById('section');
+                
+                if (course && yearLevel) {
+                    sectionSelect.disabled = false;
+                    sectionSelect.innerHTML = '<option value="" disabled selected>-- Select Section --</option>';
+                    ['A', 'B', 'C'].forEach(section => {
+                        const opt = document.createElement('option');
+                        opt.value = section;
+                        opt.textContent = `Section ${section}`;
+                        sectionSelect.appendChild(opt);
+                    });
+                } else {
+                    sectionSelect.disabled = true;
+                }
+            }
+
+            function loadClassSchedule() {
+                const course = document.getElementById('course').value;
+                const yearLevel = document.getElementById('yearLevel').value;
+                const section = document.getElementById('section').value;
+                const calendar = document.getElementById('classSchedule');
+                
+                if (!course || !yearLevel || !section) {
+                    calendar.style.display = 'none';
+                    return;
+                }
+                
+                calendar.style.display = 'grid';
+                
+                const timeSlots = [
+                    "7:00 AM - 8:30 AM",
+                    "8:30 AM - 10:00 AM",
+                    "10:00 AM - 11:30 AM",
+                    "11:30 AM - 1:00 PM",
+                    "1:00 PM - 2:30 PM",
+                    "2:30 PM - 4:00 PM",
+                    "4:00 PM - 5:30 PM"
+                ];
+                
+                const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                
+                // Sample subjects data (replace with actual data source)
+                const subjects = [
+                    { code: 'CS101', name: 'Introduction to Programming', course: 'CS', yearLevel: '1', section: 'A' },
+                    { code: 'IT201', name: 'Network Fundamentals', course: 'IT', yearLevel: '2', section: 'B' },
+                    { code: 'CS301', name: 'Database Systems', course: 'CS', yearLevel: '3', section: 'A' },
+                    { code: 'IT401', name: 'Cybersecurity', course: 'IT', yearLevel: '4', section: 'C' }
+                ];
+                
+                // Clear existing cells except headers
+                const cells = calendar.querySelectorAll('.time-cell, .schedule-cell');
+                cells.forEach(cell => cell.remove());
+                
+                // Filter schedules for the selected course, year level, and section
+                const relevantSchedules = allSchedules.filter(s =>
+                    s.course === course &&
+                    s.yearLevel === yearLevel &&
+                    s.section === section
+                );
+                
+                // Find subjects for the selected course, year level, and section
+                const relevantSubjects = subjects.filter(s =>
+                    s.course === course &&
+                    s.yearLevel === yearLevel &&
+                    s.section === section
+                );
+                
+                // Add time slots and schedule cells
+                timeSlots.forEach(time => {
+                    const timeCell = document.createElement('div');
+                    timeCell.className = 'time-cell';
+                    timeCell.textContent = time;
+                    calendar.appendChild(timeCell);
+                    
+                    days.forEach(day => {
+                        const scheduleCell = document.createElement('div');
+                        scheduleCell.className = 'schedule-cell';
+                        scheduleCell.dataset.time = time;
+                        scheduleCell.dataset.day = day;
+                        
+                        // Find schedule for this time slot and day
+                        const schedule = relevantSchedules.find(s =>
+                            s.day === day &&
+                            s.start === time.split(' - ')[0] &&
+                            s.end === time.split(' - ')[1]
+                        );
+                        
+                        if (schedule) {
+                            // Display existing schedule
+                            scheduleCell.className = 'schedule-cell occupied';
+                            scheduleCell.innerHTML = `
+                                <div class="subject-info">
+                                    <div class="subject-code">${schedule.subjectCode} - ${schedule.subjectName}</div>
+                                    <div class="subject-room">Room: ${schedule.room}</div>
+                                    <div class="instructor-name">${schedule.instructor || 'Unassigned'}</div>
+                                </div>
+                            `;
+                        } else {
+                            // Display subject information instead of "Available"
+                            const subject = relevantSubjects.find(s => 
+                                // Assuming subjects are pre-assigned to specific times/days
+                                // You may need to adjust this logic based on your data structure
+                                true // Placeholder: modify to match your subject assignment logic
+                            );
+                            
+                            scheduleCell.innerHTML = `
+                                <div class="subject-info">
+                                    <div class="subject-code">${subject ? `${subject.code} - ${subject.name}` : 'No Subject'}</div>
+                                    <div style="font-weight:lighter; font-size:0.7rem;" class="subject-room">${subject ? 'Select to assign' : 'No Room'}</div>
+                                </div>
+                            `;
+                            scheduleCell.addEventListener('click', () => {
+                                if (!scheduleCell.classList.contains('conflict') && !scheduleCell.classList.contains('occupied')) {
+                                    scheduleCell.classList.toggle('selected');
+                                    document.getElementById('saveScheduleBtn').disabled = 
+                                        document.querySelectorAll('.schedule-cell.selected').length === 0;
+                                }
+                            });
+                        }
+                        
+                        calendar.appendChild(scheduleCell);
+                    });
+                });
+                
+                checkConflicts();
+            }
+
+            function saveSchedule() {
+                const instructor = document.getElementById('instructor').value;
+                const instructorName = instructorSelect.options[instructorSelect.selectedIndex].text;
+                const selectedSlots = document.querySelectorAll('.schedule-cell.selected');
+                
+                if (selectedSlots.length === 0) {
+                    showModal("Please select at least one schedule slot");
+                    return;
+                }
+                
+                const course = document.getElementById('course').value;
+                const yearLevel = document.getElementById('yearLevel').value;
+                const section = document.getElementById('section').value;
+                
+                // Sample subjects data (replace with actual data source)
+                const subjects = [
+                    { code: 'CS101', name: 'Introduction to Programming', course: 'CS', yearLevel: '1', section: 'A' },
+                    { code: 'IT201', name: 'Network Fundamentals', course: 'IT', yearLevel: '2', section: 'B' },
+                    { code: 'CS301', name: 'Database Systems', course: 'CS', yearLevel: '3', section: 'A' },
+                    { code: 'IT401', name: 'Cybersecurity', course: 'IT', yearLevel: '4', section: 'C' }
+                ];
+                
+                // Find subject for the selected course, year level, and section
+                const subject = subjects.find(s =>
+                    s.course === course &&
+                    s.yearLevel === yearLevel &&
+                    s.section === section
+                );
+                
+                // Collect all selected schedules
+                const newSchedules = Array.from(selectedSlots).map(slot => {
+                    const [start, end] = slot.dataset.time.split(' - ');
+                    return {
+                        instructor: instructorName,
+                        subjectCode: subject ? subject.code : `CS${Math.floor(Math.random() * 1000)}`,
+                        subjectName: subject ? subject.name : 'Unknown Subject',
+                        day: slot.dataset.day,
+                        start,
+                        end,
+                        room: `LR${Math.floor(Math.random() * 5) + 1}`,
+                        course,
+                        yearLevel,
+                        section
+                    };
+                });
+                
+                // Check for conflicts before saving
+                for (const schedule of newSchedules) {
+                    if (hasConflict(instructorName, schedule.day, schedule.start, schedule.end)) {
+                        showModal("⚠️ Selected schedule conflicts with existing instructor schedule!");
+                        return;
+                    }
+                }
+                
+                // Add to existing schedules
+                allSchedules.push(...newSchedules);
+                
+                // Update or create table row
+                const existingRow = Array.from(tableBody.querySelectorAll('tr')).find(row => 
+                    row.cells[0].textContent === instructorName
+                );
+                
+                const instructorSchedules = allSchedules.filter(s => s.instructor === instructorName);
+                const uniqueSubjects = [...new Set(instructorSchedules.map(s => s.subjectCode))].length;
+                const totalMeetings = instructorSchedules.length;
+                
+                if (existingRow) {
+                    existingRow.cells[1].textContent = uniqueSubjects;
+                    existingRow.cells[2].textContent = totalMeetings;
+                } else {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${instructorName}</td>
+                        <td>${uniqueSubjects}</td>
+                        <td>${totalMeetings}</td>
+                        <td class="action-btns">
+                            <button class="btn-view-schedule" title="View Schedule" data-instructor="${instructorName}">
+                                <i class="fas fa-calendar-alt"></i>
+                            </button>
+                            <button class="delete" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    `;
+                    
+                    row.querySelector('.btn-view-schedule').addEventListener('click', () => 
+                        showInstructorSchedule(instructorName)
+                    );
+                    
+                    row.querySelector('.delete').addEventListener('click', () => {
+                        row.remove();
+                        allSchedules = allSchedules.filter(s => s.instructor !== instructorName);
+                        updateUnassignedInstructors();
+                    });
+                    
+                    tableBody.appendChild(row);
+                }
+                
+                // Update UI
+                updateUnassignedInstructors();
+                showModal("Schedule saved successfully!");
+                selectedSlots.forEach(slot => slot.classList.remove('selected'));
+                document.getElementById('saveScheduleBtn').disabled = true;
+                
+                // Refresh calendar to reflect new schedules
+                loadClassSchedule();
+            }
+
+            // Initialize app
+            updateUnassignedInstructors();
+            
+            // Make functions globally accessible
+            window.showPhase1 = showPhase1;
+            window.showPhase2 = showPhase2;
+            window.loadSections = loadSections;
+            window.loadClassSchedule = loadClassSchedule;
+            window.checkConflicts = checkConflicts;
+            window.saveSchedule = saveSchedule;
+            window.showModal = showModal;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+opencv-python
+dlib
+torch
+numpy
+face_recognition
+mysql-connector-python
+smtplib
+random2  
+json5  
+flask
+flask-cors
+logging 
+ultralytics
+werkzeug

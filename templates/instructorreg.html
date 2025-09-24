@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WMSU Instructor Registration</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='instructorreg.css') }}">
+  <link rel="stylesheet" href="../static/instructorreg.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='password_strength.css') }}">
+  <link rel="stylesheet" href="../static/password_strength.css">
+</head>
+<body>
+
+  <div class="container">
+    <!-- Step 1 -->
+    <div id="step1">
+      <div class="header">VERIFY USING YOUR WMSU GMAIL ACCOUNT</div>
+      <div class="content">
+        <h2>WMSU Instructor Verification</h2>
+        <input type="email" placeholder="e.g. instructor@wmsu.edu.ph" id="email">
+        <button onclick="validateStep1()">Next</button>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div id="step2" class="hidden">
+      <div class="header">ENTER OTP</div>
+      <div class="content">
+        <h2>Check your WMSU Gmail</h2>
+        <div class="otp-boxes">
+          <input type="text" maxlength="1" id="otp1" oninput="moveToNext(1, event)" onkeydown="handleOtpKeydown(1, event)">
+          <input type="text" maxlength="1" id="otp2" oninput="moveToNext(2, event)" onkeydown="handleOtpKeydown(2, event)">
+          <input type="text" maxlength="1" id="otp3" oninput="moveToNext(3, event)" onkeydown="handleOtpKeydown(3, event)">
+          <input type="text" maxlength="1" id="otp4" oninput="moveToNext(4, event)" onkeydown="handleOtpKeydown(4, event)">
+          <input type="text" maxlength="1" id="otp5" oninput="moveToNext(5, event)" onkeydown="handleOtpKeydown(5, event)">
+          <input type="text" maxlength="1" id="otp6" oninput="moveToNext(6, event)" onkeydown="handleOtpKeydown(6, event)">
+        </div>
+        <div class="resend-otp" onclick="resendOTP()">Didn't receive OTP?</div>
+        <button onclick="validateStep2()">Verify</button>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div id="step3" class="hidden">
+      <div class="header">FILL-UP INSTRUCTOR INFORMATION</div>
+      <div class="content">
+        <h2>Upload Photo & Info</h2>
+        <div class="upload-container">
+          <div class="upload-preview" id="uploadPreview">
+            <span>Click to Upload</span>
+          </div>
+          <input type="file" id="photo" class="upload-input" accept="image/*" onchange="previewUploadedImage(event)">
+        </div>
+        <div class="name-fields">
+          <input type="text" placeholder="Last Name" id="lastName">
+          <input type="text" placeholder="First Name" id="firstName">
+          <input type="text" placeholder="Middle Name" id="middleName">
+        </div>
+        <input type="text" placeholder="Instructor ID (numbers and hyphens only)" id="instructorId" oninput="validateInstructorId(this)">
+        <select id="department">
+          <option value="">Select Department</option>
+          <option value="BSIT">BS Information Technology</option>
+          <option value="BSCS">BS Computer Science</option>
+          <option value="ACT">Associate in Computer Technology</option>
+        </select>
+        <select id="designation">
+          <option value="">Select Designation</option>
+          <option value="Instructor">Instructor</option>
+          <option value="Professor">Professor</option>
+          <option value="Department Head">Department Head</option>
+          <option value="Program Coordinator">Program Coordinator</option>
+          <option value="Lecturer">Lecturer</option>
+        </select>
+        <label class="password-label">Create Password</label>
+        <input type="password" id="password" placeholder="Enter password" oninput="validatePassword()">
+        <div id="passwordStrength" class="password-strength">
+          <div class="strength-bar">
+            <div id="strengthFill" class="strength-fill"></div>
+          </div>
+          <span id="strengthText">Password strength</span>
+        </div>
+        <input type="password" id="confirmPassword" placeholder="Confirm password" oninput="validateConfirmPassword()">
+        <div id="passwordMatch" class="password-match"></div>
+        <button onclick="validateStep3()">Next</button>
+      </div>
+    </div>
+
+    <!-- Step 4 -->
+<div id="step4" class="hidden">
+    <div class="header">FACE SCAN</div>
+    <div class="content">
+        <h2>Facial Biometrics Detection</h2>
+        <div class="scan-instruction" id="scanInstruction">Please look straight at the camera</div>
+        <div class="face-scan">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
+        </div>
+        <div class="scan-progress">
+            <div class="progress-step" id="step-frontal"></div>
+        </div>
+        <div id="scanStatus" style="margin-top: 15px; font-weight: bold; color: #5a4522;">
+            Processing... Please keep your face in the frame
+        </div>
+    </div>
+</div>
+
+    <!-- Step 5 -->
+    <div id="step5" class="hidden">
+      <div class="header">ID PREVIEW</div>
+      <div class="content">
+        <h2>ID Preview</h2>
+        <div class="id-card">
+          <div class="id-header">WMSU INSTRUCTOR ID</div>
+          <div class="id-photo" id="idPhoto"></div>
+          <p><b id="previewName"></b></p>
+          <p>Instructor ID: <span id="previewInstructorId"></span></p>
+          <p>Department: <span id="previewDepartment"></span></p>
+          <p>Designation: <span id="previewDesignation"></span></p>
+        </div>
+        <button onclick="registerInstructor()">Finish Registration</button>
+      </div>
+    </div>
+
+    <!-- Step 6 -->
+    <div id="step6" class="hidden">
+      <div class="header">REGISTRATION COMPLETED</div>
+      <div class="content">
+        <div class="success">✔</div>
+        <p>YOU ARE NOW REGISTERED.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <h3 id="modalTitle">⚠ Warning</h3>
+      <p id="modalMessage"></p>
+      <button onclick="closeModal()">OK</button>
+    </div>
+  </div>
+
+  <!-- Audio for bell sound -->
+  <audio id="bellSound" src="static/Hotel bell ringing - Sounds effect.mp3" preload="auto"></audio>
+
+  <script>
+let currentPose = 'frontal';
+let faceEncoding = null;
+let faceEncodings = [];
+let uploadedPhoto = null;
+let videoStream = null;
+let scanState = 0;
+let scanInterval = null;
+let userEmail = "";
+let faceScanState = {
+    frontal: { captured: false, encoding: null, quality: 0 },
+    left: { captured: false, encoding: null, quality: 0 },
+    right: { captured: false, encoding: null, quality: 0 },
+    up: { captured: false, encoding: null, quality: 0 },
+    down: { captured: false, encoding: null, quality: 0 },
+    mouth_open: { captured: false, encoding: null, quality: 0 },
+    eyes_closed: { captured: false, encoding: null, quality: 0 }
+};
+
+let scanAttempts = 0;
+const MAX_SCAN_ATTEMPTS = 10;
+
+    // Pose detection states (added blink)
+    const POSE_STATES = [
+    { id: 'frontal', name: 'Front View', instruction: 'Please look straight at the camera' },
+    { id: 'left', name: 'Left Side', instruction: 'Please slowly turn your head to the left' },
+    { id: 'right', name: 'Right Side', instruction: 'Please slowly turn your head to the right' },
+    { id: 'up', name: 'Looking Up', instruction: 'Please slowly tilt your head up' },
+    { id: 'down', name: 'Looking Down', instruction: 'Please slowly tilt your head down' },
+    { id: 'mouth_open', name: 'Mouth Open', instruction: 'Please open your mouth slightly' },
+    { id: 'eyes_closed', name: 'Eyes Closed', instruction: 'Please close your eyes gently' }
+];
+
+function checkPose(result, poseId) {
+    if (!result) return false;
+    switch (poseId) {
+        case 'frontal':
+            return result.is_frontal || 
+                   (Math.abs(result.yaw || 0) < 40 && 
+                    Math.abs(result.pitch || 0) < 35 && 
+                    Math.abs(result.roll || 0) < 30);
+        case 'left':
+            return result.is_left || (result.yaw >= 15);
+        case 'right':
+            return result.is_right || (result.yaw <= -15);
+        case 'up':
+            return result.is_up || (result.pitch <= -12);
+        case 'down':
+            return result.is_down || (result.pitch >= 12);
+        case 'mouth_open':
+            return result.is_mouth_open || (result.mar >= 0.18);
+        case 'eyes_closed':
+            return result.is_eyes_closed || 
+                   (((result.left_ear || 0.3) + (result.right_ear || 0.3)) / 2 <= 0.32);
+        default:
+            return false;
+    }
+}
+
+function getUpPoseFeedback(result) {
+    if (!result) return "No face detected";
+    
+    const pitch = result.pitch || 0;
+    
+    if (pitch > 0) {
+        return "Your head is tilted down. Please tilt UP";
+    } else if (pitch > -5) {
+        return "Tilt your head up more";
+    } else if (pitch > -10) {
+        return "Good! Tilt a bit more upward";
+    } else if (pitch > -20) {
+        return "Perfect up position! Hold still";
+    } else {
+        return "Too far up. Relax a little";
+    }
+}
+
+function getDownPoseFeedback(result) {
+    if (!result) return "No face detected";
+    
+    const pitch = result.pitch || 0;
+    
+    if (pitch < 0) {
+        return "Your head is tilted up. Please tilt DOWN";
+    } else if (pitch < 5) {
+        return "Tilt your head down more";
+    } else if (pitch < 10) {
+        return "Good! Tilt a bit more downward";
+    } else if (pitch < 20) {
+        return "Perfect down position! Hold still";
+    } else {
+        return "Too far down. Relax a little";
+    }
+}
+
+    function captureAndSendImage() {
+    // Assume canvas contains the current webcam frame
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append('image', blob, 'face.jpg');
+        formData.append('current_pose', currentPose);
+
+        fetch('/api/encode_face', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('pose-instruction').textContent = data.message;
+            if (data.success) {
+                // Play ring sound
+                new Audio('ring.mp3').play();
+                currentPose = data.next_pose;
+                if (data.encoding.length > 0) {
+                    faceEncoding = JSON.stringify(data.encoding);
+                }
+                if (currentPose === 'eyes_closed' && data.success) {
+                    // All poses completed, proceed to registration
+                    proceedToRegistration();
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('pose-instruction').textContent = 'Error processing image. Please try again.';
+        });
+    });
+}
+
+function proceedToRegistration() {
+    // Submit registration form with faceEncoding
+    const formData = new FormData();
+    formData.append('email', document.getElementById('email').value);
+    formData.append('student_id', document.getElementById('student_id').value);
+    // ... other fields ...
+    formData.append('face_encoding', faceEncoding);
+    fetch('/api/register_student', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Handle registration response
+    });
+}
+
+// Call captureAndSendImage repeatedly (e.g., every 500ms)
+setInterval(captureAndSendImage, 500);
+
+    function showModal(title, message) {
+        document.getElementById("modalTitle").textContent = title;
+        document.getElementById("modalMessage").textContent = message;
+        document.getElementById("modal").style.display = "flex";
+    }
+    
+    function closeModal() {
+        document.getElementById("modal").style.display = "none";
+    }
+
+    function nextStep(step) {
+        for (let i = 1; i <= 6; i++) {
+            document.getElementById("step" + i).classList.add("hidden");
+        }
+        document.getElementById("step" + step).classList.remove("hidden");
+
+        if (step === 4) {
+            startCamera();
+            startFaceScan();
+        }
+        
+        if (step === 5) {
+            const firstName = document.getElementById("firstName").value;
+            const lastName = document.getElementById("lastName").value;
+            const middleName = document.getElementById("middleName").value;
+            
+            document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`;
+            document.getElementById("previewInstructorId").textContent = document.getElementById("instructorId").value;
+            document.getElementById("previewDepartment").textContent = document.getElementById("department").options[document.getElementById("department").selectedIndex].text;
+            document.getElementById("previewDesignation").textContent = document.getElementById("designation").options[document.getElementById("designation").selectedIndex].text;
+            
+            // Use the uploaded photo in the ID preview
+            if (uploadedPhoto) {
+                document.getElementById("idPhoto").innerHTML = `<img src="${uploadedPhoto}">`;
+            }
+        }
+    }
+
+    function validateStep1() {
+        userEmail = document.getElementById("email").value.trim();
+        if (userEmail === "" || !userEmail.includes("@wmsu.edu.ph")) {
+            showModal("Warning", "Please enter a valid WMSU email address.");
+        } else {
+            // Send OTP to email
+            fetch('/api/send_otp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email: userEmail })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    nextStep(2);
+                    // Auto-focus first OTP box
+                    setTimeout(() => document.getElementById("otp1").focus(), 100);
+                } else {
+                    showModal("Error", data.message);
+                }
+            })
+            .catch(error => {
+                showModal("Error", "Failed to send OTP. Please try again.");
+                console.error("Error:", error);
+            });
+        }
+    }
+
+    function moveToNext(current, event) {
+        const value = event.target.value;
+
+        // Allow any character and move to next input if not empty
+        if (value.length > 0 && current < 6) {
+            document.getElementById(`otp${current + 1}`).focus();
+        }
+    }
+
+    function handleOtpKeydown(current, event) {
+        // Handle backspace key
+        if (event.key === "Backspace") {
+            const currentInput = document.getElementById(`otp${current}`);
+            
+            // If current input is empty, move to previous input and clear it
+            if (currentInput.value === "" && current > 1) {
+                const prevInput = document.getElementById(`otp${current - 1}`);
+                prevInput.value = "";
+                prevInput.focus();
+            } else {
+                // Clear current input but stay in the same box
+                currentInput.value = "";
+            }
+            
+            // Prevent default to avoid any browser-specific behavior
+            event.preventDefault();
+        }
+    }
+
+    function validateStep2() {
+        let boxes = document.querySelectorAll(".otp-boxes input");
+        let otp = "";
+        
+        for (let b of boxes) {
+            if (b.value.trim() === "") {
+                showModal("Warning", "Please fill all OTP fields.");
+                return;
+            }
+            otp += b.value;
+        }
+        
+        // Verify OTP with backend
+        fetch('/api/verify_otp', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email: userEmail, otp: otp })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                nextStep(3);
+            } else {
+                showModal("Error", data.message);
+            }
+        })
+        .catch(error => {
+            showModal("Error", "Failed to verify OTP. Please try again.");
+            console.error("Error:", error);
+        });
+    }
+
+    function resendOTP() {
+        fetch('/api/send_otp', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email: userEmail })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showModal("Success", "A new OTP has been sent to your email.");
+                
+                // Clear all OTP fields
+                for (let i = 1; i <= 6; i++) {
+                    document.getElementById(`otp${i}`).value = "";
+                }
+                
+                // Focus back to the first OTP field
+                document.getElementById("otp1").focus();
+            } else {
+                showModal("Error", data.message);
+            }
+        })
+        .catch(error => {
+            showModal("Error", "Failed to resend OTP. Please try again.");
+            console.error("Error:", error);
+        });
+    }
+
+    function validateInstructorId(input) {
+        // Allow only numbers and hyphens
+        input.value = input.value.replace(/[^0-9-]/g, '');
+    }
+
+    function previewUploadedImage(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                uploadedPhoto = e.target.result;
+                document.getElementById("uploadPreview").innerHTML = `<img src="${uploadedPhoto}" alt="Uploaded Photo">`;
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    function validatePassword() {
+        const password = document.getElementById("password").value;
+        const strengthFill = document.getElementById("strengthFill");
+        const strengthText = document.getElementById("strengthText");
+        
+        let strength = 0;
+        let strengthLabel = "";
+        let strengthColor = "";
+        
+        // Check password strength
+        if (password.length >= 8) strength++;
+        if (password.match(/[a-z]/)) strength++;
+        if (password.match(/[A-Z]/)) strength++;
+        if (password.match(/[0-9]/)) strength++;
+        if (password.match(/[^a-zA-Z0-9]/)) strength++;
+        
+        switch (strength) {
+            case 0:
+            case 1:
+                strengthLabel = "Very Weak";
+                strengthColor = "#ff4444";
+                break;
+            case 2:
+                strengthLabel = "Weak";
+                strengthColor = "#ff8800";
+                break;
+            case 3:
+                strengthLabel = "Fair";
+                strengthColor = "#ffaa00";
+                break;
+            case 4:
+                strengthLabel = "Good";
+                strengthColor = "#88cc00";
+                break;
+            case 5:
+                strengthLabel = "Strong";
+                strengthColor = "#00aa00";
+                break;
+        }
+        
+        strengthFill.style.width = (strength * 20) + "%";
+        strengthFill.style.backgroundColor = strengthColor;
+        strengthText.textContent = strengthLabel;
+        strengthText.style.color = strengthColor;
+        
+        // Validate confirm password if it has content
+        const confirmPassword = document.getElementById("confirmPassword").value;
+        if (confirmPassword) {
+            validateConfirmPassword();
+        }
+    }
+    
+    function validateConfirmPassword() {
+        const password = document.getElementById("password").value;
+        const confirmPassword = document.getElementById("confirmPassword").value;
+        const matchDiv = document.getElementById("passwordMatch");
+        
+        if (confirmPassword === "") {
+            matchDiv.textContent = "";
+            matchDiv.className = "password-match";
+            return;
+        }
+        
+        if (password === confirmPassword) {
+            matchDiv.textContent = "✓ Passwords match";
+            matchDiv.className = "password-match match";
+        } else {
+            matchDiv.textContent = "✗ Passwords do not match";
+            matchDiv.className = "password-match no-match";
+        }
+    }
+
+    function validateStep3() {
+        const lastName = document.getElementById("lastName").value.trim();
+        const firstName = document.getElementById("firstName").value.trim();
+        const instructorId = document.getElementById("instructorId").value.trim();
+        const department = document.getElementById("department").value;
+        const designation = document.getElementById("designation").value;
+        const password = document.getElementById("password").value;
+        const confirmPassword = document.getElementById("confirmPassword").value;
+        
+        if (!lastName || !firstName || !instructorId || !department || !designation) {
+            showModal("Warning", "Please fill out all required fields.");
+            return;
+        }
+        
+        if (!uploadedPhoto) {
+            showModal("Warning", "Please upload a photo.");
+            return;
+        }
+        
+        if (!password || password.length < 8) {
+            showModal("Warning", "Password must be at least 8 characters long.");
+            return;
+        }
+        
+        if (password !== confirmPassword) {
+            showModal("Warning", "Passwords do not match.");
+            return;
+        }
+        
+        nextStep(4);
+    }
+
+    function startCamera() {
+    console.log('Starting camera...');
+    let video = document.getElementById("video");
+    
+    // Stop any existing stream first
+    if (videoStream) {
+        console.log('Stopping existing stream');
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+    }
+    
+    const constraints = {
+        video: {
+            facingMode: "user",
+            width: { ideal: 640, max: 1280 },
+            height: { ideal: 480, max: 720 }
+        }
+    };
+    
+    navigator.mediaDevices.getUserMedia(constraints)
+        .then(stream => {
+            console.log('Camera stream acquired');
+            video.srcObject = stream;
+            videoStream = stream;
+            video.onloadedmetadata = () => {
+                console.log(`Video resolution: ${video.videoWidth}x${video.videoHeight}`);
+                video.play().catch(err => {
+                    console.error('Video play error:', err);
+                    showModal("Error", "Failed to start video. Ensure camera is enabled and try again.");
+                });
+            };
+        })
+        .catch(err => {
+            console.error('Camera error:', err);
+            let message = "Camera access denied. ";
+            
+            if (err.name === "NotFoundError" || err.name === "OverconstrainedError") {
+                message += "No camera found. Please ensure your device has a working camera.";
+            } else if (err.name === "NotReadableError") {
+                message += "Camera is already in use by another application.";
+            } else if (err.name === "SecurityError") {
+                message += "Camera access requires HTTPS or localhost. Please access via https:// or http://localhost.";
+            } else {
+                message += "Please allow camera access in your browser settings and refresh the page.";
+            }
+            
+            showModal("Error", message);
+        });
+}
+
+   function startFaceScan() {
+    scanState = 0;
+    faceEncodings = [];
+    faceScanState = {
+        frontal: { captured: false, encoding: null, quality: 0 },
+        left: { captured: false, encoding: null, quality: 0 },
+        right: { captured: false, encoding: null, quality: 0 },
+        up: { captured: false, encoding: null, quality: 0 },
+        down: { captured: false, encoding: null, quality: 0 },
+        mouth_open: { captured: false, encoding: null, quality: 0 },
+        eyes_closed: { captured: false, encoding: null, quality: 0 }
+    };
+    scanAttempts = 0;
+    updateScanProgress();
+    
+    const instructionEl = document.getElementById("scanInstruction");
+    if (instructionEl) {
+        instructionEl.textContent = POSE_STATES[scanState].instruction;
+    }
+    
+    scanInterval = setInterval(automatedFaceScan, 2000);
+}
+
+    function automatedFaceScan() {
+    if (scanAttempts >= MAX_SCAN_ATTEMPTS) {
+        clearInterval(scanInterval);
+        const instructionEl = document.getElementById("scanInstruction");
+        if (instructionEl) {
+            instructionEl.textContent = "Face scan failed. Please try again in better lighting.";
+        }
+        showModal("Error", "Face scan failed after multiple attempts. Ensure good lighting and try again.");
+        setTimeout(() => {
+            scanState = 0;
+            scanAttempts = 0;
+            startFaceScan();
+        }, 3000);
+        return;
+    }
+    
+    scanAttempts++;
+    
+    const currentPose = POSE_STATES[scanState];
+    const instructionEl = document.getElementById("scanInstruction");
+    if (instructionEl) {
+        instructionEl.textContent = `${currentPose.instruction} (Attempt ${scanAttempts}/${MAX_SCAN_ATTEMPTS})`;
+    }
+    
+    captureFaceEncodingWithQuality().then(result => {
+        if (result && checkPose(result, currentPose.id)) {
+            // Play bell sound when pose is confirmed
+            const bellSound = document.getElementById('bellSound');
+            if (bellSound) {
+                bellSound.currentTime = 0;
+                bellSound.play().catch(e => console.log('Audio play failed:', e));
+            }
+            
+            if (currentPose.id === 'frontal' && result.encoding && result.encoding.length > 0) {
+                faceScanState[currentPose.id] = {
+                    captured: true,
+                    encoding: Array.from(result.encoding),
+                    quality: result.quality || 0.5
+                };
+            } else if (currentPose.id !== 'frontal') {
+                faceScanState[currentPose.id] = {
+                    captured: true,
+                    encoding: null,
+                    quality: result.quality || 0.5
+                };
+            }
+            
+            console.log(`Captured ${currentPose.id} pose with quality ${result.quality}`);
+            updateScanProgress();
+            
+            // Move to next pose immediately after successful capture
+            setTimeout(() => {
+                scanState++;
+                scanAttempts = 0; // Reset attempts for next pose
+                
+                if (scanState >= POSE_STATES.length) {
+                    finishFaceScan();
+                } else {
+                    // Update instruction for next pose
+                    const nextPose = POSE_STATES[scanState];
+                    if (instructionEl) {
+                        instructionEl.textContent = nextPose.instruction;
+                    }
+                    updateScanProgress();
+                }
+            }, 1000);
+        } else {
+            console.log(`No valid pose for ${currentPose.id}, retrying...`);
+            if (instructionEl && result) {
+                let feedback = '';
+                if (result) {
+                    switch(currentPose.id) {
+                        case 'up':
+                            feedback = getUpPoseFeedback(result);
+                            break;
+                        case 'down':
+                            feedback = getDownPoseFeedback(result);
+                            break;
+                        case 'mouth_open':
+                            feedback = `Open your mouth wider (current: ${result.mar?.toFixed(2) || 'N/A'})`;
+                            break;
+                        case 'eyes_closed':
+                            const avgEAR = ((result.left_ear || 0) + (result.right_ear || 0)) / 2;
+                            feedback = `Close your eyes more completely (current: ${avgEAR.toFixed(2)})`;
+                            break;
+                        default:
+                            feedback = result.message || 'Adjust position';
+                    }
+                } else {
+                    feedback = 'No face detected. Ensure good lighting and center your face.';
+                }
+                
+                instructionEl.textContent = `${currentPose.instruction} (${feedback} - Attempt ${scanAttempts}/${MAX_SCAN_ATTEMPTS})`;
+            }
+        }
+    }).catch(error => {
+        console.error("Face scan error:", error);
+        if (instructionEl) {
+            instructionEl.textContent = `${currentPose.instruction} (Error - Attempt ${scanAttempts}/${MAX_SCAN_ATTEMPTS})`;
+        }
+    });
+}
+
+    function assessImageQuality(imageData) {
+    const data = imageData.data;
+    let brightness = 0;
+    let contrast = 0;
+    
+    for (let i = 0; i < data.length; i += 4) {
+        brightness += (data[i] + data[i+1] + data[i+2]) / 3;
+    }
+    brightness /= (data.length / 4);
+    
+    let pixelValues = [];
+    const sampleSize = 2000;
+    for (let i = 0; i < sampleSize; i++) {
+        const idx = Math.floor(Math.random() * (data.length / 4)) * 4;
+        const value = (data[idx] + data[idx+1] + data[idx+2]) / 3;
+        pixelValues.push(value);
+    }
+    
+    const min = Math.min(...pixelValues);
+    const max = Math.max(...pixelValues);
+    contrast = (max - min) / 255;
+    
+    const brightnessScore = 1 - Math.abs(brightness - 127) / 127;
+    const quality = (brightnessScore * 0.4) + (contrast * 0.6);
+    
+    console.log(`Quality assessment - Brightness: ${brightness.toFixed(2)}, Contrast: ${contrast.toFixed(3)}, Score: ${quality.toFixed(3)}`);
+    
+    return Math.max(0, Math.min(1, quality));
+}
+
+    function finishFaceScan() {
+    clearInterval(scanInterval);
+    
+    // Use frontal encoding only, as per backend logic
+    if (!faceScanState.frontal.captured || !faceScanState.frontal.encoding) {
+        const instructionEl = document.getElementById("scanInstruction");
+        if (instructionEl) {
+            instructionEl.textContent = "Face scan failed. Please try again.";
+        }
+        showModal("Error", "No valid frontal face encoding captured. Please try again.");
+        setTimeout(startFaceScan, 3000);
+        return;
+    }
+    
+    window.faceEncoding = faceScanState.frontal.encoding;
+    
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+    }
+    
+    const instructionEl = document.getElementById("scanInstruction");
+    if (instructionEl) {
+        instructionEl.textContent = "Face scan completed!";
+    }
+    
+    setTimeout(() => nextStep(5), 1000);
+}
+
+    async function captureFaceEncodingWithQuality() {
+    try {
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        if (!video || !canvas) {
+            console.error("Video or canvas element not found");
+            return null;
+        }
+        const ctx = canvas.getContext("2d");
+        
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        if (video.videoWidth === 0 || video.videoHeight === 0) {
+            console.error("Video dimensions are zero.");
+            return null;
+        }
+        
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const quality = assessImageQuality(imageData);
+        
+        if (quality < 0.3) {
+            console.log(`Image quality too low: ${quality}`);
+            return null;
+        }
+        
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+        
+        const formData = new FormData();
+        formData.append('image', blob, 'face.jpg');
+        formData.append('current_pose', POSE_STATES[scanState].id);
+        
+        const response = await fetch('/api/encode_face', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log(`Received for ${POSE_STATES[scanState].id}:`, data);
+            return { 
+                encoding: data.encoding ? new Float32Array(data.encoding) : [],
+                quality: quality,
+                is_frontal: data.is_frontal || false,
+                is_left: data.is_left || false,
+                is_right: data.is_right || false,
+                is_up: data.is_up || false,
+                is_down: data.is_down || false,
+                is_mouth_open: data.is_mouth_open || false,
+                is_eyes_closed: data.is_eyes_closed || false,
+                message: data.message,
+                yaw: data.yaw,
+                pitch: data.pitch,
+                roll: data.roll,
+                mar: data.mar,
+                left_ear: data.left_ear,
+                right_ear: data.right_ear
+            };
+        } else {
+            console.error("Face encoding failed:", data.message);
+            return { message: data.message };
+        }
+    } catch (error) {
+        console.error("Error capturing face encoding:", error);
+        return { message: "Error during face scan. Please try again." };
+    }
+}
+
+    async function detectFacePosition(canvas) {
+        // Simple face position detection
+        // This would ideally use a face detection library, but for simplicity:
+        try {
+            // Send to server for face detection (assuming backend has /api/detect_face_position, but since not, simulate)
+            // For real pose detection, integrate MediaPipe or similar, but here assume success
+            return { isCentered: true, size: 0.5 };
+        } catch (error) {
+            console.error("Face position detection error:", error);
+            // Fallback: assume face is centered if detection fails
+            return { isCentered: true, size: 0.5 };
+        }
+    }
+    
+    function updateScanProgress() {
+    for (let i = 0; i < POSE_STATES.length; i++) {
+        const stepEl = document.getElementById(`step-${POSE_STATES[i].id}`);
+        if (stepEl) {
+            stepEl.classList.remove("active", "completed");
+            if (i < scanState) {
+                stepEl.classList.add("completed");
+            } else if (i === scanState) {
+                stepEl.classList.add("active");
+            }
+        }
+    }
+    
+    if (scanState < POSE_STATES.length) {
+        const instructionEl = document.getElementById("scanInstruction");
+        if (instructionEl) {
+            instructionEl.textContent = POSE_STATES[scanState].instruction;
+        }
+    }
+}
+
+    function moveToNextPin(current, event) {
+        const value = event.target.value;
+        const pinInputs = document.querySelectorAll('.pin-digit');
+
+        // Allow any character and move to next input if not empty
+        if (value.length > 0 && current < 6) {
+            pinInputs[current].focus();
+        }
+    }
+
+    function handlePinKeydown(current, event) {
+        // Handle backspace key
+        if (event.key === "Backspace") {
+            const pinInputs = document.querySelectorAll('.pin-digit');
+            const currentInput = pinInputs[current - 1];
+            
+            // If current input is empty, move to previous input and clear it
+            if (currentInput.value === "" && current > 1) {
+                const prevInput = pinInputs[current - 2];
+                prevInput.value = "";
+                prevInput.focus();
+            } else {
+                // Clear current input but stay in the same box
+                currentInput.value = "";
+            }
+            
+            // Prevent default to avoid any browser-specific behavior
+            event.preventDefault();
+        }
+    }
+
+    function registerInstructor() {
+        const formData = new FormData();
+        formData.append('email', userEmail);
+        formData.append('instructor_id', document.getElementById("instructorId").value);
+        formData.append('first_name', document.getElementById("firstName").value);
+        formData.append('last_name', document.getElementById("lastName").value);
+        formData.append('middle_name', document.getElementById("middleName").value);
+        formData.append('department', document.getElementById("department").value);
+        formData.append('designation', document.getElementById("designation").value);
+        
+        // Get password
+        const password = document.getElementById("password").value;
+        formData.append('pin', password);
+        
+        formData.append('face_encoding', JSON.stringify(window.faceEncoding));
+        
+        // Add photo file if uploaded
+        const photoInput = document.getElementById("photo");
+        if (photoInput.files.length > 0) {
+            formData.append('photo', photoInput.files[0]);
+        }
+        
+        // Show loading state
+        const registerBtn = document.querySelector("#step5 button");
+        registerBtn.disabled = true;
+        registerBtn.textContent = "Registering...";
+        
+        // Send registration request
+        fetch('/api/register_instructor', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                nextStep(6);
+            } else {
+                showModal("Error", data.message);
+                registerBtn.disabled = false;
+                registerBtn.textContent = "Finish Registration";
+            }
+        })
+        .catch(error => {
+            showModal("Error", "Registration failed. Please try again.");
+            console.error("Registration error:", error);
+            registerBtn.disabled = false;
+            registerBtn.textContent = "Finish Registration";
+        });
+    }
+
+    // Initialize OTP boxes to handle input properly
+    document.addEventListener('DOMContentLoaded', function() {
+    const otpInputs = document.querySelectorAll('.otp-boxes input');
+    otpInputs.forEach(input => {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === "Backspace" || e.key === "Delete") return;
+            if (input.value.length >= 1 && e.key.length === 1) {
+                e.preventDefault();
+            }
+        });
+    });
+    
+    // Password validation is handled by oninput events in HTML
+    
+    const progressContainer = document.querySelector('.scan-progress');
+    if (progressContainer) {
+        progressContainer.innerHTML = '';
+        POSE_STATES.forEach((pose, index) => {
+            const stepEl = document.createElement('div');
+            stepEl.className = 'progress-step';
+            stepEl.id = `step-${pose.id}`;
+            if (index === 0) stepEl.classList.add('active');
+            progressContainer.appendChild(stepEl);
+        });
+    }
+});
+  </script>
+</body>
+</html>

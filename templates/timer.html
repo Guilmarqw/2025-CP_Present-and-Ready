@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">   
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../static/timer.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='timer.css') }}">
+
+    <title>Class Attendance Timer</title>
+</head>
+<body>
+    <div class="header">
+        <img src="../static/images/logo.png" alt="University Logo" class="logo">
+        <h1 class="title">Class Attendance Timer</h1>
+        <a href="../templates/AdminDB.html" class="header-btn">
+            <span class="material-icons">dashboard</span>
+            <span class="btn-text">Go to Dashboard</span>
+        </a>
+    </div>
+    <div class="content-wrapper">
+        <div class="timer-settings">
+            <label><input type="radio" name="timerMode" value="default" checked> Use Default Settings</label>
+            <label><input type="radio" name="timerMode" value="custom"> Customize Timer</label>
+        </div>
+        <div class="timer-container">
+            <div class="main-timer-container">
+                <h3 class="group-title">Class Session Timer</h3>
+                <div class="timer-display" id="mainTimer">
+                    <div class="time-unit">
+                        <input type="number" min="0" max="23" value="01" id="sessionHours" readonly>
+                        <span class="time-label">Hours</span>
+                    </div>
+                    <div class="time-unit">
+                        <input type="number" min="0" max="59" value="00" id="sessionMinutes" readonly>
+                        <span class="time-label">Minutes</span>
+                    </div>
+                    <div class="time-unit">
+                        <input type="number" min="0" max="59" value="00" id="sessionSeconds" readonly>
+                        <span class="time-label">Seconds</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="threshold-container">
+                <h3 class="group-title">Late Threshold</h3>
+                <div class="timer-display">
+                    <div class="time-unit">
+                        <input type="number" min="0" max="23" value="00" id="thresholdHours" readonly>
+                        <span class="time-label">Hours</span>
+                    </div>
+                    <div class="time-unit">
+                        <input type="number" min="0" max="59" value="10" id="thresholdMinutes" readonly>
+                        <span class="time-label">Minutes</span>
+                    </div>
+                    <div class="time-unit">
+                        <input type="number" min="0" max="59" value="00" id="thresholdSeconds" readonly>
+                        <span class="time-label">Seconds</span> 
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-section">
+            <div class="input-form-group">
+                <h3 class="group-title">Class Details</h3>
+                <div class="input-group">
+                    <input type="text" placeholder="Subject Instructor" id="subjectInstructor" readonly>
+                    <select id="subjectCode" disabled>
+                        <option value="" selected disabled>Select Subject Code</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <input type="text" placeholder="Year Level" id="yearLevel" readonly>
+                    <input type="text" placeholder="Course" id="course" readonly>
+                </div>
+                <div class="input-group">
+                    <select id="courseSection" disabled>
+                        <option value="" selected disabled>Select Section</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="file-upload-group">
+                <h3 class="group-title">Upload Existing Records</h3>
+                <div class="file-upload">
+                    <input type="file" accept=".csv,.xlsx,.xls" id="recordFile">
+                </div>
+            </div>
+        </div>
+        <a href="/camfootage" style="text-decoration: none;">
+            <button id="startBtn">Start Session</button>
+        </a>
+    </div>
+
+    <div class="warning-modal" id="thresholdWarningModal">
+        <div class="warning-modal-content">
+            <span class="material-icons warning-icon">warning</span>
+            <h3>Late Threshold Warning</h3>
+            <p>Late threshold cannot exceed or equal the class duration.</p>
+            <div class="warning-buttons">
+                <button class="btn-adjust" onclick="adjustThreshold()">Adjust Threshold</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sample default data (assumed from admin side)
+        const defaultSettings = {
+            timer: {
+                session: { hours: "01", minutes: "00", seconds: "00" },
+                threshold: { hours: "00", minutes: "10", seconds: "00" }
+            },
+            classDetails: {
+                instructor: "Dr. John Smith",
+                subjectCode: "CS101",
+                yearLevel: "1st Year",
+                course: "BSCS",
+                section: "A"
+            }
+        };
+
+        // Sample subject data
+        const subjectData = {
+            "CS101": { year: "1st Year", course: "BSCS", sections: ["A", "B", "C"] },
+            "CS201": { year: "2nd Year", course: "BSCS", sections: ["A", "B"] },
+            "CS301": { year: "3rd Year", course: "BSCS", sections: ["A", "B", "C", "D"] },
+            "CS401": { year: "4th Year", course: "BSCS", sections: ["A", "B"] },
+            "IT101": { year: "1st Year", course: "BSIT", sections: ["A", "B"] },
+            "IT201": { year: "2nd Year", course: "BSIT", sections: ["A", "B", "C"] },
+            "IT301": { year: "3rd Year", course: "BSIT", sections: ["A", "B"] },
+            "IT401": { year: "4th Year", course: "BSIT", sections: ["A"] },
+            "EE101": { year: "1st Year", course: "BSEE", sections: ["A", "B", "C"] },
+            "EE201": { year: "2nd Year", course: "BSEE", sections: ["A", "B"] }
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load default settings (in practice, this could come from localStorage or a backend)
+            localStorage.setItem('classSettings', JSON.stringify(defaultSettings));
+
+            // Populate class details
+            const settings = JSON.parse(localStorage.getItem('classSettings')) || defaultSettings;
+            document.getElementById('subjectInstructor').value = settings.classDetails.instructor;
+            document.getElementById('subjectCode').value = settings.classDetails.subjectCode;
+            document.getElementById('yearLevel').value = settings.classDetails.yearLevel;
+            document.getElementById('course').value = settings.classDetails.course;
+            
+            // Populate subject code dropdown
+            const subjectCodeDropdown = document.getElementById('subjectCode');
+            for (const code in subjectData) {
+                const option = document.createElement('option');
+                option.value = code;
+                option.textContent = code;
+                subjectCodeDropdown.appendChild(option);
+            }
+            
+            // Populate section dropdown based on subject code
+            const sectionDropdown = document.getElementById('courseSection');
+            sectionDropdown.innerHTML = '<option value="" selected disabled>Select Section</option>';
+            if (settings.classDetails.subjectCode && subjectData[settings.classDetails.subjectCode]) {
+                subjectData[settings.classDetails.subjectCode].sections.forEach(section => {
+                    const option = document.createElement('option');
+                    option.value = section;
+                    option.textContent = section;
+                    sectionDropdown.appendChild(option);
+                });
+                sectionDropdown.value = settings.classDetails.section;
+            }
+
+            // Populate timer inputs with default values
+            document.getElementById('sessionHours').value = settings.timer.session.hours;
+            document.getElementById('sessionMinutes').value = settings.timer.session.minutes;
+            document.getElementById('sessionSeconds').value = settings.timer.session.seconds;
+            document.getElementById('thresholdHours').value = settings.timer.threshold.hours;
+            document.getElementById('thresholdMinutes').value = settings.timer.threshold.minutes;
+            document.getElementById('thresholdSeconds').value = settings.timer.threshold.seconds;
+
+            // Handle radio button toggle
+            const timerModeRadios = document.querySelectorAll('input[name="timerMode"]');
+            timerModeRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const isCustom = this.value === 'custom';
+                    document.querySelectorAll('.time-unit input').forEach(input => {
+                        if (isCustom) {
+                            input.removeAttribute('readonly');
+                        } else {
+                            input.setAttribute('readonly', 'readonly');
+                            // Restore default timer values
+                            input.value = settings.timer[input.id.includes('threshold') ? 'threshold' : 'session'][input.id.replace(/^(session|threshold)/, '').toLowerCase()];
+                        }
+                    });
+                });
+            });
+        });
+
+        let timerInterval;
+        let startTime;
+        let isRunning = false;
+        let sessionDuration;
+        let lateThreshold;
+
+        function validateTimeInputs() {
+            const timerMode = document.querySelector('input[name="timerMode"]:checked').value;
+            if (timerMode === 'default') return true; // Skip validation for default settings
+
+            const mainSeconds = 
+                parseInt(document.getElementById('sessionHours').value) * 3600 +
+                parseInt(document.getElementById('sessionMinutes').value) * 60 +
+                parseInt(document.getElementById('sessionSeconds').value);
+
+            const thresholdSeconds = 
+                parseInt(document.getElementById('thresholdHours').value) * 3600 +
+                parseInt(document.getElementById('thresholdMinutes').value) * 60 +
+                parseInt(document.getElementById('thresholdSeconds').value);
+
+            if (thresholdSeconds >= mainSeconds) {
+                document.getElementById('thresholdWarningModal').style.display = 'flex';
+                return false;
+            }
+            return true;
+        }
+
+        function adjustThreshold() {
+            const settings = JSON.parse(localStorage.getItem('classSettings')) || defaultSettings;
+            document.getElementById('thresholdHours').value = settings.timer.threshold.hours;
+            document.getElementById('thresholdMinutes').value = settings.timer.threshold.minutes;
+            document.getElementById('thresholdSeconds').value = settings.timer.threshold.seconds;
+            document.getElementById('thresholdWarningModal').style.display = 'none';
+        }
+
+        document.getElementById('startBtn').addEventListener('click', function(event) {
+            const settings = {
+                timer: {
+                    session: {
+                        hours: document.getElementById('sessionHours').value,
+                        minutes: document.getElementById('sessionMinutes').value,
+                        seconds: document.getElementById('sessionSeconds').value
+                    },
+                    threshold: {
+                        hours: document.getElementById('thresholdHours').value,
+                        minutes: document.getElementById('thresholdMinutes').value,
+                        seconds: document.getElementById('thresholdSeconds').value
+                    }
+                },
+                classDetails: {
+                    instructor: document.getElementById('subjectInstructor').value,
+                    subjectCode: document.getElementById('subjectCode').value,
+                    yearLevel: document.getElementById('yearLevel').value,
+                    course: document.getElementById('course').value,
+                    section: document.getElementById('courseSection').value
+                }
+            };
+            
+            localStorage.setItem('classSettings', JSON.stringify(settings));
+            
+            if (!settings.classDetails.instructor || 
+                !settings.classDetails.subjectCode || 
+                !settings.classDetails.yearLevel ||
+                !settings.classDetails.course ||
+                !settings.classDetails.section) {
+                alert('Please fill in all class details');
+                event.preventDefault();
+                return;
+            }
+            
+            const totalSeconds = 
+                parseInt(settings.timer.session.hours) * 3600 + 
+                parseInt(settings.timer.session.minutes) * 60 + 
+                parseInt(settings.timer.session.seconds);
+                
+            if (totalSeconds === 0) {
+                alert('Please set a class duration');
+                event.preventDefault();
+                return;
+            }
+
+            if (!validateTimeInputs()) {
+                event.preventDefault();
+                return;
+            }
+
+            if (!isRunning) {
+                sessionDuration = totalSeconds * 1000;
+                lateThreshold = (
+                    parseInt(document.getElementById('thresholdHours').value) * 3600 +
+                    parseInt(document.getElementById('thresholdMinutes').value) * 60 +
+                    parseInt(document.getElementById('thresholdSeconds').value)
+                ) * 1000;
+
+                startTime = new Date();
+                timerInterval = setInterval(updateTimer, 1000);
+                this.textContent = 'Stop Session';
+                isRunning = true;
+
+                document.querySelectorAll('.time-unit input').forEach(input => {
+                    input.setAttribute('readonly', 'readonly');
+                });
+                document.querySelectorAll('input[name="timerMode"]').forEach(radio => {
+                    radio.disabled = true;
+                });
+            } else {
+                clearInterval(timerInterval);
+                this.textContent = 'Start Session';
+                isRunning = false;
+
+                document.querySelectorAll('.time-unit input').forEach(input => {
+                    if (document.querySelector('input[name="timerMode"]:checked').value === 'custom') {
+                        input.removeAttribute('readonly');
+                    }
+                });
+                document.querySelectorAll('input[name="timerMode"]').forEach(radio => {
+                    radio.disabled = false;
+                });
+            }
+        });
+
+        function updateTimer() {
+            const now = new Date();
+            const diff = now - startTime;
+            
+            if (diff >= sessionDuration) {
+                clearInterval(timerInterval);
+                document.getElementById('startBtn').textContent = 'Start Session';
+                isRunning = false;
+                document.querySelectorAll('.time-unit input').forEach(input => {
+                    if (document.querySelector('input[name="timerMode"]:checked').value === 'custom') {
+                        input.removeAttribute('readonly');
+                    }
+                });
+                document.querySelectorAll('input[name="timerMode"]').forEach(radio => {
+                    radio.disabled = false;
+                });
+                return;
+            }
+
+            const remaining = sessionDuration - diff;
+            const hours = Math.floor(remaining / 3600000);
+            const minutes = Math.floor((remaining % 3600000) / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+
+            document.getElementById('sessionHours').value = String(hours).padStart(2, '0');
+            document.getElementById('sessionMinutes').value = String(minutes).padStart(2, '0');
+            document.getElementById('sessionSeconds').value = String(seconds).padStart(2, '0');
+
+            if (diff >= lateThreshold) {
+                document.getElementById('mainTimer').classList.add('late');
+            }
+        }
+
+        document.querySelectorAll('.time-unit input').forEach(input => {
+            input.addEventListener('input', function() {
+                if (this.hasAttribute('readonly')) return; // Skip if readonly
+                let value = parseInt(this.value);
+                if (isNaN(value)) value = 0;
+                if (this.id.includes('Hours')) {
+                    value = Math.min(23, Math.max(0, value));
+                } else {
+                    value = Math.min(59, Math.max(0, value));
+                }
+                this.value = String(value).padStart(2, '0');
+            });
+        });
+
+        document.querySelectorAll('.threshold-container .time-unit input').forEach(input => {
+            input.addEventListener('change', function() {
+                if (document.querySelector('input[name="timerMode"]:checked').value === 'custom') {
+                    validateTimeInputs();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
