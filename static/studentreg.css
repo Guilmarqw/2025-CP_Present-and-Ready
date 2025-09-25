@@ -169,7 +169,7 @@
       background-color: #ccc;
     }
     .progress-step.active {
-      background-color: #5a4522;
+      background-color: oklch(86.732% 0.2936 142.29);
     }
     .upload-container {
       position: relative;
