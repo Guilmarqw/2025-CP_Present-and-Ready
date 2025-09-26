@@ -23,6 +23,9 @@ import logging
 from werkzeug.utils import secure_filename
 from sklearn.preprocessing import normalize
 from sklearn.metrics.pairwise import cosine_similarity
+from collections import deque, defaultdict
+import queue
+from scipy.optimize import linear_sum_assignment
 
 
 # =========================
@@ -59,7 +62,7 @@ PROCESSING_INTERVAL = 3
 RESIZE_FACTOR = 0.75
 
 # Distance settings
-MAX_RECOGNITION_DISTANCE = 17
+MAX_RECOGNITION_DISTANCE = 20
 FACE_SIZE_FOR_DISTANCE = 80
 
 # Locking configuration
@@ -118,6 +121,227 @@ session_config = {
 # =========================
 # Utilities
 # =========================
+# Thread-safe state manager
+class ThreadSafeTrackManager:
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._tracks = []
+        self._locked_tracks = {}
+        self._attendance = {}
+        
+    def update_tracks_atomic(self, update_func):
+        with self._lock:
+            return update_func(self._tracks, self._locked_tracks)
+    
+    def get_tracks_snapshot(self):
+        with self._lock:
+            return {
+                'tracks': self._tracks.copy(),
+                'locked_tracks': self._locked_tracks.copy(),
+                'attendance': self._attendance.copy()
+            }
+    
+    def mark_attendance_safe(self, person_id, name, person_type):
+        with self._lock:
+            if person_type != 'student':
+                return False
+                
+            current_time = datetime.datetime.now()
+            time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
+            
+            if person_id in self._attendance:
+                last_time = datetime.datetime.strptime(
+                    self._attendance[person_id]["time"], 
+                    "%Y-%m-%d %H:%M:%S"
+                )
+                if (current_time - last_time).total_seconds() < 14400:
+                    return False
+            
+            self._attendance[person_id] = {"name": name, "time": time_str}
+            
+            # Async DB write
+            threading.Thread(
+                target=self._write_attendance_to_db,
+                args=(person_id, name, time_str),
+                daemon=True
+            ).start()
+            return True
+    
+    def _write_attendance_to_db(self, person_id, name, time_str):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO attendance (student_id, name, timestamp) VALUES (%s, %s, %s)",
+                (person_id, name, time_str)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            logger.info(f"Attendance recorded: {name} ({person_id})")
+        except Exception as e:
+            logger.error(f"DB write failed: {e}")
+
+# Initialize thread-safe manager
+track_manager = ThreadSafeTrackManager()
+
+class MotionPredictor:
+    def __init__(self):
+        self.velocity_history = {}
+        
+    def predict_next_position(self, track_id, current_box, frame_idx):
+        if track_id not in self.velocity_history:
+            return current_box
+            
+        history = self.velocity_history[track_id]
+        if len(history) < 2:
+            return current_box
+            
+        recent_velocities = history[-3:]
+        avg_vx = np.mean([v[0] for v in recent_velocities])
+        avg_vy = np.mean([v[1] for v in recent_velocities])
+        
+        x1, y1, x2, y2 = current_box
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        w, h = x2 - x1, y2 - y1
+        
+        pred_cx = cx + avg_vx * 2
+        pred_cy = cy + avg_vy * 2
+        
+        pred_x1 = max(0, pred_cx - w/2)
+        pred_y1 = max(0, pred_cy - h/2)
+        pred_x2 = pred_cx + w/2
+        pred_y2 = pred_cy + h/2
+        
+        return (pred_x1, pred_y1, pred_x2, pred_y2)
+    
+    def update_velocity(self, track_id, prev_box, curr_box, frame_idx):
+        if prev_box is None:
+            return
+            
+        prev_cx = (prev_box[0] + prev_box[2]) / 2
+        prev_cy = (prev_box[1] + prev_box[3]) / 2
+        curr_cx = (curr_box[0] + curr_box[2]) / 2
+        curr_cy = (curr_box[1] + curr_box[3]) / 2
+        
+        vx = curr_cx - prev_cx
+        vy = curr_cy - prev_cy
+        
+        if track_id not in self.velocity_history:
+            self.velocity_history[track_id] = []
+            
+        self.velocity_history[track_id].append((vx, vy))
+        
+        if len(self.velocity_history[track_id]) > 10:
+            self.velocity_history[track_id] = self.velocity_history[track_id][-10:]
+
+def enhanced_iou_with_motion(box1, box2, predicted_box=None, motion_weight=0.3):
+    base_iou = iou(box1, box2)
+    
+    if predicted_box is None:
+        return base_iou
+        
+    predicted_iou = iou(predicted_box, box2)
+    enhanced_score = (1 - motion_weight) * base_iou + motion_weight * predicted_iou
+    return enhanced_score
+
+def hungarian_assignment(tracks, detections, motion_predictor, frame_idx):
+    if not tracks or not detections:
+        return []
+    
+    cost_matrix = np.full((len(tracks), len(detections)), 1.0)
+    
+    for i, track in enumerate(tracks):
+        track_id = track.get('id')
+        current_box = track.get('box')
+        
+        if current_box is None:
+            continue
+            
+        predicted_box = motion_predictor.predict_next_position(
+            track_id, current_box, frame_idx
+        )
+        
+        for j, (det_x1, det_y1, det_x2, det_y2, conf) in enumerate(detections):
+            det_box = (det_x1, det_y1, det_x2, det_y2)
+            
+            enhanced_score = enhanced_iou_with_motion(
+                current_box, det_box, predicted_box, motion_weight=0.4
+            )
+            
+            confidence_bonus = min(0.2, conf * 0.3)
+            identity_bonus = 0.1 if track.get('name') != 'Unknown' else 0
+            
+            total_score = enhanced_score + confidence_bonus + identity_bonus
+            cost_matrix[i, j] = max(0, 1.0 - total_score)
+    
+    row_indices, col_indices = linear_sum_assignment(cost_matrix)
+    
+    assignments = []
+    for row, col in zip(row_indices, col_indices):
+        if cost_matrix[row, col] < 0.6:
+            assignments.append((row, col, 1.0 - cost_matrix[row, col]))
+    
+    return assignments
+
+# Initialize motion predictor
+motion_predictor = MotionPredictor()
+
+class IdentityVerificationManager:
+    def __init__(self):
+        self.active_identities = {}
+        self.verification_threshold = 0.8
+        self.max_simultaneous_same_id = 1
+        self.verification_interval = 30
+        
+    def can_assign_identity(self, person_id, track_id, confidence):
+        current_time = time.time()
+        
+        if person_id not in self.active_identities:
+            return True
+            
+        active_info = self.active_identities[person_id]
+        existing_track_id = active_info.get('track_id')
+        
+        if existing_track_id == track_id:
+            return confidence >= self.verification_threshold
+            
+        last_verification = active_info.get('last_verification', 0)
+        if current_time - last_verification > 5.0:
+            logger.info(f"Identity {person_id} switching from track {existing_track_id} to {track_id}")
+            return True
+            
+        logger.warning(f"Duplicate identity attempt: {person_id} already active on track {existing_track_id}")
+        return False
+    
+    def assign_identity(self, person_id, track_id, confidence):
+        if not self.can_assign_identity(person_id, track_id, confidence):
+            return False
+            
+        current_time = time.time()
+        self.active_identities[person_id] = {
+            'track_id': track_id,
+            'last_verification': current_time,
+            'confidence_history': [confidence],
+            'assignment_time': current_time
+        }
+        logger.info(f"Identity {person_id} assigned to track {track_id} with confidence {confidence:.3f}")
+        return True
+    
+    def cleanup_stale_identities(self):
+        current_time = time.time()
+        stale_ids = [
+            person_id for person_id, info in self.active_identities.items()
+            if current_time - info['last_verification'] > 10.0
+        ]
+        
+        for person_id in stale_ids:
+            del self.active_identities[person_id]
+            logger.info(f"Removed stale identity for {person_id}")
+
+# Initialize identity manager
+identity_manager = IdentityVerificationManager()
+
 def expand_box(x1, y1, x2, y2, w, h, scale=EXPAND_BOX_RATIO):
     bw, bh = (x2 - x1), (y2 - y1)
     px, py = int(bw * scale), int(bh * scale)
@@ -383,40 +607,38 @@ tracking_history = {}
 
 def mark_attendance(name, id, type):
     if type != 'student':
-        return  # Only mark for students
+        return
     
     current_time = datetime.datetime.now()
     time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    
     today = current_time.strftime("%Y-%m-%d")
-    if id in attendance and attendance[id].startswith(today):
-        last_time_str = attendance[id]
+    
+    # Check if already marked today within 4 hours
+    if id in attendance:
+        last_time_str = attendance[id]["time"]
         last_time = datetime.datetime.strptime(last_time_str, "%Y-%m-%d %H:%M:%S")
         time_diff = (current_time - last_time).total_seconds() / 3600
-        
         if time_diff < 4:
             return
     
+    # Save in-memory
+    attendance[id] = {"name": name, "time": time_str}
+    
+    # Save to database
     try:
-        attendance[id] = time_str
-        
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO attendance (student_id, name, timestamp) VALUES (%s, %s, %s)",
-                (id, name, time_str)
-            )
-            conn.commit()
-            cursor.close()
-            conn.close()
-            logger.info(f"Attendance recorded: {name} ({id}) at {time_str}")
-        except Exception as e:
-            logger.error(f"Failed to save attendance to database: {e}")
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO attendance (student_id, name, timestamp) VALUES (%s, %s, %s)",
+            (id, name, time_str)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"Attendance recorded: {name} ({id}) at {time_str}")
     except Exception as e:
-        logger.error(f"Failed to mark attendance for {name}: {e}")
+        logger.error(f"Failed to save attendance to database: {e}", exc_info=True)
 
-# Modified sections for enhanced face tracking display
 
 def update_trackers(rgb, frame, frame_idx):
     global tracks, locked_tracks
@@ -730,9 +952,9 @@ def recognize_face_with_anti_spoofing(face_image, tolerance=0.6):
 def refresh_with_detections(frame, rgb, frame_idx):
     global tracks, locked_tracks, DETECT_EVERY
 
-    # BETTER TRACK MANAGEMENT FOR 30+ STUDENTS
-    MAX_TOTAL_TRACKS = 35
-    MAX_UNLOCKED_TRACKS = 10
+    # BETTER TRACK MANAGEMENT FOR 30+ ABOVE STUDENTS
+    MAX_TOTAL_TRACKS = 50
+    MAX_UNLOCKED_TRACKS = 20
 
     # Clean up old tracks first
     if len(tracks) > MAX_TOTAL_TRACKS:
@@ -1765,6 +1987,8 @@ if __name__ == "__main__":
         ssl_context = None
         cert_path = 'cert.pem'
         key_path = 'key.pem'
+        
+        # Setup SSL if certificates exist
         if os.path.exists(cert_path) and os.path.exists(key_path):
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -1773,16 +1997,28 @@ if __name__ == "__main__":
             logger.info("Running server with HTTPS")
         else:
             logger.warning("SSL certificates not found. Running with HTTP")
+        
+        # Start Flask app
         app.run(host="0.0.0.0", port=5000, debug=False, threaded=True, ssl_context=ssl_context)
+    
     finally:
+        # Signal video capture loop to stop
         stop_flag = True
         time.sleep(0.05)
+        
+        # Release camera resource safely
         with cap_lock:
             if cap is not None:
                 cap.release()
+        
+        # Save attendance to CSV if recognition is enabled
         if ENABLE_RECOGNITION:
-            with open("attendance_log.csv", "w") as f:
-                f.write("Name,DateTime\n")
-                for name, ts in attendance.items():
-                    f.write(f"{name},{ts}\n")
-            logger.info("Attendance saved to attendance_log.csv")
+            try:
+                with open("attendance_log.csv", "w") as f:
+                    f.write("ID,Name,DateTime\n")
+                    for sid, data in attendance.items():
+                        f.write(f"{sid},{data['name']},{data['time']}\n")
+                logger.info("Attendance saved to attendance_log.csv")
+            except Exception as e:
+                logger.error(f"Failed to save attendance CSV: {e}", exc_info=True)
+
