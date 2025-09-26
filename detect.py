@@ -424,7 +424,7 @@ def update_trackers(rgb, frame, frame_idx):
     kept = []
     to_remove_locks = []
 
-    # Remove locked tracks when person disappears (far away)
+    # Remove locked tracks when person disappears
     for sid, lock_info in list(locked_tracks.items()):
         frames_since_seen = frame_idx - lock_info.get('last_seen', frame_idx)
         if frames_since_seen > 30:  # ~1 second at 30fps
@@ -434,7 +434,7 @@ def update_trackers(rgb, frame, frame_idx):
     for sid in to_remove_locks:
         locked_tracks.pop(sid, None)
 
-    for tr in tracks:
+    for tr in list(tracks):
         tracker_ok = False
         tid = tr.get("id")
         is_locked = tid in locked_tracks
@@ -444,76 +444,90 @@ def update_trackers(rgb, frame, frame_idx):
             if tracker is None:
                 continue
 
-            # Get current tracker state
             pos = tracker.get_position()
             old_x1, old_y1 = int(pos.left()), int(pos.top())
             old_x2, old_y2 = int(pos.right()), int(pos.bottom())
             old_width = max(old_x2 - old_x1, 1)
             old_height = max(old_y2 - old_y1, 1)
 
-            # Update tracker
             update_success = tracker.update(rgb)
 
             if update_success is not False and update_success is not None:
+                tracker_quality = None
+                try:
+                    tracker_quality = float(update_success)
+                except Exception:
+                    tracker_quality = None
+
                 pos = tracker.get_position()
                 x1, y1 = int(pos.left()), int(pos.top())
                 x2, y2 = int(pos.right()), int(pos.bottom())
-                new_width = x2 - x1
-                new_height = y2 - y1
+                new_width = max(x2 - x1, 1)
+                new_height = max(y2 - y1, 1)
 
-                # Validate position and size
-                valid_position = (x2 > x1 and y2 > y1 and x2 < w and y2 < h and x1 >= 0 and y1 >= 0)
+                valid_position = (
+                    x2 > x1 and y2 > y1 and
+                    0 <= x1 < w and 0 <= y1 < h and
+                    x2 <= w and y2 <= h
+                )
+
                 size_growth = max(new_width / old_width, new_height / old_height)
-                size_reasonable = (size_growth < 1.5 and new_width < w * 0.8 and new_height < h * 0.8)
+                size_reasonable = (
+                    size_growth < 1.6 and
+                    new_width < w * 0.9 and
+                    new_height < h * 0.9
+                )
 
-                # Check movement
-                old_cx = (old_x1 + old_x2) / 2.0
-                old_cy = (old_y1 + old_y2) / 2.0
-                new_cx = (x1 + x2) / 2.0
-                new_cy = (y1 + y2) / 2.0
+                old_cx, old_cy = (old_x1 + old_x2) / 2.0, (old_y1 + old_y2) / 2.0
+                new_cx, new_cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
                 center_movement_sq = (new_cx - old_cx) ** 2 + (new_cy - old_cy) ** 2
                 diag = (w ** 2 + h ** 2) ** 0.5
-                movement_reasonable = center_movement_sq < (0.02 * (diag ** 2))
+                movement_reasonable = center_movement_sq < (0.03 * (diag ** 2))
 
-                min_size = max(new_width, new_height) >= 40
+                min_size_ok = max(new_width, new_height) >= 20
 
-                if valid_position and size_reasonable and movement_reasonable and min_size:
+                if valid_position and size_reasonable and movement_reasonable and min_size_ok:
                     tracker_ok = True
                     tr["box"] = (x1, y1, x2, y2)
 
-                    # Update confidence only for scanning (yellow) tracks (dynamic)
+                    # Dynamic confidence update
                     if not is_locked:
-                        current_conf = tr.get("confidence", 0.0)
-                        # gentle dynamic update: slight decay but keep some floor
-                        if current_conf > 0.0:
-                            tr["confidence"] = max(0.0, min(1.0, current_conf * 0.98 + 0.002))
+                        prev_conf = tr.get("confidence", 0.5)
+                        if tracker_quality is not None:
+                            qc = max(0.0, min(1.0, tracker_quality))
+                            tr["confidence"] = min(0.95, prev_conf * 0.9 + qc * 0.1)
+                        else:
+                            # Decay slowly if no quality returned
+                            tr["confidence"] = max(0.3, prev_conf * 0.995)
+
         except Exception as e:
             logger.debug(f"Tracker update failed for {tr.get('name','Unknown')}: {e}")
+            tracker_ok = False
 
         if not tracker_ok:
             tr["consecutive_failures"] = tr.get("consecutive_failures", 0) + 1
             if tr.get("consecutive_failures", 0) >= 3:
                 logger.info(f"Removing track {tr.get('name', 'Unknown')} - too many failures")
-                if tid in locked_tracks:
+                if tid is not None and tid in locked_tracks:
                     locked_tracks.pop(tid, None)
+                    logger.info(f"Removed lock for {tid}")
                 continue
 
-            # Try to reinitialize tracker
             if "box" in tr:
                 try:
-                    x1, y1, x2, y2 = tr["box"]
-                    padding = min(10, (x2 - x1) // 4, (y2 - y1) // 4)
-                    ex1 = max(0, x1 - padding)
-                    ey1 = max(0, y1 - padding)
-                    ex2 = min(w - 1, x2 + padding)
-                    ey2 = min(h - 1, y2 + padding)
+                    bx1, by1, bx2, by2 = tr["box"]
+                    padding = min(12, max(4, (bx2 - bx1) // 6, (by2 - by1) // 6))
+                    ex1 = max(0, bx1 - padding)
+                    ey1 = max(0, by1 - padding)
+                    ex2 = min(w - 1, bx2 + padding)
+                    ey2 = min(h - 1, by2 + padding)
 
                     new_tracker = dlib.correlation_tracker()
                     new_tracker.start_track(rgb, dlib.rectangle(int(ex1), int(ey1), int(ex2), int(ey2)))
                     tr["tracker"] = new_tracker
                     tracker_ok = True
-                except Exception:
-                    continue
+                except Exception as e:
+                    logger.debug(f"Tracker reinit failed for {tr.get('name','Unknown')}: {e}")
         else:
             tr["consecutive_failures"] = 0
 
@@ -521,90 +535,88 @@ def update_trackers(rgb, frame, frame_idx):
             continue
 
         tr["last_seen"] = frame_idx
-
         if "start_frame" not in tr:
             tr["start_frame"] = frame_idx
 
         duration_frames = frame_idx - tr["start_frame"]
         duration_seconds = duration_frames / 30.0
 
-        # Update locked track info
         if is_locked:
             locked_tracks[tid]['last_seen'] = frame_idx
             locked_tracks[tid]['track'] = tr
-
-        # Professional display formatting
-        if is_locked:
-            color = (0, 255, 0)  # Green for locked
-        elif tr.get("confidence", 0.0) >= 0.6:
-            color = (0, 255, 0)  # Green for high confidence
-        elif tr.get("confidence", 0.0) > 0.4:
-            color = (0, 255, 255)  # Yellow for scanning
+            tr["confidence"] = max(tr.get("confidence", 0.6), 0.6)
         else:
-            color = (0, 0, 255)  # Red for low confidence
+            if tr.get("confidence", 0.0) >= 0.55 and tid:
+                if tid not in locked_tracks:
+                    locked_tracks[tid] = {
+                        'track': tr,
+                        'last_seen': frame_idx,
+                        'lock_start': frame_idx,
+                        'missed_detections': 0
+                    }
+                    logger.info(f"Track LOCKED for {tr.get('name','Unknown')} ({tid})")
 
-        # Draw bounding box (thinner)
-        box = tr.get("box", (0, 0, 0, 0))
-        x1, y1, x2, y2 = box
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        # === Status and box color tied together ===
+        if is_locked:
+            status_label = "[LOCKED]"
+            status_color = (0, 200, 0)
+            box_color = (0, 255, 0)
+        elif tr.get("confidence", 0.0) >= 0.4:
+            status_label = "[SCANNING]"
+            status_color = (0, 180, 180)
+            box_color = (0, 255, 255)
+        else:
+            status_label = "[DETECTING]"
+            status_color = (0, 0, 180)
+            box_color = (0, 0, 255)
 
-        # Text display settings
+        bx1, by1, bx2, by2 = tr.get("box", (0, 0, 0, 0))
+        cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, 2)
+
         font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.7
+        font_scale = 0.6
         thickness = 2
-        text_color = (255, 255, 255)  # White text for all labels
+        text_color = (255, 255, 255)
         bg_color = (0, 0, 0)
         padding = 6
 
-        # Name (always above box)
         display_name = tr.get("name") if tr.get("name") and tr.get("name") != "Unknown" else "Unknown"
         (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale, thickness)
-        name_y = max(10, y1 - 10)
-        name_x2 = min(w - 1, x1 + name_w + padding)
-        cv2.rectangle(frame, (x1, name_y - name_h - 4), (name_x2, name_y + 4), bg_color, -1)
-        cv2.putText(frame, display_name, (x1 + 4, name_y), font, font_scale, text_color, thickness)
+        name_y = max(10, by1 - 10)
+        name_x2 = min(w - 1, bx1 + name_w + padding)
+        cv2.rectangle(frame, (bx1, name_y - name_h - 4), (name_x2, name_y + 4), bg_color, -1)
+        cv2.putText(frame, display_name, (bx1 + 4, name_y), font, font_scale, text_color, thickness)
 
-        # Tracking time (below box)
         mins = int(duration_seconds // 60)
         secs = int(duration_seconds % 60)
         track_time_label = f"Time: {mins:02d}:{secs:02d}"
         (time_w, time_h), _ = cv2.getTextSize(track_time_label, font, font_scale - 0.1, thickness - 1)
-        time_y = y2 + time_h + 10
-        time_x2 = min(w - 1, x1 + time_w + padding)
-        cv2.rectangle(frame, (x1, time_y - time_h - 4), (time_x2, time_y + 4), bg_color, -1)
-        cv2.putText(frame, track_time_label, (x1 + 4, time_y), font, font_scale - 0.1, text_color, thickness - 1)
-
-        # Status (below tracking time) - colored background, white text
-        if is_locked:
-            status_label = "[LOCKED]"
-            status_color = (0, 200, 0)
-        elif tr.get("confidence", 0.0) >= 0.4:
-            status_label = "[SCANNING]"
-            status_color = (0, 180, 180)
-        else:
-            status_label = "[DETECTING]"
-            status_color = (0, 0, 180)
+        time_y = by2 + time_h + 10
+        time_x2 = min(w - 1, bx1 + time_w + padding)
+        cv2.rectangle(frame, (bx1, time_y - time_h - 4), (time_x2, time_y + 4), bg_color, -1)
+        cv2.putText(frame, track_time_label, (bx1 + 4, time_y), font, font_scale - 0.1, text_color, thickness - 1)
 
         (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale - 0.1, thickness - 1)
         status_y = time_y + status_h + 10
-        status_x2 = min(w - 1, x1 + status_w + padding)
-        # draw colored background rectangle for status
-        cv2.rectangle(frame, (x1, status_y - status_h - 4), (status_x2, status_y + 4), status_color, -1)
-        cv2.putText(frame, status_label, (x1 + 4, status_y), font, font_scale - 0.1, text_color, thickness - 1)
+        status_x2 = min(w - 1, bx1 + status_w + padding)
+        cv2.rectangle(frame, (bx1, status_y - status_h - 4), (status_x2, status_y + 4), status_color, -1)
+        cv2.putText(frame, status_label, (bx1 + 4, status_y), font, font_scale - 0.1, text_color, thickness - 1)
 
-        # Confidence (below status) - DO NOT SHOW when locked
         if not is_locked:
-            conf_label = f"Conf: {tr.get('confidence', 0.0):.2f}"
+            conf_val = tr.get("confidence", 0.0)
+            conf_label = f"Conf: {conf_val:.2f}"
             (conf_w, conf_h), _ = cv2.getTextSize(conf_label, font, font_scale - 0.1, thickness - 1)
             conf_y = status_y + conf_h + 10
-            conf_x2 = min(w - 1, x1 + conf_w + padding)
-            cv2.rectangle(frame, (x1, conf_y - conf_h - 4), (conf_x2, conf_y + 4), bg_color, -1)
-            cv2.putText(frame, conf_label, (x1 + 4, conf_y), font, font_scale - 0.1, text_color, thickness - 1)
+            conf_x2 = min(w - 1, bx1 + conf_w + padding)
+            cv2.rectangle(frame, (bx1, conf_y - conf_h - 4), (conf_x2, conf_y + 4), bg_color, -1)
+            cv2.putText(frame, conf_label, (bx1 + 4, conf_y), font, font_scale - 0.1, text_color, thickness - 1)
 
         if tr.get("consecutive_failures", 0) < 3:
             kept.append(tr)
 
-    tracks = kept
+    tracks[:] = kept
+
+
 
 def cleanup_locked_tracks():
     global locked_tracks
@@ -621,11 +633,15 @@ def cleanup_locked_tracks():
 
 def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_locked_track=False):
     try:
+        # Estimate distance based on face width in pixels
         distance = estimate_distance(face_width_pixels)
+
+        # Too far for reliable recognition
         if distance > MAX_RECOGNITION_DISTANCE:
             logger.info(f"Face too far for recognition: {distance:.1f}m")
             return "Unknown", None, float('inf'), distance, 0.0, None
-        
+
+        # Image enhancement (better for low-light or far faces)
         if len(face_image.shape) == 3:
             gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
             gray = cv2.equalizeHist(gray)
@@ -633,15 +649,15 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_loc
             enhanced = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         else:
             enhanced = face_image
-        
+
+        # Extract embeddings
         faces = face_analysis.get(enhanced)
-        
         if not faces:
             return "Unknown", None, float('inf'), distance, 0.0, None
-        
+
         face_embedding = faces[0].embedding
-        
-        # Check against known faces
+
+        # Compare against known embeddings
         similarities = []
         for known_embedding in known_face_encodings:
             dot_product = np.dot(face_embedding, known_embedding)
@@ -649,24 +665,39 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_loc
             norm_b = np.linalg.norm(known_embedding)
             similarity = dot_product / (norm_a * norm_b)
             similarities.append(similarity)
-        
+
         if similarities:
-            best_match_index = np.argmax(similarities)
-            best_similarity = similarities[best_match_index]
-            
-            if is_locked_track or best_similarity >= (1 - tolerance):
+            best_match_index = int(np.argmax(similarities))
+            best_similarity = float(similarities[best_match_index])
+
+            # Confidence: convert similarity into "closeness" score
+            confidence = best_similarity
+
+            # Decide recognition
+            if is_locked_track or confidence >= (1 - tolerance):
                 name = known_face_names[best_match_index]
                 id = known_face_ids[best_match_index]
-                type = known_face_types[best_match_index]
-                if type == 'instructor':
-                    name = "Instructor: " + name
-                return name, id, 1 - best_similarity, distance, best_similarity, type
-        
+                role_type = known_face_types[best_match_index]
+
+                # Add role label (e.g., instructor)
+                if role_type == 'instructor':
+                    name = f"Instructor: {name}"
+
+                return (
+                    name,
+                    id,
+                    1 - confidence,   # recognition distance metric
+                    distance,         # estimated distance in meters
+                    confidence,       # similarity-based confidence
+                    role_type
+                )
+
+        # Fallback if no match
         return "Unknown", None, float('inf'), distance, 0.0, None
-        
+
     except Exception as e:
         logger.error(f"Error in enhanced_recognize_face: {e}")
-        return "Unknown", None, float('inf'), distance, 0.0, None
+        return "Unknown", None, float('inf'), None, 0.0, None
 
 
 def detect_liveness_cctv(face_image):
