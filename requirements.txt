@@ -1,29 +1,25 @@
-# Deep Learning & Inference
-torch>=1.13.0
-ultralytics>=8.0.20
-insightface>=0.7.3
-onnxruntime>=1.14.1
+# Complete requirements for detect.py script
+# This list includes all necessary dependencies for deep learning, computer vision, web server, database, and email functionality.
+# To install, run: pip install -r requirements.txt
+# Ensure you have a MySQL server running and the yolov8n-face.pt model file in the correct directory.
+# For GPU support, install torch and onnxruntime-gpu with appropriate CUDA versions.
+# Note: dlib may require additional system dependencies (cmake, libopenblas, liblapack).
 
-# Computer Vision
-opencv-python>=4.8.0
-dlib>=19.24.0
-numpy>=1.23.0
-
-# Flask Web Server
-Flask>=2.2.0
-flask-cors>=3.0.10
-Werkzeug>=2.2.0
-
-# Machine Learning
-scikit-learn>=1.2.0
-
-# MySQL Database
-mysql-connector-python>=8.0.30
-
-# Email utilities (email.mime is built-in; validator is useful)
-email-validator>=1.3.1
-
-# Optional utilities
-requests>=2.28.0
-
-bcrypt==4.0.1
+torch>=1.13.0              # Deep learning framework for running YOLOv8 model and tensor operations (used for device management and YOLO inference)
+ultralytics>=8.0.20        # Provides YOLOv8 implementation for face detection (used in refresh_with_detections for detecting faces)
+insightface>=0.7.3         # Face recognition library for generating face embeddings (used in enhanced_recognize_face and encode_face)
+onnxruntime>=1.14.1        # ONNX Runtime for optimized inference of InsightFace model (required by insightface for efficient execution)
+opencv-python>=4.8.0       # Computer vision library for image processing, frame capture, and drawing bounding boxes (used throughout for cv2 operations)
+dlib>=19.24.0              # Correlation tracking for maintaining face tracks across frames (used in update_trackers and refresh_with_detections)
+numpy>=1.23.0              # Numerical operations and array manipulations for embedding calculations and data handling (used in enhanced_recognize_face, etc.)
+Flask>=2.2.0               # Web server framework for streaming video and handling API requests (used for app routes and video_feed)
+flask-cors>=3.0.10         # Enables Cross-Origin Resource Sharing for Flask app (used to allow frontend requests from different origins)
+Werkzeug>=2.2.0            # Utilities for secure file handling in Flask (used for secure_filename in register_student and register_faculty)
+scikit-learn>=1.2.0        # Machine learning utilities for normalization, cosine similarity, and Hungarian assignment (used in enhanced_recognize_face and hungarian_assignment)
+mysql-connector-python>=8.0.30  # MySQL database connector for storing/retrieving student, faculty, and attendance data (used in get_db_connection)
+email-validator>=1.3.1     # Validates email addresses for authentication and OTP sending (used implicitly in login and forgot_password)
+requests>=2.28.0           # Optional utility for potential external HTTP requests (not explicitly used but recommended for future integrations)
+bcrypt==4.0.1              # Password hashing and verification for secure authentication (used in hash_password and verify_password)
+Pillow>=9.0.0              # Image handling support, often required by opencv-python and insightface (used implicitly for image processing)
+python-multipart>=0.0.5    # Handles multipart/form-data requests for file uploads in Flask (used in encode_face, register_student, register_faculty)
+scipy>=1.8.0               # Optimization functions for Hungarian assignment in tracking (used for linear_sum_assignment in hungarian_assignment)
