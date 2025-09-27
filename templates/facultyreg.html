@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WMSU Instructor Registration</title>
+  <title>WMSU Faculty Member Registration</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='instructorreg.css') }}">
-  <link rel="stylesheet" href="../static/instructorreg.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='facultyreg.css') }}">
+  <link rel="stylesheet" href="../static/facultyreg.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='password_strength.css') }}">
   <link rel="stylesheet" href="../static/password_strength.css">
 </head>
@@ -17,8 +17,8 @@
     <div id="step1">
       <div class="header">VERIFY USING YOUR WMSU GMAIL ACCOUNT</div>
       <div class="content">
-        <h2>WMSU Instructor Verification</h2>
-        <input type="email" placeholder="e.g. instructor@wmsu.edu.ph" id="email">
+        <h2>WMSU Faculty Member Verification</h2>
+        <input type="email" placeholder="e.g. facultymember@wmsu.edu.ph" id="email">
         <button onclick="validateStep1()">Next</button>
       </div>
     </div>
@@ -43,7 +43,7 @@
 
     <!-- Step 3 -->
     <div id="step3" class="hidden">
-      <div class="header">FILL-UP INSTRUCTOR INFORMATION</div>
+      <div class="header">FILL-UP FACULTY MEMBER INFORMATION</div>
       <div class="content">
         <h2>Upload Photo & Info</h2>
         <div class="upload-container">
@@ -57,7 +57,7 @@
           <input type="text" placeholder="First Name" id="firstName">
           <input type="text" placeholder="Middle Name" id="middleName">
         </div>
-        <input type="text" placeholder="Instructor ID (numbers and hyphens only)" id="instructorId" oninput="validateInstructorId(this)">
+        <input type="text" placeholder="Faculty Member ID (numbers and hyphens only)" id="facultyId" oninput="validateFacultyId(this)">
         <select id="department">
           <option value="">Select Department</option>
           <option value="BSIT">BS Information Technology</option>
@@ -111,14 +111,14 @@
       <div class="content">
         <h2>ID Preview</h2>
         <div class="id-card">
-          <div class="id-header">WMSU INSTRUCTOR ID</div>
+          <div class="id-header">WMSU Faculty Member ID</div>
           <div class="id-photo" id="idPhoto"></div>
           <p><b id="previewName"></b></p>
-          <p>Instructor ID: <span id="previewInstructorId"></span></p>
+          <p>Faculty Member ID: <span id="previewFacultyId"></span></p>
           <p>Department: <span id="previewDepartment"></span></p>
           <p>Designation: <span id="previewDesignation"></span></p>
         </div>
-        <button onclick="registerInstructor()">Finish Registration</button>
+        <button onclick="registerFaculty()">Finish Registration</button>
       </div>
     </div>
 
@@ -323,7 +323,7 @@ setInterval(captureAndSendImage, 500);
             const middleName = document.getElementById("middleName").value;
             
             document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`;
-            document.getElementById("previewInstructorId").textContent = document.getElementById("instructorId").value;
+            document.getElementById("previewFacultyId").textContent = document.getElementById("facultyId").value;
             document.getElementById("previewDepartment").textContent = document.getElementById("department").options[document.getElementById("department").selectedIndex].text;
             document.getElementById("previewDesignation").textContent = document.getElementById("designation").options[document.getElementById("designation").selectedIndex].text;
             
@@ -457,7 +457,7 @@ setInterval(captureAndSendImage, 500);
         });
     }
 
-    function validateInstructorId(input) {
+    function validateFacultyId(input) {
         // Allow only numbers and hyphens
         input.value = input.value.replace(/[^0-9-]/g, '');
     }
@@ -549,13 +549,13 @@ setInterval(captureAndSendImage, 500);
     function validateStep3() {
         const lastName = document.getElementById("lastName").value.trim();
         const firstName = document.getElementById("firstName").value.trim();
-        const instructorId = document.getElementById("instructorId").value.trim();
+        const facultyId = document.getElementById("facultyId").value.trim();
         const department = document.getElementById("department").value;
         const designation = document.getElementById("designation").value;
         const password = document.getElementById("password").value;
         const confirmPassword = document.getElementById("confirmPassword").value;
-        
-        if (!lastName || !firstName || !instructorId || !department || !designation) {
+
+        if (!lastName || !firstName || !facultyId || !department || !designation) {
             showModal("Warning", "Please fill out all required fields.");
             return;
         }
@@ -949,12 +949,12 @@ setInterval(captureAndSendImage, 500);
         }
     }
 
-    function registerInstructor() {
+    function registerFaculty() {
     const formData = new FormData();
     
     // Get all form elements
     const email = userEmail || "";
-    const instructorId = document.getElementById("instructorId")?.value?.trim() || "";
+    const facultyId = document.getElementById("facultyId")?.value?.trim() || "";
     const firstName = document.getElementById("firstName")?.value?.trim() || "";
     const lastName = document.getElementById("lastName")?.value?.trim() || "";
     const middleName = document.getElementById("middleName")?.value?.trim() || "";
@@ -965,8 +965,8 @@ setInterval(captureAndSendImage, 500);
     const photoInput = document.getElementById("photo");
     
     // Debug logging to see what we have
-    console.log("Instructor registration data:", {
-        email, instructorId, firstName, lastName, middleName, department, designation,
+    console.log("Faculty Member registration data:", {
+        email, facultyId, firstName, lastName, middleName, department, designation,
         passwordLength: password.length, confirmPasswordLength: confirmPassword.length,
         faceEncodingLength: window.faceEncoding ? window.faceEncoding.length : 0,
         hasPhoto: photoInput?.files?.length > 0
@@ -978,8 +978,8 @@ setInterval(captureAndSendImage, 500);
         return;
     }
     
-    if (!instructorId) {
-        showModal("Warning", "Instructor ID is required.");
+    if (!facultyId) {
+        showModal("Warning", "Faculty Member ID is required.");
         return;
     }
     
@@ -1025,7 +1025,7 @@ setInterval(captureAndSendImage, 500);
     
     // All validations passed, build FormData
     formData.append('email', email);
-    formData.append('instructor_id', instructorId);
+    formData.append('faculty_id', facultyId);
     formData.append('first_name', firstName);
     formData.append('last_name', lastName);
     formData.append('middle_name', middleName);
@@ -1043,7 +1043,7 @@ setInterval(captureAndSendImage, 500);
     }
     
     // Send registration request
-    fetch('/api/register_instructor', {
+    fetch('/api/register_faculty', {
         method: 'POST',
         body: formData
     })

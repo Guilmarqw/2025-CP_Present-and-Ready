@@ -8,10 +8,10 @@
   <link rel="icon" type="image/x-icon" href="../static/favicon.ico">
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
   <title>WMSU Login</title>
- 
 </head>
 <body>
   <div class="container">
+    <!-- Login Form -->
     <div id="loginForm">
       <h2>WMSU Login</h2>
       <div class="input-group">
@@ -25,11 +25,13 @@
         <input type="password" id="password" placeholder="Enter your password">
       </div>
       <p id="passwordError" class="error" style="display: none;">Password cannot be empty.</p>
+      <p id="loginError" class="error" style="display: none;"></p>
 
-      <button class="btn" onclick="login()">Login</button>
+      <button class="btn" id="loginBtn" onclick="login()">Login</button>
       <button class="forgot-btn" onclick="showResetForm()">Forgot Password?</button>
     </div>
 
+    <!-- Reset Password Form -->
     <div id="resetForm" class="hidden">
       <h2>Reset Password</h2>
       <div class="input-group">
@@ -37,17 +39,61 @@
         <input type="email" id="resetEmail" placeholder="yourname@wmsu.edu.ph">
       </div>
       <p id="resetEmailError" class="error" style="display: none;">Please enter a valid WMSU email.</p>
-      <button class="btn" onclick="submitResetPassword()">Send Reset Link</button>
+      <p id="resetMessage" class="success" style="display: none;"></p>
+      
+      <button class="btn" id="sendOtpBtn" onclick="sendResetOTP()">Send OTP</button>
       <button class="back-btn" onclick="showLoginForm()">Back to Login</button>
+      
+      <!-- Cooldown display -->
+      <p id="cooldownMessage" style="display: none; color: #666; margin-top: 10px;"></p>
+    </div>
+
+    <!-- OTP Verification Form -->
+    <div id="otpForm" class="hidden">
+      <h2>Verify OTP</h2>
+      <p>Enter the 6-digit code sent to your email:</p>
+      
+      <div class="input-group">
+        <label for="otpCode">OTP Code</label>
+        <input type="text" id="otpCode" placeholder="123456" maxlength="6">
+      </div>
+      <p id="otpError" class="error" style="display: none;"></p>
+
+      <div class="input-group">
+        <label for="newPassword">New Password</label>
+        <input type="password" id="newPassword" placeholder="Enter new password">
+      </div>
+      <p id="newPasswordError" class="error" style="display: none;">Password must be at least 8 characters long.</p>
+
+      <div class="input-group">
+        <label for="confirmPassword">Confirm Password</label>
+        <input type="password" id="confirmPassword" placeholder="Confirm new password">
+      </div>
+      <p id="confirmPasswordError" class="error" style="display: none;">Passwords do not match.</p>
+
+      <button class="btn" onclick="verifyOTPAndResetPassword()">Reset Password</button>
+      <button class="back-btn" onclick="showResetForm()">Back</button>
+    </div>
+
+    <!-- Success Message -->
+    <div id="successForm" class="hidden">
+      <h2>Password Reset Successful</h2>
+      <p>Your password has been successfully reset.</p>
+      <button class="btn" onclick="showLoginForm()">Go to Login</button>
     </div>
   </div>
 
   <script>
-    function login() {
+    let cooldownTimer = null;
+    let resetEmail = '';
+
+    async function login() {
       const emailInput = document.getElementById('email');
       const passwordInput = document.getElementById('password');
       const emailError = document.getElementById('emailError');
       const passwordError = document.getElementById('passwordError');
+      const loginError = document.getElementById('loginError');
+      const loginBtn = document.getElementById('loginBtn');
 
       const email = emailInput.value.trim();
       const password = passwordInput.value.trim();
@@ -55,52 +101,268 @@
 
       let valid = true;
 
+      // Clear previous errors
+      emailError.style.display = 'none';
+      passwordError.style.display = 'none';
+      loginError.style.display = 'none';
+
       if (!emailRegex.test(email)) {
         emailError.style.display = 'block';
         valid = false;
-      } else {
-        emailError.style.display = 'none';
       }
 
       if (password === '') {
         passwordError.style.display = 'block';
         valid = false;
-      } else {
-        passwordError.style.display = 'none';
       }
 
-      if (valid) {
-        // Simulate redirect to dashboard after validation
-        window.location.href = "../Admin/dashboard/dashboard.html";
+      if (!valid) return;
+
+      // Disable button and show loading
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Logging in...';
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: email,
+            password: password
+          })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          // Store session token if needed
+          if (result.session_token) {
+            localStorage.setItem('session_token', result.session_token);
+          }
+          
+          // Redirect based on user type/role
+          window.location.href = result.redirect_url;
+        } else {
+          loginError.textContent = result.message;
+          loginError.style.display = 'block';
+        }
+      } catch (error) {
+        loginError.textContent = 'Login failed. Please try again.';
+        loginError.style.display = 'block';
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Login';
       }
     }
 
     function showResetForm() {
       document.getElementById('loginForm').classList.add('hidden');
       document.getElementById('resetForm').classList.remove('hidden');
+      document.getElementById('otpForm').classList.add('hidden');
+      document.getElementById('successForm').classList.add('hidden');
     }
 
     function showLoginForm() {
       document.getElementById('resetForm').classList.add('hidden');
+      document.getElementById('otpForm').classList.add('hidden');
+      document.getElementById('successForm').classList.add('hidden');
       document.getElementById('loginForm').classList.remove('hidden');
+      
+      // Clear form data
       document.getElementById('resetEmail').value = '';
       document.getElementById('resetEmailError').style.display = 'none';
+      document.getElementById('resetMessage').style.display = 'none';
+      document.getElementById('cooldownMessage').style.display = 'none';
+      
+      if (cooldownTimer) {
+        clearInterval(cooldownTimer);
+        cooldownTimer = null;
+      }
     }
 
-    function submitResetPassword() {
+    function showOtpForm() {
+      document.getElementById('resetForm').classList.add('hidden');
+      document.getElementById('otpForm').classList.remove('hidden');
+    }
+
+    function showSuccessForm() {
+      document.getElementById('otpForm').classList.add('hidden');
+      document.getElementById('successForm').classList.remove('hidden');
+    }
+
+    async function sendResetOTP() {
       const resetEmailInput = document.getElementById('resetEmail');
       const resetEmailError = document.getElementById('resetEmailError');
+      const resetMessage = document.getElementById('resetMessage');
+      const sendOtpBtn = document.getElementById('sendOtpBtn');
+      const cooldownMessage = document.getElementById('cooldownMessage');
+      
       const email = resetEmailInput.value.trim();
       const emailRegex = /^[a-zA-Z0-9._%+-]+@wmsu\.edu\.ph$/;
 
+      // Clear previous messages
+      resetEmailError.style.display = 'none';
+      resetMessage.style.display = 'none';
+
       if (!emailRegex.test(email)) {
+        resetEmailError.textContent = 'Please enter a valid WMSU email.';
         resetEmailError.style.display = 'block';
-      } else {
-        resetEmailError.style.display = 'none';
-        alert(`A password reset link has been sent to ${email}. Please check your email.`);
-        showLoginForm();
+        return;
+      }
+
+      // Disable button
+      sendOtpBtn.disabled = true;
+      sendOtpBtn.textContent = 'Sending...';
+
+      try {
+        const response = await fetch('/api/forgot_password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: email
+          })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          resetEmail = email;
+          resetMessage.textContent = result.message;
+          resetMessage.style.display = 'block';
+          
+          // Start cooldown timer
+          startCooldown(result.cooldown || 30);
+          
+          // Show OTP form after a short delay
+          setTimeout(() => {
+            showOtpForm();
+          }, 2000);
+        } else {
+          resetEmailError.textContent = result.message;
+          resetEmailError.style.display = 'block';
+          
+          // Handle cooldown
+          if (result.cooldown) {
+            startCooldown(result.cooldown);
+          }
+        }
+      } catch (error) {
+        resetEmailError.textContent = 'Failed to send reset email. Please try again.';
+        resetEmailError.style.display = 'block';
+      } finally {
+        if (!sendOtpBtn.disabled) {
+          sendOtpBtn.disabled = false;
+          sendOtpBtn.textContent = 'Send OTP';
+        }
       }
     }
+
+    function startCooldown(seconds) {
+      const sendOtpBtn = document.getElementById('sendOtpBtn');
+      const cooldownMessage = document.getElementById('cooldownMessage');
+      
+      let remainingTime = seconds;
+      
+      sendOtpBtn.disabled = true;
+      cooldownMessage.style.display = 'block';
+      
+      cooldownTimer = setInterval(() => {
+        remainingTime--;
+        cooldownMessage.textContent = `Please wait ${remainingTime} seconds before requesting another OTP.`;
+        sendOtpBtn.textContent = `Send OTP (${remainingTime}s)`;
+        
+        if (remainingTime <= 0) {
+          clearInterval(cooldownTimer);
+          cooldownTimer = null;
+          sendOtpBtn.disabled = false;
+          sendOtpBtn.textContent = 'Send OTP';
+          cooldownMessage.style.display = 'none';
+        }
+      }, 1000);
+    }
+
+    async function verifyOTPAndResetPassword() {
+      const otpCode = document.getElementById('otpCode').value.trim();
+      const newPassword = document.getElementById('newPassword').value.trim();
+      const confirmPassword = document.getElementById('confirmPassword').value.trim();
+      
+      const otpError = document.getElementById('otpError');
+      const newPasswordError = document.getElementById('newPasswordError');
+      const confirmPasswordError = document.getElementById('confirmPasswordError');
+      
+      let valid = true;
+      
+      // Clear previous errors
+      otpError.style.display = 'none';
+      newPasswordError.style.display = 'none';
+      confirmPasswordError.style.display = 'none';
+      
+      // Validate OTP
+      if (otpCode.length !== 6 || !/^\d{6}$/.test(otpCode)) {
+        otpError.textContent = 'Please enter a valid 6-digit OTP.';
+        otpError.style.display = 'block';
+        valid = false;
+      }
+      
+      // Validate new password
+      if (newPassword.length < 8) {
+        newPasswordError.style.display = 'block';
+        valid = false;
+      }
+      
+      // Validate password confirmation
+      if (newPassword !== confirmPassword) {
+        confirmPasswordError.style.display = 'block';
+        valid = false;
+      }
+      
+      if (!valid) return;
+
+      try {
+        const response = await fetch('/api/verify_reset_otp', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: resetEmail,
+            otp: otpCode,
+            new_password: newPassword
+          })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          showSuccessForm();
+        } else {
+          otpError.textContent = result.message;
+          otpError.style.display = 'block';
+        }
+      } catch (error) {
+        otpError.textContent = 'Failed to reset password. Please try again.';
+        otpError.style.display = 'block';
+      }
+    }
+
+    // Allow Enter key to trigger login
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('password').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          login();
+        }
+      });
+      
+      document.getElementById('confirmPassword').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+          verifyOTPAndResetPassword();
+        }
+      });
+    });
   </script>
 </body>
 </html>

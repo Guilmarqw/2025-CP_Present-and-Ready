@@ -81,25 +81,25 @@
             background: #DC2626;
         }
 
-        .instructor-info {
+        .faculty-info {
             padding: 20px 30px;
             border-bottom: 1px solid #E5E7EB;
             flex-shrink: 0;
         }
 
-        .instructor-row {
+        .faculty-row {
             display: flex;
             gap: 60px;
             align-items: flex-start;
         }
 
-        .instructor-profile {
+        .faculty-profile {
             display: flex;
             align-items: center;
             gap: 20px;
         }
 
-        .instructor-avatar {
+        .faculty-avatar {
             width: 60px;
             height: 60px;
             border-radius: 50%;
@@ -110,27 +110,27 @@
             overflow: hidden;
         }
 
-        .instructor-avatar img {
+        .faculty-avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
             border-radius: 50%;
         }
 
-        .instructor-details {
+        .faculty-details {
             display: flex;
             flex-direction: column;
             gap: 4px;
         }
 
-        .instructor-name {
+        .faculty-name {
             font-size: 16px;
             color: #111827;
             font-weight: 600;
             margin-bottom: 2px;
         }
 
-        .instructor-title {
+        .faculty-title {
             font-size: 14px;
             color: #6B7280;
             font-weight: 500;
@@ -641,7 +641,7 @@
                 gap: 20px;
             }
 
-            .instructor-row {
+            .faculty-row {
                 flex-direction: column;
                 gap: 15px;
                 align-items: flex-start;

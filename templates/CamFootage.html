@@ -51,12 +51,12 @@
         
         <div class="attendance-section">
             <header>
-                <div class="instructor-info">
+                <div class="faculty-info">
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <img src="https://randomuser.me/api/portraits/women/45.jpg" alt="Instructor" class="instructor-avatar">
+                        <img src="https://randomuser.me/api/portraits/women/45.jpg" alt="Faculty Member" class="faculty-avatar">
                         <div>
                             <span>Dr. Sarah Johnson</span>
-                            <div class="instructor-role">Instructor</div>
+                            <div class="faculty-role">Faculty Member</div>
                         </div>
                     </div>
                 </div>
@@ -314,8 +314,8 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Instructor Information</label>
-                    <input type="text" id="instructorName" placeholder="Instructor Name" required>
+                    <label>Faculty Member Information</label>
+                    <input type="text" id="facultymemberName" placeholder="Faculty Member Name" required>
                 </div>
 
                 <div class="form-group">
@@ -892,8 +892,8 @@ let classConfig = {
     subjectName: '',
     course: '',
     section: '',
-    instructorName: '',
-    instructorId: '',
+    facultymemberName: '',
+    facultymemberID: '',
     classDuration: 180,
     lateThreshold: 15,
     videoQuality: '720'
@@ -907,8 +907,8 @@ function saveSettings() {
         subjectName: document.getElementById('subjectName').value,
         course: document.getElementById('course').value,
         section: document.getElementById('section').value,
-        instructorName: document.getElementById('instructorName').value,
-        instructorId: document.getElementById('instructorId').value,
+        facultymemberName: document.getElementById('facultymemberName').value,
+        facultymemberID: document.getElementById('facultyId').value,
         classDuration: parseInt(document.getElementById('classDuration').value) || 180,
         lateThreshold: parseInt(document.getElementById('lateThreshold').value) || 15,
         videoQuality: document.getElementById('videoQuality').value
@@ -921,8 +921,8 @@ function saveSettings() {
     document.querySelector('.cctv-header h3').textContent = classConfig.subjectName;
     document.querySelector('.cctv-header span[style]').textContent = classConfig.subjectCode;
     
-    // Update instructor info
-    document.querySelector('.instructor-info span').textContent = classConfig.instructorName;
+    // Update faculty member info
+    document.querySelector('.faculty-info span').textContent = classConfig.facultymemberName;
     
     // Update section info
     document.querySelector('.section-info span:last-child').textContent = 
@@ -943,7 +943,7 @@ function updateConfigDisplay() {
         `${classConfig.subjectCode} - ${classConfig.subjectName}`;
     document.getElementById('displayClass').textContent = 
         `${classConfig.course} ${classConfig.section}`;
-    document.getElementById('displayInstructor').textContent = classConfig.instructorName;
+    document.getElementById('displayFacultyMembers').textContent = classConfig.facultymemberName;
     document.getElementById('displayDuration').textContent = `${classConfig.classDuration} mins`;
     document.getElementById('displayLateThreshold').textContent = `${classConfig.lateThreshold} mins`;
 }
@@ -985,8 +985,8 @@ function loadClassSettings() {
     // Update section info
     document.querySelector('.section-info span:last-child').textContent = settings.classDetails.courseSection;
     
-    // Update instructor name
-    document.querySelector('.instructor-info span').textContent = settings.classDetails.instructor;
+    // Update faculty member name
+    document.querySelector('.faculty-info span').textContent = settings.classDetails.faculty;
     
     // Store late threshold for status checks
     const lateThresholdSeconds = 

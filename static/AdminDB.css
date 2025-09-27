@@ -76,7 +76,7 @@
             transform: translateY(-5px);
         }
 
-        .stat-card.instructors {
+        .stat-card.faculty {
             background: linear-gradient(to right, #11998e, #38ef7d);
         }
 

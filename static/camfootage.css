@@ -209,7 +209,7 @@
             background: rgba(255,255,255,0.3);
         }
 
-        .instructor-info {
+        .faculty-info {
             display: flex;
             align-items: center;
             gap: 0.75rem;
@@ -218,7 +218,7 @@
             flex-wrap: wrap;
         }
 
-        .instructor-role {
+        .faculty-role {
             font-size: 0.8rem;
             opacity: 0.8;
             margin-top: 0;
@@ -500,7 +500,7 @@
             border-radius: 50%;
         }
 
-        .instructor-avatar {
+        .faculty-avatar {
             width: 48px;
             height: 48px;
             border-radius: 50%;

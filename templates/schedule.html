@@ -14,13 +14,13 @@
 
     <div class="main-content">
         <div class="header">
-            <h2><i class="fas fa-calendar-alt"></i> Instructor Schedules</h2>
+            <h2><i class="fas fa-calendar-alt"></i> Faculty Member Schedules</h2>
         </div>
 
         <div class="phase active" id="phase1">
             <div class="schedule-table">
                 <div class="phase-header">
-                    <h3>Unassigned Instructors Overview</h3>
+                    <h3>Unassigned Faculty Members Overview</h3>
                     <button class="add-schedule-btn" onclick="showPhase2()">
                         <i class="fas fa-plus"></i> Add Schedule
                     </button>
@@ -43,7 +43,7 @@
                 <table id="scheduleTable">
                     <thead>
                         <tr>
-                            <th>Instructor</th>
+                            <th>Faculty Member</th>
                             <th>Subject</th>
                             <th>Meetings</th>
                             <th>Actions</th>
@@ -90,9 +90,9 @@
                             </select>
                         </div>
                         <div>
-                            <label for="instructor">Instructor</label>
-                            <select id="instructor" onchange="checkConflicts()">
-                                <option value="" disabled selected>Select Instructor</option>
+                            <label for="facultyMember">Faculty Member</label>
+                            <select id="facultyMember" onchange="checkConflicts()">
+                                <option value="" disabled selected>Select Faculty Member</option>
                                 <option value="1">Guilmar Quimba</option>
                                 <option value="2">Jane Smith</option>
                                 <option value="3">John Doe</option>
@@ -133,7 +133,7 @@
     <div class="schedule-overview-modal" id="scheduleOverviewModal">
         <div class="schedule-overview-content">
             <div class="schedule-overview-header">
-                <h3>Instructor Schedule Overview</h3>
+                <h3>Faculty Member Schedule Overview</h3>
                 <button class="schedule-overview-close" id="closeOverviewModal">&times;</button>
             </div>
             <div id="overviewContent"></div>
@@ -241,15 +241,14 @@
                                     <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
                                 </a>
                                 <ul class="dropdown-content">
-                                    <li><a href="../Admin/curriculum/programs/programs.html"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
-                                    <li><a href="../Admin/curriculum/courses/courses.html"><i class="fas fa-book"></i> <span>Courses</span></a></li>
-                                    <li><a href="../Admin/curriculum/schedule/schedule.html"><i class="fas fa-calendar-check"></i> <span>Instructor Schedules</span></a></li>
-                                    <li><a href="../Admin/curriculum/class schedule/classsched.html"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
+                                    <li><a href="../templates/programs.html"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
+                                    <li><a href="../templates/schedule/schedule.html"><i class="fas fa-calendar-check"></i> <span>Faculty Member Schedules</span></a></li>
+                                    <li><a href="../templates/class schedule/classsched.html"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
                                 </ul>
                             </li>
-                            <li><a href="../Admin/instructors/instructors.html"><i class="fas fa-chalkboard-teacher"></i> <span>Instructors</span></a></li>
-                            <li><a href="../Admin/students/student.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
-                            <li><a href="../Admin/settings/settings.html"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
+                            <li><a href="../templates/FacultyDB.html"><i class="fas fa-chalkboard-teacher"></i> <span>Faculty Members</span></a></li>
+                            <li><a href="../templates/StudentDB.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
+                            <li><a href="../templates/settings.html"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
                             <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
                         </ul>
                     </aside>
@@ -276,7 +275,7 @@
             // Schedule functionality
             const form = document.getElementById('scheduleForm');
             const tableBody = document.querySelector('#scheduleTable tbody');
-            const instructorSelect = document.getElementById('instructor');
+            const facultyMemberSelect = document.getElementById('facultyMember');
             const scheduleOverviewModal = document.getElementById('scheduleOverviewModal');
             const closeOverviewModal = document.getElementById('closeOverviewModal');
             const overviewContent = document.getElementById('overviewContent');
@@ -291,12 +290,12 @@
                 return hours * 60 + minutes;
             }
 
-            function hasConflict(instructor, day, start, end) {
+            function hasConflict(facultyMember, day, start, end) {
                 const startMinutes = timeToMinutes(start);
                 const endMinutes = timeToMinutes(end);
                 
                 return allSchedules.some(schedule => {
-                    if (schedule.instructor !== instructor || schedule.day !== day) return false;
+                    if (schedule.facultyMember !== facultyMember || schedule.day !== day) return false;
                     const scheduleStart = timeToMinutes(schedule.start);
                     const scheduleEnd = timeToMinutes(schedule.end);
                     return (
@@ -308,14 +307,14 @@
             }
 
             function checkConflicts() {
-                const instructor = instructorSelect.value;
+                const facultyMember = facultyMemberSelect.value;
                 const selectedSlots = document.querySelectorAll('.schedule-cell');
                 
                 selectedSlots.forEach(slot => {
                     const day = slot.dataset.day;
                     const [start, end] = slot.dataset.time.split(' - ');
                     
-                    if (hasConflict(instructor, day, start, end)) {
+                    if (hasConflict(facultyMember, day, start, end)) {
                         slot.classList.add('conflict');
                         slot.classList.remove('selected');
                     } else {
@@ -327,10 +326,10 @@
                     document.querySelectorAll('.schedule-cell.selected').length === 0;
             }
 
-            function showInstructorSchedule(instructorName) {
+            function showFacultyMemberSchedule(facultyMemberName) {
                 overviewContent.innerHTML = '';
-                const schedules = allSchedules.filter(s => s.instructor === instructorName);
-                
+                const schedules = allSchedules.filter(s => s.facultyMember === facultyMemberName);
+
                 const calendar = document.createElement('div');
                 calendar.className = 'weekly-calendar';
                 
@@ -372,27 +371,27 @@
                 scheduleOverviewModal.style.display = 'none';
             });
 
-            function updateUnassignedInstructors() {
-                const assignedInstructors = [...new Set(allSchedules.map(s => s.instructor))];
-                const instructors = [
+            function updateUnassignedFacultyMembers() {
+                const assignedFacultyMembers = [...new Set(allSchedules.map(s => s.facultyMember))];
+                const facultyMembers = [
                     { id: '1', name: 'Guilmar Quimba', dept: 'Computer Science', specialization: 'Database Systems' },
                     { id: '2', name: 'Jane Smith', dept: 'Computer Science', specialization: 'Web Development' },
                     { id: '3', name: 'John Doe', dept: 'Information Technology', specialization: 'Network Security' },
                     { id: '4', name: 'Emily Davis', dept: 'Computer Science', specialization: 'AI & Machine Learning' }
                 ];
                 
-                const unassigned = instructors.filter(i => !assignedInstructors.includes(i.name));
+                const unassigned = facultyMembers.filter(i => !assignedFacultyMembers.includes(i.name));
                 const unassignedTable = document.querySelector('#unassignedTable tbody');
                 unassignedTable.innerHTML = '';
                 
-                unassigned.forEach(instructor => {
+                unassigned.forEach(facultyMember => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td>${instructor.name}</td>
-                        <td>${instructor.dept}</td>
-                        <td>${instructor.specialization}</td>
+                        <td>${facultyMember.name}</td>
+                        <td>${facultyMember.dept}</td>
+                        <td>${facultyMember.specialization}</td>
                         <td>
-                            <button class="add-schedule-btn" onclick="assignInstructor('${instructor.id}')">
+                            <button class="add-schedule-btn" onclick="assignFacultyMember('${facultyMember.id}')">
                                 <i class="fas fa-plus"></i> Assign
                             </button>
                         </td>
@@ -401,9 +400,9 @@
                 });
             }
             
-            window.assignInstructor = function(instructorId) {
+            window.assignFacultyMember = function(facultyMemberId) {
                 showPhase2();
-                instructorSelect.value = instructorId;
+                facultyMemberSelect.value = facultyMemberId;
                 checkConflicts();
             }
             
@@ -516,7 +515,7 @@
                                 <div class="subject-info">
                                     <div class="subject-code">${schedule.subjectCode} - ${schedule.subjectName}</div>
                                     <div class="subject-room">Room: ${schedule.room}</div>
-                                    <div class="instructor-name">${schedule.instructor || 'Unassigned'}</div>
+                                    <div class="faculty-member-name">${schedule.facultyMember || 'Unassigned'}</div>
                                 </div>
                             `;
                         } else {
@@ -550,8 +549,8 @@
             }
 
             function saveSchedule() {
-                const instructor = document.getElementById('instructor').value;
-                const instructorName = instructorSelect.options[instructorSelect.selectedIndex].text;
+                const facultyMember = document.getElementById('facultyMember').value;
+                const facultyMemberName = facultyMemberSelect.options[facultyMemberSelect.selectedIndex].text;
                 const selectedSlots = document.querySelectorAll('.schedule-cell.selected');
                 
                 if (selectedSlots.length === 0) {
@@ -582,7 +581,7 @@
                 const newSchedules = Array.from(selectedSlots).map(slot => {
                     const [start, end] = slot.dataset.time.split(' - ');
                     return {
-                        instructor: instructorName,
+                        facultyMember: facultyMemberName,
                         subjectCode: subject ? subject.code : `CS${Math.floor(Math.random() * 1000)}`,
                         subjectName: subject ? subject.name : 'Unknown Subject',
                         day: slot.dataset.day,
@@ -597,8 +596,8 @@
                 
                 // Check for conflicts before saving
                 for (const schedule of newSchedules) {
-                    if (hasConflict(instructorName, schedule.day, schedule.start, schedule.end)) {
-                        showModal("⚠️ Selected schedule conflicts with existing instructor schedule!");
+                    if (hasConflict(facultyMemberName, schedule.day, schedule.start, schedule.end)) {
+                        showModal("⚠️ Selected schedule conflicts with existing faculty member schedule!");
                         return;
                     }
                 }
@@ -608,12 +607,12 @@
                 
                 // Update or create table row
                 const existingRow = Array.from(tableBody.querySelectorAll('tr')).find(row => 
-                    row.cells[0].textContent === instructorName
+                    row.cells[0].textContent === facultyMemberName
                 );
-                
-                const instructorSchedules = allSchedules.filter(s => s.instructor === instructorName);
-                const uniqueSubjects = [...new Set(instructorSchedules.map(s => s.subjectCode))].length;
-                const totalMeetings = instructorSchedules.length;
+
+                const facultyMemberSchedules = allSchedules.filter(s => s.facultyMember === facultyMemberName);
+                const uniqueSubjects = [...new Set(facultyMemberSchedules.map(s => s.subjectCode))].length;
+                const totalMeetings = facultyMemberSchedules.length;
                 
                 if (existingRow) {
                     existingRow.cells[1].textContent = uniqueSubjects;
@@ -621,11 +620,11 @@
                 } else {
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${instructorName}</td>
+                        <td>${facultyMemberName}</td>
                         <td>${uniqueSubjects}</td>
                         <td>${totalMeetings}</td>
                         <td class="action-btns">
-                            <button class="btn-view-schedule" title="View Schedule" data-instructor="${instructorName}">
+                            <button class="btn-view-schedule" title="View Schedule" data-faculty-member="${facultyMemberName}">
                                 <i class="fas fa-calendar-alt"></i>
                             </button>
                             <button class="delete" title="Delete">
@@ -635,20 +634,20 @@
                     `;
                     
                     row.querySelector('.btn-view-schedule').addEventListener('click', () => 
-                        showInstructorSchedule(instructorName)
+                        showFacultyMemberSchedule(facultyMemberName)
                     );
                     
                     row.querySelector('.delete').addEventListener('click', () => {
                         row.remove();
-                        allSchedules = allSchedules.filter(s => s.instructor !== instructorName);
-                        updateUnassignedInstructors();
+                        allSchedules = allSchedules.filter(s => s.facultyMember !== facultyMemberName);
+                        updateUnassignedFacultyMembers();
                     });
                     
                     tableBody.appendChild(row);
                 }
                 
                 // Update UI
-                updateUnassignedInstructors();
+                updateUnassignedFacultyMembers();
                 showModal("Schedule saved successfully!");
                 selectedSlots.forEach(slot => slot.classList.remove('selected'));
                 document.getElementById('saveScheduleBtn').disabled = true;
@@ -658,7 +657,7 @@
             }
 
             // Initialize app
-            updateUnassignedInstructors();
+            updateUnassignedFacultyMembers();
             
             // Make functions globally accessible
             window.showPhase1 = showPhase1;

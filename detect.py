@@ -26,6 +26,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 from collections import deque, defaultdict
 import queue
 from scipy.optimize import linear_sum_assignment
+import bcrypt
+import secrets
+from datetime import datetime, timedelta
+import hashlib
 
 
 # =========================
@@ -41,6 +45,10 @@ pose_embeddings = {}
 STABLE_TOLERANCE_FRAMES = 20  # Increased for better lock stability
 MAX_TRACKS = 128
 EXPAND_BOX_RATIO = 0.4
+
+PASSWORD_RESET_EXPIRE_HOURS = 24
+OTP_RESEND_COOLDOWN = 30  # seconds
+MAX_OTP_ATTEMPTS = 3
 
 ENABLE_RECOGNITION = True
 TOLERANCE = 0.5  # InsightFace uses different distance metric
@@ -85,7 +93,7 @@ DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
     'password': '',
-    'database': 'fcee'
+    'database': 'facesys' # fcee for backup
 }
 
 # Email configuration
@@ -122,6 +130,153 @@ session_config = {
 # Utilities
 # =========================
 # Thread-safe state manager
+# Add these utility functions before the Flask routes
+
+def hash_password(password):
+    """Hash a password for storing in database"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password, hashed):
+    """Verify a password against its hash"""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def generate_session_token():
+    """Generate a secure session token"""
+    return secrets.token_urlsafe(32)
+
+def generate_reset_token():
+    """Generate a secure password reset token"""
+    return secrets.token_urlsafe(48)
+
+def authenticate_user(email, password):
+    """Authenticate user against database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check admins table first
+        cursor.execute(
+            "SELECT admin_id as user_id, first_name, last_name, password_hash, role, 'admin' as user_type FROM admins WHERE email = %s AND status = 'active'",
+            (email,)
+        )
+        user = cursor.fetchone()
+        
+        # Check faculty table if not found in admins
+        if not user:
+            cursor.execute(
+                "SELECT faculty_id as user_id, first_name, last_name, password_hash, role, 'faculty' as user_type FROM faculty WHERE email = %s AND status = 'active'",
+                (email,)
+            )
+            user = cursor.fetchone()
+        
+        # Check students table if not found in faculty
+        if not user:
+            cursor.execute(
+                "SELECT student_id as user_id, first_name, last_name, password_hash, 'student' as role, 'student' as user_type FROM students WHERE email = %s AND status = 'active'",
+                (email,)
+            )
+            user = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if user and verify_password(password, user['password_hash']):
+            return user
+        return None
+        
+    except Exception as e:
+        logger.error(f"Authentication error: {e}")
+        return None
+
+def create_user_session(user_id, user_type):
+    """Create a new user session"""
+    try:
+        session_token = generate_session_token()
+        expires_at = datetime.now() + timedelta(hours=24)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Clean up old sessions for this user
+        cursor.execute(
+            "DELETE FROM user_sessions WHERE user_id = %s AND user_type = %s",
+            (user_id, user_type)
+        )
+        
+        # Create new session
+        cursor.execute(
+            "INSERT INTO user_sessions (user_id, user_type, session_token, expires_at) VALUES (%s, %s, %s, %s)",
+            (user_id, user_type, session_token, expires_at)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return session_token
+        
+    except Exception as e:
+        logger.error(f"Session creation error: {e}")
+        return None
+
+def get_last_otp_time(email, purpose='password_reset'):
+    """Get the time when the last OTP was sent"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT created_at FROM otp_codes WHERE email = %s AND purpose = %s ORDER BY created_at DESC LIMIT 1",
+            (email, purpose)
+        )
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if result:
+            return result[0]
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error getting last OTP time: {e}")
+        return None
+
+# Update the mark_attendance function to include status
+def mark_attendance_with_status(name, student_id, status='present', session_id=None):
+    """Mark attendance with specific status"""
+    if not student_id:
+        return False
+    
+    current_time = datetime.now()
+    time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Check if already marked today for this session
+    if student_id in attendance:
+        last_time_str = attendance[student_id]["time"]
+        last_time = datetime.strptime(last_time_str, "%Y-%m-%d %H:%M:%S")
+        time_diff = (current_time - last_time).total_seconds() / 3600
+        if time_diff < 1:  # Don't allow duplicate entries within 1 hour
+            return False
+    
+    # Save in-memory
+    attendance[student_id] = {"name": name, "time": time_str, "status": status}
+    
+    # Save to database
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO attendance (student_id, name, timestamp, status, session_id) VALUES (%s, %s, %s, %s, %s)",
+            (student_id, name, time_str, status, session_id)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(f"Attendance recorded: {name} ({student_id}) - {status}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save attendance to database: {e}")
+        return False
+
 class ThreadSafeTrackManager:
     def __init__(self):
         self._lock = threading.RLock()
@@ -448,7 +603,7 @@ except Exception as e:
 known_face_encodings = []
 known_face_names = []
 known_face_ids = []
-known_face_types = []  # 'student' or 'instructor'
+known_face_types = []  # 'student' or 'faculty'
 
 def load_known_faces_from_db():
     global known_face_encodings, known_face_names, known_face_ids, known_face_types
@@ -488,13 +643,13 @@ def load_known_faces_from_db():
     except Exception as e:
         logger.error(f"Failed to load student faces from database: {e}")
 
-def load_known_instructors_from_db():
+def load_known_faculties_from_db():
     global known_face_encodings, known_face_names, known_face_ids, known_face_types
-    instructor_count = 0  # Track instructor faces separately
+    faculty_count = 0  # Track faculty faces separately
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT instructor_id, first_name, last_name, face_encoding FROM instructors WHERE face_encoding IS NOT NULL")
+        cursor.execute("SELECT faculty_id, first_name, last_name, face_encoding FROM faculty WHERE face_encoding IS NOT NULL")
         for (id, first_name, last_name, face_encoding) in cursor:
             try:
                 if isinstance(face_encoding, str):
@@ -514,22 +669,22 @@ def load_known_instructors_from_db():
                     full_name = f"{first_name} {last_name}"
                     known_face_names.append(full_name)
                     known_face_ids.append(id)
-                    known_face_types.append('instructor')
-                    instructor_count += 1
-                    logger.info(f"Loaded instructor {full_name} ({id}) with encoding shape {encoding.shape}")
+                    known_face_types.append('faculty')
+                    faculty_count += 1
+                    logger.info(f"Loaded faculty {full_name} ({id}) with encoding shape {encoding.shape}")
                 else:
-                    logger.warning(f"Invalid encoding size for instructor {id}: {encoding.size}")
+                    logger.warning(f"Invalid encoding size for faculty {id}: {encoding.size}")
             except Exception as e:
-                logger.error(f"Error parsing encoding for instructor {id}: {e}")
+                logger.error(f"Error parsing encoding for faculty {id}: {e}")
         cursor.close()
         conn.close()
-        logger.info(f"Loaded {instructor_count} known instructor faces from database")
+        logger.info(f"Loaded {faculty_count} known faculty faces from database")
     except Exception as e:
-        logger.error(f"Failed to load instructor faces from database: {e}")
+        logger.error(f"Failed to load faculty faces from database: {e}")
 
 # Initialize known faces
 load_known_faces_from_db()
-load_known_instructors_from_db()
+load_known_faculties_from_db()
 
 # =========================
 # Load YOLOv8-Face
@@ -601,7 +756,7 @@ grab_thread.start()
 # Tracking & attendance
 # =========================
 tracks = []
-locked_tracks = {}  # Dict: id -> {'track': tr, 'last_seen': frame_idx, 'lock_start': frame_idx, 'type': 'student' or 'instructor'}
+locked_tracks = {}  # Dict: id -> {'track': tr, 'last_seen': frame_idx, 'lock_start': frame_idx, 'type': 'student' or 'faculty'}
 attendance = {}
 tracking_history = {}
 
@@ -901,9 +1056,9 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_loc
                 id = known_face_ids[best_match_index]
                 role_type = known_face_types[best_match_index]
 
-                # Add role label (e.g., instructor)
-                if role_type == 'instructor':
-                    name = f"Instructor: {name}"
+                # Add role label (e.g., faculty)
+                if role_type == 'faculty':
+                    name = f"Faculty: {name}"
 
                 return (
                     name,
@@ -1205,17 +1360,256 @@ def refresh_with_detections(frame, rgb, frame_idx):
 app = Flask(__name__)
 CORS(app)
 
+# Add these Flask routes for authentication
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    try:
+        data = request.json
+        email = data.get('email', '').strip()
+        password = data.get('password', '')
+        
+        if not email or not password:
+            return jsonify({'success': False, 'message': 'Email and password are required'})
+        
+        if "@wmsu.edu.ph" not in email:
+            return jsonify({'success': False, 'message': 'Invalid WMSU email address'})
+        
+        # Authenticate user
+        user = authenticate_user(email, password)
+        if not user:
+            return jsonify({'success': False, 'message': 'Invalid email or password'})
+        
+        # Create session
+        session_token = create_user_session(user['user_id'], user['user_type'])
+        if not session_token:
+            return jsonify({'success': False, 'message': 'Failed to create session'})
+        
+        # Determine redirect URL based on role
+        redirect_url = '/AdminDB'  # Default for admins and faculty
+        if user['user_type'] == 'student':
+            redirect_url = '/StudentLP'
+        
+        return jsonify({
+            'success': True,
+            'message': 'Login successful',
+            'user': {
+                'id': user['user_id'],
+                'name': f"{user['first_name']} {user['last_name']}",
+                'type': user['user_type'],
+                'role': user.get('role', 'student')
+            },
+            'redirect_url': redirect_url,
+            'session_token': session_token
+        })
+        
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({'success': False, 'message': 'Login failed. Please try again.'})
+
+@app.route('/api/forgot_password', methods=['POST'])
+def forgot_password():
+    try:
+        data = request.json
+        email = data.get('email', '').strip()
+        
+        if not email or "@wmsu.edu.ph" not in email:
+            return jsonify({'success': False, 'message': 'Invalid WMSU email address'})
+        
+        # Check cooldown period
+        last_otp_time = get_last_otp_time(email, 'password_reset')
+        if last_otp_time:
+            time_diff = (datetime.now() - last_otp_time).total_seconds()
+            if time_diff < OTP_RESEND_COOLDOWN:
+                remaining = int(OTP_RESEND_COOLDOWN - time_diff)
+                return jsonify({
+                    'success': False, 
+                    'message': f'Please wait {remaining} seconds before requesting another OTP',
+                    'cooldown': remaining
+                })
+        
+        # Check if user exists in any table
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT email FROM admins WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        
+        if not user:
+            cursor.execute("SELECT email FROM faculty WHERE email = %s", (email,))
+            user = cursor.fetchone()
+            
+        if not user:
+            cursor.execute("SELECT email FROM students WHERE email = %s", (email,))
+            user = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'Email not found in our system'})
+        
+        # Generate OTP
+        otp_code = generate_otp()
+        expires_at = datetime.now() + timedelta(minutes=10)
+        
+        # Save OTP to database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Delete old OTPs for this email
+        cursor.execute("DELETE FROM otp_codes WHERE email = %s AND purpose = 'password_reset'", (email,))
+        
+        cursor.execute(
+            "INSERT INTO otp_codes (email, otp_code, purpose, expires_at) VALUES (%s, %s, 'password_reset', %s)",
+            (email, otp_code, expires_at)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        # Send OTP email
+        if send_otp_email(email, otp_code):
+            return jsonify({
+                'success': True,
+                'message': 'Password reset OTP sent to your email',
+                'cooldown': OTP_RESEND_COOLDOWN
+            })
+        else:
+            return jsonify({'success': False, 'message': 'Failed to send OTP email'})
+            
+    except Exception as e:
+        logger.error(f"Forgot password error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to process password reset request'})
+
+@app.route('/api/verify_reset_otp', methods=['POST'])
+def verify_reset_otp():
+    try:
+        data = request.json
+        email = data.get('email', '').strip()
+        otp_code = data.get('otp', '').strip()
+        new_password = data.get('new_password', '').strip()
+        
+        if not email or not otp_code or not new_password:
+            return jsonify({'success': False, 'message': 'All fields are required'})
+        
+        if len(new_password) < 8:
+            return jsonify({'success': False, 'message': 'Password must be at least 8 characters long'})
+        
+        # Verify OTP
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT otp_code, expires_at, attempts FROM otp_codes WHERE email = %s AND purpose = 'password_reset' AND used = FALSE ORDER BY created_at DESC LIMIT 1",
+            (email,)
+        )
+        result = cursor.fetchone()
+        
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'No valid OTP found for this email'})
+        
+        stored_otp, expires_at, attempts = result
+        
+        if datetime.now() > expires_at:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'OTP has expired'})
+        
+        if attempts >= MAX_OTP_ATTEMPTS:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Maximum OTP attempts exceeded'})
+        
+        if otp_code != stored_otp:
+            # Increment attempts
+            cursor.execute(
+                "UPDATE otp_codes SET attempts = attempts + 1 WHERE email = %s AND purpose = 'password_reset'",
+                (email,)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Invalid OTP'})
+        
+        # Mark OTP as used
+        cursor.execute(
+            "UPDATE otp_codes SET used = TRUE WHERE email = %s AND purpose = 'password_reset'",
+            (email,)
+        )
+        
+        # Update password in appropriate table
+        password_hash = hash_password(new_password)
+        
+        # Try updating in admins table first
+        cursor.execute("UPDATE admins SET password_hash = %s WHERE email = %s", (password_hash, email))
+        if cursor.rowcount == 0:
+            # Try faculty table
+            cursor.execute("UPDATE faculty SET password_hash = %s WHERE email = %s", (password_hash, email))
+            if cursor.rowcount == 0:
+                # Try students table
+                cursor.execute("UPDATE students SET password_hash = %s WHERE email = %s", (password_hash, email))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Password reset successfully'})
+        
+    except Exception as e:
+        logger.error(f"Reset password error: {e}")
+        return jsonify({'success': False, 'message': 'Failed to reset password'})
+
+@app.route('/api/update_attendance_status', methods=['POST'])
+def update_attendance_status():
+    try:
+        data = request.json
+        student_id = data.get('student_id')
+        status = data.get('status')  # 'present', 'late', 'absent', 'excused'
+        remarks = data.get('remarks', '')
+        
+        if not student_id or not status:
+            return jsonify({'success': False, 'message': 'Student ID and status are required'})
+        
+        if status not in ['present', 'late', 'absent', 'excused']:
+            return jsonify({'success': False, 'message': 'Invalid status'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Update the most recent attendance record for this student
+        cursor.execute(
+            "UPDATE attendance SET status = %s, remarks = %s WHERE student_id = %s AND DATE(timestamp) = CURDATE() ORDER BY timestamp DESC LIMIT 1",
+            (status, remarks, student_id)
+        )
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'No attendance record found to update'})
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Attendance status updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating attendance status: {e}")
+        return jsonify({'success': False, 'message': str(e)})   
+
 # Serve student photos
 @app.route('/student_photos/<filename>')
 def serve_photo(filename):
     return send_from_directory('student_photos', filename)
 
-# Serve instructor photos
-os.makedirs('instructor_photos', exist_ok=True)
+# Serve faculty photos
+os.makedirs('faculty_photos', exist_ok=True)
 
-@app.route('/instructor_photos/<filename>')
-def serve_instructor_photo(filename):
-    return send_from_directory('instructor_photos', filename)
+@app.route('/faculty_photos/<filename>')
+def serve_faculty_photo(filename):
+    return send_from_directory('faculty_photos', filename)
 
 @app.route('/api/get_students', methods=['GET'])
 def get_students():
@@ -1244,30 +1638,30 @@ def get_students():
         logger.error(f"Error fetching students: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/get_instructors', methods=['GET'])
-def get_instructors():
+@app.route('/api/get_faculty', methods=['GET'])
+def get_faculty():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT instructor_id, first_name, last_name, department, designation, photo_path FROM instructors")
-        instructors = cursor.fetchall()
+        cursor.execute("SELECT faculty_id, first_name, last_name, department, designation, photo_path FROM faculty")
+        faculty = cursor.fetchall()
         cursor.close()
         conn.close()
         
-        formatted_instructors = [
+        formatted_faculty = [
             {
-                'idNumber': i['instructor_id'],
+                'idNumber': i['faculty_id'],
                 'name': f"{i['first_name']} {i['last_name']}",
                 'department': i['department'],
                 'designation': i['designation'],
                 'photo': i['photo_path'] if i['photo_path'] else f"https://ui-avatars.com/api/?name={i['first_name']}+{i['last_name']}&background=random"
             }
-            for i in instructors
+            for i in faculty
         ]
         
-        return jsonify({'success': True, 'instructors': formatted_instructors})
+        return jsonify({'success': True, 'faculty': formatted_faculty})
     except Exception as e:
-        logger.error(f"Error fetching instructors: {e}")
+        logger.error(f"Error fetching faculty: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/generate_invite', methods=['POST'])
@@ -1401,73 +1795,73 @@ def delete_student():
         logger.error(f"Error deleting student: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/update_instructor', methods=['POST'])
-def update_instructor():
+@app.route('/api/update_faculty', methods=['POST'])
+def update_faculty():
     try:
         data = request.json
-        instructor_id = data.get('instructor_id')
+        faculty_id = data.get('faculty_id')
         first_name = data.get('first_name')
         last_name = data.get('last_name')
         department = data.get('department')
         designation = data.get('designation')
-        
-        if not all([instructor_id, first_name, last_name, department, designation]):
+
+        if not all([faculty_id, first_name, last_name, department, designation]):
             return jsonify({'success': False, 'message': 'All fields are required'})
             
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            """UPDATE instructors 
+            """UPDATE faculty 
                SET first_name = %s, last_name = %s, department = %s, designation = %s 
-               WHERE instructor_id = %s""",
-            (first_name, last_name, department, designation, instructor_id)
+               WHERE faculty_id = %s""",
+            (first_name, last_name, department, designation, faculty_id)
         )
         if cursor.rowcount == 0:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'Instructor not found'})
+            return jsonify({'success': False, 'message': 'Faculty Member not found'})
             
         conn.commit()
         cursor.close()
         conn.close()
         
-        load_known_instructors_from_db()  # Refresh
-        return jsonify({'success': True, 'message': 'Instructor updated successfully'})
+        load_known_faculties_from_db()  # Refresh
+        return jsonify({'success': True, 'message': 'Faculty Member updated successfully'})
     except Exception as e:
-        logger.error(f"Error updating instructor: {e}")
+        logger.error(f"Error updating faculty: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/delete_instructor', methods=['POST'])
-def delete_instructor():
+@app.route('/api/delete_faculty', methods=['POST'])
+def delete_faculty():
     try:
-        instructor_id = request.json.get('instructor_id')
-        if not instructor_id:
-            return jsonify({'success': False, 'message': 'Instructor ID is required'})
+        faculty_id = request.json.get('faculty_id')
+        if not faculty_id:
+            return jsonify({'success': False, 'message': 'Faculty ID is required'})
             
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM instructors WHERE instructor_id = %s", (instructor_id,))
+        cursor.execute("DELETE FROM faculty WHERE faculty_id = %s", (faculty_id,))
         if cursor.rowcount == 0:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'Instructor not found'})
-            
+            return jsonify({'success': False, 'message': 'Faculty Member not found'})
+
         conn.commit()
         cursor.close()
         conn.close()
         
         # Remove photo if exists
-        photo_path = f"instructor_photos/{instructor_id}.jpg"
+        photo_path = f"faculty_photos/{faculty_id}.jpg"
         if os.path.exists(photo_path):
             os.remove(photo_path)
-            logger.info(f"Deleted photo for instructor {instructor_id}")
-            
-        load_known_instructors_from_db()  # Refresh
-        if instructor_id in locked_tracks:
-            del locked_tracks[instructor_id]
-        return jsonify({'success': True, 'message': 'Instructor deleted successfully'})
+            logger.info(f"Deleted photo for faculty {faculty_id}")
+
+        load_known_faculties_from_db()  # Refresh
+        if faculty_id in locked_tracks:
+            del locked_tracks[faculty_id]
+        return jsonify({'success': True, 'message': 'Faculty Member deleted successfully'})
     except Exception as e:
-        logger.error(f"Error deleting instructor: {e}")
+        logger.error(f"Error deleting faculty: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/send_otp', methods=['POST'])
@@ -1706,7 +2100,7 @@ def register_student():
         year_section = data.get('year_section', '').strip()
         password = data.get('password', '').strip()
         
-        if not all([email, student_id, first_name, last_name, course, year_section]):
+        if not all([email, student_id, first_name, last_name, course, year_section, password]):
             logger.warning("Missing required fields in register_student request")
             return jsonify({'success': False, 'message': 'All fields are required'})
         
@@ -1716,6 +2110,9 @@ def register_student():
         
         if len(password) < 8:
             return jsonify({'success': False, 'message': 'Password must be at least 8 characters long'})
+        
+        # Hash password
+        password_hash = hash_password(password)
         
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1755,6 +2152,7 @@ def register_student():
                 photo.save(photo_path)
                 logger.info(f"Saved photo for {student_id} at {photo_path}")
                 
+                # Verify photo matches face scan
                 img = cv2.imread(photo_path)
                 if img is not None:
                     faces = face_analysis.get(img)
@@ -1777,16 +2175,18 @@ def register_student():
                         conn.close()
                         return jsonify({'success': False, 'message': 'No face detected in uploaded photo.'})
         
+        # Insert student with hashed password
         cursor.execute(
             """INSERT INTO students 
-            (student_id, first_name, last_name, middle_name, course, year_section, email, face_encoding, photo_path, password) 
+            (student_id, first_name, last_name, middle_name, course, year_section, email, face_encoding, photo_path, password_hash) 
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (student_id, first_name, last_name, middle_name or None, course, year_section, email, encoding_str, photo_path, password)
+            (student_id, first_name, last_name, middle_name or None, course, year_section, email, encoding_str, photo_path, password_hash)
         )
         conn.commit()
         cursor.close()
         conn.close()
         
+        # Reload known faces
         load_known_faces_from_db()
         pose_embeddings.clear()  # Reset after registration
         
@@ -1796,21 +2196,22 @@ def register_student():
         logger.error(f"Registration error: {str(e)}")
         return jsonify({'success': False, 'message': f'Registration error: {str(e)}'})
 
-@app.route('/api/register_instructor', methods=['POST'])
-def register_instructor():
+@app.route('/api/register_faculty', methods=['POST'])
+def register_faculty():
     try:
         data = request.form
         email = data.get('email', '').strip()
-        instructor_id = data.get('instructor_id', '').strip()
+        faculty_id = data.get('faculty_id', '').strip()
         first_name = data.get('first_name', '').strip()
         last_name = data.get('last_name', '').strip()
         middle_name = data.get('middle_name', '').strip()
         department = data.get('department', '').strip()
         designation = data.get('designation', '').strip()
         password = data.get('password', '').strip()
+        role = data.get('role', 'moderator').strip()  # Default role for faculty
         
-        if not all([email, instructor_id, first_name, last_name, department, designation]):
-            logger.warning("Missing required fields in register_instructor request")
+        if not all([email, faculty_id, first_name, last_name, department, designation, password]):
+            logger.warning("Missing required fields in register_faculty request")
             return jsonify({'success': False, 'message': 'All fields are required'})
         
         if "@wmsu.edu.ph" not in email:
@@ -1820,16 +2221,23 @@ def register_instructor():
         if len(password) < 8:
             return jsonify({'success': False, 'message': 'Password must be at least 8 characters long'})
         
+        # Validate role
+        if role not in ['super_admin', 'admin', 'moderator']:
+            role = 'moderator'
+        
+        # Hash password
+        password_hash = hash_password(password)
+        
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT instructor_id FROM instructors WHERE instructor_id = %s OR email = %s", 
-                      (instructor_id, email))
+        cursor.execute("SELECT faculty_id FROM faculty WHERE faculty_id = %s OR email = %s", 
+                      (faculty_id, email))
         
         if cursor.fetchone():
             cursor.close()
             conn.close()
-            logger.warning(f"Instructor ID {instructor_id} or email {email} already exists")
-            return jsonify({'success': False, 'message': 'Instructor ID or email already exists'})
+            logger.warning(f"Faculty ID {faculty_id} or email {email} already exists")
+            return jsonify({'success': False, 'message': 'Faculty ID or email already exists'})
         
         # Average embeddings from multiple poses
         if len(pose_embeddings) >= 3:  # Require at least 3 poses
@@ -1853,11 +2261,12 @@ def register_instructor():
             photo = request.files['photo']
             filename = secure_filename(photo.filename)
             if filename and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                os.makedirs('instructor_photos', exist_ok=True)
-                photo_path = f"instructor_photos/{instructor_id}.jpg"
+                os.makedirs('faculty_photos', exist_ok=True)
+                photo_path = f"faculty_photos/{faculty_id}.jpg"
                 photo.save(photo_path)
-                logger.info(f"Saved photo for instructor {instructor_id} at {photo_path}")
+                logger.info(f"Saved photo for faculty {faculty_id} at {photo_path}")
                 
+                # Verify photo matches face scan
                 img = cv2.imread(photo_path)
                 if img is not None:
                     faces = face_analysis.get(img)
@@ -1880,23 +2289,25 @@ def register_instructor():
                         conn.close()
                         return jsonify({'success': False, 'message': 'No face detected in uploaded photo.'})
         
+        # Insert faculty with hashed password and role
         cursor.execute(
-            """INSERT INTO instructors 
-            (instructor_id, first_name, last_name, middle_name, department, designation, email, face_encoding, photo_path, password) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (instructor_id, first_name, last_name, middle_name or None, department, designation, email, encoding_str, photo_path, password)
+            """INSERT INTO faculty 
+            (faculty_id, first_name, last_name, middle_name, department, designation, email, face_encoding, photo_path, password_hash, role) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (faculty_id, first_name, last_name, middle_name or None, department, designation, email, encoding_str, photo_path, password_hash, role)
         )
         conn.commit()
         cursor.close()
         conn.close()
         
-        load_known_instructors_from_db()
+        # Reload known faces
+        load_known_faculties_from_db()
         pose_embeddings.clear()  # Reset after registration
         
-        logger.info(f"Instructor registered: {instructor_id} ({first_name} {last_name})")
-        return jsonify({'success': True, 'message': 'Instructor registered successfully'})
+        logger.info(f"Faculty registered: {faculty_id} ({first_name} {last_name}) with role {role}")
+        return jsonify({'success': True, 'message': 'Faculty registered successfully'})
     except Exception as e:
-        logger.error(f"Instructor registration error: {str(e)}")
+        logger.error(f"Faculty registration error: {str(e)}")
         return jsonify({'success': False, 'message': f'Registration error: {str(e)}'})
 
 @app.route('/api/health', methods=['GET'])
@@ -1942,7 +2353,7 @@ def generate_frames():
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 # Routes
-@app.route('/')
+@app.route('/timer')
 def timer_page():
     return render_template('Timer.html')
 
@@ -1958,9 +2369,9 @@ def summary_page():
 def studentreg_page():
     return render_template('studentreg.html')
 
-@app.route('/instructorreg')
-def instructor_reg_page():
-    return render_template('instructorreg.html')
+@app.route('/facultyreg')
+def faculty_reg_page():
+    return render_template('facultyreg.html')
 
 @app.route('/AdminDB')
 def admin_db_page():
@@ -1970,13 +2381,17 @@ def admin_db_page():
 def student_db_page():
     return render_template('StudentDB.html')
 
-@app.route('/InstructorDB')
-def instructor_db_page():
-    return render_template('InstructorDB.html')
+@app.route('/FacultyDB')
+def faculty_db_page():
+    return render_template('FacultyDB.html')
 
 @app.route('/settings')
 def settings_page():
     return render_template('settings.html')
+
+@app.route('/')
+def login_page():
+    return render_template('login.html')
 
 @app.route('/video_feed')
 def video_feed():
