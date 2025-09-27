@@ -142,7 +142,7 @@
 
     <script>
         // Load sidebar with navigation functionality
-        fetch('../../sidebar.html')  // Changed path to go up two levels to Admin folder
+        fetch('/sidebar')  // Changed path to go up two levels to Admin folder
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Sidebar not found');
@@ -241,14 +241,14 @@
                                     <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
                                 </a>
                                 <ul class="dropdown-content">
-                                    <li><a href="../templates/programs.html"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
-                                    <li><a href="../templates/schedule/schedule.html"><i class="fas fa-calendar-check"></i> <span>Faculty Member Schedules</span></a></li>
-                                    <li><a href="../templates/class schedule/classsched.html"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
+                                    <li><a href="*/programs"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
+                                    <li><a href="/schedule"><i class="fas fa-calendar-check"></i> <span>Faculty Member Schedules</span></a></li>
+                                    <li><a href="/classsched"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
                                 </ul>
                             </li>
-                            <li><a href="../templates/FacultyDB.html"><i class="fas fa-chalkboard-teacher"></i> <span>Faculty Members</span></a></li>
-                            <li><a href="../templates/StudentDB.html"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
-                            <li><a href="../templates/settings.html"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
+                            <li><a href="/FacultyDB"><i class="fas fa-chalkboard-teacher"></i> <span>Faculty Members</span></a></li>
+                            <li><a href="/StudentDB"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
+                            <li><a href="/settings"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
                             <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
                         </ul>
                     </aside>

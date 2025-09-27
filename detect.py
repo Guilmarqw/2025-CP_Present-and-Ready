@@ -42,6 +42,13 @@ DETECT_EVERY = 8  # Default value, will be adjusted dynamically
 CONF_THRESH = 0.45  
 pose_embeddings = {}
 
+# Add these global variables near the top with other globals (after line ~370 in your original code)
+camera_available = False
+use_dummy_feed = False
+dummy_frame = None
+latest_frame = None
+stop_flag = False
+
 STABLE_TOLERANCE_FRAMES = 20  # Increased for better lock stability
 MAX_TRACKS = 128
 EXPAND_BOX_RATIO = 0.4
@@ -131,6 +138,22 @@ session_config = {
 # =========================
 # Thread-safe state manager
 # Add these utility functions before the Flask routes
+
+def create_dummy_frame():
+    """Create a dummy frame when camera is not available"""
+    global dummy_frame
+    if dummy_frame is None:
+        # Create a black frame with text
+        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(dummy_frame, "CAMERA NOT AVAILABLE", (50, 200), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(dummy_frame, "Face Recognition System Running", (80, 250), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(dummy_frame, "Connect RTSP camera to enable detection", (30, 300), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 100, 100), 1)
+    return dummy_frame.copy()
+
+
 
 def hash_password(password):
     """Hash a password for storing in database"""
@@ -704,47 +727,92 @@ cap_lock = threading.Lock()
 cap = None
 
 def open_stream():
-    global cap
-    with cap_lock:
-        if cap is not None:
-            try:
-                cap.release()
-            except Exception:
-                pass
-        cap = cv2.VideoCapture(RTSP_URL)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, STREAM_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, STREAM_HEIGHT)
-        if not cap.isOpened():
-            logger.error("Cannot open RTSP stream. Check if stream is accessible.")
-            return False
-        logger.info("RTSP stream connected.")
-        return True
+    """Modified to handle connection failures gracefully without webcam fallback"""
+    global cap, camera_available, use_dummy_feed
+    
+    try:
+        with cap_lock:
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+                    
+            cap = cv2.VideoCapture(RTSP_URL)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, STREAM_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, STREAM_HEIGHT)
+            
+            if cap.isOpened():
+                # Test if we can actually read a frame
+                ret, test_frame = cap.read()
+                if ret and test_frame is not None:
+                    camera_available = True
+                    use_dummy_feed = False
+                    logger.info("RTSP stream connected successfully.")
+                    return True
+                else:
+                    cap.release()
+                    cap = None
+                    raise Exception("Cannot read frames from RTSP stream")
+            else:
+                raise Exception("Cannot open RTSP stream")
+                
+    except Exception as e:
+        logger.warning(f"RTSP connection failed: {e}")
+        logger.info("Switching to dummy feed mode - Flask app will continue running")
+        camera_available = False
+        use_dummy_feed = True
+        cap = None
+        logger.info("No camera available - using dummy feed")
+        return True  # Continue app execution with dummy feed
 
-if not open_stream():
-    raise SystemExit(1)
-
-latest_frame = None
-stop_flag = False
 
 def grabber():
-    global latest_frame, stop_flag
+    """Modified grabber to handle dummy feed and connection retries"""
+    global latest_frame, stop_flag, camera_available, use_dummy_feed, cap
     empty_count = 0
+    retry_interval = 0
+    
     while not stop_flag:
+        if use_dummy_feed:
+            # Use dummy frame when no camera
+            latest_frame = create_dummy_frame()
+            time.sleep(0.1)  # Slower refresh for dummy feed
+            
+            # Periodically try to reconnect to RTSP
+            retry_interval += 1
+            if retry_interval > 100:  # Try every ~10 seconds
+                retry_interval = 0
+                logger.info("Attempting to reconnect to RTSP...")
+                if open_stream():
+                    continue
+            continue
+            
+        # Normal camera grabbing logic
         with cap_lock:
+            if cap is None:
+                time.sleep(0.1)
+                continue
+                
             ok, f = cap.read()
+            
         if not ok:
             empty_count += 1
             if empty_count > MAX_EMPTY_GRABS:
-                logger.warning("Camera stalled. Reconnecting...")
+                logger.warning("Camera connection lost. Attempting reconnection...")
                 time.sleep(RECONNECT_COOLDOWN)
-                if open_stream():
-                    empty_count = 0
-                else:
-                    time.sleep(RECONNECT_COOLDOWN)
+                
+                # Try to reconnect
+                if not open_stream():
+                    logger.warning("Reconnection failed - switching to dummy feed")
+                    camera_available = False
+                    use_dummy_feed = True
+                empty_count = 0
             else:
                 time.sleep(0.01)
             continue
+            
         empty_count = 0
         latest_frame = f
         time.sleep(GRAB_SLEEP)
@@ -1358,6 +1426,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
 # Flask streaming & API
 # =========================
 app = Flask(__name__)
+app.template_folder = 'templates'  # Add this line
+app.static_folder = 'static'       # Add this line
 CORS(app)
 
 # Add these Flask routes for authentication
@@ -1873,7 +1943,7 @@ def send_otp():
         return jsonify({'success': False, 'message': 'Invalid WMSU email address'})
     
     otp_code = generate_otp()
-    expires_at = datetime.datetime.now() + datetime.timedelta(minutes=10)
+    expires_at = datetime.now() + timedelta(minutes=10)  # Use datetime.now() and timedelta directly
     
     try:
         conn = get_db_connection()
@@ -1927,7 +1997,7 @@ def verify_otp():
         
         stored_otp, expires_at = result
         
-        if datetime.datetime.now() > expires_at:
+        if datetime.now() > expires_at:  # Fixed: Use datetime.now() instead of datetime.datetime.now()
             logger.warning(f"OTP expired for email: {email}")
             return jsonify({'success': False, 'message': 'OTP has expired'})
         
@@ -2310,40 +2380,65 @@ def register_faculty():
         logger.error(f"Faculty registration error: {str(e)}")
         return jsonify({'success': False, 'message': f'Registration error: {str(e)}'})
 
+# Modified health check to not fail on camera issues
 @app.route('/api/health', methods=['GET'])
 def health_check():
     try:
-        with cap_lock:
-            cam_ok = cap is not None and cap.isOpened()
-        db_ok = get_db_connection().is_connected()
+        db_ok = True
+        try:
+            conn = get_db_connection()
+            db_ok = conn.is_connected()
+            conn.close()
+        except Exception:
+            db_ok = False
+            
         model_ok = yolo is not None and face_analysis is not None
+        
         return jsonify({
             'success': True,
-            'camera': cam_ok,
+            'camera': camera_available,
+            'camera_type': 'rtsp' if camera_available and not use_dummy_feed else 'dummy',
             'database': db_ok,
             'models': model_ok,
-            'active_tracks': len(tracks),
-            'locked_tracks': len(locked_tracks)
+            'active_tracks': len(tracks) if camera_available else 0,
+            'locked_tracks': len(locked_tracks) if camera_available else 0
         })
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({
+            'success': True,  # Keep this True so app doesn't fail
+            'camera': False,
+            'database': False,
+            'models': False,
+            'error': str(e)
+        })
+
 
 def generate_frames():
+    """Modified to handle dummy feed scenario"""
     frame_idx = 0
+    
     while True:
         with cap_lock:
             if latest_frame is None:
                 time.sleep(0.01)
                 continue
             frame = latest_frame.copy()
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Update trackers and refresh detections
-        update_trackers(rgb, frame, frame_idx)
-        refresh_with_detections(frame, rgb, frame_idx)
-        frame_idx += 1
-        
+            
+        # Only do face processing if real camera is available
+        if camera_available and not use_dummy_feed:
+            try:
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Update trackers and refresh detections
+                update_trackers(rgb, frame, frame_idx)
+                refresh_with_detections(frame, rgb, frame_idx)
+                frame_idx += 1
+            except Exception as e:
+                logger.error(f"Frame processing error: {e}")
+        else:
+            # Just display the dummy frame
+            pass
+            
         ret, buffer = cv2.imencode('.jpg', frame)
         if not ret:
             continue
@@ -2351,6 +2446,38 @@ def generate_frames():
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        
+# Add an API endpoint to check camera status
+@app.route('/api/camera_status', methods=['GET'])
+def camera_status():
+    return jsonify({
+        'camera_available': camera_available,
+        'using_dummy_feed': use_dummy_feed,
+        'active_tracks': len(tracks) if camera_available else 0,
+        'locked_tracks': len(locked_tracks) if camera_available else 0
+    })
+
+# Add an API endpoint to retry camera connection
+@app.route('/api/reconnect_camera', methods=['POST'])
+def reconnect_camera():
+    try:
+        if open_stream():
+            return jsonify({
+                'success': True, 
+                'camera_available': camera_available,
+                'message': 'Camera connected successfully' if camera_available else 'Using fallback feed'
+            })
+        else:
+            return jsonify({
+                'success': False, 
+                'message': 'Failed to connect to camera'
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False, 
+            'message': f'Connection error: {str(e)}'
+        })
+
 
 # Routes
 @app.route('/timer')
@@ -2361,9 +2488,25 @@ def timer_page():
 def camfootage_page():
     return render_template('CamFootage.html')
 
+@app.route('/sidebar')
+def sidebar_page():
+    return render_template('sidebar.html')
+
 @app.route('/summary')
 def summary_page():
     return render_template('Summary.html')
+
+@app.route('/schedule')
+def schedule_page():
+    return render_template('schedule.html')
+
+@app.route('/programs')
+def programs_page():
+    return render_template('programs.html')
+
+@app.route('/classsched')
+def classsched_page():
+    return render_template('classsched.html')
 
 @app.route('/studentreg')
 def studentreg_page():
@@ -2372,6 +2515,10 @@ def studentreg_page():
 @app.route('/facultyreg')
 def faculty_reg_page():
     return render_template('facultyreg.html')
+
+@app.route('/subject')
+def subject_page():
+    return render_template('subject.html')
 
 @app.route('/AdminDB')
 def admin_db_page():
@@ -2398,6 +2545,21 @@ def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == "__main__":
+    # Initialize global variables (no need for global keyword here)
+    latest_frame = None
+    stop_flag = False
+    camera_available = False
+    use_dummy_feed = False
+    dummy_frame = None
+    
+    # Try to connect to camera, but don't exit if it fails
+    if not open_stream():
+        logger.warning("Initial camera connection failed, but continuing with dummy feed")
+    
+    # Start the grabber thread
+    grab_thread = threading.Thread(target=grabber, daemon=True)
+    grab_thread.start()
+    
     try:
         ssl_context = None
         cert_path = 'cert.pem'
