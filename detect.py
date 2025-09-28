@@ -2203,6 +2203,297 @@ def revoke_invite():
         logger.error(f"Error revoking invite: {e}")
         return jsonify({'success': False, 'message': str(e)})    
 
+@app.route('/api/get_enhanced_dashboard_stats', methods=['GET'])
+def get_enhanced_dashboard_stats():
+    """Get comprehensive dashboard statistics including course breakdowns"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get total student count
+        cursor.execute("SELECT COUNT(*) as total_students FROM students WHERE status = 'active'")
+        total_students = cursor.fetchone()['total_students']
+        
+        # Get total faculty count  
+        cursor.execute("SELECT COUNT(*) as total_faculty FROM faculty WHERE status = 'active'")
+        total_faculty = cursor.fetchone()['total_faculty']
+        
+        # Get student count by course
+        cursor.execute("""
+            SELECT course, COUNT(*) as count 
+            FROM students 
+            WHERE status = 'active' 
+            GROUP BY course 
+            ORDER BY count DESC
+        """)
+        course_stats = cursor.fetchall()
+        
+        # Get CS, IT, and ACT student counts specifically
+        cs_count = 0
+        it_count = 0 
+        act_count = 0
+        
+        for course in course_stats:
+            course_name = course['course'].upper()
+            if 'COMPUTER SCIENCE' in course_name or 'CS' in course_name:
+                cs_count += course['count']
+            elif 'INFORMATION TECHNOLOGY' in course_name or 'IT' in course_name:
+                it_count += course['count']
+            elif 'ACT' in course_name or 'ASSOCIATE IN COMPUTER TECHNOLOGY' in course_name:
+                act_count += course['count']
+        
+        # Get faculty count by department
+        cursor.execute("""
+            SELECT department, COUNT(*) as count 
+            FROM faculty 
+            WHERE status = 'active' 
+            GROUP BY department 
+            ORDER BY count DESC
+        """)
+        department_stats = cursor.fetchall()
+        
+        # Get recent attendance (today)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT student_id) as present_today,
+                   COUNT(*) as total_attendance_records_today
+            FROM attendance 
+            WHERE DATE(timestamp) = CURDATE()
+        """)
+        attendance_today = cursor.fetchone()
+        
+        # Get attendance this week
+        cursor.execute("""
+            SELECT COUNT(DISTINCT student_id) as unique_students_week,
+                   COUNT(*) as total_records_week
+            FROM attendance 
+            WHERE YEARWEEK(timestamp) = YEARWEEK(NOW())
+        """)
+        attendance_week = cursor.fetchone()
+        
+        # Get recent registrations (last 30 days)
+        cursor.execute("""
+            SELECT 
+                (SELECT COUNT(*) FROM students WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as students_30days,
+                (SELECT COUNT(*) FROM faculty WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as faculty_30days
+        """)
+        recent_registrations = cursor.fetchone()
+        
+        # Get active invites count
+        cursor.execute("""
+            SELECT COUNT(*) as active_invites
+            FROM invites 
+            WHERE expires_at > NOW() AND used = 0
+        """)
+        active_invites = cursor.fetchone()['active_invites']
+        
+        # Get year/section distribution
+        cursor.execute("""
+            SELECT year_section, COUNT(*) as count 
+            FROM students 
+            WHERE status = 'active' 
+            GROUP BY year_section 
+            ORDER BY year_section
+        """)
+        year_section_stats = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        # Format the response to match your HTML structure
+        response_data = {
+            'success': True,
+            'stats': {
+                # Main dashboard cards
+                'total_students': total_students,
+                'total_faculty': total_faculty,
+                'cs_students': cs_count,
+                'it_students': it_count, 
+                'act_students': act_count,
+                
+                # Detailed breakdowns
+                'course_breakdown': [
+                    {
+                        'course': course['course'],
+                        'count': course['count'],
+                        'percentage': round((course['count'] / total_students * 100), 1) if total_students > 0 else 0
+                    }
+                    for course in course_stats
+                ],
+                
+                'department_breakdown': [
+                    {
+                        'department': dept['department'],
+                        'count': dept['count'],
+                        'percentage': round((dept['count'] / total_faculty * 100), 1) if total_faculty > 0 else 0
+                    }
+                    for dept in department_stats
+                ],
+                
+                'year_section_breakdown': [
+                    {
+                        'year_section': ys['year_section'],
+                        'count': ys['count'],
+                        'percentage': round((ys['count'] / total_students * 100), 1) if total_students > 0 else 0
+                    }
+                    for ys in year_section_stats
+                ],
+                
+                # Attendance stats
+                'attendance': {
+                    'present_today': attendance_today['present_today'] or 0,
+                    'total_records_today': attendance_today['total_attendance_records_today'] or 0,
+                    'unique_students_week': attendance_week['unique_students_week'] or 0,
+                    'total_records_week': attendance_week['total_records_week'] or 0
+                },
+                
+                # Recent activity
+                'recent_activity': {
+                    'students_registered_30days': recent_registrations['students_30days'] or 0,
+                    'faculty_registered_30days': recent_registrations['faculty_30days'] or 0,
+                    'active_invites': active_invites
+                },
+                
+                # Status summary
+                'summary': {
+                    'total_users': total_students + total_faculty,
+                    'attendance_rate_today': round((attendance_today['present_today'] / total_students * 100), 1) if total_students > 0 else 0,
+                    'most_popular_course': course_stats[0]['course'] if course_stats else 'N/A',
+                    'largest_department': department_stats[0]['department'] if department_stats else 'N/A'
+                }
+            }
+        }
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error fetching enhanced dashboard stats: {e}")
+        return jsonify({
+            'success': False, 
+            'message': str(e),
+            'stats': {
+                'total_students': 0,
+                'total_faculty': 0,
+                'cs_students': 0,
+                'it_students': 0,
+                'act_students': 0
+            }
+        })
+
+
+@app.route('/api/get_course_distribution', methods=['GET'])
+def get_course_distribution():
+    """Get detailed course distribution for charts and analytics"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get course distribution with year sections
+        cursor.execute("""
+            SELECT 
+                course,
+                year_section,
+                COUNT(*) as student_count,
+                GROUP_CONCAT(CONCAT(first_name, ' ', last_name) SEPARATOR ', ') as student_names
+            FROM students 
+            WHERE status = 'active'
+            GROUP BY course, year_section
+            ORDER BY course, year_section
+        """)
+        
+        detailed_distribution = cursor.fetchall()
+        
+        # Get summary by course only
+        cursor.execute("""
+            SELECT 
+                course,
+                COUNT(*) as total_students,
+                COUNT(DISTINCT year_section) as sections_count
+            FROM students 
+            WHERE status = 'active'
+            GROUP BY course
+            ORDER BY total_students DESC
+        """)
+        
+        course_summary = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'detailed_distribution': detailed_distribution,
+            'course_summary': course_summary
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching course distribution: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+
+@app.route('/api/get_faculty_distribution', methods=['GET'])
+def get_faculty_distribution():
+    """Get detailed faculty distribution by department and designation"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get faculty distribution by department and designation
+        cursor.execute("""
+            SELECT 
+                department,
+                designation,
+                COUNT(*) as faculty_count,
+                GROUP_CONCAT(CONCAT(first_name, ' ', last_name) SEPARATOR ', ') as faculty_names
+            FROM faculty 
+            WHERE status = 'active'
+            GROUP BY department, designation
+            ORDER BY department, designation
+        """)
+        
+        detailed_distribution = cursor.fetchall()
+        
+        # Get summary by department only
+        cursor.execute("""
+            SELECT 
+                department,
+                COUNT(*) as total_faculty,
+                COUNT(DISTINCT designation) as designation_count
+            FROM faculty 
+            WHERE status = 'active'
+            GROUP BY department
+            ORDER BY total_faculty DESC
+        """)
+        
+        department_summary = cursor.fetchall()
+        
+        # Get summary by designation only
+        cursor.execute("""
+            SELECT 
+                designation,
+                COUNT(*) as total_faculty,
+                COUNT(DISTINCT department) as department_count
+            FROM faculty 
+            WHERE status = 'active'
+            GROUP BY designation
+            ORDER BY total_faculty DESC
+        """)
+        
+        designation_summary = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'detailed_distribution': detailed_distribution,
+            'department_summary': department_summary,
+            'designation_summary': designation_summary
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching faculty distribution: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
 # Serve student photos
 @app.route('/student_photos/<filename>')
 def serve_photo(filename):

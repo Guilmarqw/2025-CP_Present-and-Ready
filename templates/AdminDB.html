@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../static/AdminDB.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
 </head>
 <body>
@@ -128,6 +129,320 @@
                 </div>
             `;
         });
+ // Add this JavaScript to your AdminDB.html file or create a separate dashboard.js file
+
+class DashboardManager {
+    constructor() {
+        this.statsCache = null;
+        this.lastUpdate = null;
+        this.refreshInterval = 30000; // 30 seconds
+        this.init();
+    }
+
+    init() {
+        this.loadDashboardStats();
+        this.setupAutoRefresh();
+        this.setupEventListeners();
+    }
+
+    async loadDashboardStats() {
+        try {
+            const response = await fetch('/api/get_enhanced_dashboard_stats');
+            const data = await response.json();
+
+            if (data.success) {
+                this.statsCache = data.stats;
+                this.lastUpdate = new Date();
+                this.updateDashboardUI(data.stats);
+                console.log('Dashboard stats loaded successfully');
+            } else {
+                console.error('Failed to load dashboard stats:', data.message);
+                this.showError('Failed to load dashboard statistics');
+            }
+        } catch (error) {
+            console.error('Error loading dashboard stats:', error);
+            this.showError('Network error loading dashboard');
+        }
+    }
+
+    updateDashboardUI(stats) {
+        // Update the main stat cards (matching your HTML structure)
+        this.updateStatCard('.stat-card.students .number', stats.total_students);
+        this.updateStatCard('.stat-card.faculty .number', stats.total_faculty);
+        this.updateStatCard('.stat-card.cs-students .number', stats.cs_students);
+        this.updateStatCard('.stat-card.it-students .number', stats.it_students);
+        this.updateStatCard('.stat-card.act-students .number', stats.act_students);
+
+        // Update course breakdown if container exists
+        if (document.getElementById('course-breakdown')) {
+            this.updateCourseBreakdown(stats.course_breakdown);
+        }
+
+        // Update faculty distribution if container exists
+        if (document.getElementById('faculty-distribution')) {
+            this.updateFacultyDistribution(stats.department_breakdown);
+        }
+
+        // Update attendance summary if container exists
+        if (document.getElementById('attendance-summary')) {
+            this.updateAttendanceSummary(stats.attendance);
+        }
+
+        // Update recent activity if container exists
+        if (document.getElementById('recent-activity')) {
+            this.updateRecentActivity(stats.recent_activity);
+        }
+
+        // Update last refresh time
+        this.updateLastRefreshTime();
+    }
+
+    updateStatCard(selector, value) {
+        const element = document.querySelector(selector);
+        if (element) {
+            // Animate number change
+            this.animateNumber(element, parseInt(element.textContent) || 0, value);
+        }
+    }
+
+    animateNumber(element, start, end) {
+        const duration = 1000;
+        const increment = (end - start) / (duration / 16);
+        let current = start;
+
+        const timer = setInterval(() => {
+            current += increment;
+            if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
+                current = end;
+                clearInterval(timer);
+            }
+            element.textContent = Math.round(current);
+        }, 16);
+    }
+
+    updateCourseBreakdown(courseData) {
+        const container = document.getElementById('course-breakdown');
+        if (!container || !courseData) return;
+
+        const html = `
+            <div class="breakdown-header">
+                <h4>Course Distribution</h4>
+            </div>
+            <div class="breakdown-list">
+                ${courseData.map(course => `
+                    <div class="breakdown-item">
+                        <div class="breakdown-info">
+                            <span class="breakdown-label">${course.course}</span>
+                            <span class="breakdown-count">${course.count} students</span>
+                        </div>
+                        <div class="breakdown-bar">
+                            <div class="breakdown-fill" style="width: ${course.percentage}%"></div>
+                        </div>
+                        <span class="breakdown-percentage">${course.percentage}%</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        container.innerHTML = html;
+    }
+
+    updateFacultyDistribution(departmentData) {
+        const container = document.getElementById('faculty-distribution');
+        if (!container || !departmentData) return;
+
+        const html = `
+            <div class="breakdown-header">
+                <h4>Faculty by Department</h4>
+            </div>
+            <div class="breakdown-list">
+                ${departmentData.map(dept => `
+                    <div class="breakdown-item">
+                        <div class="breakdown-info">
+                            <span class="breakdown-label">${dept.department}</span>
+                            <span class="breakdown-count">${dept.count} faculty</span>
+                        </div>
+                        <div class="breakdown-bar">
+                            <div class="breakdown-fill" style="width: ${dept.percentage}%"></div>
+                        </div>
+                        <span class="breakdown-percentage">${dept.percentage}%</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        container.innerHTML = html;
+    }
+
+    updateAttendanceSummary(attendanceData) {
+        const container = document.getElementById('attendance-summary');
+        if (!container || !attendanceData) return;
+
+        const html = `
+            <div class="summary-header">
+                <h4>Attendance Summary</h4>
+            </div>
+            <div class="summary-stats">
+                <div class="summary-item">
+                    <span class="summary-label">Present Today</span>
+                    <span class="summary-value">${attendanceData.present_today}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Attendance Rate</span>
+                    <span class="summary-value">${this.statsCache?.summary?.attendance_rate_today || 0}%</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">This Week</span>
+                    <span class="summary-value">${attendanceData.unique_students_week} unique</span>
+                </div>
+            </div>
+        `;
+        container.innerHTML = html;
+    }
+
+    updateRecentActivity(activityData) {
+        const container = document.getElementById('recent-activity');
+        if (!container || !activityData) return;
+
+        const html = `
+            <div class="activity-header">
+                <h4>Recent Activity (30 days)</h4>
+            </div>
+            <div class="activity-list">
+                <div class="activity-item">
+                    <i class="fas fa-user-graduate"></i>
+                    <span>${activityData.students_registered_30days} new students registered</span>
+                </div>
+                <div class="activity-item">
+                    <i class="fas fa-chalkboard-teacher"></i>
+                    <span>${activityData.faculty_registered_30days} new faculty registered</span>
+                </div>
+                <div class="activity-item">
+                    <i class="fas fa-envelope"></i>
+                    <span>${activityData.active_invites} active invitations</span>
+                </div>
+            </div>
+        `;
+        container.innerHTML = html;
+    }
+
+    updateLastRefreshTime() {
+        const element = document.getElementById('last-refresh');
+        if (element && this.lastUpdate) {
+            element.textContent = `Last updated: ${this.lastUpdate.toLocaleTimeString()}`;
+        }
+    }
+
+    setupAutoRefresh() {
+        setInterval(() => {
+            this.loadDashboardStats();
+        }, this.refreshInterval);
+    }
+
+    setupEventListeners() {
+        // Refresh button
+        const refreshBtn = document.getElementById('refresh-stats');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.loadDashboardStats();
+                this.showSuccess('Dashboard refreshed');
+            });
+        }
+
+        // Export buttons
+        const exportStudentsBtn = document.getElementById('export-students');
+        if (exportStudentsBtn) {
+            exportStudentsBtn.addEventListener('click', () => this.exportData('students'));
+        }
+
+        const exportFacultyBtn = document.getElementById('export-faculty');
+        if (exportFacultyBtn) {
+            exportFacultyBtn.addEventListener('click', () => this.exportData('faculty'));
+        }
+    }
+
+    async exportData(type) {
+        try {
+            const response = await fetch('/api/export_data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    type: type,
+                    filters: { status: 'active' }
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                // Create and download CSV file
+                const blob = new Blob([data.csv_data], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = data.filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                this.showSuccess(`${type} data exported successfully`);
+            } else {
+                this.showError(`Failed to export ${type} data`);
+            }
+        } catch (error) {
+            console.error('Export error:', error);
+            this.showError('Export failed');
+        }
+    }
+
+    showSuccess(message) {
+        this.showNotification(message, 'success');
+    }
+
+    showError(message) {
+        this.showNotification(message, 'error');
+    }
+
+    showNotification(message, type) {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+
+        // Add to page
+        document.body.appendChild(notification);
+
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    }
+
+    // Public method to get cached stats
+    getStats() {
+        return this.statsCache;
+    }
+
+    // Public method to force refresh
+    refresh() {
+        return this.loadDashboardStats();
+    }
+}
+
+// Initialize dashboard manager when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    window.dashboardManager = new DashboardManager();
+});
+
+// Optional: Add keyboard shortcut for refresh (Ctrl+R or F5)
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey && e.key === 'r') || e.key === 'F5') {
+        e.preventDefault();
+        if (window.dashboardManager) {
+            window.dashboardManager.refresh();
+        }
+    }
+});       
 </script>
 </body>
 </html>
