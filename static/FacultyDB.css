@@ -479,3 +479,159 @@
                 padding: 15px;
             }
         }
+
+        .duration-controls {
+    display: flex;
+    gap: 15px;
+    margin-top: 8px;
+}
+
+.duration-item {
+    flex: 1;
+}
+
+.duration-item label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.duration-item input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.duration-preview {
+    margin-top: 8px;
+    padding: 8px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    font-size: 14px;
+    color: #495057;
+}
+
+.quick-duration-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.quick-btn {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    background-color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.quick-btn:hover {
+    background-color: #f8f9fa;
+    border-color: #007bff;
+}
+
+.quick-btn.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.link-info {
+    margin-top: 12px;
+    padding: 12px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    border-left: 4px solid #1976d2;
+}
+
+.link-info p {
+    margin: 4px 0;
+    font-size: 14px;
+}
+
+.invites-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.invite-item {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 12px;
+    background-color: #fff;
+}
+
+.invite-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.invite-type-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    background-color: #e3f2fd;
+    color: #1976d2;
+}
+
+.invite-link-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.invite-link-display input {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
+}
+
+.invite-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.btn-revoke {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-copy-small {
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.time-remaining {
+    font-size: 12px;
+    color: #666;
+}
+
+.time-remaining.expiring {
+    color: #dc3545;
+    font-weight: bold;
+}

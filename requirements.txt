@@ -23,3 +23,5 @@ bcrypt==4.0.1              # Password hashing and verification for secure authen
 Pillow>=9.0.0              # Image handling support, often required by opencv-python and insightface (used implicitly for image processing)
 python-multipart>=0.0.5    # Handles multipart/form-data requests for file uploads in Flask (used in encode_face, register_student, register_faculty)
 scipy>=1.8.0               # Optimization functions for Hungarian assignment in tracking (used for linear_sum_assignment in hungarian_assignment)
+
+

@@ -1631,6 +1631,452 @@ def verify_reset_otp():
         logger.error(f"Reset password error: {e}")
         return jsonify({'success': False, 'message': 'Failed to reset password'})
 
+    
+@app.route('/api/get_students_enhanced', methods=['GET'])
+def get_students_enhanced():
+    try:
+        # Get query parameters for filtering
+        department = request.args.get('department', '')
+        course = request.args.get('course', '')
+        year_section = request.args.get('year_section', '')
+        status = request.args.get('status', 'active')
+        search = request.args.get('search', '')
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Build dynamic query
+        where_conditions = ["status = %s"]
+        params = [status]
+        
+        if course:
+            where_conditions.append("course LIKE %s")
+            params.append(f"%{course}%")
+            
+        if year_section:
+            where_conditions.append("year_section LIKE %s")
+            params.append(f"%{year_section}%")
+            
+        if search:
+            where_conditions.append("(first_name LIKE %s OR last_name LIKE %s OR student_id LIKE %s OR email LIKE %s)")
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param, search_param, search_param])
+        
+        where_clause = " AND ".join(where_conditions)
+        offset = (page - 1) * limit
+        
+        # Get total count
+        count_query = f"SELECT COUNT(*) as total FROM students WHERE {where_clause}"
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()['total']
+        
+        # Get paginated results
+        query = f"""
+            SELECT student_id, first_name, last_name, middle_name, course, year_section, 
+                   email, photo_path, status, created_at, updated_at
+            FROM students 
+            WHERE {where_clause}
+            ORDER BY last_name, first_name
+            LIMIT %s OFFSET %s
+        """
+        params.extend([limit, offset])
+        cursor.execute(query, params)
+        students = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Format student data for frontend
+        formatted_students = []
+        for s in students:
+            formatted_students.append({
+                'id': s['student_id'],
+                'idNumber': s['student_id'],
+                'firstName': s['first_name'],
+                'lastName': s['last_name'],
+                'middleName': s['middle_name'],
+                'name': f"{s['first_name']} {s['middle_name'] + ' ' if s['middle_name'] else ''}{s['last_name']}",
+                'course': s['course'],
+                'yearSection': s['year_section'],
+                'email': s['email'],
+                'photo': f"/student_photos/{s['student_id']}.jpg" if s['photo_path'] else f"https://ui-avatars.com/api/?name={s['first_name']}+{s['last_name']}&background=random",
+                'status': s['status'],
+                'createdAt': s['created_at'].isoformat() if s['created_at'] else None,
+                'updatedAt': s['updated_at'].isoformat() if s['updated_at'] else None
+            })
+        
+        return jsonify({
+            'success': True, 
+            'students': formatted_students,
+            'pagination': {
+                'total': total_count,
+                'page': page,
+                'limit': limit,
+                'pages': (total_count + limit - 1) // limit
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching students: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_faculty_enhanced', methods=['GET'])
+def get_faculty_enhanced():
+    try:
+        # Get query parameters for filtering
+        department = request.args.get('department', '')
+        designation = request.args.get('designation', '')
+        status = request.args.get('status', 'active')
+        search = request.args.get('search', '')
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Build dynamic query
+        where_conditions = ["status = %s"]
+        params = [status]
+        
+        if department:
+            where_conditions.append("department LIKE %s")
+            params.append(f"%{department}%")
+            
+        if designation:
+            where_conditions.append("designation LIKE %s")
+            params.append(f"%{designation}%")
+            
+        if search:
+            where_conditions.append("(first_name LIKE %s OR last_name LIKE %s OR faculty_id LIKE %s OR email LIKE %s)")
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param, search_param, search_param])
+        
+        where_clause = " AND ".join(where_conditions)
+        offset = (page - 1) * limit
+        
+        # Get total count
+        count_query = f"SELECT COUNT(*) as total FROM faculty WHERE {where_clause}"
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()['total']
+        
+        # Get paginated results
+        query = f"""
+            SELECT faculty_id, first_name, last_name, middle_name, department, designation, 
+                   email, photo_path, status, role, created_at, updated_at
+            FROM faculty 
+            WHERE {where_clause}
+            ORDER BY last_name, first_name
+            LIMIT %s OFFSET %s
+        """
+        params.extend([limit, offset])
+        cursor.execute(query, params)
+        faculty = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Format faculty data for frontend
+        formatted_faculty = []
+        for f in faculty:
+            formatted_faculty.append({
+                'id': f['faculty_id'],
+                'idNumber': f['faculty_id'],
+                'firstName': f['first_name'],
+                'lastName': f['last_name'],
+                'middleName': f['middle_name'],
+                'name': f"{f['first_name']} {f['middle_name'] + ' ' if f['middle_name'] else ''}{f['last_name']}",
+                'department': f['department'],
+                'designation': f['designation'],
+                'email': f['email'],
+                'photo': f"/faculty_photos/{f['faculty_id']}.jpg" if f['photo_path'] else f"https://ui-avatars.com/api/?name={f['first_name']}+{f['last_name']}&background=random",
+                'status': f['status'],
+                'role': f['role'],
+                'createdAt': f['created_at'].isoformat() if f['created_at'] else None,
+                'updatedAt': f['updated_at'].isoformat() if f['updated_at'] else None
+            })
+        
+        return jsonify({
+            'success': True, 
+            'faculty': formatted_faculty,
+            'pagination': {
+                'total': total_count,
+                'page': page,
+                'limit': limit,
+                'pages': (total_count + limit - 1) // limit
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching faculty: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_dashboard_stats', methods=['GET'])
+def get_dashboard_stats():
+    """Get dashboard statistics for admin overview"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get student count by status
+        cursor.execute("SELECT status, COUNT(*) as count FROM students GROUP BY status")
+        student_stats = {row['status']: row['count'] for row in cursor.fetchall()}
+        
+        # Get faculty count by status
+        cursor.execute("SELECT status, COUNT(*) as count FROM faculty GROUP BY status")
+        faculty_stats = {row['status']: row['count'] for row in cursor.fetchall()}
+        
+        # Get recent registrations (last 30 days)
+        cursor.execute("""
+            SELECT 'student' as type, COUNT(*) as count 
+            FROM students 
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            UNION ALL
+            SELECT 'faculty' as type, COUNT(*) as count 
+            FROM faculty 
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        """)
+        recent_registrations = {row['type']: row['count'] for row in cursor.fetchall()}
+        
+        # Get active invites count
+        cursor.execute("""
+            SELECT invite_type, COUNT(*) as count 
+            FROM invites 
+            WHERE expires_at > NOW() AND current_uses < max_uses 
+            GROUP BY invite_type
+        """)
+        active_invites = {row['invite_type']: row['count'] for row in cursor.fetchall()}
+        
+        # Get attendance stats (today)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT student_id) as present_today
+            FROM attendance 
+            WHERE DATE(timestamp) = CURDATE()
+        """)
+        attendance_today = cursor.fetchone()['present_today']
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'students': {
+                    'total': sum(student_stats.values()),
+                    'active': student_stats.get('active', 0),
+                    'inactive': student_stats.get('inactive', 0)
+                },
+                'faculty': {
+                    'total': sum(faculty_stats.values()),
+                    'active': faculty_stats.get('active', 0),
+                    'inactive': faculty_stats.get('inactive', 0)
+                },
+                'recent_registrations': {
+                    'students': recent_registrations.get('student', 0),
+                    'faculty': recent_registrations.get('faculty', 0)
+                },
+                'active_invites': {
+                    'student': active_invites.get('student', 0),
+                    'faculty': active_invites.get('faculty', 0)
+                },
+                'attendance': {
+                    'present_today': attendance_today
+                }
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching dashboard stats: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/bulk_update_students', methods=['POST'])
+def bulk_update_students():
+    """Bulk update student status or other fields"""
+    try:
+        data = request.json
+        student_ids = data.get('student_ids', [])
+        updates = data.get('updates', {})
+        
+        if not student_ids or not updates:
+            return jsonify({'success': False, 'message': 'Student IDs and updates are required'})
+        
+        # Validate updates (only allow certain fields)
+        allowed_fields = ['status', 'course', 'year_section']
+        valid_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+        
+        if not valid_updates:
+            return jsonify({'success': False, 'message': 'No valid fields to update'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Build update query
+        set_clause = ", ".join([f"{field} = %s" for field in valid_updates.keys()])
+        placeholders = ", ".join(["%s"] * len(student_ids))
+        
+        query = f"""
+            UPDATE students 
+            SET {set_clause}, updated_at = NOW() 
+            WHERE student_id IN ({placeholders})
+        """
+        
+        params = list(valid_updates.values()) + student_ids
+        cursor.execute(query, params)
+        
+        affected_rows = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        # Refresh known faces if needed
+        if 'status' in valid_updates:
+            load_known_faces_from_db()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Updated {affected_rows} students successfully',
+            'affected_rows': affected_rows
+        })
+        
+    except Exception as e:
+        logger.error(f"Error bulk updating students: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/bulk_update_faculty', methods=['POST'])
+def bulk_update_faculty():
+    """Bulk update faculty status or other fields"""
+    try:
+        data = request.json
+        faculty_ids = data.get('faculty_ids', [])
+        updates = data.get('updates', {})
+        
+        if not faculty_ids or not updates:
+            return jsonify({'success': False, 'message': 'Faculty IDs and updates are required'})
+        
+        # Validate updates (only allow certain fields)
+        allowed_fields = ['status', 'department', 'designation', 'role']
+        valid_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+        
+        if not valid_updates:
+            return jsonify({'success': False, 'message': 'No valid fields to update'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Build update query
+        set_clause = ", ".join([f"{field} = %s" for field in valid_updates.keys()])
+        placeholders = ", ".join(["%s"] * len(faculty_ids))
+        
+        query = f"""
+            UPDATE faculty 
+            SET {set_clause}, updated_at = NOW() 
+            WHERE faculty_id IN ({placeholders})
+        """
+        
+        params = list(valid_updates.values()) + faculty_ids
+        cursor.execute(query, params)
+        
+        affected_rows = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        # Refresh known faces if needed
+        if 'status' in valid_updates:
+            load_known_faculties_from_db()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Updated {affected_rows} faculty members successfully',
+            'affected_rows': affected_rows
+        })
+        
+    except Exception as e:
+        logger.error(f"Error bulk updating faculty: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/export_data', methods=['POST'])
+def export_data():
+    """Export students or faculty data to CSV"""
+    try:
+        data = request.json
+        data_type = data.get('type', 'students')  # 'students' or 'faculty'
+        filters = data.get('filters', {})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        if data_type == 'students':
+            query = """
+                SELECT student_id, first_name, last_name, middle_name, course, 
+                       year_section, email, status, created_at
+                FROM students
+                WHERE status = %s
+                ORDER BY last_name, first_name
+            """
+            cursor.execute(query, [filters.get('status', 'active')])
+            
+        elif data_type == 'faculty':
+            query = """
+                SELECT faculty_id, first_name, last_name, middle_name, department, 
+                       designation, email, role, status, created_at
+                FROM faculty
+                WHERE status = %s
+                ORDER BY last_name, first_name
+            """
+            cursor.execute(query, [filters.get('status', 'active')])
+        
+        else:
+            return jsonify({'success': False, 'message': 'Invalid data type'})
+        
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        if not results:
+            return jsonify({'success': False, 'message': 'No data found to export'})
+        
+        # Convert to CSV format
+        import csv
+        import io
+        
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=results[0].keys())
+        writer.writeheader()
+        
+        for row in results:
+            # Convert datetime objects to strings
+            formatted_row = {}
+            for key, value in row.items():
+                if hasattr(value, 'isoformat'):
+                    formatted_row[key] = value.isoformat()
+                else:
+                    formatted_row[key] = value
+            writer.writerow(formatted_row)
+        
+        csv_data = output.getvalue()
+        output.close()
+        
+        return jsonify({
+            'success': True,
+            'csv_data': csv_data,
+            'filename': f'{data_type}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error exporting data: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+# Update existing routes to use the enhanced functionality
+@app.route('/api/get_students', methods=['GET'])
+def get_students():
+    """Legacy route - redirects to enhanced version"""
+    return get_students_enhanced()
+
+@app.route('/api/get_faculty', methods=['GET'])
+def get_faculty():
+    """Legacy route - redirects to enhanced version"""
+    return get_faculty_enhanced()    
+
 @app.route('/api/update_attendance_status', methods=['POST'])
 def update_attendance_status():
     try:
@@ -1668,6 +2114,94 @@ def update_attendance_status():
     except Exception as e:
         logger.error(f"Error updating attendance status: {e}")
         return jsonify({'success': False, 'message': str(e)})   
+    
+@app.route('/api/get_active_invites', methods=['GET'])
+def get_active_invites():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get active invites that haven't expired
+        cursor.execute("""
+            SELECT token, expires_at, used, created_at 
+            FROM invites 
+            WHERE expires_at > NOW() AND used = 0
+            ORDER BY created_at DESC
+        """)
+        
+        invites = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Format the invites data
+        formatted_invites = []
+        for invite in invites:
+            # Calculate time remaining
+            time_remaining = invite['expires_at'] - datetime.now()
+            if time_remaining.total_seconds() > 0:
+                days = time_remaining.days
+                hours, remainder = divmod(time_remaining.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+                
+                if days > 0:
+                    time_remaining_str = f"{days}d {hours}h {minutes}m"
+                elif hours > 0:
+                    time_remaining_str = f"{hours}h {minutes}m"
+                else:
+                    time_remaining_str = f"{minutes}m"
+                
+                # Determine invite type (you may need to add a type column to your invites table)
+                # For now, assuming all invites are for students, but you can modify this
+                invite_type = 'student'  # or 'faculty' based on your logic
+                
+                formatted_invites.append({
+                    'token': invite['token'],
+                    'type': invite_type,
+                    'link': f"{request.host_url}studentreg?token={invite['token']}" if invite_type == 'student' else f"{request.host_url}facultyreg?token={invite['token']}",
+                    'created_at': invite['created_at'].isoformat(),
+                    'expires_at': invite['expires_at'].isoformat(),
+                    'time_remaining': time_remaining_str,
+                    'uses': 0  # You may need to track this in your database
+                })
+        
+        return jsonify({
+            'success': True,
+            'invites': formatted_invites
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting active invites: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/revoke_invite', methods=['POST'])
+def revoke_invite():
+    try:
+        data = request.json
+        token = data.get('token')
+        
+        if not token:
+            return jsonify({'success': False, 'message': 'Token is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Mark the invite as used (revoked)
+        cursor.execute("UPDATE invites SET used = 1 WHERE token = %s", (token,))
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Invite not found'})
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Invite revoked successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error revoking invite: {e}")
+        return jsonify({'success': False, 'message': str(e)})    
 
 # Serve student photos
 @app.route('/student_photos/<filename>')
@@ -1681,8 +2215,8 @@ os.makedirs('faculty_photos', exist_ok=True)
 def serve_faculty_photo(filename):
     return send_from_directory('faculty_photos', filename)
 
-@app.route('/api/get_students', methods=['GET'])
-def get_students():
+@app.route('/api/get_other_students', methods=['GET'])  # Different route path
+def get_other_students():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1708,8 +2242,8 @@ def get_students():
         logger.error(f"Error fetching students: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/get_faculty', methods=['GET'])
-def get_faculty():
+@app.route('/api/get_faculty_list', methods=['GET'])
+def get_faculty_list():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1795,6 +2329,52 @@ def join(token):
     except Exception as e:
         logger.error(f"Error validating invite: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
+    
+@app.route('/api/generate_dynamic_invite', methods=['POST'])
+def generate_dynamic_invite():
+    try:
+        data = request.get_json()
+        invite_type = data.get('type')  # 'student' or 'faculty'
+        expiry_days = int(data.get('days', 0))
+        expiry_hours = int(data.get('hours', 0))
+        expiry_minutes = int(data.get('minutes', 0))
+
+        # Validate invite type
+        if invite_type not in ['student', 'faculty']:
+            return jsonify({'success': False, 'message': 'Invalid invite type'}), 400
+
+        # Calculate expiration time
+        expiry_delta = timedelta(days=expiry_days, hours=expiry_hours, minutes=expiry_minutes)
+        if expiry_delta <= timedelta(0):
+            expiry_delta = timedelta(hours=24)  # Default to 24 hours
+        expires_at = datetime.now() + expiry_delta
+
+        # Generate unique token
+        token = secrets.token_urlsafe(32)
+
+        # Insert into invites table
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO invites (token, expires_at, used) VALUES (%s, %s, %s)",
+            (token, expires_at, 0)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"Generated {invite_type} invite token: {token}")
+        return jsonify({
+            'success': True,
+            'message': f'{invite_type.capitalize()} invite link generated successfully',
+            'token': token,
+            'expires_at': expires_at.isoformat(),
+            'type': f'{invite_type}_registration'
+        })
+
+    except Exception as e:
+        logger.error(f"Error generating invite: {str(e)}")
+        return jsonify({'success': False, 'message': f'Error generating invite: {str(e)}'}), 500   
 
 @app.route('/api/update_student', methods=['POST'])
 def update_student():

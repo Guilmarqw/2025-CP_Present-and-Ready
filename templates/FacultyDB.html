@@ -79,23 +79,98 @@
         </div>
     </main>
 
-    <!-- Invite Link Modal -->
+    <!-- Enhanced Invite Faculty Modal -->
     <div id="inviteLinkModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h2 class="modal-title">Invite Faculty Member</h2>
                 <span class="close">&times;</span>
             </div>
             <div class="modal-body">
-                <p style="margin-bottom: 15px;">Share this link to invite faculty members to join:</p>
-                <div class="invite-link-container">
-                    <input type="text" id="inviteLink" value="https://present-ready.com/faculty/join/abc123" readonly>
-                    <button class="copy-btn" onclick="copyInviteLink()">
-                        <i class="fas fa-copy"></i>
-                        Copy
-                    </button>
+                <!-- Time Duration Settings -->
+                <div class="form-group">
+                    <label>Link Expiration Time</label>
+                    <div class="duration-controls">
+                        <div class="duration-item">
+                            <label for="facultyDurationDays">Days</label>
+                            <input type="number" id="facultyDurationDays" min="0" max="30" value="0">
+                        </div>
+                        <div class="duration-item">
+                            <label for="facultyDurationHours">Hours</label>
+                            <input type="number" id="facultyDurationHours" min="0" max="23" value="24">
+                        </div>
+                        <div class="duration-item">
+                            <label for="facultyDurationMinutes">Minutes</label>
+                            <input type="number" id="facultyDurationMinutes" min="0" max="59" value="0">
+                        </div>
+                    </div>
+                    <div class="duration-preview">
+                        <span id="facultyDurationPreview">Link will expire in: 24 hours</span>
+                    </div>
                 </div>
-                <p class="copy-status" id="copyStatus"></p>
+
+                <!-- Quick Duration Buttons -->
+                <div class="form-group">
+                    <label>Quick Select</label>
+                    <div class="quick-duration-buttons">
+                        <button type="button" class="quick-btn" data-minutes="30">30 min</button>
+                        <button type="button" class="quick-btn" data-minutes="60">1 hour</button>
+                        <button type="button" class="quick-btn" data-minutes="360">6 hours</button>
+                        <button type="button" class="quick-btn" data-minutes="720">12 hours</button>
+                        <button type="button" class="quick-btn active" data-minutes="1440">24 hours</button>
+                        <button type="button" class="quick-btn" data-minutes="4320">3 days</button>
+                        <button type="button" class="quick-btn" data-minutes="10080">1 week</button>
+                    </div>
+                </div>
+
+                <!-- Generated Link Display -->
+                <div id="facultyGeneratedLinkSection" style="display: none;">
+                    <div class="form-group">
+                        <label>Generated Faculty Invite Link</label>
+                        <div class="invite-link-container">
+                            <input type="text" id="facultyGeneratedInviteLink" readonly>
+                            <button class="copy-btn" onclick="copyFacultyGeneratedLink()">
+                                <i class="fas fa-copy"></i>
+                                Copy
+                            </button>
+                        </div>
+                        <div class="link-info">
+                            <p><strong>Expires:</strong> <span id="facultyLinkExpiration"></span></p>
+                            <p><strong>Type:</strong> Faculty Registration</p>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="copy-status" id="facultyCopyStatus"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Cancel</button>
+                <button class="modal-btn btn-submit" id="generate-faculty-link-btn">
+                    <i class="fas fa-link"></i> Generate Faculty Link
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Faculty Invites Modal -->
+    <div id="activeFacultyInvitesModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Active Faculty Invite Links</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="invites-container">
+                    <div id="activeFacultyInvitesList">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Close</button>
+                <button class="modal-btn btn-refresh" onclick="loadActiveFacultyInvites()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
             </div>
         </div>
     </div>
@@ -206,27 +281,184 @@
     </div>
 
     <script>
-        // Faculty Member data (simulating a database)
-        let facultyMembers = [
-            { 
-                id: 1, 
-                name: "Dr. Sarah Johnson", 
-                idNumber: "FAC-001", 
-                department: "Computer Science",
-                specialization: "Database Management",
-                status: "Active",
-                photo: "https://ui-avatars.com/api/?name=Sarah+Johnson&background=random" 
-            },
-            { 
-                id: 2, 
-                name: "Prof. Michael Chen", 
-                idNumber: "INST-002", 
-                department: "Information Technology",
-                specialization: "Network Security",
-                status: "Active",
-                photo: "https://ui-avatars.com/api/?name=Michael+Chen&background=random" 
+        // Global variables for data management
+        let currentPage = 1;
+        let facultyPerPage = 20;
+        let allFaculty = [];
+        let totalFaculty = 0;
+
+        // Faculty data management
+        async function loadFacultyFromDatabase() {
+            try {
+                showLoadingState('Loading faculty...');
+                
+                const params = new URLSearchParams({
+                    page: currentPage,
+                    limit: facultyPerPage,
+                    status: 'active'
+                });
+                
+                const deptFilter = document.getElementById('departmentFilter')?.value;
+                const searchTerm = document.querySelector('.search-box input')?.value;
+                
+                if (deptFilter) params.append('department', deptFilter);
+                if (searchTerm) params.append('search', searchTerm);
+                
+                const response = await fetch(`/api/get_faculty_enhanced?${params}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    allFaculty = data.faculty;
+                    totalFaculty = data.pagination.total;
+                    displayFaculty(data.faculty);
+                    updatePagination(data.pagination);
+                    updateFacultyStats(data.pagination.total);
+                } else {
+                    showAlert('Failed to load faculty: ' + data.message, false);
+                }
+            } catch (error) {
+                console.error('Error loading faculty:', error);
+                showAlert('Error loading faculty from database', false);
+            } finally {
+                hideLoadingState();
             }
-        ];
+        }
+
+        function displayFaculty(faculty) {
+            const tbody = document.querySelector('.faculty-table tbody');
+            if (!tbody) return;
+            
+            tbody.innerHTML = '';
+            
+            if (faculty.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 20px;">
+                            <i class="fas fa-users"></i><br>
+                            No faculty members found
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            faculty.forEach(facultyMember => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><img src="${facultyMember.photo}" class="faculty-photo" alt="Faculty Photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random'"></td>
+                    <td>${facultyMember.name}</td>
+                    <td>${facultyMember.idNumber}</td>
+                    <td>${facultyMember.department}</td>
+                    <td class="action-buttons">
+                        <button class="action-btn edit-btn" data-id="${facultyMember.id}"><i class="fas fa-edit"></i></button>
+                        <button class="action-btn view-btn" data-id="${facultyMember.id}"><i class="fas fa-eye"></i></button>
+                        <button class="action-btn delete-btn" data-id="${facultyMember.id}"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+                addEventListenersToRow(row);
+            });
+        }
+
+        function updatePagination(pagination) {
+            const paginationContainer = document.getElementById('facultyPagination') || createPaginationContainer();
+            
+            if (pagination.pages <= 1) {
+                paginationContainer.style.display = 'none';
+                return;
+            }
+            
+            paginationContainer.style.display = 'flex';
+            
+            let paginationHTML = '';
+            
+            if (pagination.page > 1) {
+                paginationHTML += `<button class="page-btn" onclick="changePage(${pagination.page - 1})"><i class="fas fa-chevron-left"></i></button>`;
+            }
+            
+            const startPage = Math.max(1, pagination.page - 2);
+            const endPage = Math.min(pagination.pages, pagination.page + 2);
+            
+            for (let i = startPage; i <= endPage; i++) {
+                paginationHTML += `<button class="page-btn ${i === pagination.page ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+            }
+            
+            if (pagination.page < pagination.pages) {
+                paginationHTML += `<button class="page-btn" onclick="changePage(${pagination.page + 1})"><i class="fas fa-chevron-right"></i></button>`;
+            }
+            
+            paginationContainer.innerHTML = paginationHTML;
+        }
+
+        function createPaginationContainer() {
+            const container = document.createElement('div');
+            container.id = 'facultyPagination';
+            container.className = 'pagination-container';
+            container.style.cssText = `
+                display: flex;
+                justify-content: center;
+                gap: 5px;
+                margin-top: 20px;
+                align-items: center;
+            `;
+            
+            const style = document.createElement('style');
+            style.textContent = `
+                .pagination-container .page-btn {
+                    padding: 8px 12px;
+                    border: 1px solid #ddd;
+                    background: white;
+                    cursor: pointer;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    transition: all 0.2s;
+                }
+                .pagination-container .page-btn:hover {
+                    background: #f8f9fa;
+                    border-color: #007bff;
+                }
+                .pagination-container .page-btn.active {
+                    background: #007bff;
+                    color: white;
+                    border-color: #007bff;
+                }
+            `;
+            if (!document.querySelector('#pagination-styles')) {
+                style.id = 'pagination-styles';
+                document.head.appendChild(style);
+            }
+            
+            document.querySelector('.faculty-content').appendChild(container);
+            return container;
+        }
+
+        function changePage(page) {
+            currentPage = page;
+            loadFacultyFromDatabase();
+        }
+
+        function updateFacultyStats(total) {
+            const header = document.querySelector('.header h2');
+            if (header) header.textContent = `List of Faculty Members (${total})`;
+        }
+
+        function showLoadingState(message) {
+            const tbody = document.querySelector('.faculty-table tbody');
+            if (tbody) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 20px;">
+                            <i class="fas fa-spinner fa-spin"></i><br>
+                            ${message}
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        function hideLoadingState() {
+            // Loading state is replaced by actual data or empty state
+        }
 
         // DOM Elements
         const inviteBtn = document.getElementById('inviteBtn');
@@ -245,52 +477,22 @@
 
         // Modal functions
         function openModal(modal) {
-            modal.style.display = "block";
+            if (modal) modal.style.display = "block";
         }
 
         function closeModal(modal) {
-            modal.style.display = "none";
+            if (modal) modal.style.display = "none";
         }
 
         // Show alert function
         function showAlert(message, isSuccess = true) {
-            alertMessage.textContent = message;
-            
-            if (isSuccess) {
-                alertIcon.innerHTML = '<i class="fas fa-check-circle success-icon"></i>';
-            } else {
-                alertIcon.innerHTML = '<i class="fas fa-exclamation-circle error-icon"></i>';
+            if (alertMessage && alertIcon) {
+                alertMessage.textContent = message;
+                alertIcon.innerHTML = isSuccess
+                    ? '<i class="fas fa-check-circle success-icon"></i>'
+                    : '<i class="fas fa-exclamation-circle error-icon"></i>';
+                openModal(alertModal);
             }
-            
-            openModal(alertModal);
-        }
-
-        // Generate a unique ID
-        function generateId() {
-            return facultyMembers.length > 0 ? Math.max(...facultyMembers.map(i => i.id)) + 1 : 1;
-        }
-
-        // Add faculty member to table
-        function addFacultyMemberToTable(facultyMember) {
-            const tbody = document.querySelector('.faculty-members-table tbody');
-            const row = document.createElement('tr');
-            
-            row.innerHTML = `
-                <td><img src="${facultyMember.photo}" class="faculty-member-photo" alt="Faculty Member Photo"></td>
-                <td>${facultyMember.name}</td>
-                <td>${facultyMember.idNumber}</td>
-                <td>${facultyMember.department}</td>
-                <td class="action-buttons">
-                    <button class="action-btn edit-btn" data-id="${facultyMember.id}"><i class="fas fa-edit"></i></button>
-                    <button class="action-btn view-btn" data-id="${facultyMember.id}"><i class="fas fa-eye"></i></button>
-                    <button class="action-btn delete-btn" data-id="${facultyMember.id}"><i class="fas fa-trash"></i></button>
-                </td>
-            `;
-            
-            tbody.appendChild(row);
-            
-            // Add event listeners to the new buttons
-            addEventListenersToRow(row);
         }
 
         // Add event listeners to a table row
@@ -299,52 +501,69 @@
             const viewBtn = row.querySelector('.view-btn');
             const deleteBtn = row.querySelector('.delete-btn');
             
-            editBtn.addEventListener('click', function() {
-                const facultyMemberId = parseInt(this.getAttribute('data-id'));
-                const facultyMember = facultyMembers.find(i => i.id === facultyMemberId);
+            editBtn?.addEventListener('click', function() {
+                const facultyId = this.getAttribute('data-id');
+                const faculty = allFaculty.find(f => f.id === facultyId);
 
-                if (facultyMember) {
-                    document.getElementById('editId').value = facultyMember.id;
-                    document.getElementById('editName').value = facultyMember.name;
-                    document.getElementById('editIdNumber').value = facultyMember.idNumber;
-                    document.getElementById('editDepartment').value = facultyMember.department;
-                    document.getElementById('editSpecialization').value = facultyMember.specialization;
+                if (faculty) {
+                    const editId = document.getElementById('editId');
+                    const editName = document.getElementById('editName');
+                    const editIdNumber = document.getElementById('editIdNumber');
+                    const editDepartment = document.getElementById('editDepartment');
+                    const editSpecialization = document.getElementById('editSpecialization');
 
-                    openModal(editFacultyMemberModal);
+                    if (editId && editName && editIdNumber && editDepartment && editSpecialization) {
+                        editId.value = faculty.id;
+                        editName.value = faculty.name;
+                        editIdNumber.value = faculty.idNumber;
+                        editDepartment.value = faculty.department;
+                        editSpecialization.value = faculty.designation;
+                        openModal(editFacultyMemberModal);
+                    }
                 }
             });
             
-            viewBtn.addEventListener('click', function() {
-                const facultyMemberId = parseInt(this.getAttribute('data-id'));
-                const facultyMember = facultyMembers.find(i => i.id === facultyMemberId);
+            viewBtn?.addEventListener('click', function() {
+                const facultyId = this.getAttribute('data-id');
+                const faculty = allFaculty.find(f => f.id === facultyId);
 
-                if (facultyMember) {
-                    document.getElementById('viewName').textContent = facultyMember.name;
-                    document.getElementById('viewId').textContent = facultyMember.idNumber;
-                    document.getElementById('viewDepartment').textContent = facultyMember.department;
-                    document.getElementById('viewSpecialization').textContent = facultyMember.specialization;
+                if (faculty) {
+                    const viewName = document.getElementById('viewName');
+                    const viewId = document.getElementById('viewId');
+                    const viewDepartment = document.getElementById('viewDepartment');
+                    const viewSpecialization = document.getElementById('viewSpecialization');
 
-                    openModal(viewFacultyMemberModal);
+                    if (viewName && viewId && viewDepartment && viewSpecialization) {
+                        viewName.textContent = faculty.name;
+                        viewId.textContent = faculty.idNumber;
+                        viewDepartment.textContent = faculty.department;
+                        viewSpecialization.textContent = faculty.designation;
+                        openModal(viewFacultyMemberModal);
+                    }
                 }
             });
             
-            deleteBtn.addEventListener('click', function() {
-                const facultyMemberId = parseInt(this.getAttribute('data-id'));
-                const facultyMember = facultyMembers.find(i => i.id === facultyMemberId);
+            deleteBtn?.addEventListener('click', function() {
+                const facultyId = this.getAttribute('data-id');
+                const faculty = allFaculty.find(f => f.id === facultyId);
 
-                if (facultyMember) {
-                    document.getElementById('deleteFacultyMemberName').textContent = facultyMember.name;
-                    confirmDelete.setAttribute('data-id', facultyMember.id);
-                    
-                    openModal(deleteFacultyModal);
+                if (faculty) {
+                    const deleteFacultyMemberName = document.getElementById('deleteFacultyMemberName');
+                    if (deleteFacultyMemberName && confirmDelete) {
+                        deleteFacultyMemberName.textContent = faculty.name;
+                        confirmDelete.setAttribute('data-id', faculty.id);
+                        openModal(deleteFacultyMemberModal);
+                    }
                 }
             });
         }
 
         // Event Listeners
-        inviteBtn.addEventListener('click', () => {
-            openModal(inviteLinkModal);
-        });
+        if (inviteBtn) {
+            inviteBtn.addEventListener('click', () => {
+                openModal(inviteLinkModal);
+            });
+        }
 
         closeButtons.forEach(button => {
             button.addEventListener('click', function() {
@@ -360,200 +579,408 @@
             });
         });
 
-        alertButton.addEventListener('click', function() {
-            closeModal(alertModal);
-        });
+        if (alertButton) {
+            alertButton.addEventListener('click', () => closeModal(alertModal));
+        }
 
-        // Close modal when clicking outside
         window.addEventListener('click', function(event) {
             if (event.target.classList.contains('modal')) {
                 closeModal(event.target);
             }
         });
 
-        // Add event listeners to existing table rows
-        document.querySelectorAll('.faculty-table tbody tr').forEach(row => {
-            addEventListenersToRow(row);
-        });
-
         // Edit faculty member functionality
-        submitEditFacultyMember.addEventListener('click', function() {
-            const id = parseInt(document.getElementById('editId').value);
-            const name = document.getElementById('editName').value;
-            const idNumber = document.getElementById('editIdNumber').value;
-            const department = document.getElementById('editDepartment').value;
-            const specialization = document.getElementById('editSpecialization').value;
-            
-            if (name && idNumber && department) {
-                // Check if ID number already exists (excluding current faculty member)
-                if (facultyMembers.some(facultyMember => facultyMember.idNumber === idNumber && facultyMember.id !== id)) {
-                    showAlert('ID number already exists!', false);
-                    return;
-                }
+        if (submitEditFacultyMember) {
+            submitEditFacultyMember.addEventListener('click', async function() {
+                const id = document.getElementById('editId')?.value;
+                const name = document.getElementById('editName')?.value;
+                const idNumber = document.getElementById('editIdNumber')?.value;
+                const department = document.getElementById('editDepartment')?.value;
+                const specialization = document.getElementById('editSpecialization')?.value;
                 
-                // Update faculty member in array
-                const facultyMemberIndex = facultyMembers.findIndex(i => i.id === id);
-                if (facultyMemberIndex !== -1) {
-                    facultyMembers[facultyMemberIndex] = {
-                        ...facultyMembers[facultyMemberIndex],
-                        name,
-                        idNumber,
-                        department,
-                        specialization,
-                        photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`
-                    };
-                    
-                    // Update the table row
-                    const row = document.querySelector(`.edit-btn[data-id="${id}"]`).closest('tr');
-                    row.cells[1].textContent = name;
-                    row.cells[2].textContent = idNumber;
-                    row.cells[3].textContent = department;
-                    row.cells[0].querySelector('img').src = facultyMembers[facultyMemberIndex].photo;
-
-                    // Show success message
-                    showAlert(`Faculty member ${name} updated successfully!`);
-                    
-                    // Close modal
-                    closeModal(editFacultyMemberModal);
-                }
-            } else {
-                showAlert('Please fill all required fields', false);
-            }
-        });
-
-        // Delete faculty member functionality
-        confirmDelete.addEventListener('click', function() {
-            const facultyMemberId = parseInt(this.getAttribute('data-id'));
-            const facultyMemberIndex = facultyMembers.findIndex(i => i.id === facultyMemberId);
-            
-            if (facultyMemberIndex !== -1) {
-                const deletedFacultyMember = facultyMembers[facultyMemberIndex];
-                
-                // Remove from array
-                facultyMembers.splice(facultyMemberIndex, 1);
-                
-                // Remove from table
-                const row = document.querySelector(`.delete-btn[data-id="${facultyMemberId}"]`).closest('tr');
-                row.remove();
-                
-                // Show success message
-                showAlert(`Faculty member ${deletedFacultyMember.name} deleted successfully!`);
-
-                // Close modal
-                closeModal(deleteFacultyMemberModal);
-            }
-        });
-
-        // Search functionality specific to faculty members
-        const searchInput = document.querySelector('.search-box input');
-        searchInput.addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            const tbody = document.querySelector('.faculty-members-table tbody');
-            const rows = tbody.querySelectorAll('tr');
-            
-            rows.forEach(row => {
-                const name = row.cells[1].textContent.toLowerCase();
-                const id = row.cells[2].textContent.toLowerCase();
-                const department = row.cells[3].textContent.toLowerCase();
-                
-                if (name.includes(searchTerm) || 
-                    id.includes(searchTerm) || 
-                    department.includes(searchTerm)) {
-                    row.style.display = '';
+                if (name && idNumber && department) {
+                    try {
+                        const [firstName, ...lastNameParts] = name.split(' ');
+                        const lastName = lastNameParts.join(' ');
+                        
+                        const response = await fetch('/api/update_faculty', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                faculty_id: id,
+                                first_name: firstName,
+                                last_name: lastName,
+                                department: department,
+                                designation: specialization
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            showAlert(`Faculty member ${name} updated successfully!`);
+                            closeModal(editFacultyMemberModal);
+                            loadFacultyFromDatabase();
+                        } else {
+                            showAlert(data.message || 'Failed to update faculty member', false);
+                        }
+                    } catch (error) {
+                        console.error('Error updating faculty member:', error);
+                        showAlert('Error updating faculty member', false);
+                    }
                 } else {
-                    row.style.display = 'none';
+                    showAlert('Please fill all required fields', false);
                 }
             });
-        });
-
-        // Filter functionality for faculty members
-        document.getElementById('departmentFilter').addEventListener('change', function() {
-            const department = this.value.toLowerCase();
-            const tbody = document.querySelector('.faculty-members-table tbody');
-            const rows = tbody.querySelectorAll('tr');
-            
-            rows.forEach(row => {
-                const rowDepartment = row.cells[3].textContent.toLowerCase();
-                row.style.display = department === '' || rowDepartment.includes(department) ? '' : 'none';
-            });
-        });
-
-        // Initialize the page
-        window.addEventListener('load', () => {
-            facultyMembers.forEach(facultyMember => addFacultyMemberToTable(facultyMember));
-        });
-
-        function copyInviteLink() {
-            const inviteLink = document.getElementById('inviteLink');
-            inviteLink.select();
-            document.execCommand('copy');
-            
-            const copyStatus = document.getElementById('copyStatus');
-            copyStatus.textContent = 'Link copied to clipboard!';
-            
-            setTimeout(() => {
-                copyStatus.textContent = '';
-            }, 2000);
         }
 
-        // Load sidebar with correct path
+        // Delete faculty member functionality
+        if (confirmDelete) {
+            confirmDelete.addEventListener('click', async function() {
+                const facultyId = this.getAttribute('data-id');
+                
+                try {
+                    const response = await fetch('/api/delete_faculty', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ faculty_id: facultyId })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        showAlert('Faculty member deleted successfully!');
+                        closeModal(deleteFacultyMemberModal);
+                        loadFacultyFromDatabase();
+                    } else {
+                        showAlert(data.message || 'Failed to delete faculty member', false);
+                    }
+                } catch (error) {
+                    console.error('Error deleting faculty member:', error);
+                    showAlert('Error deleting faculty member', false);
+                }
+            });
+        }
+
+        // Search functionality
+        const searchInput = document.querySelector('.search-box input');
+        let searchTimeout;
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    currentPage = 1;
+                    loadFacultyFromDatabase();
+                }, 500);
+            });
+        }
+
+        // Filter functionality
+        const departmentFilter = document.getElementById('departmentFilter');
+        if (departmentFilter) {
+            departmentFilter.addEventListener('change', function() {
+                currentPage = 1;
+                loadFacultyFromDatabase();
+            });
+        }
+
+        // Faculty invite functionality - simplified like StudentDB
+        function initializeFacultyInviteModal() {
+            const generateBtn = document.getElementById('generate-faculty-link-btn');
+            const durationInputs = document.querySelectorAll('#facultyDurationDays, #facultyDurationHours, #facultyDurationMinutes');
+            const quickBtns = document.querySelectorAll('.quick-btn');
+
+            if (!generateBtn) {
+                console.error('Element with ID "generate-faculty-link-btn" not found');
+                return;
+            }
+
+            generateBtn.addEventListener('click', generateFacultyDynamicInvite);
+
+            durationInputs.forEach(input => {
+                input.addEventListener('input', updateFacultyDurationPreview);
+            });
+
+            quickBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    quickBtns.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    const minutes = parseInt(this.dataset.minutes);
+                    setFacultyDurationFromMinutes(minutes);
+                });
+            });
+        }
+
+        function updateFacultyDurationPreview() {
+            const days = parseInt(document.getElementById('facultyDurationDays')?.value) || 0;
+            const hours = parseInt(document.getElementById('facultyDurationHours')?.value) || 0;
+            const minutes = parseInt(document.getElementById('facultyDurationMinutes')?.value) || 0;
+            
+            const totalMinutes = days * 1440 + hours * 60 + minutes;
+            const previewElement = document.getElementById('facultyDurationPreview');
+            
+            if (!previewElement) return;
+            
+            if (totalMinutes === 0) {
+                previewElement.textContent = 'Please set a valid duration';
+                return;
+            }
+            
+            let preview = 'Link will expire in: ';
+            if (days > 0) preview += `${days} day${days > 1 ? 's' : ''} `;
+            if (hours > 0) preview += `${hours} hour${hours > 1 ? 's' : ''} `;
+            if (minutes > 0) preview += `${minutes} minute${minutes > 1 ? 's' : ''}`;
+            
+            previewElement.textContent = preview;
+        }
+
+        function setFacultyDurationFromMinutes(totalMinutes) {
+            const days = Math.floor(totalMinutes / 1440);
+            const hours = Math.floor((totalMinutes % 1440) / 60);
+            const minutes = totalMinutes % 60;
+            
+            const daysInput = document.getElementById('facultyDurationDays');
+            const hoursInput = document.getElementById('facultyDurationHours');
+            const minutesInput = document.getElementById('facultyDurationMinutes');
+            
+            if (daysInput) daysInput.value = days;
+            if (hoursInput) hoursInput.value = hours;
+            if (minutesInput) minutesInput.value = minutes;
+            
+            updateFacultyDurationPreview();
+        }
+
+        function generateFacultyDynamicInvite() {
+            const days = parseInt(document.getElementById('facultyDurationDays')?.value) || 0;
+            const hours = parseInt(document.getElementById('facultyDurationHours')?.value) || 0;
+            const minutes = parseInt(document.getElementById('facultyDurationMinutes')?.value) || 0;
+            
+            const totalMinutes = days * 1440 + hours * 60 + minutes;
+            
+            if (totalMinutes === 0) {
+                showAlert('Please set a valid duration', false);
+                return;
+            }
+            
+            if (totalMinutes > 43200) {
+                showAlert('Maximum duration is 30 days', false);
+                return;
+            }
+            
+            const generateBtn = document.getElementById('generate-faculty-link-btn');
+            if (generateBtn) {
+                generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+                generateBtn.disabled = true;
+            }
+            
+            fetch('/api/generate_dynamic_invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'faculty', days, hours, minutes })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const linkInput = document.getElementById('facultyGeneratedInviteLink');
+                    const expirationSpan = document.getElementById('facultyLinkExpiration');
+                    const linkSection = document.getElementById('facultyGeneratedLinkSection');
+                    
+                    if (linkInput && expirationSpan && linkSection) {
+                        const inviteLink = `${window.location.origin}/facultyreg?token=${data.token}`;
+                        linkInput.value = inviteLink;
+                        expirationSpan.textContent = new Date(data.expires_at).toLocaleString();
+                        linkSection.style.display = 'block';
+                        showAlert('Faculty invite link generated successfully!', true);
+                    } else {
+                        showAlert('Error: Output elements not found', false);
+                    }
+                } else {
+                    showAlert(data.message || 'Failed to generate faculty invite link', false);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('Error generating faculty invite link', false);
+            })
+            .finally(() => {
+                if (generateBtn) {
+                    generateBtn.innerHTML = '<i class="fas fa-link"></i> Generate Faculty Link';
+                    generateBtn.disabled = false;
+                }
+            });
+        }
+
+        function copyFacultyGeneratedLink() {
+            const linkInput = document.getElementById('facultyGeneratedInviteLink');
+            if (!linkInput) return;
+            
+            navigator.clipboard.writeText(linkInput.value).then(() => {
+                showAlert('Faculty link copied to clipboard!', true);
+            }).catch(err => {
+                // Fallback for older browsers
+                linkInput.select();
+                document.execCommand('copy');
+                showAlert('Faculty link copied to clipboard!', true);
+            });
+            
+            const copyStatus = document.getElementById('facultyCopyStatus');
+            if (copyStatus) {
+                copyStatus.textContent = 'Faculty link copied to clipboard!';
+                copyStatus.style.color = 'green';
+                setTimeout(() => copyStatus.textContent = '', 3000);
+            }
+        }
+
+        function openActiveFacultyInvitesModal() {
+            const modal = document.getElementById('activeFacultyInvitesModal');
+            if (modal) {
+                openModal(modal);
+                loadActiveFacultyInvites();
+            }
+        }
+
+        function loadActiveFacultyInvites() {
+            fetch('/api/get_active_invites')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const facultyInvites = data.invites.filter(invite => invite.type === 'faculty');
+                    displayActiveFacultyInvites(facultyInvites);
+                } else {
+                    showAlert('Failed to load active faculty invites', false);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading faculty invites:', error);
+                showAlert('Error loading active faculty invites', false);
+            });
+        }
+
+        function displayActiveFacultyInvites(invites) {
+            const container = document.getElementById('activeFacultyInvitesList');
+            if (!container) return;
+            
+            if (invites.length === 0) {
+                container.innerHTML = '<p>No active faculty invites found.</p>';
+                return;
+            }
+            
+            container.innerHTML = invites.map(invite => `
+                <div class="invite-item">
+                    <div class="invite-item-header">
+                        <span class="invite-type-badge">FACULTY</span>
+                        <span class="time-remaining ${isExpiringSoon(invite.time_remaining) ? 'expiring' : ''}">${invite.time_remaining} remaining</span>
+                    </div>
+                    <div class="invite-link-display">
+                        <input type="text" value="${invite.link}" readonly>
+                        <button class="btn-copy-small" onclick="copyFacultyInviteLink('${invite.link}')">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin: 4px 0;">
+                        <div>Created: ${new Date(invite.created_at).toLocaleString()}</div>
+                        <div>Expires: ${new Date(invite.expires_at).toLocaleString()}</div>
+                        <div>Uses: ${invite.uses}</div>
+                    </div>
+                    <div class="invite-actions">
+                        <button class="btn-revoke" onclick="revokeFacultyInvite('${invite.token}')">
+                            <i class="fas fa-ban"></i> Revoke
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function copyFacultyInviteLink(link) {
+            navigator.clipboard.writeText(link).then(() => {
+                showAlert('Faculty link copied to clipboard!', true);
+            });
+        }
+
+        function revokeFacultyInvite(token) {
+            if (!confirm('Are you sure you want to revoke this faculty invite?')) return;
+            
+            fetch('/api/revoke_invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('Faculty invite revoked successfully!', true);
+                    loadActiveFacultyInvites();
+                } else {
+                    showAlert(data.message || 'Failed to revoke faculty invite', false);
+                }
+            })
+            .catch(error => {
+                console.error('Error revoking faculty invite:', error);
+                showAlert('Error revoking faculty invite', false);
+            });
+        }
+
+        function isExpiringSoon(timeRemaining) {
+            return timeRemaining.includes('m') && !timeRemaining.includes('h') && !timeRemaining.includes('d');
+        }
+
+        // Load sidebar
         fetch('/sidebar')
             .then(response => response.text())
             .then(html => {
-                document.getElementById('sidebar-container').innerHTML = html;
-                
-                // Fix navigation paths after sidebar loads
-                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
-                    // Convert relative paths to correct module paths
-                    if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
-                        link.href = '../' + link.getAttribute('href');
-                    }
-                });
-
-                // Initialize dropdown functionality
-                document.querySelectorAll(".dropdown-btn").forEach(btn => {
-                    btn.addEventListener("click", function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        // Close all other dropdowns first
-                        document.querySelectorAll('.dropdown-content').forEach(content => {
-                            if (content !== this.nextElementSibling) {
-                                content.style.display = 'none';
-                            }
-                        });
-
-                        // Toggle current dropdown
-                        const content = this.nextElementSibling;
-                        if (content) {
-                            content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                const sidebarContainer = document.getElementById('sidebar-container');
+                if (sidebarContainer) {
+                    sidebarContainer.innerHTML = html;
+                    
+                    document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
+                        if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
+                            link.href = '../' + link.getAttribute('href');
                         }
                     });
-                });
 
-                // Close dropdowns when clicking outside
-                document.addEventListener('click', function(e) {
-                    if (!e.target.closest('.dropdown')) {
-                        document.querySelectorAll('.dropdown-content').forEach(content => {
-                            content.style.display = 'none';
+                    document.querySelectorAll(".dropdown-btn").forEach(btn => {
+                        btn.addEventListener("click", function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            document.querySelectorAll('.dropdown-content').forEach(content => {
+                                if (content !== this.nextElementSibling) {
+                                    content.style.display = 'none';
+                                }
+                            });
+                            const content = this.nextElementSibling;
+                            if (content) {
+                                content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                            }
                         });
-                    }
-                });
+                    });
 
-                // Handle active state
-                const currentPath = window.location.pathname;
-                document.querySelectorAll('.nav-items a').forEach(link => {
-                    const linkPath = link.getAttribute('href');
-                    if (currentPath.includes(linkPath) && linkPath !== '#') {
-                        link.classList.add('active');
-                        // If link is in dropdown, show parent dropdown
-                        const dropdown = link.closest('.dropdown-content');
-                        if (dropdown) {
-                            dropdown.style.display = 'block';
+                    document.addEventListener('click', function(e) {
+                        if (!e.target.closest('.dropdown')) {
+                            document.querySelectorAll('.dropdown-content').forEach(content => {
+                                content.style.display = 'none';
+                            });
                         }
-                    }
-                });
+                    });
+
+                    const currentPath = window.location.pathname;
+                    document.querySelectorAll('.nav-items a').forEach(link => {
+                        const linkPath = link.getAttribute('href');
+                        if (currentPath.includes(linkPath) && linkPath !== '#') {
+                            link.classList.add('active');
+                            const dropdown = link.closest('.dropdown-content');
+                            if (dropdown) {
+                                dropdown.style.display = 'block';
+                            }
+                        }
+                    });
+                }
             });
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeFacultyInviteModal();
+            loadFacultyFromDatabase();
+        });
     </script>
 </body>
 </html>
