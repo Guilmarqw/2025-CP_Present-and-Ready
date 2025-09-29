@@ -141,121 +141,81 @@
     </div>
 
     <script>
-        // Load sidebar with navigation functionality
-        fetch('/sidebar')  // Changed path to go up two levels to Admin folder
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Sidebar not found');
-                }
-                return response.text();
-            })
-            .then(html => {
-                document.getElementById('sidebar-container').innerHTML = html;
-                
-                // Fix navigation paths after sidebar loads
-                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
-                    const href = link.getAttribute('href');
-                    if (!href.startsWith('http') && !href.startsWith('#')) {
-                        if (href === '../Timer/timer.html') {
-                            link.href = '../../../Timer/timer.html'; // Adjust Timer path
-                        } else {
-                            link.href = '../../' + href.replace('../Admin/', ''); // Fix other paths
-                        }
-                    }
-                });
-
-                // Initialize dropdown functionality
-                document.querySelectorAll("#sidebar-container .dropdown-btn").forEach(btn => {
-                    btn.addEventListener("click", function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        // Close all other dropdowns first
-                        document.querySelectorAll('#sidebar-container .dropdown-content').forEach(content => {
-                            if (content !== this.nextElementSibling) {
-                                content.style.display = 'none';
-                            }
-                        });
-
-                        // Toggle current dropdown
-                        const content = this.nextElementSibling;
-                        if (content) {
-                            content.style.display = content.style.display === 'block' ? 'none' : 'block';
+ console.log('Starting sidebar fetch...');
+    
+    // Load sidebar with error handling
+    fetch('/sidebar')
+        .then(response => {
+            console.log('Fetch response status:', response.status);
+            console.log('Fetch response URL:', response.url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(html => {
+            console.log('Sidebar HTML received, length:', html.length);
+            console.log('First 100 chars:', html.substring(0, 100));
+            
+            document.getElementById('sidebar-container').innerHTML = html;
+            
+            // Initialize dropdown functionality
+            document.querySelectorAll(".dropdown-btn").forEach(btn => {
+                btn.addEventListener("click", function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // Close all other dropdowns first
+                    document.querySelectorAll('.dropdown-content').forEach(content => {
+                        if (content !== this.nextElementSibling) {
+                            content.style.display = 'none';
                         }
                     });
-                });
 
-                // Close dropdowns when clicking outside
-                document.addEventListener('click', function(e) {
-                    if (!e.target.closest('#sidebar-container .dropdown')) {
-                        document.querySelectorAll('#sidebar-container .dropdown-content').forEach(content => {
-                            content.style.display = 'none';
-                        });
+                    // Toggle current dropdown
+                    const content = this.nextElementSibling;
+                    if (content) {
+                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
                     }
                 });
-
-                // Handle active state
-                const currentPath = window.location.pathname;
-                document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
-                    const linkPath = link.getAttribute('href');
-                    if (currentPath.includes(linkPath.split('/').pop()) && linkPath !== '#') {
-                        link.classList.add('active');
-                        // If link is in dropdown, show parent dropdown and mark as active
-                        const dropdown = link.closest('.dropdown-content');
-                        if (dropdown) {
-                            dropdown.style.display = 'block';
-                            const parentBtn = dropdown.previousElementSibling;
-                            if (parentBtn) {
-                                parentBtn.classList.add('active');
-                            }
-                        }
-                    }
-                });
-
-                // Initialize your schedule functionality after sidebar loads
-                initializeScheduleApp();
-            })
-            .catch(error => {
-                console.error('Error loading sidebar:', error);
-                // Show basic sidebar as fallback
-                document.getElementById('sidebar-container').innerHTML = `
-                    <aside class="sidebar">
-                        <div class="logo">
-                            <h1>Admin Side</h1>
-                        </div>
-                        <div class="user-info">
-                            <div class="avatar">
-                                <i class="fas fa-user"></i>
-                            </div>
-                            <div class="name">Unknown User</div>
-                            <div class="role">Admin</div>
-                        </div>
-                        <ul class="nav-items">
-                            <li class="timer-item">
-                                <a href="../Timer/timer.html"><i class="fas fa-stopwatch"></i> <span>Go to Timer</span></a>
-                            </li>
-                            <li><a href="../Admin/dashboard/dashboard.html"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
-                            <li class="dropdown">
-                                <a href="#" class="dropdown-btn">
-                                    <i class="fas fa-graduation-cap"></i> <span>Management</span>
-                                    <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
-                                </a>
-                                <ul class="dropdown-content">
-                                    <li><a href="*/programs"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
-                                    <li><a href="/schedule"><i class="fas fa-calendar-check"></i> <span>Faculty Member Schedules</span></a></li>
-                                    <li><a href="/classsched"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
-                                </ul>
-                            </li>
-                            <li><a href="/FacultyDB"><i class="fas fa-chalkboard-teacher"></i> <span>Faculty Members</span></a></li>
-                            <li><a href="/StudentDB"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
-                            <li><a href="/settings"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
-                            <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
-                        </ul>
-                    </aside>
-                `;
-                initializeScheduleApp();
             });
 
+            // Close dropdowns when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.dropdown')) {
+                    document.querySelectorAll('.dropdown-content').forEach(content => {
+                        content.style.display = 'none';
+                    });
+                }
+            });
+
+            // Handle active state
+            const currentPath = window.location.pathname;
+            document.querySelectorAll('.nav-items a').forEach(link => {
+                const linkPath = link.getAttribute('href');
+                if (currentPath.includes(linkPath) && linkPath !== '#') {
+                    link.classList.add('active');
+                    // If link is in dropdown, show parent dropdown
+                    const dropdown = link.closest('.dropdown-content');
+                    if (dropdown) {
+                        dropdown.style.display = 'block';
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Sidebar fetch failed:', error);
+            console.error('Error details:', error.message);
+            // Show error in sidebar container for debugging
+            document.getElementById('sidebar-container').innerHTML = `
+                <div style="color: red; padding: 20px;">
+                    <h3>Sidebar Error</h3>
+                    <p>Failed to load sidebar: ${error.message}</p>
+                    <p>Check console for details</p>
+                </div>
+            `;
+        });
         // Initialize schedule functionality
         function initializeScheduleApp() {
             // Modal functionality

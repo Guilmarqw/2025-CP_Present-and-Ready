@@ -12,6 +12,11 @@
       min-height: 100vh;
     }
 
+    .nav-items a.active {
+      background-color: #4a6fa9;
+      color: white;
+    }
+
     /* Sidebar Styles - Updated to light theme */
     .sidebar {
       width: 250px;
@@ -87,11 +92,6 @@
       text-decoration: none;
       border-radius: 5px;
       transition: all 0.3s ease;
-    }
-
-    .nav-items a:hover, .nav-items a.active {
-      background-color: rgba(0, 0, 0, 0.05);
-      color: black;
     }
 
     .nav-items a i {

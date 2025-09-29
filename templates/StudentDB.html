@@ -1018,29 +1018,39 @@ function isExpiringSoon(timeRemaining) {
     return timeRemaining.includes('m') && !timeRemaining.includes('h') && !timeRemaining.includes('d');
 }
 
-// Load sidebar
-fetch('/sidebar')
-    .then(response => response.text())
-    .then(html => {
-        const sidebarContainer = document.getElementById('sidebar-container');
-        if (sidebarContainer) {
-            sidebarContainer.innerHTML = html;
+ console.log('Starting sidebar fetch...');
+    
+    // Load sidebar with error handling
+    fetch('/sidebar')
+        .then(response => {
+            console.log('Fetch response status:', response.status);
+            console.log('Fetch response URL:', response.url);
             
-            document.querySelectorAll('#sidebar-container .nav-items a').forEach(link => {
-                if (!link.getAttribute('href').startsWith('http') && !link.getAttribute('href').startsWith('#')) {
-                    link.href = '../' + link.getAttribute('href');
-                }
-            });
-
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(html => {
+            console.log('Sidebar HTML received, length:', html.length);
+            console.log('First 100 chars:', html.substring(0, 100));
+            
+            document.getElementById('sidebar-container').innerHTML = html;
+            
+            // Initialize dropdown functionality
             document.querySelectorAll(".dropdown-btn").forEach(btn => {
                 btn.addEventListener("click", function(e) {
                     e.preventDefault();
                     e.stopPropagation();
+                    
+                    // Close all other dropdowns first
                     document.querySelectorAll('.dropdown-content').forEach(content => {
                         if (content !== this.nextElementSibling) {
                             content.style.display = 'none';
                         }
                     });
+
+                    // Toggle current dropdown
                     const content = this.nextElementSibling;
                     if (content) {
                         content.style.display = content.style.display === 'block' ? 'none' : 'block';
@@ -1048,6 +1058,7 @@ fetch('/sidebar')
                 });
             });
 
+            // Close dropdowns when clicking outside
             document.addEventListener('click', function(e) {
                 if (!e.target.closest('.dropdown')) {
                     document.querySelectorAll('.dropdown-content').forEach(content => {
@@ -1056,19 +1067,32 @@ fetch('/sidebar')
                 }
             });
 
+            // Handle active state
             const currentPath = window.location.pathname;
             document.querySelectorAll('.nav-items a').forEach(link => {
                 const linkPath = link.getAttribute('href');
                 if (currentPath.includes(linkPath) && linkPath !== '#') {
                     link.classList.add('active');
+                    // If link is in dropdown, show parent dropdown
                     const dropdown = link.closest('.dropdown-content');
                     if (dropdown) {
                         dropdown.style.display = 'block';
                     }
                 }
             });
-        }
-    });
+        })
+        .catch(error => {
+            console.error('Sidebar fetch failed:', error);
+            console.error('Error details:', error.message);
+            // Show error in sidebar container for debugging
+            document.getElementById('sidebar-container').innerHTML = `
+                <div style="color: red; padding: 20px;">
+                    <h3>Sidebar Error</h3>
+                    <p>Failed to load sidebar: ${error.message}</p>
+                    <p>Check console for details</p>
+                </div>
+            `;
+        });
 
 // Initialize everything
 document.addEventListener('DOMContentLoaded', function() {

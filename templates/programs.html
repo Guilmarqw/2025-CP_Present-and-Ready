@@ -9,43 +9,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='programs.css') }}">
 </head>
 <body>
-
-  <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="logo">
-      <h1>Admin Side</h1>
-    </div>
-
-    <div class="user-info">
-      <div class="avatar">
-        <i class="fas fa-user"></i>
-      </div>
-      <div class="name">Admin User</div>
-      <div class="role">Administrator</div>
-    </div>
-
-    <ul class="nav-items">
-      <li class="timer-item">
-        <a href="/timer"><i class="fas fa-stopwatch"></i> <span>Go to Timer</span></a>
-      </li>
-      <li><a href="/AdminDB"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
-      <li class="dropdown">
-        <a href="#" class="dropdown-btn">
-          <i class="fas fa-graduation-cap"></i> <span>Management</span>
-          <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
-        </a>
-        <ul class="dropdown-content">
-          <li><a href="/programs" class="active"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
-          <li><a href="/schedule"><i class="fas fa-calendar-check"></i> <span>Faculty Member Schedules</span></a></li>
-          <li><a href="/classsched"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>
-        </ul>
-      </li>
-      <li><a href="/FacultyDB"><i class="fas fa-chalkboard-teacher"></i> <span>Faculty Members</span></a></li>
-      <li><a href="/StudentDB"><i class="fas fa-user-graduate"></i> <span>Students</span></a></li>
-      <li><a href="/settings"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
-      <li><a href="#"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
-    </ul>
-  </aside>
+<!-- Sidebar -->
+    <div id="sidebar-container"></div>
 
   <!-- Main Content -->
   <div class="main-content">
@@ -148,36 +113,82 @@
     let confirmCallback = null;
     let confirmData = null;
 
-    // Initialize sidebar functionality
-    function initSidebar() {
-      // Toggle dropdown
-      document.querySelectorAll(".dropdown-btn").forEach(btn => {
-        btn.addEventListener("click", function(e) {
-          e.preventDefault();
-          const dropdown = this.closest('.dropdown');
-          const isOpen = dropdown.classList.contains('open');
-          
-          // Close all dropdowns
-          document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
-          
-          // Toggle current dropdown
-          if (!isOpen) {
-            dropdown.classList.add('open');
-          }
-        });
-      });
-
-      // Set active state based on current page
+     console.log('Starting sidebar fetch...');
     
-    }
+    // Load sidebar with error handling
+    fetch('/sidebar')
+        .then(response => {
+            console.log('Fetch response status:', response.status);
+            console.log('Fetch response URL:', response.url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.text();
+        })
+        .then(html => {
+            console.log('Sidebar HTML received, length:', html.length);
+            console.log('First 100 chars:', html.substring(0, 100));
+            
+            document.getElementById('sidebar-container').innerHTML = html;
+            
+            // Initialize dropdown functionality
+            document.querySelectorAll(".dropdown-btn").forEach(btn => {
+                btn.addEventListener("click", function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // Close all other dropdowns first
+                    document.querySelectorAll('.dropdown-content').forEach(content => {
+                        if (content !== this.nextElementSibling) {
+                            content.style.display = 'none';
+                        }
+                    });
 
-    // Initialize sidebar
-    if (document.readyState !== 'loading') {
-      initSidebar();
-    } else {
-      document.addEventListener('DOMContentLoaded', initSidebar);
-    }
+                    // Toggle current dropdown
+                    const content = this.nextElementSibling;
+                    if (content) {
+                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                    }
+                });
+            });
 
+            // Close dropdowns when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.dropdown')) {
+                    document.querySelectorAll('.dropdown-content').forEach(content => {
+                        content.style.display = 'none';
+                    });
+                }
+            });
+
+            // Handle active state
+            const currentPath = window.location.pathname;
+            document.querySelectorAll('.nav-items a').forEach(link => {
+                const linkPath = link.getAttribute('href');
+                if (currentPath.includes(linkPath) && linkPath !== '#') {
+                    link.classList.add('active');
+                    // If link is in dropdown, show parent dropdown
+                    const dropdown = link.closest('.dropdown-content');
+                    if (dropdown) {
+                        dropdown.style.display = 'block';
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Sidebar fetch failed:', error);
+            console.error('Error details:', error.message);
+            // Show error in sidebar container for debugging
+            document.getElementById('sidebar-container').innerHTML = `
+                <div style="color: red; padding: 20px;">
+                    <h3>Sidebar Error</h3>
+                    <p>Failed to load sidebar: ${error.message}</p>
+                    <p>Check console for details</p>
+                </div>
+            `;
+        });
+   
     // Generic Alert Modal Functions
     function showAlertModal(title, message, isError = false) {
       const modal = document.getElementById('alertModal');
