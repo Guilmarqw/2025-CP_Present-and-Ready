@@ -1,3 +1,4 @@
+from functools import wraps
 import os
 import sys
 import cv2
@@ -17,7 +18,7 @@ import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
-from flask import Flask, Response, render_template, request, jsonify, redirect, url_for, send_from_directory
+from flask import Flask, Response, g, make_response, render_template, request, jsonify, redirect, url_for, send_from_directory
 from flask_cors import CORS
 import logging
 from werkzeug.utils import secure_filename
@@ -1460,7 +1461,8 @@ def login():
         if user['user_type'] == 'student':
             redirect_url = '/StudentLP'
         
-        return jsonify({
+        # Create response
+        resp = jsonify({
             'success': True,
             'message': 'Login successful',
             'user': {
@@ -1469,9 +1471,12 @@ def login():
                 'type': user['user_type'],
                 'role': user.get('role', 'student')
             },
-            'redirect_url': redirect_url,
-            'session_token': session_token
+            'redirect_url': redirect_url
         })
+        
+        # Set session token as a cookie
+        resp.set_cookie('session_token', session_token, httponly=True, secure=False, samesite='Strict')  # secure=False for non-HTTPS testing
+        return resp
         
     except Exception as e:
         logger.error(f"Login error: {e}")
@@ -2494,6 +2499,33 @@ def get_faculty_distribution():
         logger.error(f"Error fetching faculty distribution: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
+# Add this decorator function before the routes
+# Login required decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        session_token = request.cookies.get('session_token')
+        if not session_token:
+            return redirect(url_for('login_page'))
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT * FROM user_sessions WHERE session_token = %s AND expires_at > NOW()",
+                (session_token,)
+            )
+            session = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            if not session:
+                return redirect(url_for('login_page'))
+            g.user = session
+        except Exception as e:
+            logger.error(f"Session validation error: {e}")
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 # Serve student photos
 @app.route('/student_photos/<filename>')
 def serve_photo(filename):
@@ -3352,58 +3384,74 @@ def reconnect_camera():
 
 # Routes
 @app.route('/timer')
+@login_required
 def timer_page():
     return render_template('Timer.html')
 
 @app.route('/camfootage')
+@login_required
 def camfootage_page():
     return render_template('CamFootage.html')
 
 @app.route('/sidebar')
+@login_required
 def sidebar_page():
-    return render_template('sidebar.html')
+    user = g.get('user', {})
+    user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or "Unknown User"
+    return render_template('sidebar.html', user_name=user_name)
 
 @app.route('/summary')
+@login_required
 def summary_page():
     return render_template('Summary.html')
 
 @app.route('/schedule')
+@login_required
 def schedule_page():
     return render_template('schedule.html')
 
 @app.route('/programs')
+@login_required
 def programs_page():
     return render_template('programs.html')
 
 @app.route('/classsched')
+@login_required
 def classsched_page():
     return render_template('classsched.html')
 
 @app.route('/studentreg')
+@login_required
 def studentreg_page():
     return render_template('studentreg.html')
 
 @app.route('/facultyreg')
+@login_required
 def faculty_reg_page():
     return render_template('facultyreg.html')
 
 @app.route('/subject')
+@login_required
 def subject_page():
     return render_template('subject.html')
 
 @app.route('/AdminDB')
+@login_required
 def admin_db_page():
     return render_template('AdminDB.html')
 
 @app.route('/StudentDB')
+@login_required
 def student_db_page():
     return render_template('StudentDB.html')
 
 @app.route('/FacultyDB')
+@login_required
 def faculty_db_page():
     return render_template('FacultyDB.html')
 
 @app.route('/settings')
+@login_required
 def settings_page():
     return render_template('settings.html')
 
@@ -3414,6 +3462,7 @@ def login_page():
 @app.route('/video_feed')
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
 
 if __name__ == "__main__":
     # Initialize global variables (no need for global keyword here)
