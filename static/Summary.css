@@ -1,4 +1,4 @@
-        * {
+          * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
@@ -256,18 +256,16 @@
             color: #9CA3AF;
             font-weight: 500;
         }
-
         .attendance-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 20px;
             padding: 20px;
             background: #f5f5f5;
             flex: 1;
             overflow: hidden;
         }
-
-        .attendance-column {
+.attendance-column {
             padding: 20px;
             border-radius: 12px;
             height: auto;
@@ -277,20 +275,21 @@
             background: white;
             min-height: 0;
         }
-
         .column-present {
-            border-left: 4px solid #16A34A;
+            border-top: 4px solid #16A34A;
         }
 
         .column-late {
-            border-left: 4px solid #D97706;
+            border-top: 4px solid #D97706;
         }
-
         .column-absent {
-            border-left: 4px solid #DC2626;
+            border-top: 4px solid #DC2626;
         }
 
-        .column-header {
+        .column-excused {
+            border-top: 4px solid #8B5CF6;
+        }
+.column-header {
             text-align: center;
             margin-bottom: 20px;
             flex-shrink: 0;
@@ -309,12 +308,14 @@
         .count-late {
             color: #D97706;
         }
-
         .count-absent {
             color: #DC2626;
         }
 
-        .attendance-label {
+        .count-excused {
+            color: #8B5CF6;
+        }
+.attendance-label {
             font-size: 12px;
             color: #6B7280;
             font-weight: 500;
@@ -487,7 +488,6 @@
         .option-late:hover {
             background: #B45309;
         }
-
         .option-absent {
             background: #DC2626;
             color: white;
@@ -497,7 +497,15 @@
             background: #B91C1C;
         }
 
-        .students-container {
+        .option-excused {
+            background: #8B5CF6;
+            color: white;
+        }
+
+        .option-excused:hover {
+            background: #7C3AED;
+        }
+.students-container {
             flex: 1;
             overflow-y: auto;
             max-height: 300px;
@@ -584,12 +592,14 @@
         .checkbox-late {
             color: #D97706;
         }
-
         .checkbox-absent {
             color: #DC2626;
         }
 
-        .modal-actions {
+        .checkbox-excused {
+            color: #8B5CF6;
+        }
+.modal-actions {
             padding: 16px 20px;
             border-top: 1px solid #E5E7EB;
             display: flex;
@@ -624,7 +634,6 @@
         .modal-btn-cancel:hover {
             background: #4B5563;
         }
-
         @media (max-width: 768px) {
             .container {
                 margin: 0;
