@@ -12,6 +12,8 @@
 </head>
 <body>
 
+<input type="hidden" name="invite_token" id="invite_token">
+
   <div class="container">
     <!-- Step 1 -->
     <div id="step1">
@@ -986,6 +988,13 @@ function registerStudent() {
     formData.append('face_encoding', JSON.stringify(window.faceEncoding));
     formData.append('photo', photoInput.files[0]);
     
+     // **ADD THIS LINE - Get the invite token from URL and append it**
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteToken = urlParams.get('token');
+    if (inviteToken) {
+        formData.append('invite_token', inviteToken);
+    }
+
     const registerBtn = document.querySelector("#step5 button");
     if (registerBtn) {
         registerBtn.disabled = true;
@@ -1018,9 +1027,11 @@ function registerStudent() {
     });
 }
 
-// Get token from URL
-    const urlParams = new URLSearchParams(window.location.search);
+ const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
+    if (token) {
+        document.getElementById('invite_token').value = token;
+    }
 
     // Add token to form submission
     document.getElementById('student-reg-form').addEventListener('submit', async (e) => {

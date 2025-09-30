@@ -1,4 +1,5 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "cmake.sourceDirectory": "C:/Users/Lawrence Tilde/OneDrive/Documents/GitHub/2025-CP_Present-and-Ready/ByteTrack/deploy/DeepStream"
 }

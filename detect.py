@@ -101,7 +101,10 @@ DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
     'password': '',
-    'database': 'facesys' # fcee for backup
+    'database': 'facesys',  # fcee for backup
+    'autocommit': False,  # Explicitly set to False for transaction control
+    'pool_name': 'mypool',
+    'pool_size': 5
 }
 
 # Email configuration
@@ -2675,24 +2678,67 @@ def generate_dynamic_invite():
         # Generate unique token
         token = secrets.token_urlsafe(32)
 
-        # Insert into invites table
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO invites (token, expires_at, used) VALUES (%s, %s, %s)",
-            (token, expires_at, 0)
-        )
-        conn.commit()
-        cursor.close()
-        conn.close()
+        # Insert into invites table - matching your actual schema
+        conn = None
+        cursor = None
+        
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Your schema: id, token, invite_type, created_by, max_uses, current_uses, notes, expires_at, used, created_at
+            cursor.execute(
+                """INSERT INTO invites 
+                   (token, invite_type, max_uses, current_uses, expires_at, used) 
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (token, invite_type, 1, 0, expires_at, 0)
+            )
+            
+            # Get the inserted ID
+            invite_id = cursor.lastrowid
+            
+            # Commit BEFORE verification
+            conn.commit()
+            
+            logger.info(f"Committed invite with ID {invite_id}, token: {token[:10]}...")
+            
+            # Verify the insert succeeded
+            cursor.execute(
+                "SELECT id, token, invite_type FROM invites WHERE id = %s",
+                (invite_id,)
+            )
+            verify = cursor.fetchone()
+            
+            if not verify:
+                raise Exception("Token insertion failed verification")
+            
+            logger.info(f"Generated {invite_type} invite token: {token} (ID: {invite_id})")
+            
+        except mysql.connector.Error as db_error:
+            if conn:
+                conn.rollback()
+            logger.error(f"Database error during invite generation: {db_error}")
+            raise Exception(f"Database error: {str(db_error)}")
+            
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
-        logger.info(f"Generated {invite_type} invite token: {token}")
+        # Generate the appropriate invite link
+        if invite_type == 'student':
+            invite_link = f"{request.host_url}studentreg?token={token}"
+        else:
+            invite_link = f"{request.host_url}facultyreg?token={token}"
+
         return jsonify({
             'success': True,
             'message': f'{invite_type.capitalize()} invite link generated successfully',
             'token': token,
+            'link': invite_link,
             'expires_at': expires_at.isoformat(),
-            'type': f'{invite_type}_registration'
+            'type': invite_type
         })
 
     except Exception as e:
@@ -3066,6 +3112,7 @@ def register_student():
         data = request.form
         email = data.get('email', '').strip()
         student_id = data.get('student_id', '').strip()
+        invite_token = data.get('invite_token', '').strip()  
         first_name = data.get('first_name', '').strip()
         last_name = data.get('last_name', '').strip()
         middle_name = data.get('middle_name', '').strip()
@@ -3099,7 +3146,7 @@ def register_student():
             return jsonify({'success': False, 'message': 'Student ID or email already exists'})
         
         # Average embeddings from multiple poses
-        if len(pose_embeddings) >= 3:  # Require at least 3 poses
+        if len(pose_embeddings) >= 3:
             avg_embedding = np.mean([np.array(pose_embeddings[p]) for p in POSE_SEQUENCE if p in pose_embeddings], axis=0)
             encoding_str = "[" + ",".join(str(x) for x in avg_embedding) + "]"
         else:
@@ -3155,19 +3202,55 @@ def register_student():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (student_id, first_name, last_name, middle_name or None, course, year_section, email, encoding_str, photo_path, password_hash)
         )
-        conn.commit()
+        conn.commit()  # COMMIT THE STUDENT INSERT FIRST
         cursor.close()
         conn.close()
         
+        # Update invite token uses (ONLY ONCE, AFTER student is registered)
+        if invite_token:
+            try:
+                conn_invite = get_db_connection()
+                cursor_invite = conn_invite.cursor()
+
+                # Increment current_uses
+                cursor_invite.execute(
+                    "UPDATE invites SET current_uses = current_uses + 1 WHERE token = %s",
+                    (invite_token,)
+                )
+
+                # Check if max uses reached and mark as used
+                cursor_invite.execute(
+                    "SELECT current_uses, max_uses FROM invites WHERE token = %s",
+                    (invite_token,)
+                )
+                result = cursor_invite.fetchone()
+
+                if result and result[0] >= result[1]:
+                    cursor_invite.execute(
+                        "UPDATE invites SET used = 1 WHERE token = %s",
+                        (invite_token,)
+                    )
+                    logger.info(f"Invite token {invite_token} has reached max uses and marked as used")
+
+                conn_invite.commit()
+                cursor_invite.close()
+                conn_invite.close()
+
+                logger.info(f"Incremented uses for invite token: {invite_token}")
+            except Exception as e:
+                logger.error(f"Failed to update invite uses: {e}")
+        
         # Reload known faces
         load_known_faces_from_db()
-        pose_embeddings.clear()  # Reset after registration
+        pose_embeddings.clear()
         
         logger.info(f"Student registered: {student_id} ({first_name} {last_name})")
         return jsonify({'success': True, 'message': 'Student registered successfully'})
+
     except Exception as e:
         logger.error(f"Registration error: {str(e)}")
         return jsonify({'success': False, 'message': f'Registration error: {str(e)}'})
+    
 
 @app.route('/api/register_faculty', methods=['POST'])
 def register_faculty():
@@ -3175,13 +3258,14 @@ def register_faculty():
         data = request.form
         email = data.get('email', '').strip()
         faculty_id = data.get('faculty_id', '').strip()
+        invite_token = data.get('invite_token', '').strip()
         first_name = data.get('first_name', '').strip()
         last_name = data.get('last_name', '').strip()
         middle_name = data.get('middle_name', '').strip()
         department = data.get('department', '').strip()
         designation = data.get('designation', '').strip()
         password = data.get('password', '').strip()
-        role = data.get('role', 'moderator').strip()  # Default role for faculty
+        role = data.get('role', 'moderator').strip()
         
         if not all([email, faculty_id, first_name, last_name, department, designation, password]):
             logger.warning("Missing required fields in register_faculty request")
@@ -3213,7 +3297,7 @@ def register_faculty():
             return jsonify({'success': False, 'message': 'Faculty ID or email already exists'})
         
         # Average embeddings from multiple poses
-        if len(pose_embeddings) >= 3:  # Require at least 3 poses
+        if len(pose_embeddings) >= 3:
             avg_embedding = np.mean([np.array(pose_embeddings[p]) for p in POSE_SEQUENCE if p in pose_embeddings], axis=0)
             encoding_str = "[" + ",".join(str(x) for x in avg_embedding) + "]"
         else:
@@ -3269,16 +3353,51 @@ def register_faculty():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (faculty_id, first_name, last_name, middle_name or None, department, designation, email, encoding_str, photo_path, password_hash, role)
         )
-        conn.commit()
+        conn.commit()  # COMMIT THE FACULTY INSERT FIRST
         cursor.close()
         conn.close()
+
+        # Update invite token uses (ONLY ONCE, AFTER faculty is registered)
+        if invite_token:
+            try:
+                conn_invite = get_db_connection()
+                cursor_invite = conn_invite.cursor()
+
+                # Increment current_uses
+                cursor_invite.execute(
+                    "UPDATE invites SET current_uses = current_uses + 1 WHERE token = %s",
+                    (invite_token,)
+                )
+
+                # Check if max uses reached and mark as used
+                cursor_invite.execute(
+                    "SELECT current_uses, max_uses FROM invites WHERE token = %s",
+                    (invite_token,)
+                )
+                result = cursor_invite.fetchone()
+
+                if result and result[0] >= result[1]:
+                    cursor_invite.execute(
+                        "UPDATE invites SET used = 1 WHERE token = %s",
+                        (invite_token,)
+                    )
+                    logger.info(f"Invite token {invite_token} has reached max uses and marked as used")
+
+                conn_invite.commit()
+                cursor_invite.close()
+                conn_invite.close()
+
+                logger.info(f"Incremented uses for invite token: {invite_token}")
+            except Exception as e:
+                logger.error(f"Failed to update invite uses: {e}")
         
         # Reload known faces
         load_known_faculties_from_db()
-        pose_embeddings.clear()  # Reset after registration
+        pose_embeddings.clear()
         
         logger.info(f"Faculty registered: {faculty_id} ({first_name} {last_name}) with role {role}")
         return jsonify({'success': True, 'message': 'Faculty registered successfully'})
+        
     except Exception as e:
         logger.error(f"Faculty registration error: {str(e)}")
         return jsonify({'success': False, 'message': f'Registration error: {str(e)}'})
@@ -3421,17 +3540,106 @@ def classsched_page():
     return render_template('classsched.html')
 
 @app.route('/studentreg')
-@login_required
 def studentreg_page():
-    return render_template('studentreg.html')
+    """Student registration page - requires valid invite token"""
+    token = request.args.get('token')
+    
+    if not token:
+        return redirect(url_for('login_page'))
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all relevant fields including current_uses and max_uses
+        cursor.execute(
+            "SELECT expires_at, used, current_uses, max_uses, invite_type FROM invites WHERE token = %s",
+            (token,)
+        )
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not result:
+            logger.warning(f"Invalid invite token attempted: {token}")
+            return redirect(url_for('login_page'))
+        
+        expires_at, used, current_uses, max_uses, invite_type = result
+        
+        # Validate invite type
+        if invite_type != 'student':
+            logger.warning(f"Wrong invite type for student registration: {invite_type}")
+            return redirect(url_for('login_page'))
+        
+        # Check if token is used up (either marked as used OR current_uses >= max_uses)
+        if used == 1 or current_uses >= max_uses:
+            logger.warning(f"Used up invite token attempted: {token} (used={used}, {current_uses}/{max_uses})")
+            return redirect(url_for('login_page'))
+            
+        # Check if token is expired
+        if datetime.now() > expires_at:
+            logger.warning(f"Expired invite token attempted: {token}")
+            return redirect(url_for('login_page'))
+        
+        # Valid token - show registration page
+        logger.info(f"Valid student invite token accessed: {token} ({current_uses}/{max_uses} uses)")
+        return render_template('studentreg.html', token=token)
+        
+    except Exception as e:
+        logger.error(f"Error validating invite token: {e}")
+        return redirect(url_for('login_page'))
 
 @app.route('/facultyreg')
-@login_required
 def faculty_reg_page():
-    return render_template('facultyreg.html')
-
+    """Faculty registration page - requires valid invite token"""
+    token = request.args.get('token')
+    
+    if not token:
+        return redirect(url_for('login_page'))
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all relevant fields including current_uses and max_uses
+        cursor.execute(
+            "SELECT expires_at, used, current_uses, max_uses, invite_type FROM invites WHERE token = %s",
+            (token,)
+        )
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not result:
+            logger.warning(f"Invalid invite token attempted: {token}")
+            return redirect(url_for('login_page'))
+        
+        expires_at, used, current_uses, max_uses, invite_type = result
+        
+        # Validate invite type
+        if invite_type != 'faculty':
+            logger.warning(f"Wrong invite type for faculty registration: {invite_type}")
+            return redirect(url_for('login_page'))
+        
+        # Check if token is used up (either marked as used OR current_uses >= max_uses)
+        if used == 1 or current_uses >= max_uses:
+            logger.warning(f"Used up invite token attempted: {token} (used={used}, {current_uses}/{max_uses})")
+            return redirect(url_for('login_page'))
+            
+        # Check if token is expired
+        if datetime.now() > expires_at:
+            logger.warning(f"Expired invite token attempted: {token}")
+            return redirect(url_for('login_page'))
+        
+        # Valid token - show registration page
+        logger.info(f"Valid faculty invite token accessed: {token} ({current_uses}/{max_uses} uses)")
+        return render_template('facultyreg.html', token=token)
+        
+    except Exception as e:
+        logger.error(f"Error validating invite token: {e}")
+        return redirect(url_for('login_page'))
+    
 @app.route('/subject')
-@login_required
 def subject_page():
     return render_template('subject.html')
 
@@ -3463,6 +3671,53 @@ def login_page():
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    try:
+        session_token = request.cookies.get('session_token')
+        
+        if session_token:
+            # Delete session from database
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM user_sessions WHERE session_token = %s",
+                (session_token,)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            logger.info(f"Session {session_token[:8]}... deleted")
+        
+        # Create response that clears the cookie
+        resp = jsonify({'success': True, 'message': 'Logged out successfully'})
+        resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
+        
+        return resp
+        
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return jsonify({'success': False, 'message': 'Logout failed'})
+
+@app.route('/logout')
+def logout_page():
+    """Direct logout route that redirects to login"""
+    session_token = request.cookies.get('session_token')
+    
+    if session_token:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM user_sessions WHERE session_token = %s", (session_token,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Logout error: {e}")
+    
+    resp = make_response(redirect(url_for('login_page')))
+    resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
+    return resp
 
 if __name__ == "__main__":
     # Initialize global variables (no need for global keyword here)

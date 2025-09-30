@@ -270,15 +270,15 @@
     </div>
 
     <!-- Alert Modal -->
-    <div id="alertModal" class="alert-modal">
-        <div class="alert-content">
-            <div class="alert-icon" id="alertIcon">
-                <i class="fas fa-check-circle success-icon"></i>
-            </div>
-            <p class="alert-message" id="alertMessage"></p>
-            <button class="alert-btn" id="alertButton">OK</button>
+<div id="alertModal" class="alert-modal" style="z-index: 10000;">
+    <div class="alert-content" style="position: relative; z-index: 10001;">
+        <div class="alert-icon" id="alertIcon">
+            <i class="fas fa-check-circle success-icon"></i>
         </div>
+        <p class="alert-message" id="alertMessage"></p>
+        <button class="alert-btn" id="alertButton">OK</button>
     </div>
+</div>
 
     <script>
         // Global variables for data management
@@ -857,39 +857,63 @@
         }
 
         function displayActiveFacultyInvites(invites) {
-            const container = document.getElementById('activeFacultyInvitesList');
-            if (!container) return;
-            
-            if (invites.length === 0) {
-                container.innerHTML = '<p>No active faculty invites found.</p>';
-                return;
-            }
-            
-            container.innerHTML = invites.map(invite => `
-                <div class="invite-item">
-                    <div class="invite-item-header">
-                        <span class="invite-type-badge">FACULTY</span>
-                        <span class="time-remaining ${isExpiringSoon(invite.time_remaining) ? 'expiring' : ''}">${invite.time_remaining} remaining</span>
-                    </div>
-                    <div class="invite-link-display">
-                        <input type="text" value="${invite.link}" readonly>
-                        <button class="btn-copy-small" onclick="copyFacultyInviteLink('${invite.link}')">
-                            <i class="fas fa-copy"></i>
-                        </button>
-                    </div>
-                    <div style="font-size: 12px; color: #666; margin: 4px 0;">
-                        <div>Created: ${new Date(invite.created_at).toLocaleString()}</div>
-                        <div>Expires: ${new Date(invite.expires_at).toLocaleString()}</div>
-                        <div>Uses: ${invite.uses}</div>
-                    </div>
-                    <div class="invite-actions">
-                        <button class="btn-revoke" onclick="revokeFacultyInvite('${invite.token}')">
-                            <i class="fas fa-ban"></i> Revoke
-                        </button>
-                    </div>
-                </div>
-            `).join('');
+    const container = document.getElementById('activeFacultyInvitesList');
+    if (!container) return;
+    
+    if (invites.length === 0) {
+        container.innerHTML = '<p>No active faculty invites found.</p>';
+        return;
+    }
+    
+    container.innerHTML = invites.map(invite => {
+        // Calculate actual expiration time from creation time + duration
+        const createdAt = new Date(invite.created_at);
+        const expiresAt = new Date(invite.expires_at);
+        
+        // Calculate time remaining
+        const now = new Date();
+        const timeRemaining = expiresAt - now;
+        const minutesRemaining = Math.floor(timeRemaining / 60000);
+        const hoursRemaining = Math.floor(minutesRemaining / 60);
+        const daysRemaining = Math.floor(hoursRemaining / 24);
+        
+        let timeRemainingText;
+        if (daysRemaining > 0) {
+            timeRemainingText = `${daysRemaining}d ${hoursRemaining % 24}h remaining`;
+        } else if (hoursRemaining > 0) {
+            timeRemainingText = `${hoursRemaining}h ${minutesRemaining % 60}m remaining`;
+        } else if (minutesRemaining > 0) {
+            timeRemainingText = `${minutesRemaining}m remaining`;
+        } else {
+            timeRemainingText = 'Expired';
         }
+        
+        return `
+            <div class="invite-item">
+                <div class="invite-item-header">
+                    <span class="invite-type-badge">FACULTY</span>
+                    <span class="time-remaining ${minutesRemaining < 60 ? 'expiring' : ''}">${timeRemainingText}</span>
+                </div>
+                <div class="invite-link-display">
+                    <input type="text" value="${invite.link}" readonly>
+                    <button class="btn-copy-small" onclick="copyFacultyInviteLink('${invite.link}')">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                <div style="font-size: 12px; color: #666; margin: 8px 0;">
+                    <div><strong>Created:</strong> ${createdAt.toLocaleString()}</div>
+                    <div><strong>Expires:</strong> ${expiresAt.toLocaleString()}</div>
+                    <div><strong>Link will expire in:</strong> ${timeRemainingText}</div>
+                </div>
+                <div class="invite-actions">
+                    <button class="btn-revoke" onclick="revokeFacultyInvite('${invite.token}')">
+                        <i class="fas fa-ban"></i> Revoke
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
 
         function copyFacultyInviteLink(link) {
             navigator.clipboard.writeText(link).then(() => {

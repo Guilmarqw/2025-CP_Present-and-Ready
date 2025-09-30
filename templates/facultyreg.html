@@ -12,6 +12,8 @@
 </head>
 <body>
 
+<input type="hidden" name="invite_token" id="invite_token">
+
   <div class="container">
     <!-- Step 1 -->
     <div id="step1">
@@ -1034,6 +1036,12 @@ setInterval(captureAndSendImage, 500);
     formData.append('password', password);  // Changed from 'pin' to 'password'
     formData.append('face_encoding', JSON.stringify(window.faceEncoding));
     formData.append('photo', photoInput.files[0]);
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteToken = urlParams.get('token');
+    if (inviteToken) {
+        formData.append('invite_token', inviteToken);
+    }
     
     // Show loading state
     const registerBtn = document.querySelector("#step5 button");
@@ -1068,9 +1076,11 @@ setInterval(captureAndSendImage, 500);
         }
     });
 }
-// Get token from URL
-    const urlParams = new URLSearchParams(window.location.search);
+ const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
+    if (token) {
+        document.getElementById('invite_token').value = token;
+    }
 
     // Add token to form submission
     document.getElementById('faculty-reg-form').addEventListener('submit', async (e) => {
