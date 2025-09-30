@@ -40,7 +40,7 @@ RTSP_URL = "rtsp://admin:@101Pok3r5610@192.168.1.64:554/Streaming/Channels/101"
 WEIGHTS_PATH = "yolov8n-face.pt"
 STREAM_WIDTH, STREAM_HEIGHT = 3840, 2160
 DETECT_EVERY = 8  # Default value, will be adjusted dynamically
-CONF_THRESH = 0.45  
+CONF_THRESH = 0.35 
 pose_embeddings = {}
 
 # Add these global variables near the top with other globals (after line ~370 in your original code)
@@ -59,7 +59,7 @@ OTP_RESEND_COOLDOWN = 30  # seconds
 MAX_OTP_ATTEMPTS = 3
 
 ENABLE_RECOGNITION = True
-TOLERANCE = 0.5  # InsightFace uses different distance metric
+TOLERANCE = 0.6  # InsightFace uses different distance metric
 CONFIRMATION_THRESHOLD = 0.8  # Higher threshold for locking a track
 KNOWN_DIR = "known_faces"
 
@@ -69,16 +69,16 @@ MAX_EMPTY_GRABS = 150
 
 # Anti-spoofing configuration
 LIVENESS_THRESHOLD = 150
-MIN_FACE_SIZE = 20
+MIN_FACE_SIZE = 15
 HIGH_CONFIDENCE_THRESHOLD = 0.45
 MEDIUM_CONFIDENCE_THRESHOLD = 0.55
 
 # Performance optimization
 PROCESSING_INTERVAL = 3
-RESIZE_FACTOR = 0.75
+RESIZE_FACTOR = 1
 
 # Distance settings
-MAX_RECOGNITION_DISTANCE = 20
+MAX_RECOGNITION_DISTANCE = 8
 FACE_SIZE_FOR_DISTANCE = 80
 
 # Locking configuration
@@ -1223,7 +1223,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 if conf >= CONF_THRESH and x2 > x1 and y2 > y1:
                     box_width = x2 - x1
                     box_height = y2 - y1
-                    if box_width >= 30 and box_height >= 30:
+                    if box_width >= 25 and box_height >= 25:
                         raw_dets.append((x1, y1, x2, y2, conf))
 
     # Apply Non-Maximum Suppression to remove duplicate detections

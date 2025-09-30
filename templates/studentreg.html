@@ -244,31 +244,52 @@ function nextStep(step) {
 }
 
 function validateStep1() {
-    userEmail = document.getElementById("email")?.value.trim() || "";
+    const emailInput = document.getElementById("email");
+    const nextButton = event.target; // Get the button that was clicked
+    
+    userEmail = emailInput?.value.trim() || "";
+    
     if (userEmail === "" || !userEmail.includes("@wmsu.edu.ph")) {
         showModal("Warning", "Please enter a valid WMSU email address.");
-    } else {
-        fetch('/api/send_otp', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ email: userEmail })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                nextStep(2);
-                setTimeout(() => document.getElementById("otp1")?.focus(), 100);
-            } else {
-                showModal("Error", data.message || "Failed to send OTP.");
-            }
-        })
-        .catch(error => {
-            showModal("Error", "Failed to send OTP. Please try again.");
-            console.error("Error:", error);
-        });
+        return;
     }
+    
+    // Disable button and show loading state
+    nextButton.disabled = true;
+    nextButton.textContent = "Sending OTP...";
+    nextButton.style.opacity = "0.6";
+    nextButton.style.cursor = "not-allowed";
+    
+    fetch('/api/send_otp', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email: userEmail })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            nextStep(2);
+            setTimeout(() => document.getElementById("otp1")?.focus(), 100);
+        } else {
+            showModal("Error", data.message || "Failed to send OTP.");
+            // Re-enable button on error
+            nextButton.disabled = false;
+            nextButton.textContent = "Next";
+            nextButton.style.opacity = "1";
+            nextButton.style.cursor = "pointer";
+        }
+    })
+    .catch(error => {
+        showModal("Error", "Failed to send OTP. Please try again.");
+        console.error("Error:", error);
+        // Re-enable button on error
+        nextButton.disabled = false;
+        nextButton.textContent = "Next";
+        nextButton.style.opacity = "1";
+        nextButton.style.cursor = "pointer";
+    });
 }
 
 function moveToNext(current, event) {
@@ -354,6 +375,14 @@ function validateStep2() {
 }
 
 function resendOTP() {
+    const resendLink = event.target;
+    
+    // Disable resend temporarily
+    resendLink.style.pointerEvents = "none";
+    resendLink.style.opacity = "0.5";
+    const originalText = resendLink.textContent;
+    resendLink.textContent = "Sending...";
+    
     fetch('/api/send_otp', {
         method: 'POST',
         headers: {
@@ -371,35 +400,29 @@ function resendOTP() {
             }
             const otp1 = document.getElementById("otp1");
             if (otp1) otp1.focus();
+            
+            // Re-enable after 30 seconds
+            setTimeout(() => {
+                resendLink.style.pointerEvents = "auto";
+                resendLink.style.opacity = "1";
+                resendLink.textContent = originalText;
+            }, 30000);
         } else {
             showModal("Error", data.message || "Failed to resend OTP.");
+            // Re-enable immediately on error
+            resendLink.style.pointerEvents = "auto";
+            resendLink.style.opacity = "1";
+            resendLink.textContent = originalText;
         }
     })
     .catch(error => {
         showModal("Error", "Failed to resend OTP. Please try again.");
         console.error("Error:", error);
+        // Re-enable immediately on error
+        resendLink.style.pointerEvents = "auto";
+        resendLink.style.opacity = "1";
+        resendLink.textContent = originalText;
     });
-}
-
-function validateStudentId(input) {
-    if (input) {
-        input.value = input.value.replace(/[^0-9-]/g, '');
-    }
-}
-
-function previewUploadedImage(event) {
-    const file = event.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            uploadedPhoto = e.target.result;
-            const uploadPreview = document.getElementById("uploadPreview");
-            if (uploadPreview) {
-                uploadPreview.innerHTML = `<img src="${uploadedPhoto}" alt="Uploaded Photo">`;
-            }
-        };
-        reader.readAsDataURL(file);
-    }
 }
 
 function validatePassword() {

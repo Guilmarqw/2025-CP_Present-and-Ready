@@ -336,35 +336,54 @@ setInterval(captureAndSendImage, 500);
         }
     }
 
-    function validateStep1() {
-        userEmail = document.getElementById("email").value.trim();
-        if (userEmail === "" || !userEmail.includes("@wmsu.edu.ph")) {
-            showModal("Warning", "Please enter a valid WMSU email address.");
-        } else {
-            // Send OTP to email
-            fetch('/api/send_otp', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ email: userEmail })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    nextStep(2);
-                    // Auto-focus first OTP box
-                    setTimeout(() => document.getElementById("otp1").focus(), 100);
-                } else {
-                    showModal("Error", data.message);
-                }
-            })
-            .catch(error => {
-                showModal("Error", "Failed to send OTP. Please try again.");
-                console.error("Error:", error);
-            });
-        }
+function validateStep1() {
+    const emailInput = document.getElementById("email");
+    const nextButton = event.target; // Get the button that was clicked
+    
+    userEmail = emailInput?.value.trim() || "";
+    
+    if (userEmail === "" || !userEmail.includes("@wmsu.edu.ph")) {
+        showModal("Warning", "Please enter a valid WMSU email address.");
+        return;
     }
+    
+    // Disable button and show loading state
+    nextButton.disabled = true;
+    nextButton.textContent = "Sending OTP...";
+    nextButton.style.opacity = "0.6";
+    nextButton.style.cursor = "not-allowed";
+    
+    fetch('/api/send_otp', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email: userEmail })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            nextStep(2);
+            setTimeout(() => document.getElementById("otp1")?.focus(), 100);
+        } else {
+            showModal("Error", data.message || "Failed to send OTP.");
+            // Re-enable button on error
+            nextButton.disabled = false;
+            nextButton.textContent = "Next";
+            nextButton.style.opacity = "1";
+            nextButton.style.cursor = "pointer";
+        }
+    })
+    .catch(error => {
+        showModal("Error", "Failed to send OTP. Please try again.");
+        console.error("Error:", error);
+        // Re-enable button on error
+        nextButton.disabled = false;
+        nextButton.textContent = "Next";
+        nextButton.style.opacity = "1";
+        nextButton.style.cursor = "pointer";
+    });
+}
 
     function moveToNext(current, event) {
         const value = event.target.value;
@@ -429,35 +448,56 @@ setInterval(captureAndSendImage, 500);
         });
     }
 
-    function resendOTP() {
-        fetch('/api/send_otp', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ email: userEmail })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showModal("Success", "A new OTP has been sent to your email.");
-                
-                // Clear all OTP fields
-                for (let i = 1; i <= 6; i++) {
-                    document.getElementById(`otp${i}`).value = "";
-                }
-                
-                // Focus back to the first OTP field
-                document.getElementById("otp1").focus();
-            } else {
-                showModal("Error", data.message);
+function resendOTP() {
+    const resendLink = event.target;
+    
+    // Disable resend temporarily
+    resendLink.style.pointerEvents = "none";
+    resendLink.style.opacity = "0.5";
+    const originalText = resendLink.textContent;
+    resendLink.textContent = "Sending...";
+    
+    fetch('/api/send_otp', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email: userEmail })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showModal("Success", "A new OTP has been sent to your email.");
+            for (let i = 1; i <= 6; i++) {
+                const otpInput = document.getElementById(`otp${i}`);
+                if (otpInput) otpInput.value = "";
             }
-        })
-        .catch(error => {
-            showModal("Error", "Failed to resend OTP. Please try again.");
-            console.error("Error:", error);
-        });
-    }
+            const otp1 = document.getElementById("otp1");
+            if (otp1) otp1.focus();
+            
+            // Re-enable after 30 seconds
+            setTimeout(() => {
+                resendLink.style.pointerEvents = "auto";
+                resendLink.style.opacity = "1";
+                resendLink.textContent = originalText;
+            }, 30000);
+        } else {
+            showModal("Error", data.message || "Failed to resend OTP.");
+            // Re-enable immediately on error
+            resendLink.style.pointerEvents = "auto";
+            resendLink.style.opacity = "1";
+            resendLink.textContent = originalText;
+        }
+    })
+    .catch(error => {
+        showModal("Error", "Failed to resend OTP. Please try again.");
+        console.error("Error:", error);
+        // Re-enable immediately on error
+        resendLink.style.pointerEvents = "auto";
+        resendLink.style.opacity = "1";
+        resendLink.textContent = originalText;
+    });
+}
 
     function validateFacultyId(input) {
         // Allow only numbers and hyphens
