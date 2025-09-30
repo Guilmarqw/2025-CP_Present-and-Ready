@@ -3663,6 +3663,21 @@ def faculty_db_page():
 def settings_page():
     return render_template('settings.html')
 
+@app.route('/StudentLP')
+@login_required
+def student_lp_page():
+    return render_template('StudentLP.html')
+
+@app.route('/StudSettings')
+@login_required
+def student_settings_page():
+    return render_template('StudSettings.html')
+
+@app.route('/StudAttendance')
+@login_required
+def student_attendance_page():
+    return render_template('StudAttendance.html')
+
 @app.route('/')
 def login_page():
     return render_template('login.html')
