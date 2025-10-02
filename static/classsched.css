@@ -12,8 +12,13 @@
       min-height: 100vh;
     }
 
-    .nav-items a.active {
-      background-color: #4a6fa9;
+ .nav-items a.active {
+      background-color: #555;
+      color: white;
+      opacity: 0.4;
+    }
+        .nav-items a.active:hover {
+      background-color: #555;
       color: white;
     }
 
@@ -489,8 +494,8 @@
     }
 
     .btn-warning {
-      background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
-      color: #212529;
+      background: #4a6fa9;
+      color: white;
       box-shadow: 0 2px 4px rgba(255, 193, 7, 0.2);
     }
 

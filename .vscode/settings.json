@@ -1,5 +1,6 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "python-envs.pythonProjects": [],
-    "cmake.sourceDirectory": "C:/Users/Lawrence Tilde/OneDrive/Documents/GitHub/2025-CP_Present-and-Ready/ByteTrack/deploy/DeepStream"
+    "cmake.sourceDirectory": "C:/Users/Lawrence Tilde/OneDrive/Documents/GitHub/2025-CP_Present-and-Ready/ByteTrack/deploy/DeepStream",
+    "liveServer.settings.port": 5501
 }

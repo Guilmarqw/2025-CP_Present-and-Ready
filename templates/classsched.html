@@ -67,7 +67,6 @@
                 <option value="" disabled selected>-- Select Class Type --</option>
                 <option value="Lecture">Lecture</option>
                 <option value="Laboratory">Laboratory</option>
-                <option value="Discussion">Discussion</option>
               </select>
             </div>
           </div>
@@ -341,9 +340,8 @@
 
     // Room mapping based on class type
     const ROOM_MAPPING = {
-      'Lecture': ['LR1', 'LR2', 'LR3', 'LR4', 'LR5', 'LR6'],
-      'Laboratory': ['LAB1', 'LAB2', 'LAB3', 'LAB4', 'CHEM-LAB', 'PHYS-LAB'],
-      'Discussion': ['LR1', 'LR2', 'LR3', 'LR4']
+      'Lecture': ['LR1', 'LR2', 'LR3', 'LR4', 'LR5'],
+      'Laboratory': ['LAB1', 'LAB2']
     };
 
     // Global storage for all schedules - grouped by subject code and year section
