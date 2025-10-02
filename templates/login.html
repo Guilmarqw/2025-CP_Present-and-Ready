@@ -84,6 +84,20 @@
   </div>
 
   <script>
+    window.addEventListener('DOMContentLoaded', async function() {
+    try {
+        const response = await fetch('/api/check_session');
+        const data = await response.json();
+        
+        if (data.logged_in) {
+            // User already logged in, redirect
+            window.location.href = data.redirect_url;
+        }
+    } catch (error) {
+        console.log('Session check failed:', error);
+    }
+});
+
     let cooldownTimer = null;
     let resetEmail = '';
 

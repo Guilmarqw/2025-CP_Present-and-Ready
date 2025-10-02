@@ -2507,25 +2507,23 @@ def get_faculty_distribution():
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        session_token = request.cookies.get('session_token')
-        if not session_token:
+        user = get_current_user()
+        if not user:
             return redirect(url_for('login_page'))
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
-            cursor.execute(
-                "SELECT * FROM user_sessions WHERE session_token = %s AND expires_at > NOW()",
-                (session_token,)
-            )
-            session = cursor.fetchone()
-            cursor.close()
-            conn.close()
-            if not session:
-                return redirect(url_for('login_page'))
-            g.user = session
-        except Exception as e:
-            logger.error(f"Session validation error: {e}")
-            return redirect(url_for('login_page'))
+        g.user = user
+        return f(*args, **kwargs)
+    return decorated_function
+
+def logout_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = get_current_user()
+        if user:
+            # User is already logged in, redirect based on user type
+            if user['user_type'] == 'student':
+                return redirect(url_for('student_lp_page'))
+            else:  # admin or faculty
+                return redirect(url_for('admin_db_page'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -3015,6 +3013,12 @@ def encode_face():
         yaw, pitch, roll = face.pose
         landmarks = face.landmark_2d_106
         
+        # MIRROR CORRECTION: Invert yaw and roll for mirrored camera
+        # When user turns right (from their view), camera sees negative yaw
+        # We need to flip this so logic matches user's perspective
+        yaw = -yaw
+        roll = -roll
+        
         left_eye_indices = [96, 97, 98, 99, 100, 101]
         left_ear = calculate_ear(landmarks, left_eye_indices)
         right_eye_indices = [90, 91, 92, 93, 94, 95]
@@ -3022,18 +3026,18 @@ def encode_face():
         mouth_indices = [76, 77, 78, 79, 80, 81, 82, 83]
         mar = calculate_mar(landmarks, mouth_indices)
         
-        # Much more lenient pose detection thresholds
+        # More lenient pose detection thresholds
         pose_results = {
             'is_frontal': bool(abs(yaw) <= 45 and abs(pitch) <= 40 and abs(roll) <= 35),
-            'is_right': bool(yaw <= -5),  # More lenient
-            'is_left': bool(yaw >= 5),   # More lenient
-            'is_up': bool(pitch <= -5),  # More lenient
-            'is_down': bool(pitch >= 5), # More lenient
-            'is_mouth_open': bool(mar >= 0.15),  # Much more lenient
-            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.4)  # More lenient
+            'is_right': bool(yaw >= 5),   # User turns right = positive yaw (after mirror correction)
+            'is_left': bool(yaw <= -5),   # User turns left = negative yaw (after mirror correction)
+            'is_up': bool(pitch <= -3),   # Even more lenient - reduced from 5 to 3
+            'is_down': bool(pitch >= 3),  # Even more lenient - reduced from 5 to 3
+            'is_mouth_open': bool(mar >= 0.15),
+            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.4)
         }
         
-        logger.info(f"Pose results for {current_pose}: {pose_results}, yaw={yaw:.2f}, pitch={pitch:.2f}, roll={roll:.2f}, mar={mar:.3f}, left_ear={left_ear:.3f}, right_ear={right_ear:.3f}")
+        logger.info(f"Pose results for {current_pose}: {pose_results}, yaw={yaw:.2f} (corrected), pitch={pitch:.2f}, roll={roll:.2f} (corrected), mar={mar:.3f}, left_ear={left_ear:.3f}, right_ear={right_ear:.3f}")
         
         pose_satisfied = False
         message = ""
@@ -3043,22 +3047,22 @@ def encode_face():
             pose_satisfied = pose_results['is_frontal']
             message = "Frontal pose detected successfully." if pose_satisfied else "Please face the camera directly."
         elif current_pose == 'right':
-            pose_satisfied = pose_results['is_right'] or yaw <= -5  # Even more lenient fallback
-            message = "Right pose detected successfully." if pose_satisfied else "Please turn your head to the right."
+            pose_satisfied = pose_results['is_right'] or yaw >= 5
+            message = "Right pose detected successfully." if pose_satisfied else "Please turn your head to the RIGHT."
         elif current_pose == 'left':
-            pose_satisfied = pose_results['is_left'] or yaw >= 5   # Even more lenient fallback
-            message = "Left pose detected successfully." if pose_satisfied else "Please turn your head to the left."
+            pose_satisfied = pose_results['is_left'] or yaw <= -5
+            message = "Left pose detected successfully." if pose_satisfied else "Please turn your head to the LEFT."
         elif current_pose == 'up':
-            pose_satisfied = pose_results['is_up'] or pitch <= -5  # More lenient fallback
-            message = "Upward pose detected successfully." if pose_satisfied else "Please tilt your head up."
+            pose_satisfied = pose_results['is_up'] or pitch <= -3  # More lenient
+            message = "Upward pose detected successfully." if pose_satisfied else "Please tilt your head UP slightly."
         elif current_pose == 'down':
-            pose_satisfied = pose_results['is_down'] or pitch >= 5 # More lenient fallback
-            message = "Downward pose detected successfully." if pose_satisfied else "Please tilt your head down."
+            pose_satisfied = pose_results['is_down'] or pitch >= 3  # More lenient
+            message = "Downward pose detected successfully." if pose_satisfied else "Please tilt your head DOWN slightly."
         elif current_pose == 'mouth_open':
-            pose_satisfied = pose_results['is_mouth_open'] or mar >= 0.12  # Very lenient
+            pose_satisfied = pose_results['is_mouth_open'] or mar >= 0.12
             message = "Mouth open detected successfully." if pose_satisfied else "Please open your mouth wider."
         elif current_pose == 'eyes_closed':
-            pose_satisfied = pose_results['is_eyes_closed'] or ((left_ear + right_ear) / 2 <= 0.4)  # Very lenient
+            pose_satisfied = pose_results['is_eyes_closed'] or ((left_ear + right_ear) / 2 <= 0.4)
             message = "Eyes closed detected successfully." if pose_satisfied else "Please close your eyes."
         
         if pose_satisfied:
@@ -3072,20 +3076,19 @@ def encode_face():
         
         encoding_response = face_embedding.tolist() if current_pose == 'frontal' else []
         
-        # Convert all numpy types to native Python types to avoid JSON serialization issues
+        # Convert all numpy types to native Python types
         return jsonify({
-            'success': bool(pose_satisfied),  # Ensure it's a Python bool
+            'success': bool(pose_satisfied),
             'message': str(message),
             'current_pose': str(current_pose),
             'next_pose': str(next_pose),
             'encoding': encoding_response,
-            'yaw': float(yaw),
+            'yaw': float(yaw),  # Return corrected yaw
             'pitch': float(pitch),
-            'roll': float(roll),
+            'roll': float(roll),  # Return corrected roll
             'mar': float(mar),
             'left_ear': float(left_ear),
             'right_ear': float(right_ear),
-            # Convert numpy bool_ to Python bool explicitly
             'is_frontal': bool(pose_results['is_frontal']),
             'is_left': bool(pose_results['is_left']),
             'is_right': bool(pose_results['is_right']),
@@ -3102,9 +3105,7 @@ def encode_face():
             'current_pose': current_pose,
             'next_pose': current_pose,
             'encoding': []
-        }), 500
-
-        logger.info(f"Received encode_face request for pose: {request.form.get('current_pose')}")
+        }, 500)
 
 @app.route('/api/register_student', methods=['POST'])
 def register_student():
@@ -3435,6 +3436,47 @@ def health_check():
             'error': str(e)
         })
 
+def get_current_user():
+    """Get current user from session token"""
+    session_token = request.cookies.get('session_token')
+    if not session_token:
+        return None
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """SELECT us.user_id, us.user_type, us.expires_at,
+                      CASE 
+                          WHEN us.user_type = 'admin' THEN a.first_name
+                          WHEN us.user_type = 'faculty' THEN f.first_name
+                          WHEN us.user_type = 'student' THEN s.first_name
+                      END as first_name,
+                      CASE 
+                          WHEN us.user_type = 'admin' THEN a.last_name
+                          WHEN us.user_type = 'faculty' THEN f.last_name
+                          WHEN us.user_type = 'student' THEN s.last_name
+                      END as last_name,
+                      CASE 
+                          WHEN us.user_type = 'admin' THEN a.role
+                          WHEN us.user_type = 'faculty' THEN f.role
+                          ELSE 'student'
+                      END as role
+               FROM user_sessions us
+               LEFT JOIN admins a ON us.user_id = a.admin_id AND us.user_type = 'admin'
+               LEFT JOIN faculty f ON us.user_id = f.faculty_id AND us.user_type = 'faculty'
+               LEFT JOIN students s ON us.user_id = s.student_id AND us.user_type = 'student'
+               WHERE us.session_token = %s AND us.expires_at > NOW()""",
+            (session_token,)
+        )
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return user
+    except Exception as e:
+        logger.error(f"Error getting current user: {e}")
+        return None
+
 
 def generate_frames():
     """Modified to handle dummy feed scenario"""
@@ -3542,6 +3584,14 @@ def classsched_page():
 @app.route('/studentreg')
 def studentreg_page():
     """Student registration page - requires valid invite token"""
+    # Check if user is already logged in
+    user = get_current_user()
+    if user:
+        if user['user_type'] == 'student':
+            return redirect(url_for('student_lp_page'))
+        else:
+            return redirect(url_for('admin_db_page'))
+    
     token = request.args.get('token')
     
     if not token:
@@ -3550,8 +3600,6 @@ def studentreg_page():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Get all relevant fields including current_uses and max_uses
         cursor.execute(
             "SELECT expires_at, used, current_uses, max_uses, invite_type FROM invites WHERE token = %s",
             (token,)
@@ -3566,23 +3614,19 @@ def studentreg_page():
         
         expires_at, used, current_uses, max_uses, invite_type = result
         
-        # Validate invite type
         if invite_type != 'student':
             logger.warning(f"Wrong invite type for student registration: {invite_type}")
             return redirect(url_for('login_page'))
         
-        # Check if token is used up (either marked as used OR current_uses >= max_uses)
         if used == 1 or current_uses >= max_uses:
-            logger.warning(f"Used up invite token attempted: {token} (used={used}, {current_uses}/{max_uses})")
+            logger.warning(f"Used up invite token attempted: {token}")
             return redirect(url_for('login_page'))
             
-        # Check if token is expired
         if datetime.now() > expires_at:
             logger.warning(f"Expired invite token attempted: {token}")
             return redirect(url_for('login_page'))
         
-        # Valid token - show registration page
-        logger.info(f"Valid student invite token accessed: {token} ({current_uses}/{max_uses} uses)")
+        logger.info(f"Valid student invite token accessed: {token}")
         return render_template('studentreg.html', token=token)
         
     except Exception as e:
@@ -3592,6 +3636,14 @@ def studentreg_page():
 @app.route('/facultyreg')
 def faculty_reg_page():
     """Faculty registration page - requires valid invite token"""
+    # Check if user is already logged in
+    user = get_current_user()
+    if user:
+        if user['user_type'] == 'student':
+            return redirect(url_for('student_lp_page'))
+        else:
+            return redirect(url_for('admin_db_page'))
+    
     token = request.args.get('token')
     
     if not token:
@@ -3600,8 +3652,6 @@ def faculty_reg_page():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Get all relevant fields including current_uses and max_uses
         cursor.execute(
             "SELECT expires_at, used, current_uses, max_uses, invite_type FROM invites WHERE token = %s",
             (token,)
@@ -3616,29 +3666,38 @@ def faculty_reg_page():
         
         expires_at, used, current_uses, max_uses, invite_type = result
         
-        # Validate invite type
         if invite_type != 'faculty':
             logger.warning(f"Wrong invite type for faculty registration: {invite_type}")
             return redirect(url_for('login_page'))
         
-        # Check if token is used up (either marked as used OR current_uses >= max_uses)
         if used == 1 or current_uses >= max_uses:
-            logger.warning(f"Used up invite token attempted: {token} (used={used}, {current_uses}/{max_uses})")
+            logger.warning(f"Used up invite token attempted: {token}")
             return redirect(url_for('login_page'))
             
-        # Check if token is expired
         if datetime.now() > expires_at:
             logger.warning(f"Expired invite token attempted: {token}")
             return redirect(url_for('login_page'))
         
-        # Valid token - show registration page
-        logger.info(f"Valid faculty invite token accessed: {token} ({current_uses}/{max_uses} uses)")
+        logger.info(f"Valid faculty invite token accessed: {token}")
         return render_template('facultyreg.html', token=token)
         
     except Exception as e:
         logger.error(f"Error validating invite token: {e}")
         return redirect(url_for('login_page'))
-    
+
+@app.route('/api/check_session', methods=['GET'])
+def check_session():
+    """Check if user has active session"""
+    user = get_current_user()
+    if user:
+        return jsonify({
+            'logged_in': True,
+            'user_type': user['user_type'],
+            'name': f"{user['first_name']} {user['last_name']}",
+            'redirect_url': '/StudentLP' if user['user_type'] == 'student' else '/AdminDB'
+        })
+    return jsonify({'logged_in': False})  
+
 @app.route('/subject')
 def subject_page():
     return render_template('subject.html')
@@ -3679,6 +3738,7 @@ def student_attendance_page():
     return render_template('StudAttendance.html')
 
 @app.route('/')
+@logout_required
 def login_page():
     return render_template('login.html')
 
@@ -3713,6 +3773,11 @@ def logout():
     except Exception as e:
         logger.error(f"Logout error: {e}")
         return jsonify({'success': False, 'message': 'Logout failed'})
+
+@app.route('/login')
+@logout_required
+def login_page_alt():
+    return render_template('login.html')
 
 @app.route('/logout')
 def logout_page():
