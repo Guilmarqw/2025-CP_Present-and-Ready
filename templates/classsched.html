@@ -27,43 +27,40 @@
       <form id="classScheduleForm">
         <!-- Horizontal Form Group with two rows -->
         <div class="horizontal-form-group">
-          <!-- First Row: Year & Section, Subject Code, Class Type -->
+          <!-- First Row: Program, Year & Section, Subject Code, Class Type -->
           <div class="form-row-1">
+            <div class="form-field">
+              <label for="program">
+                <i class="fas fa-layer-group"></i> Program *
+              </label>
+              <select id="program" required>
+                <option value="" disabled selected>-- Choose Program --</option>
+                <option value="CS">BS Computer Science</option>
+                <option value="IT">BS Information Technology</option>
+                <option value="ACT">Assistive in Computer Technology</option>
+              </select>
+            </div>
             <div class="form-field">
               <label for="yearSection">
                 <i class="fas fa-layer-group"></i> Year & Section *
               </label>
-              <select id="yearSection" required>
+              <select id="yearSection" required disabled>
                 <option value="" disabled selected>-- Choose Year & Section --</option>
-                <option>1st Year - Section A</option>
-                <option>1st Year - Section B</option>
-                <option>2nd Year - Section A</option>
-                <option>2nd Year - Section B</option>
-                <option>3rd Year - Section A</option>
-                <option>3rd Year - Section B</option>
-                <option>4th Year - Section A</option>
-                <option>4th Year - Section B</option>
               </select>
             </div>
             <div class="form-field">
               <label for="subjectCode">
                 <i class="fas fa-tag"></i> Subject Code *
               </label>
-              <select id="subjectCode" required>
+              <select id="subjectCode" required disabled>
                 <option value="" disabled selected>-- Select Subject Code --</option>
-                <option value="CS-101">CS-101 - Introduction to Programming</option>
-                <option value="IT-202">IT-202 - Database Systems</option>
-                <option value="ENG-303">ENG-303 - Technical Writing</option>
-                <option value="MATH-404">MATH-404 - Calculus III</option>
-                <option value="PHYS-205">PHYS-205 - General Physics</option>
-                <option value="CHEM-306">CHEM-306 - Organic Chemistry</option>
               </select>
             </div>
             <div class="form-field">
               <label for="classType">
                 <i class="fas fa-book-open"></i> Class Type *
               </label>
-              <select id="classType" required>
+              <select id="classType" required disabled>
                 <option value="" disabled selected>-- Select Class Type --</option>
                 <option value="Lecture">Lecture</option>
                 <option value="Laboratory">Laboratory</option>
@@ -367,6 +364,7 @@
     const pendingList = document.getElementById('pendingList');
     const pendingCount = document.getElementById('pendingCount');
     const totalPendingCount = document.getElementById('totalPendingCount');
+    const programSelect = document.getElementById('program');
 
     // Function to populate rooms based on class type
     function populateRooms(classType) {
@@ -420,8 +418,9 @@
 
     // Function to check if form is complete
     function isFormComplete() {
-      return yearSectionSelect.value && subjectCodeSelect.value && classTypeSelect.value && 
-             scheduleDaySelect.value && startTimeSelect.value && endTimeSelect.value && roomSelect.value;
+      return programSelect.value && yearSectionSelect.value && subjectCodeSelect.value && 
+             classTypeSelect.value && scheduleDaySelect.value && startTimeSelect.value && 
+             endTimeSelect.value && roomSelect.value;
     }
 
     // Function to update Add Schedule button state
@@ -730,6 +729,87 @@
         tableBody.appendChild(row);
       });
     }
+
+    // Update the year section options based on selected program
+    function updateYearSectionOptions() {
+      const program = programSelect.value;
+      yearSectionSelect.innerHTML = '<option value="" disabled selected>-- Choose Year & Section --</option>';
+      
+      if (!program) {
+        yearSectionSelect.disabled = true;
+        return;
+      }
+
+      yearSectionSelect.disabled = false;
+      const years = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+      const sections = ['A', 'B'];
+
+      years.forEach(year => {
+        sections.forEach(section => {
+          const option = document.createElement('option');
+          option.value = `${year} - Section ${section}`;
+          option.textContent = `${year} - Section ${section}`;
+          yearSectionSelect.appendChild(option);
+        });
+      });
+    }
+
+    // Update subject codes based on program
+    function updateSubjectCodes() {
+      const program = programSelect.value;
+      subjectCodeSelect.innerHTML = '<option value="" disabled selected>-- Select Subject Code --</option>';
+      
+      if (!program || !yearSectionSelect.value) {
+        subjectCodeSelect.disabled = true;
+        return;
+      }
+
+      subjectCodeSelect.disabled = false;
+      
+      // Add program-specific subject codes
+      const subjectsByProgram = {
+        'CS': [
+          { code: 'CS-101', name: 'Introduction to Programming' },
+          { code: 'CS-102', name: 'Data Structures' }
+        ],
+        'IT': [
+          { code: 'IT-101', name: 'Information Technology Fundamentals' },
+          { code: 'IT-202', name: 'Database Systems' }
+        ],
+        'ACT': [
+          { code: 'ACT-101', name: 'Computer Hardware' },
+          { code: 'ACT-102', name: 'Basic Programming' }
+        ]
+      };
+
+      subjectsByProgram[program].forEach(subject => {
+        const option = document.createElement('option');
+        option.value = subject.code;
+        option.textContent = `${subject.code} - ${subject.name}`;
+        subjectCodeSelect.appendChild(option);
+      });
+    }
+
+    // Add event listeners
+    programSelect.addEventListener('change', () => {
+      updateYearSectionOptions();
+      subjectCodeSelect.disabled = true;
+      classTypeSelect.disabled = true;
+      roomSelect.disabled = true;
+      updateAddScheduleButton();
+    });
+
+    yearSectionSelect.addEventListener('change', () => {
+      updateSubjectCodes();
+      classTypeSelect.disabled = true;
+      roomSelect.disabled = true;
+      updateAddScheduleButton();
+    });
+
+    subjectCodeSelect.addEventListener('change', () => {
+      classTypeSelect.disabled = false;
+      updateAddScheduleButton();
+    });
 
     // Event Listeners
     if (yearSectionSelect) {

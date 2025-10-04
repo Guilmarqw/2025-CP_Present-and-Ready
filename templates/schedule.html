@@ -37,7 +37,6 @@
                         <tr>
                             <th>Name</th>
                             <th>Department</th>
-                            <th>Specialization</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -390,10 +389,10 @@ function initializeScheduleApp() {
     function updateUnassignedFacultyMembers() {
         const assignedFacultyMembers = [...new Set(allSchedules.map(s => s.facultyMember))];
         const facultyMembers = [
-            { id: '1', name: 'Guilmar Quimba', dept: 'Computer Science', specialization: 'Database Systems' },
-            { id: '2', name: 'Jane Smith', dept: 'Computer Science', specialization: 'Web Development' },
-            { id: '3', name: 'John Doe', dept: 'Information Technology', specialization: 'Network Security' },
-            { id: '4', name: 'Emily Davis', dept: 'Computer Science', specialization: 'AI & Machine Learning' }
+            { id: '1', name: 'Guilmar Quimba', dept: 'Computer Science' },
+            { id: '2', name: 'Jane Smith', dept: 'Computer Science' },
+            { id: '3', name: 'John Doe', dept: 'Information Technology' },
+            { id: '4', name: 'Emily Davis', dept: 'Computer Science' }
         ];
         
         const unassigned = facultyMembers.filter(i => !assignedFacultyMembers.includes(i.name));
@@ -406,7 +405,6 @@ function initializeScheduleApp() {
                 tr.innerHTML = `
                     <td>${facultyMember.name}</td>
                     <td>${facultyMember.dept}</td>
-                    <td>${facultyMember.specialization}</td>
                     <td>
                         <button class="add-schedule-btn" onclick="assignFacultyMember('${facultyMember.id}')">
                             <i class="fas fa-plus"></i> Assign
