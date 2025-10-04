@@ -427,7 +427,17 @@ function renderScheduleGrid(schedules) {
         timeSlots.add(`${s.start_time.substring(0, 5)} - ${s.end_time.substring(0, 5)}`);
     });
     
-    const sortedTimeSlots = Array.from(timeSlots).sort();
+    // Sort time slots properly (convert to minutes for accurate sorting)
+    const sortedTimeSlots = Array.from(timeSlots).sort((a, b) => {
+        const timeToMinutes = (timeStr) => {
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            return hours * 60 + minutes;
+        };
+        
+        const aStart = timeToMinutes(a.split(' - ')[0]);
+        const bStart = timeToMinutes(b.split(' - ')[0]);
+        return aStart - bStart;
+    });
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     
     sortedTimeSlots.forEach(time => {
@@ -606,7 +616,7 @@ async function unassignAllSchedules(facultyId) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                faculty_id: facultyId
+                faculty_id: parseInt(facultyId)
             })
         });
         
@@ -614,6 +624,47 @@ async function unassignAllSchedules(facultyId) {
         
         if (data.success) {
             showModal(`Unassigned ${data.affected_rows} schedule(s)`);
+            // Reload both tables after successful deletion
+            setTimeout(() => {
+                loadUnassignedFaculty();
+                loadFacultyWithSchedules();
+            }, 1000);
+        } else {
+            showModal(data.message || 'Failed to unassign schedules');
+        }
+    } catch (error) {
+        console.error('Error unassigning schedules:', error);
+        showModal('Failed to unassign schedules');
+    }
+}
+window.unassignAllSchedules = unassignAllSchedules;
+
+async function unassignSpecificSchedules(facultyId, scheduleIds) {
+    if (!confirm('Are you sure you want to unassign the selected schedule(s)?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/unassign_faculty_from_schedule', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                faculty_id: parseInt(facultyId),
+                schedule_ids: scheduleIds
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showModal(`Unassigned ${data.affected_rows} schedule(s)`);
+            // Reload schedule view
+            const modal = document.getElementById('scheduleOverviewModal');
+            if (modal && modal.style.display === 'block') {
+                modal.style.display = 'none';
+            }
             loadUnassignedFaculty();
             loadFacultyWithSchedules();
         } else {
@@ -624,7 +675,7 @@ async function unassignAllSchedules(facultyId) {
         showModal('Failed to unassign schedules');
     }
 }
-window.unassignAllSchedules = unassignAllSchedules;
+window.unassignSpecificSchedules = unassignSpecificSchedules;
 
 function assignFaculty(facultyId) {
     showPhase2();

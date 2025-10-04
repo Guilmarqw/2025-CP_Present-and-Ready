@@ -4059,9 +4059,35 @@ def update_subject():
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Check if subject exists
+        cursor.execute(
+            "SELECT section_id FROM subjects WHERE subject_id = %s",
+            (subject_id,)
+        )
+        
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Subject not found'})
+        
+        section_id = result[0]
+        
+        # Check if new subject code conflicts with another subject in same section
+        cursor.execute(
+            "SELECT subject_id FROM subjects WHERE section_id = %s AND subject_code = %s AND subject_id != %s",
+            (section_id, subject_code, subject_id)
+        )
+        
+        if cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Subject code already exists in this section'})
+        
+        # Update the subject
         cursor.execute(
             """UPDATE subjects 
-               SET subject_code = %s, subject_name = %s, class_type = %s, units = %s 
+               SET subject_code = %s, subject_name = %s, class_type = %s, units = %s, updated_at = NOW()
                WHERE subject_id = %s""",
             (subject_code, subject_name, class_type, units, subject_id)
         )
@@ -4069,14 +4095,20 @@ def update_subject():
         if cursor.rowcount == 0:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'Subject not found'})
+            return jsonify({'success': False, 'message': 'No changes made'})
         
         conn.commit()
         cursor.close()
         conn.close()
         
+        logger.info(f"Successfully updated subject {subject_id}")
         return jsonify({'success': True, 'message': 'Subject updated successfully'})
         
+    except mysql.connector.Error as db_error:
+        logger.error(f"Database error updating subject: {db_error}")
+        if conn:
+            conn.rollback()
+        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'})
     except Exception as e:
         logger.error(f"Error updating subject: {e}")
         return jsonify({'success': False, 'message': str(e)})
@@ -4084,7 +4116,7 @@ def update_subject():
 @app.route('/api/delete_subject', methods=['POST'])
 @login_required
 def delete_subject():
-    """Delete a subject (soft delete by setting status to inactive)"""
+    """Delete a subject permanently from the database"""
     try:
         subject_id = request.json.get('subject_id')
         
@@ -4094,22 +4126,63 @@ def delete_subject():
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # First, check if subject exists
         cursor.execute(
-            "UPDATE subjects SET status = 'inactive' WHERE subject_id = %s",
+            "SELECT subject_id FROM subjects WHERE subject_id = %s",
+            (subject_id,)
+        )
+        
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Subject not found'})
+        
+        # Delete related faculty schedules first (to maintain referential integrity)
+        cursor.execute("""
+            DELETE fs FROM faculty_schedules fs
+            INNER JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+            WHERE cs.subject_id = %s
+        """, (subject_id,))
+        
+        deleted_faculty_schedules = cursor.rowcount
+        logger.info(f"Deleted {deleted_faculty_schedules} faculty schedule assignments for subject {subject_id}")
+        
+        # Delete related class schedules
+        cursor.execute(
+            "DELETE FROM class_schedules WHERE subject_id = %s",
+            (subject_id,)
+        )
+        
+        deleted_class_schedules = cursor.rowcount
+        logger.info(f"Deleted {deleted_class_schedules} class schedules for subject {subject_id}")
+        
+        # Finally, delete the subject itself
+        cursor.execute(
+            "DELETE FROM subjects WHERE subject_id = %s",
             (subject_id,)
         )
         
         if cursor.rowcount == 0:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'Subject not found'})
+            return jsonify({'success': False, 'message': 'Failed to delete subject'})
         
+        # Commit all changes
         conn.commit()
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'message': 'Subject deleted successfully'})
+        logger.info(f"Successfully deleted subject {subject_id}")
+        return jsonify({
+            'success': True, 
+            'message': 'Subject and all related schedules deleted successfully'
+        })
         
+    except mysql.connector.Error as db_error:
+        logger.error(f"Database error deleting subject: {db_error}")
+        if conn:
+            conn.rollback()
+        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'})
     except Exception as e:
         logger.error(f"Error deleting subject: {e}")
         return jsonify({'success': False, 'message': str(e)})
@@ -4117,7 +4190,7 @@ def delete_subject():
 @app.route('/api/delete_year_section', methods=['POST'])
 @login_required
 def delete_year_section():
-    """Delete a year section (soft delete)"""
+    """Delete a year section and all related data permanently"""
     try:
         section_id = request.json.get('section_id')
         
@@ -4127,28 +4200,67 @@ def delete_year_section():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Also deactivate all subjects in this section
+        # Check if section exists
         cursor.execute(
-            "UPDATE subjects SET status = 'inactive' WHERE section_id = %s",
+            "SELECT section_id FROM year_sections WHERE section_id = %s",
             (section_id,)
         )
         
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Section not found'})
+        
+        # Delete in correct order to maintain referential integrity
+        
+        # 1. Delete faculty schedule assignments
+        cursor.execute("""
+            DELETE fs FROM faculty_schedules fs
+            INNER JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+            WHERE cs.section_id = %s
+        """, (section_id,))
+        logger.info(f"Deleted faculty schedule assignments for section {section_id}")
+        
+        # 2. Delete class schedules
         cursor.execute(
-            "UPDATE year_sections SET status = 'inactive' WHERE section_id = %s",
+            "DELETE FROM class_schedules WHERE section_id = %s",
+            (section_id,)
+        )
+        logger.info(f"Deleted class schedules for section {section_id}")
+        
+        # 3. Delete subjects
+        cursor.execute(
+            "DELETE FROM subjects WHERE section_id = %s",
+            (section_id,)
+        )
+        logger.info(f"Deleted subjects for section {section_id}")
+        
+        # 4. Finally delete the year section
+        cursor.execute(
+            "DELETE FROM year_sections WHERE section_id = %s",
             (section_id,)
         )
         
         if cursor.rowcount == 0:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'Section not found'})
+            return jsonify({'success': False, 'message': 'Failed to delete section'})
         
         conn.commit()
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'message': 'Year section deleted successfully'})
+        logger.info(f"Successfully deleted year section {section_id} and all related data")
+        return jsonify({
+            'success': True, 
+            'message': 'Year section and all related data deleted successfully'
+        })
         
+    except mysql.connector.Error as db_error:
+        logger.error(f"Database error deleting section: {db_error}")
+        if conn:
+            conn.rollback()
+        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'})
     except Exception as e:
         logger.error(f"Error deleting year section: {e}")
         return jsonify({'success': False, 'message': str(e)})
