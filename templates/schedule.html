@@ -149,6 +149,12 @@
     <script>
 console.log('Starting sidebar fetch...');
 
+// Global state
+let allFaculty = [];
+let selectedScheduleIds = new Set();
+let currentFacultyId = null;
+let currentSectionId = null;
+
 // Define global functions
 function showPhase1() {
     console.log('showPhase1 called');
@@ -160,6 +166,10 @@ function showPhase1() {
     }
     phase2.classList.remove('active');
     phase1.classList.add('active');
+    
+    // Refresh data when returning to phase 1
+    loadUnassignedFaculty();
+    loadFacultyWithSchedules();
 }
 window.showPhase1 = showPhase1;
 
@@ -173,10 +183,18 @@ function showPhase2() {
     }
     phase1.classList.remove('active');
     phase2.classList.add('active');
+    
     const form = document.getElementById('scheduleForm');
     if (form) form.reset();
+    
     const classSchedule = document.getElementById('classSchedule');
     if (classSchedule) classSchedule.style.display = 'none';
+    
+    selectedScheduleIds.clear();
+    currentSectionId = null;
+    
+    // Load all faculty for dropdown
+    loadAllFaculty();
 }
 window.showPhase2 = showPhase2;
 
@@ -184,17 +202,13 @@ window.showPhase2 = showPhase2;
 fetch('/sidebar')
     .then(response => {
         console.log('Fetch response status:', response.status);
-        console.log('Fetch response URL:', response.url);
-        
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         return response.text();
     })
     .then(html => {
-        console.log('Sidebar HTML received, length:', html.length);
-        console.log('First 100 chars:', html.substring(0, 100));
-        
+        console.log('Sidebar HTML received');
         document.getElementById('sidebar-container').innerHTML = html;
         
         // Initialize dropdown functionality
@@ -238,422 +252,437 @@ fetch('/sidebar')
     })
     .catch(error => {
         console.error('Sidebar fetch failed:', error);
-        console.error('Error details:', error.message);
         document.getElementById('sidebar-container').innerHTML = `
             <div style="color: red; padding: 20px;">
                 <h3>Sidebar Error</h3>
                 <p>Failed to load sidebar: ${error.message}</p>
-                <p>Check console for details</p>
             </div>
         `;
     })
     .finally(() => {
-        // Initialize schedule app after sidebar fetch
         initializeScheduleApp();
     });
+
+// API Functions
+async function loadUnassignedFaculty() {
+    try {
+        const response = await fetch('/api/get_unassigned_faculty');
+        const data = await response.json();
+        
+        if (data.success) {
+            const tbody = document.querySelector('#unassignedTable tbody');
+            tbody.innerHTML = '';
+            
+            data.faculty.forEach(faculty => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${faculty.full_name}</td>
+                    <td>${faculty.department || 'N/A'}</td>
+                    <td>
+                        <button class="add-schedule-btn" onclick="assignFaculty(${faculty.faculty_id})">
+                            <i class="fas fa-plus"></i> Assign
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading unassigned faculty:', error);
+        showModal('Failed to load unassigned faculty');
+    }
+}
+
+async function loadFacultyWithSchedules() {
+    try {
+        const response = await fetch('/api/get_faculty_with_schedules');
+        const data = await response.json();
+        
+        if (data.success) {
+            const tbody = document.querySelector('#scheduleTable tbody');
+            tbody.innerHTML = '';
+            
+            data.faculty.forEach(faculty => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${faculty.full_name}</td>
+                    <td>${faculty.subject_count}</td>
+                    <td>${faculty.meeting_count}</td>
+                    <td class="action-btns">
+                        <button class="btn-view-schedule" title="View Schedule" onclick="viewFacultySchedule(${faculty.faculty_id}, '${faculty.full_name}')">
+                            <i class="fas fa-calendar-alt"></i>
+                        </button>
+                        <button class="delete" title="Unassign All" onclick="unassignAllSchedules(${faculty.faculty_id})">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading faculty with schedules:', error);
+        showModal('Failed to load faculty schedules');
+    }
+}
+
+async function loadAllFaculty() {
+    try {
+        const response = await fetch('/api/get_all_faculty');
+        const data = await response.json();
+        
+        if (data.success) {
+            allFaculty = data.faculty;
+            const select = document.getElementById('facultyMember');
+            select.innerHTML = '<option value="" disabled selected>Select Faculty Member</option>';
+            
+            data.faculty.forEach(faculty => {
+                const option = document.createElement('option');
+                option.value = faculty.faculty_id;
+                option.textContent = faculty.full_name;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading all faculty:', error);
+        showModal('Failed to load faculty list');
+    }
+}
+
+async function loadSections() {
+    const course = document.getElementById('course').value;
+    const yearLevel = document.getElementById('yearLevel').value;
+    const sectionSelect = document.getElementById('section');
+    
+    if (!course || !yearLevel) {
+        sectionSelect.disabled = true;
+        sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
+        return;
+    }
+    
+    try {
+        // Fetch sections based on course and year level
+        const response = await fetch(`/api/get_sections?program_id=${course}&year_level=${yearLevel}`);
+        const data = await response.json();
+        
+        if (data.success && data.sections.length > 0) {
+            sectionSelect.disabled = false;
+            sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
+            
+            data.sections.forEach(section => {
+                const option = document.createElement('option');
+                option.value = section.section_id;
+                option.textContent = section.section_name;
+                sectionSelect.appendChild(option);
+            });
+        } else {
+            sectionSelect.disabled = true;
+            sectionSelect.innerHTML = '<option value="" disabled selected>No sections available</option>';
+        }
+    } catch (error) {
+        console.error('Error loading sections:', error);
+        showModal('Failed to load sections');
+    }
+}
+window.loadSections = loadSections;
+
+async function loadClassSchedule() {
+    const sectionId = document.getElementById('section').value;
+    const calendar = document.getElementById('classSchedule');
+    
+    if (!sectionId || !calendar) {
+        if (calendar) calendar.style.display = 'none';
+        return;
+    }
+    
+    currentSectionId = sectionId;
+    selectedScheduleIds.clear();
+    
+    try {
+        const response = await fetch(`/api/get_class_schedules_for_section?section_id=${sectionId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            renderScheduleGrid(data.schedules);
+            updateSaveButton();
+        }
+    } catch (error) {
+        console.error('Error loading class schedule:', error);
+        showModal('Failed to load class schedule');
+    }
+}
+window.loadClassSchedule = loadClassSchedule;
+
+function renderScheduleGrid(schedules) {
+    const calendar = document.getElementById('classSchedule');
+    calendar.style.display = 'grid';
+    
+    // Clear existing cells
+    const cells = calendar.querySelectorAll('.time-cell, .schedule-cell');
+    cells.forEach(cell => cell.remove());
+    
+    // Get unique time slots from schedules
+    const timeSlots = new Set();
+    schedules.forEach(s => {
+        timeSlots.add(`${s.start_time.substring(0, 5)} - ${s.end_time.substring(0, 5)}`);
+    });
+    
+    const sortedTimeSlots = Array.from(timeSlots).sort();
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    
+    sortedTimeSlots.forEach(time => {
+        const timeCell = document.createElement('div');
+        timeCell.className = 'time-cell';
+        timeCell.textContent = time;
+        calendar.appendChild(timeCell);
+        
+        days.forEach(day => {
+            const [startTime, endTime] = time.split(' - ');
+            const schedule = schedules.find(s =>
+                s.day_of_week === day &&
+                s.start_time.substring(0, 5) === startTime &&
+                s.end_time.substring(0, 5) === endTime
+            );
+            
+            const scheduleCell = document.createElement('div');
+            scheduleCell.className = 'schedule-cell';
+            
+            if (schedule) {
+                scheduleCell.dataset.scheduleId = schedule.schedule_id;
+                
+                if (schedule.is_assigned) {
+                    scheduleCell.className = 'schedule-cell occupied';
+                    scheduleCell.innerHTML = `
+                        <div class="subject-info">
+                            <div class="subject-code">${schedule.subject_code} - ${schedule.subject_name}</div>
+                            <div class="subject-room">${schedule.class_type || 'Lecture'} | Room: ${schedule.room || 'TBA'}</div>
+                            <div class="faculty-member-name">${schedule.faculty_name}</div>
+                        </div>
+                    `;
+                } else {
+                    scheduleCell.innerHTML = `
+                        <div class="subject-info">
+                            <div class="subject-code">${schedule.subject_code} - ${schedule.subject_name}</div>
+                            <div style="font-weight:lighter; font-size:0.7rem;" class="subject-room">${schedule.class_type || 'Lecture'} | Click to assign</div>
+                        </div>
+                    `;
+                    
+                    scheduleCell.addEventListener('click', () => {
+                        if (!scheduleCell.classList.contains('occupied')) {
+                            scheduleCell.classList.toggle('selected');
+                            
+                            if (scheduleCell.classList.contains('selected')) {
+                                selectedScheduleIds.add(schedule.schedule_id);
+                            } else {
+                                selectedScheduleIds.delete(schedule.schedule_id);
+                            }
+                            
+                            updateSaveButton();
+                        }
+                    });
+                }
+            } else {
+                scheduleCell.innerHTML = '<div class="subject-info"><div style="color:#ccc;">No class</div></div>';
+            }
+            
+            calendar.appendChild(scheduleCell);
+        });
+    });
+}
+
+async function saveSchedule() {
+    const facultyId = document.getElementById('facultyMember').value;
+    
+    if (!facultyId) {
+        showModal('Please select a faculty member');
+        return;
+    }
+    
+    if (selectedScheduleIds.size === 0) {
+        showModal('Please select at least one schedule slot');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/assign_faculty_to_schedule', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                faculty_id: facultyId,
+                schedule_ids: Array.from(selectedScheduleIds)
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showModal(`Successfully assigned ${data.assigned_count} schedule(s)!`);
+            selectedScheduleIds.clear();
+            
+            // Reload the schedule to show updated assignments
+            await loadClassSchedule();
+            
+            // Go back to phase 1 after short delay
+            setTimeout(() => {
+                showPhase1();
+            }, 1500);
+        } else {
+            showModal(data.message || 'Failed to assign schedules');
+        }
+    } catch (error) {
+        console.error('Error saving schedule:', error);
+        showModal('Failed to save schedule');
+    }
+}
+window.saveSchedule = saveSchedule;
+
+async function viewFacultySchedule(facultyId, facultyName) {
+    try {
+        const response = await fetch(`/api/get_faculty_schedule?faculty_id=${facultyId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            displayFacultyScheduleModal(facultyName, data.subjects);
+        }
+    } catch (error) {
+        console.error('Error viewing faculty schedule:', error);
+        showModal('Failed to load faculty schedule');
+    }
+}
+window.viewFacultySchedule = viewFacultySchedule;
+
+function displayFacultyScheduleModal(facultyName, subjects) {
+    const modal = document.getElementById('scheduleOverviewModal');
+    const content = document.getElementById('overviewContent');
+    
+    content.innerHTML = `<h4>${facultyName}</h4>`;
+    
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const calendar = document.createElement('div');
+    calendar.className = 'weekly-calendar';
+    
+    days.forEach(day => {
+        const dayCol = document.createElement('div');
+        dayCol.className = 'day-column';
+        
+        const dayHeader = document.createElement('div');
+        dayHeader.className = 'day-header';
+        dayHeader.textContent = day;
+        dayCol.appendChild(dayHeader);
+        
+        subjects.forEach(subject => {
+            const dayMeetings = subject.meetings.filter(m => m.day === day);
+            dayMeetings.forEach(meeting => {
+                const scheduleItem = document.createElement('div');
+                scheduleItem.className = 'schedule-item';
+                scheduleItem.innerHTML = `
+                    <strong>${subject.subject_code} - ${subject.subject_name}</strong><br>
+                    ${subject.program} ${subject.year_level}-${subject.section}<br>
+                    ${meeting.start_time} - ${meeting.end_time}<br>
+                    Room: ${meeting.room || 'TBA'}
+                `;
+                dayCol.appendChild(scheduleItem);
+            });
+        });
+        
+        calendar.appendChild(dayCol);
+    });
+    
+    content.appendChild(calendar);
+    modal.style.display = 'block';
+}
+
+async function unassignAllSchedules(facultyId) {
+    if (!confirm('Are you sure you want to unassign all schedules for this faculty member?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/unassign_faculty_from_schedule', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                faculty_id: facultyId
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showModal(`Unassigned ${data.affected_rows} schedule(s)`);
+            loadUnassignedFaculty();
+            loadFacultyWithSchedules();
+        } else {
+            showModal(data.message || 'Failed to unassign schedules');
+        }
+    } catch (error) {
+        console.error('Error unassigning schedules:', error);
+        showModal('Failed to unassign schedules');
+    }
+}
+window.unassignAllSchedules = unassignAllSchedules;
+
+function assignFaculty(facultyId) {
+    showPhase2();
+    setTimeout(() => {
+        const facultySelect = document.getElementById('facultyMember');
+        if (facultySelect) {
+            facultySelect.value = facultyId;
+            currentFacultyId = facultyId;
+        }
+    }, 100);
+}
+window.assignFaculty = assignFaculty;
+
+function updateSaveButton() {
+    const saveBtn = document.getElementById('saveScheduleBtn');
+    if (saveBtn) {
+        saveBtn.disabled = selectedScheduleIds.size === 0;
+    }
+}
+
+function showModal(message) {
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalMessage = document.getElementById('modalMessage');
+    
+    if (modalMessage && modalOverlay) {
+        modalMessage.textContent = message;
+        modalOverlay.style.display = 'flex';
+    }
+}
+window.showModal = showModal;
 
 // Initialize schedule functionality
 function initializeScheduleApp() {
     console.log('initializeScheduleApp called');
-    // Modal functionality
-    const modalOverlay = document.getElementById('modalOverlay');
-    const modalMessage = document.getElementById('modalMessage');
-    const closeModal = document.getElementById('closeModal');
     
-    function showModal(message) {
-        if (modalMessage && modalOverlay) {
-            modalMessage.textContent = message;
-            modalOverlay.style.display = 'flex';
-        } else {
-            console.error('Modal elements not found');
-        }
-    }
-    window.showModal = showModal;
+    // Modal functionality
+    const closeModal = document.getElementById('closeModal');
+    const modalOverlay = document.getElementById('modalOverlay');
     
     if (closeModal) {
         closeModal.addEventListener('click', () => {
             if (modalOverlay) modalOverlay.style.display = 'none';
         });
     }
-
-    // Schedule functionality
-    const form = document.getElementById('scheduleForm');
-    const tableBody = document.querySelector('#scheduleTable tbody');
-    const facultyMemberSelect = document.getElementById('facultyMember');
-    const scheduleOverviewModal = document.getElementById('scheduleOverviewModal');
+    
+    // Schedule overview modal
     const closeOverviewModal = document.getElementById('closeOverviewModal');
-    const overviewContent = document.getElementById('overviewContent');
-
-    let allSchedules = [];
-
-    function timeToMinutes(timeStr) {
-        const [time, modifier] = timeStr.split(' ');
-        let [hours, minutes] = time.split(':').map(Number);
-        if (modifier === 'PM' && hours !== 12) hours += 12;
-        if (modifier === 'AM' && hours === 12) hours = 0;
-        return hours * 60 + minutes;
-    }
-
-    function hasConflict(facultyMember, day, start, end) {
-        const startMinutes = timeToMinutes(start);
-        const endMinutes = timeToMinutes(end);
-        
-        return allSchedules.some(schedule => {
-            if (schedule.facultyMember !== facultyMember || schedule.day !== day) return false;
-            const scheduleStart = timeToMinutes(schedule.start);
-            const scheduleEnd = timeToMinutes(schedule.end);
-            return (
-                (startMinutes >= scheduleStart && startMinutes < scheduleEnd) ||
-                (endMinutes > scheduleStart && endMinutes <= scheduleEnd) ||
-                (startMinutes <= scheduleStart && endMinutes >= scheduleEnd)
-            );
-        });
-    }
-
-    function checkConflicts() {
-        if (!facultyMemberSelect) {
-            console.error('facultyMember select element not found');
-            return;
-        }
-        const facultyMember = facultyMemberSelect.value;
-        const selectedSlots = document.querySelectorAll('.schedule-cell');
-        
-        selectedSlots.forEach(slot => {
-            const day = slot.dataset.day;
-            const [start, end] = slot.dataset.time.split(' - ');
-            
-            if (hasConflict(facultyMember, day, start, end)) {
-                slot.classList.add('conflict');
-                slot.classList.remove('selected');
-            } else {
-                slot.classList.remove('conflict');
-            }
-        });
-
-        const saveScheduleBtn = document.getElementById('saveScheduleBtn');
-        if (saveScheduleBtn) {
-            saveScheduleBtn.disabled = 
-                document.querySelectorAll('.schedule-cell.selected').length === 0;
-        }
-    }
-    window.checkConflicts = checkConflicts;
-
-    function showFacultyMemberSchedule(facultyMemberName) {
-        if (!overviewContent || !scheduleOverviewModal) return;
-        overviewContent.innerHTML = '';
-        const schedules = allSchedules.filter(s => s.facultyMember === facultyMemberName);
-
-        const calendar = document.createElement('div');
-        calendar.className = 'weekly-calendar';
-        
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        
-        days.forEach(day => {
-            const dayCol = document.createElement('div');
-            dayCol.className = 'day-column';
-            
-            const dayHeader = document.createElement('div');
-            dayHeader.className = 'day-header';
-            dayHeader.textContent = day;
-            dayCol.appendChild(dayHeader);
-            
-            const daySchedules = schedules.filter(s => s.day === day);
-            if (daySchedules.length > 0) {
-                daySchedules.sort((a, b) => a.start.localeCompare(b.start));
-                daySchedules.forEach(s => {
-                    const scheduleItem = document.createElement('div');
-                    scheduleItem.className = 'schedule-item';
-                    scheduleItem.innerHTML = `
-                        <strong>${s.subjectCode} - ${s.subjectName}</strong><br>
-                        ${s.course} ${s.yearLevel}-${s.section}<br>
-                        ${s.start} - ${s.end}<br>
-                        Room: ${s.room}
-                    `;
-                    dayCol.appendChild(scheduleItem);
-                });
-            }
-            
-            calendar.appendChild(dayCol);
-        });
-        
-        overviewContent.appendChild(calendar);
-        scheduleOverviewModal.style.display = 'block';
-    }
-
+    const scheduleOverviewModal = document.getElementById('scheduleOverviewModal');
+    
     if (closeOverviewModal) {
         closeOverviewModal.addEventListener('click', () => {
             if (scheduleOverviewModal) scheduleOverviewModal.style.display = 'none';
         });
     }
-
-    function updateUnassignedFacultyMembers() {
-        const assignedFacultyMembers = [...new Set(allSchedules.map(s => s.facultyMember))];
-        const facultyMembers = [
-            { id: '1', name: 'Guilmar Quimba', dept: 'Computer Science' },
-            { id: '2', name: 'Jane Smith', dept: 'Computer Science' },
-            { id: '3', name: 'John Doe', dept: 'Information Technology' },
-            { id: '4', name: 'Emily Davis', dept: 'Computer Science' }
-        ];
-        
-        const unassigned = facultyMembers.filter(i => !assignedFacultyMembers.includes(i.name));
-        const unassignedTable = document.querySelector('#unassignedTable tbody');
-        if (unassignedTable) {
-            unassignedTable.innerHTML = '';
-            
-            unassigned.forEach(facultyMember => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${facultyMember.name}</td>
-                    <td>${facultyMember.dept}</td>
-                    <td>
-                        <button class="add-schedule-btn" onclick="assignFacultyMember('${facultyMember.id}')">
-                            <i class="fas fa-plus"></i> Assign
-                        </button>
-                    </td>
-                `;
-                unassignedTable.appendChild(tr);
-            });
-        }
-    }
-
-    window.assignFacultyMember = function(facultyMemberId) {
-        console.log('assignFacultyMember called with ID:', facultyMemberId);
-        const facultyMemberSelect = document.getElementById('facultyMember');
-        if (!facultyMemberSelect) {
-            console.error('facultyMember select element not found');
-            return;
-        }
-        showPhase2();
-        facultyMemberSelect.value = facultyMemberId;
-        checkConflicts();
-    };
-
-    function loadSections() {
-        const course = document.getElementById('course').value;
-        const yearLevel = document.getElementById('yearLevel').value;
-        const sectionSelect = document.getElementById('section');
-        
-        if (course && yearLevel && sectionSelect) {
-            sectionSelect.disabled = false;
-            sectionSelect.innerHTML = '<option value="" disabled selected>-- Select Section --</option>';
-            ['A', 'B', 'C'].forEach(section => {
-                const opt = document.createElement('option');
-                opt.value = section;
-                opt.textContent = `Section ${section}`;
-                sectionSelect.appendChild(opt);
-            });
-        } else if (sectionSelect) {
-            sectionSelect.disabled = true;
-        }
-    }
-    window.loadSections = loadSections;
-
-    function loadClassSchedule() {
-        const course = document.getElementById('course').value;
-        const yearLevel = document.getElementById('yearLevel').value;
-        const section = document.getElementById('section').value;
-        const calendar = document.getElementById('classSchedule');
-        
-        if (!course || !yearLevel || !section || !calendar) {
-            if (calendar) calendar.style.display = 'none';
-            return;
-        }
-        
-        calendar.style.display = 'grid';
-        
-        const timeSlots = [
-            "7:00 AM - 8:30 AM",
-            "8:30 AM - 10:00 AM",
-            "10:00 AM - 11:30 AM",
-            "11:30 AM - 1:00 PM",
-            "1:00 PM - 2:30 PM",
-            "2:30 PM - 4:00 PM",
-            "4:00 PM - 5:30 PM"
-        ];
-        
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        
-        const subjects = [
-            { code: 'CS101', name: 'Introduction to Programming', course: 'CS', yearLevel: '1', section: 'A' },
-            { code: 'IT201', name: 'Network Fundamentals', course: 'IT', yearLevel: '2', section: 'B' },
-            { code: 'CS301', name: 'Database Systems', course: 'CS', yearLevel: '3', section: 'A' },
-            { code: 'IT401', name: 'Cybersecurity', course: 'IT', yearLevel: '4', section: 'C' }
-        ];
-        
-        const cells = calendar.querySelectorAll('.time-cell, .schedule-cell');
-        cells.forEach(cell => cell.remove());
-        
-        const relevantSchedules = allSchedules.filter(s =>
-            s.course === course &&
-            s.yearLevel === yearLevel &&
-            s.section === section
-        );
-        
-        const relevantSubjects = subjects.filter(s =>
-            s.course === course &&
-            s.yearLevel === yearLevel &&
-            s.section === section
-        );
-        
-        timeSlots.forEach(time => {
-            const timeCell = document.createElement('div');
-            timeCell.className = 'time-cell';
-            timeCell.textContent = time;
-            calendar.appendChild(timeCell);
-            
-            days.forEach(day => {
-                const scheduleCell = document.createElement('div');
-                scheduleCell.className = 'schedule-cell';
-                scheduleCell.dataset.time = time;
-                scheduleCell.dataset.day = day;
-                
-                const schedule = relevantSchedules.find(s =>
-                    s.day === day &&
-                    s.start === time.split(' - ')[0] &&
-                    s.end === time.split(' - ')[1]
-                );
-                
-                if (schedule) {
-                    scheduleCell.className = 'schedule-cell occupied';
-                    scheduleCell.innerHTML = `
-                        <div class="subject-info">
-                            <div class="subject-code">${schedule.subjectCode} - ${schedule.subjectName}</div>
-                            <div class="subject-room">Room: ${schedule.room}</div>
-                            <div class="faculty-member-name">${schedule.facultyMember || 'Unassigned'}</div>
-                        </div>
-                    `;
-                } else {
-                    const subject = relevantSubjects.find(s => true);
-                    scheduleCell.innerHTML = `
-                        <div class="subject-info">
-                            <div class="subject-code">${subject ? `${subject.code} - ${subject.name}` : 'No Subject'}</div>
-                            <div style="font-weight:lighter; font-size:0.7rem;" class="subject-room">${subject ? 'Select to assign' : 'No Room'}</div>
-                        </div>
-                    `;
-                    scheduleCell.addEventListener('click', () => {
-                        if (!scheduleCell.classList.contains('conflict') && !scheduleCell.classList.contains('occupied')) {
-                            scheduleCell.classList.toggle('selected');
-                            const saveScheduleBtn = document.getElementById('saveScheduleBtn');
-                            if (saveScheduleBtn) {
-                                saveScheduleBtn.disabled = 
-                                    document.querySelectorAll('.schedule-cell.selected').length === 0;
-                            }
-                        }
-                    });
-                }
-                
-                calendar.appendChild(scheduleCell);
-            });
-        });
-        
-        checkConflicts();
-    }
-    window.loadClassSchedule = loadClassSchedule;
-
-    function saveSchedule() {
-        if (!facultyMemberSelect) return;
-        const facultyMember = facultyMemberSelect.value;
-        const facultyMemberName = facultyMemberSelect.options[facultyMemberSelect.selectedIndex].text;
-        const selectedSlots = document.querySelectorAll('.schedule-cell.selected');
-        
-        if (selectedSlots.length === 0) {
-            showModal("Please select at least one schedule slot");
-            return;
-        }
-        
-        const course = document.getElementById('course').value;
-        const yearLevel = document.getElementById('yearLevel').value;
-        const section = document.getElementById('section').value;
-        
-        const subjects = [
-            { code: 'CS101', name: 'Introduction to Programming', course: 'CS', yearLevel: '1', section: 'A' },
-            { code: 'IT201', name: 'Network Fundamentals', course: 'IT', yearLevel: '2', section: 'B' },
-            { code: 'CS301', name: 'Database Systems', course: 'CS', yearLevel: '3', section: 'A' },
-            { code: 'IT401', name: 'Cybersecurity', course: 'IT', yearLevel: '4', section: 'C' }
-        ];
-        
-        const subject = subjects.find(s =>
-            s.course === course &&
-            s.yearLevel === yearLevel &&
-            s.section === section
-        );
-        
-        const newSchedules = Array.from(selectedSlots).map(slot => {
-            const [start, end] = slot.dataset.time.split(' - ');
-            return {
-                facultyMember: facultyMemberName,
-                subjectCode: subject ? subject.code : `CS${Math.floor(Math.random() * 1000)}`,
-                subjectName: subject ? subject.name : 'Unknown Subject',
-                day: slot.dataset.day,
-                start,
-                end,
-                room: `LR${Math.floor(Math.random() * 5) + 1}`,
-                course,
-                yearLevel,
-                section
-            };
-        });
-        
-        for (const schedule of newSchedules) {
-            if (hasConflict(facultyMemberName, schedule.day, schedule.start, schedule.end)) {
-                showModal("⚠️ Selected schedule conflicts with existing faculty member schedule!");
-                return;
-            }
-        }
-        
-        allSchedules.push(...newSchedules);
-        
-        const existingRow = Array.from(tableBody.querySelectorAll('tr')).find(row => 
-            row.cells[0].textContent === facultyMemberName
-        );
-
-        const facultyMemberSchedules = allSchedules.filter(s => s.facultyMember === facultyMemberName);
-        const uniqueSubjects = [...new Set(facultyMemberSchedules.map(s => s.subjectCode))].length;
-        const totalMeetings = facultyMemberSchedules.length;
-        
-        if (existingRow) {
-            existingRow.cells[1].textContent = uniqueSubjects;
-            existingRow.cells[2].textContent = totalMeetings;
-        } else {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${facultyMemberName}</td>
-                <td>${uniqueSubjects}</td>
-                <td>${totalMeetings}</td>
-                <td class="action-btns">
-                    <button class="btn-view-schedule" title="View Schedule" data-faculty-member="${facultyMemberName}">
-                        <i class="fas fa-calendar-alt"></i>
-                    </button>
-                    <button class="delete" title="Delete">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
-                </td>
-            `;
-            
-            row.querySelector('.btn-view-schedule').addEventListener('click', () => 
-                showFacultyMemberSchedule(facultyMemberName)
-            );
-            
-            row.querySelector('.delete').addEventListener('click', () => {
-                row.remove();
-                allSchedules = allSchedules.filter(s => s.facultyMember !== facultyMemberName);
-                updateUnassignedFacultyMembers();
-            });
-            
-            tableBody.appendChild(row);
-        }
-        
-        updateUnassignedFacultyMembers();
-        showModal("Schedule saved successfully!");
-        selectedSlots.forEach(slot => slot.classList.remove('selected'));
-        const saveScheduleBtn = document.getElementById('saveScheduleBtn');
-        if (saveScheduleBtn) saveScheduleBtn.disabled = true;
-        
-        loadClassSchedule();
-    }
-    window.saveSchedule = saveSchedule;
-
-    updateUnassignedFacultyMembers();
+    
+    // Load initial data
+    loadUnassignedFaculty();
+    loadFacultyWithSchedules();
 }
     </script>
 </body>

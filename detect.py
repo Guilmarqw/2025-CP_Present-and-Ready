@@ -4152,6 +4152,844 @@ def delete_year_section():
     except Exception as e:
         logger.error(f"Error deleting year section: {e}")
         return jsonify({'success': False, 'message': str(e)})
+    
+# ==========================================
+# CLASS SCHEDULE MANAGEMENT API ROUTES
+# ==========================================
+
+@app.route('/api/get_schedules', methods=['GET'])
+@login_required
+def get_schedules():
+    """Get all class schedules with filtering options"""
+    try:
+        program_id = request.args.get('program_id')
+        section_id = request.args.get('section_id')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Base query
+        query = """
+            SELECT 
+                cs.schedule_id,
+                cs.day_of_week,
+                cs.start_time,
+                cs.end_time,
+                cs.room,
+                cs.class_type,
+                s.subject_code,
+                s.subject_name,
+                s.units,
+                ys.year_level,
+                ys.section_name,
+                p.program_id,
+                p.program_name
+            FROM class_schedules cs
+            JOIN subjects s ON cs.subject_id = s.subject_id
+            JOIN year_sections ys ON cs.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE cs.status = 'active' AND s.status = 'active' AND ys.status = 'active'
+        """
+        
+        params = []
+        
+        if program_id:
+            query += " AND p.program_id = %s"
+            params.append(program_id)
+            
+        if section_id:
+            query += " AND ys.section_id = %s"
+            params.append(section_id)
+            
+        query += " ORDER BY p.program_id, ys.year_level, ys.section_name, cs.day_of_week, cs.start_time"
+        
+        cursor.execute(query, params)
+        schedules = cursor.fetchall()
+        
+        # Format time fields
+        for schedule in schedules:
+            if schedule['start_time']:
+                schedule['start_time'] = str(schedule['start_time'])
+            if schedule['end_time']:
+                schedule['end_time'] = str(schedule['end_time'])
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'schedules': schedules})
+        
+    except Exception as e:
+        logger.error(f"Error fetching schedules: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/add_schedule', methods=['POST'])
+@login_required
+def add_schedule():
+    """Add a new class schedule"""
+    try:
+        data = request.json
+        subject_id = data.get('subject_id')
+        section_id = data.get('section_id')
+        class_type = data.get('class_type')
+        day_of_week = data.get('day_of_week')
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        room = data.get('room')
+        
+        if not all([subject_id, section_id, class_type, day_of_week, start_time, end_time, room]):
+            return jsonify({'success': False, 'message': 'All fields are required'})
+        
+        # Validate class type matches subject
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(
+            "SELECT class_type FROM subjects WHERE subject_id = %s AND section_id = %s",
+            (subject_id, section_id)
+        )
+        subject = cursor.fetchone()
+        
+        if not subject:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Invalid subject or section'})
+        
+        # Check if class type is valid for this subject
+        subject_class_type = subject['class_type']
+        if subject_class_type != 'both' and subject_class_type != class_type:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': f'This subject only supports {subject_class_type} classes'})
+        
+        # Check for room conflicts
+        cursor.execute("""
+            SELECT s.subject_code, ys.year_level, ys.section_name
+            FROM class_schedules cs
+            JOIN subjects s ON cs.subject_id = s.subject_id
+            JOIN year_sections ys ON cs.section_id = ys.section_id
+            WHERE cs.room = %s 
+            AND cs.day_of_week = %s
+            AND cs.status = 'active'
+            AND (
+                (cs.start_time <= %s AND cs.end_time > %s) OR
+                (cs.start_time < %s AND cs.end_time >= %s) OR
+                (cs.start_time >= %s AND cs.end_time <= %s)
+            )
+        """, (room, day_of_week, start_time, start_time, end_time, end_time, start_time, end_time))
+        
+        conflict = cursor.fetchone()
+        if conflict:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': False, 
+                'message': f'Room {room} is already booked on {day_of_week} at this time for {conflict["subject_code"]} ({conflict["year_level"]}-{conflict["section_name"]})'
+            })
+        
+        # Insert schedule
+        cursor.execute("""
+            INSERT INTO class_schedules 
+            (subject_id, section_id, class_type, day_of_week, start_time, end_time, room)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (subject_id, section_id, class_type, day_of_week, start_time, end_time, room))
+        
+        conn.commit()
+        schedule_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Schedule added successfully',
+            'schedule_id': schedule_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding schedule: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/bulk_add_schedules', methods=['POST'])
+@login_required
+def bulk_add_schedules():
+    """Add multiple schedules at once"""
+    try:
+        schedules = request.json.get('schedules', [])
+        
+        if not schedules:
+            return jsonify({'success': False, 'message': 'No schedules provided'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        added_count = 0
+        errors = []
+        
+        for idx, schedule in enumerate(schedules):
+            try:
+                # Validate required fields
+                required = ['subject_id', 'section_id', 'class_type', 'day_of_week', 'start_time', 'end_time', 'room']
+                if not all(schedule.get(field) for field in required):
+                    errors.append(f"Schedule {idx + 1}: Missing required fields")
+                    continue
+                
+                # Check for room conflicts
+                cursor.execute("""
+                    SELECT COUNT(*) as count
+                    FROM class_schedules cs
+                    WHERE cs.room = %s 
+                    AND cs.day_of_week = %s
+                    AND cs.status = 'active'
+                    AND (
+                        (cs.start_time <= %s AND cs.end_time > %s) OR
+                        (cs.start_time < %s AND cs.end_time >= %s) OR
+                        (cs.start_time >= %s AND cs.end_time <= %s)
+                    )
+                """, (
+                    schedule['room'], 
+                    schedule['day_of_week'],
+                    schedule['start_time'], schedule['start_time'],
+                    schedule['end_time'], schedule['end_time'],
+                    schedule['start_time'], schedule['end_time']
+                ))
+                
+                if cursor.fetchone()['count'] > 0:
+                    errors.append(f"Schedule {idx + 1}: Room conflict on {schedule['day_of_week']}")
+                    continue
+                
+                # Insert schedule
+                cursor.execute("""
+                    INSERT INTO class_schedules 
+                    (subject_id, section_id, class_type, day_of_week, start_time, end_time, room)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    schedule['subject_id'],
+                    schedule['section_id'],
+                    schedule['class_type'],
+                    schedule['day_of_week'],
+                    schedule['start_time'],
+                    schedule['end_time'],
+                    schedule['room']
+                ))
+                
+                added_count += 1
+                
+            except Exception as e:
+                errors.append(f"Schedule {idx + 1}: {str(e)}")
+                continue
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        message = f'Added {added_count} schedule(s) successfully'
+        if errors:
+            message += f'. {len(errors)} failed: {"; ".join(errors[:3])}'
+            if len(errors) > 3:
+                message += f' and {len(errors) - 3} more...'
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'added_count': added_count,
+            'error_count': len(errors),
+            'errors': errors
+        })
+        
+    except Exception as e:
+        logger.error(f"Error bulk adding schedules: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/update_schedule', methods=['POST'])
+@login_required
+def update_schedule():
+    """Update an existing schedule"""
+    try:
+        data = request.json
+        schedule_id = data.get('schedule_id')
+        
+        if not schedule_id:
+            return jsonify({'success': False, 'message': 'Schedule ID is required'})
+        
+        # Build update query dynamically
+        update_fields = []
+        params = []
+        
+        for field in ['class_type', 'day_of_week', 'start_time', 'end_time', 'room']:
+            if field in data:
+                update_fields.append(f"{field} = %s")
+                params.append(data[field])
+        
+        if not update_fields:
+            return jsonify({'success': False, 'message': 'No fields to update'})
+        
+        params.append(schedule_id)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        query = f"UPDATE class_schedules SET {', '.join(update_fields)} WHERE schedule_id = %s"
+        cursor.execute(query, params)
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Schedule not found'})
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Schedule updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating schedule: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/delete_schedule', methods=['POST'])
+@login_required
+def delete_schedule():
+    """Delete a schedule (soft delete)"""
+    try:
+        schedule_id = request.json.get('schedule_id')
+        
+        if not schedule_id:
+            return jsonify({'success': False, 'message': 'Schedule ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "UPDATE class_schedules SET status = 'inactive' WHERE schedule_id = %s",
+            (schedule_id,)
+        )
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Schedule not found'})
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Schedule deleted successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting schedule: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/check_room_availability', methods=['POST'])
+@login_required
+def check_room_availability():
+    """Check if a room is available at a specific time"""
+    try:
+        data = request.json
+        room = data.get('room')
+        day_of_week = data.get('day_of_week')
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        exclude_schedule_id = data.get('exclude_schedule_id')  # For updates
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+            SELECT cs.schedule_id, s.subject_code, s.subject_name, 
+                   ys.year_level, ys.section_name,
+                   cs.start_time, cs.end_time
+            FROM class_schedules cs
+            JOIN subjects s ON cs.subject_id = s.subject_id
+            JOIN year_sections ys ON cs.section_id = ys.section_id
+            WHERE cs.room = %s 
+            AND cs.day_of_week = %s
+            AND cs.status = 'active'
+            AND (
+                (cs.start_time <= %s AND cs.end_time > %s) OR
+                (cs.start_time < %s AND cs.end_time >= %s) OR
+                (cs.start_time >= %s AND cs.end_time <= %s)
+            )
+        """
+        
+        params = [room, day_of_week, start_time, start_time, end_time, end_time, start_time, end_time]
+        
+        if exclude_schedule_id:
+            query += " AND cs.schedule_id != %s"
+            params.append(exclude_schedule_id)
+        
+        cursor.execute(query, params)
+        conflicts = cursor.fetchall()
+        
+        # Format time fields
+        for conflict in conflicts:
+            if conflict['start_time']:
+                conflict['start_time'] = str(conflict['start_time'])
+            if conflict['end_time']:
+                conflict['end_time'] = str(conflict['end_time'])
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'available': len(conflicts) == 0,
+            'conflicts': conflicts
+        })
+        
+    except Exception as e:
+        logger.error(f"Error checking room availability: {e}")
+        return jsonify({'success': False, 'message': str(e)})    
+    
+# ==========================================
+# FACULTY SCHEDULE ASSIGNMENT API ROUTES
+# ==========================================
+
+@app.route('/api/get_unassigned_faculty', methods=['GET'])
+@login_required
+def get_unassigned_faculty():
+    """Get faculty members who don't have any schedules assigned"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                f.faculty_id,
+                f.first_name,
+                f.last_name,
+                f.department,
+                f.designation
+            FROM faculty f
+            WHERE f.status = 'active'
+            AND NOT EXISTS (
+                SELECT 1 FROM faculty_schedules fs 
+                WHERE fs.faculty_id = f.faculty_id 
+                AND fs.status = 'active'
+            )
+            ORDER BY f.last_name, f.first_name
+        """)
+        
+        faculty = cursor.fetchall()
+        
+        # Format names
+        for f in faculty:
+            f['full_name'] = f"{f['first_name']} {f['last_name']}"
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'faculty': faculty})
+        
+    except Exception as e:
+        logger.error(f"Error fetching unassigned faculty: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_all_faculty', methods=['GET'])
+@login_required
+def get_all_faculty():
+    """Get all active faculty members for dropdown"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                faculty_id,
+                first_name,
+                last_name,
+                department,
+                designation
+            FROM faculty
+            WHERE status = 'active'
+            ORDER BY last_name, first_name
+        """)
+        
+        faculty = cursor.fetchall()
+        
+        for f in faculty:
+            f['full_name'] = f"{f['first_name']} {f['last_name']}"
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'faculty': faculty})
+        
+    except Exception as e:
+        logger.error(f"Error fetching faculty: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_class_schedules_for_section', methods=['GET'])
+@login_required
+def get_class_schedules_for_section():
+    """Get all class schedules for a specific section with assignment status"""
+    try:
+        section_id = request.args.get('section_id')
+        
+        if not section_id:
+            return jsonify({'success': False, 'message': 'Section ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                cs.schedule_id,
+                cs.day_of_week,
+                cs.start_time,
+                cs.end_time,
+                cs.room,
+                cs.class_type,
+                s.subject_id,
+                s.subject_code,
+                s.subject_name,
+                s.units,
+                ys.year_level,
+                ys.section_name,
+                p.program_id,
+                p.program_name,
+                fs.faculty_schedule_id,
+                fs.faculty_id,
+                CONCAT(f.first_name, ' ', f.last_name) as faculty_name
+            FROM class_schedules cs
+            JOIN subjects s ON cs.subject_id = s.subject_id
+            JOIN year_sections ys ON cs.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            LEFT JOIN faculty_schedules fs ON cs.schedule_id = fs.schedule_id AND fs.status = 'active'
+            LEFT JOIN faculty f ON fs.faculty_id = f.faculty_id
+            WHERE cs.section_id = %s AND cs.status = 'active'
+            ORDER BY 
+                FIELD(cs.day_of_week, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+                cs.start_time
+        """, (section_id,))
+        
+        schedules = cursor.fetchall()
+        
+        # Format time fields
+        for schedule in schedules:
+            if schedule['start_time']:
+                schedule['start_time'] = str(schedule['start_time'])
+            if schedule['end_time']:
+                schedule['end_time'] = str(schedule['end_time'])
+            schedule['is_assigned'] = schedule['faculty_id'] is not None
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'schedules': schedules})
+        
+    except Exception as e:
+        logger.error(f"Error fetching class schedules: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/assign_faculty_to_schedule', methods=['POST'])
+@login_required
+def assign_faculty_to_schedule():
+    """Assign a faculty member to one or more class schedules"""
+    try:
+        data = request.json
+        faculty_id = data.get('faculty_id')
+        schedule_ids = data.get('schedule_ids', [])
+        
+        if not faculty_id or not schedule_ids:
+            return jsonify({'success': False, 'message': 'Faculty ID and schedule IDs are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check for time conflicts
+        cursor.execute("""
+            SELECT 
+                cs1.schedule_id,
+                cs1.day_of_week,
+                cs1.start_time,
+                cs1.end_time,
+                s.subject_code,
+                s.subject_name
+            FROM class_schedules cs1
+            JOIN subjects s ON cs1.subject_id = s.subject_id
+            WHERE cs1.schedule_id IN (%s)
+        """ % ','.join(['%s'] * len(schedule_ids)), schedule_ids)
+        
+        new_schedules = cursor.fetchall()
+        
+        # Get existing faculty schedules
+        cursor.execute("""
+            SELECT 
+                cs.schedule_id,
+                cs.day_of_week,
+                cs.start_time,
+                cs.end_time,
+                s.subject_code,
+                s.subject_name
+            FROM faculty_schedules fs
+            JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+            JOIN subjects s ON cs.subject_id = s.subject_id
+            WHERE fs.faculty_id = %s AND fs.status = 'active' AND cs.status = 'active'
+        """, (faculty_id,))
+        
+        existing_schedules = cursor.fetchall()
+        
+        # Check for conflicts
+        conflicts = []
+        for new_sched in new_schedules:
+            for exist_sched in existing_schedules:
+                if new_sched['day_of_week'] == exist_sched['day_of_week']:
+                    # Convert time strings to comparable format
+                    new_start = datetime.strptime(str(new_sched['start_time']), '%H:%M:%S').time()
+                    new_end = datetime.strptime(str(new_sched['end_time']), '%H:%M:%S').time()
+                    exist_start = datetime.strptime(str(exist_sched['start_time']), '%H:%M:%S').time()
+                    exist_end = datetime.strptime(str(exist_sched['end_time']), '%H:%M:%S').time()
+                    
+                    # Check for overlap
+                    if not (new_end <= exist_start or new_start >= exist_end):
+                        conflicts.append({
+                            'day': new_sched['day_of_week'],
+                            'new_subject': new_sched['subject_code'],
+                            'existing_subject': exist_sched['subject_code'],
+                            'time': f"{new_start} - {new_end}"
+                        })
+        
+        if conflicts:
+            conflict_msg = '; '.join([
+                f"{c['day']} {c['time']}: {c['new_subject']} conflicts with {c['existing_subject']}"
+                for c in conflicts
+            ])
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': False,
+                'message': f'Schedule conflicts detected: {conflict_msg}',
+                'conflicts': conflicts
+            })
+        
+        # Assign schedules
+        assigned_count = 0
+        for schedule_id in schedule_ids:
+            try:
+                cursor.execute("""
+                    INSERT INTO faculty_schedules (faculty_id, schedule_id)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE status = 'active', updated_at = NOW()
+                """, (faculty_id, schedule_id))
+                assigned_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to assign schedule {schedule_id}: {e}")
+                continue
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully assigned {assigned_count} schedule(s) to faculty member',
+            'assigned_count': assigned_count
+        })
+        
+    except Exception as e:
+        logger.error(f"Error assigning faculty to schedule: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_faculty_schedule', methods=['GET'])
+@login_required
+def get_faculty_schedule():
+    """Get all schedules assigned to a specific faculty member"""
+    try:
+        faculty_id = request.args.get('faculty_id')
+        
+        if not faculty_id:
+            return jsonify({'success': False, 'message': 'Faculty ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                cs.schedule_id,
+                cs.day_of_week,
+                cs.start_time,
+                cs.end_time,
+                cs.room,
+                cs.class_type,
+                s.subject_code,
+                s.subject_name,
+                s.units,
+                ys.year_level,
+                ys.section_name,
+                p.program_name,
+                p.program_id,
+                fs.faculty_schedule_id,
+                fs.assigned_date
+            FROM faculty_schedules fs
+            JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+            JOIN subjects s ON cs.subject_id = s.subject_id
+            JOIN year_sections ys ON cs.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE fs.faculty_id = %s AND fs.status = 'active' AND cs.status = 'active'
+            ORDER BY 
+                FIELD(cs.day_of_week, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+                cs.start_time
+        """, (faculty_id,))
+        
+        schedules = cursor.fetchall()
+        
+        # Format time fields
+        for schedule in schedules:
+            if schedule['start_time']:
+                schedule['start_time'] = str(schedule['start_time'])
+            if schedule['end_time']:
+                schedule['end_time'] = str(schedule['end_time'])
+        
+        # Group by subject
+        subjects = {}
+        for schedule in schedules:
+            key = f"{schedule['subject_code']}-{schedule['section_name']}"
+            if key not in subjects:
+                subjects[key] = {
+                    'subject_code': schedule['subject_code'],
+                    'subject_name': schedule['subject_name'],
+                    'program': schedule['program_name'],
+                    'year_level': schedule['year_level'],
+                    'section': schedule['section_name'],
+                    'meetings': []
+                }
+            subjects[key]['meetings'].append({
+                'day': schedule['day_of_week'],
+                'start_time': schedule['start_time'],
+                'end_time': schedule['end_time'],
+                'room': schedule['room'],
+                'class_type': schedule['class_type']
+            })
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'schedules': schedules,
+            'subjects': list(subjects.values())
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching faculty schedule: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/unassign_faculty_from_schedule', methods=['POST'])
+@login_required
+def unassign_faculty_from_schedule():
+    """Remove faculty assignment from schedule(s)"""
+    try:
+        data = request.json
+        faculty_id = data.get('faculty_id')
+        schedule_ids = data.get('schedule_ids')
+        
+        if not faculty_id:
+            return jsonify({'success': False, 'message': 'Faculty ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if schedule_ids:
+            # Unassign specific schedules
+            placeholders = ','.join(['%s'] * len(schedule_ids))
+            query = f"""
+                UPDATE faculty_schedules 
+                SET status = 'inactive' 
+                WHERE faculty_id = %s AND schedule_id IN ({placeholders})
+            """
+            cursor.execute(query, [faculty_id] + schedule_ids)
+        else:
+            # Unassign all schedules for this faculty
+            cursor.execute(
+                "UPDATE faculty_schedules SET status = 'inactive' WHERE faculty_id = %s",
+                (faculty_id,)
+            )
+        
+        affected_rows = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Unassigned {affected_rows} schedule(s)',
+            'affected_rows': affected_rows
+        })
+        
+    except Exception as e:
+        logger.error(f"Error unassigning faculty: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_sections', methods=['GET'])
+@login_required
+def get_sections():
+    """Get sections based on program and year level"""
+    try:
+        program_id = request.args.get('program_id')
+        year_level = request.args.get('year_level')
+        
+        if not program_id or not year_level:
+            return jsonify({'success': False, 'message': 'Program ID and year level are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                section_id,
+                section_name,
+                year_level,
+                program_id
+            FROM year_sections
+            WHERE program_id = %s AND year_level = %s AND status = 'active'
+            ORDER BY section_name
+        """, (program_id, year_level))
+        
+        sections = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'sections': sections})
+        
+    except Exception as e:
+        logger.error(f"Error fetching sections: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_faculty_with_schedules', methods=['GET'])
+@login_required
+def get_faculty_with_schedules():
+    """Get all faculty members with their schedule counts"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                f.faculty_id,
+                CONCAT(f.first_name, ' ', f.last_name) as full_name,
+                f.department,
+                f.designation,
+                COUNT(DISTINCT s.subject_id) as subject_count,
+                COUNT(DISTINCT fs.schedule_id) as meeting_count
+            FROM faculty f
+            LEFT JOIN faculty_schedules fs ON f.faculty_id = fs.faculty_id AND fs.status = 'active'
+            LEFT JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id AND cs.status = 'active'
+            LEFT JOIN subjects s ON cs.subject_id = s.subject_id
+            WHERE f.status = 'active'
+            GROUP BY f.faculty_id
+            HAVING meeting_count > 0
+            ORDER BY f.last_name, f.first_name
+        """)
+        
+        faculty = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'faculty': faculty})
+        
+    except Exception as e:
+        logger.error(f"Error fetching faculty with schedules: {e}")
+        return jsonify({'success': False, 'message': str(e)})    
 
 if __name__ == "__main__":
     # Initialize global variables (no need for global keyword here)

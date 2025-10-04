@@ -847,3 +847,22 @@
       background-color: #fff8e1 !important;
       box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.2) !important;
     }
+
+    .auto-populated {
+    background-color: #e8f5e9 !important;
+    border-color: #4caf50 !important;
+}
+
+.auto-calc-info, .units-info {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.time-conflict {
+    border: 2px solid #dc3545 !important;
+    background-color: #fff5f5 !important;
+}
