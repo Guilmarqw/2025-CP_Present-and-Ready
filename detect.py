@@ -3799,6 +3799,360 @@ def logout_page():
     resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
     return resp
 
+# ==========================================
+# PROGRAMS MANAGEMENT API ROUTES
+# ==========================================
+
+@app.route('/api/get_programs', methods=['GET'])
+@login_required
+def get_programs():
+    """Get all programs with their statistics"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # First, let's see what we have in the database
+        cursor.execute("SELECT * FROM programs WHERE status = 'active'")
+        programs = cursor.fetchall()
+        
+        # For each program, count its subjects
+        for program in programs:
+            program_id = program['program_id']
+            
+            # Count sections
+            cursor.execute("""
+                SELECT COUNT(*) as count 
+                FROM year_sections 
+                WHERE program_id = %s AND status = 'active'
+            """, (program_id,))
+            program['total_sections'] = cursor.fetchone()['count']
+            
+            # Count subjects through year_sections
+            cursor.execute("""
+                SELECT COUNT(DISTINCT s.subject_id) as count
+                FROM subjects s
+                INNER JOIN year_sections ys ON s.section_id = ys.section_id
+                WHERE ys.program_id = %s 
+                AND s.status = 'active' 
+                AND ys.status = 'active'
+            """, (program_id,))
+            program['total_subjects'] = cursor.fetchone()['count']
+            
+            # Count students
+            cursor.execute("""
+                SELECT COUNT(*) as count 
+                FROM students 
+                WHERE course LIKE %s AND status = 'active'
+            """, (f'%{program["program_name"]}%',))
+            program['total_students'] = cursor.fetchone()['count']
+            
+            logger.info(f"Program {program_id}: sections={program['total_sections']}, subjects={program['total_subjects']}, students={program['total_students']}")
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'programs': programs})
+        
+    except Exception as e:
+        logger.error(f"Error fetching programs: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_year_sections', methods=['GET'])
+@login_required
+def get_year_sections():
+    """Get all year sections for a program"""
+    try:
+        program_id = request.args.get('program_id')
+        
+        if not program_id:
+            return jsonify({'success': False, 'message': 'Program ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                ys.section_id,
+                ys.year_level,
+                ys.section_name,
+                ys.status,
+                COUNT(DISTINCT s.subject_id) as subject_count,
+                (SELECT COUNT(*) FROM students st 
+                 WHERE st.year_section = CONCAT(ys.year_level, '-', ys.section_name) 
+                 AND st.course LIKE CONCAT('%', p.program_name, '%')
+                 AND st.status = 'active') as student_count
+            FROM year_sections ys
+            JOIN programs p ON ys.program_id = p.program_id
+            LEFT JOIN subjects s ON ys.section_id = s.section_id AND s.status = 'active'
+            WHERE ys.program_id = %s AND ys.status = 'active'
+            GROUP BY ys.section_id
+            ORDER BY ys.year_level, ys.section_name
+        """, (program_id,))
+        
+        sections = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'sections': sections})
+        
+    except Exception as e:
+        logger.error(f"Error fetching year sections: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/add_year_section', methods=['POST'])
+@login_required
+def add_year_section():
+    """Add a new year section to a program"""
+    try:
+        data = request.json
+        program_id = data.get('program_id')
+        year_level = data.get('year_level')
+        section_name = data.get('section_name', '').strip()
+        
+        if not all([program_id, year_level, section_name]):
+            return jsonify({'success': False, 'message': 'All fields are required'})
+        
+        if not (1 <= int(year_level) <= 4):
+            return jsonify({'success': False, 'message': 'Year level must be between 1 and 4'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if section already exists
+        cursor.execute(
+            "SELECT section_id FROM year_sections WHERE program_id = %s AND year_level = %s AND section_name = %s",
+            (program_id, year_level, section_name)
+        )
+        
+        if cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'This section already exists'})
+        
+        # Insert new section
+        cursor.execute(
+            "INSERT INTO year_sections (program_id, year_level, section_name) VALUES (%s, %s, %s)",
+            (program_id, year_level, section_name)
+        )
+        
+        conn.commit()
+        section_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Year section added successfully',
+            'section_id': section_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding year section: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_subjects', methods=['GET'])
+@login_required
+def get_subjects():
+    """Get all subjects for a year section"""
+    try:
+        section_id = request.args.get('section_id')
+        
+        if not section_id:
+            return jsonify({'success': False, 'message': 'Section ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                s.subject_id,
+                s.subject_code,
+                s.subject_name,
+                s.class_type,
+                s.units,
+                s.status,
+                s.created_at
+            FROM subjects s
+            WHERE s.section_id = %s AND s.status = 'active'
+            ORDER BY s.subject_code
+        """, (section_id,))
+        
+        subjects = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'subjects': subjects})
+        
+    except Exception as e:
+        logger.error(f"Error fetching subjects: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/add_subject', methods=['POST'])
+@login_required
+def add_subject():
+    """Add a new subject to a year section"""
+    try:
+        data = request.json
+        section_id = data.get('section_id')
+        subject_code = data.get('subject_code', '').strip().upper()
+        subject_name = data.get('subject_name', '').strip()
+        class_type = data.get('class_type', 'lecture')
+        units = data.get('units', 3)
+        
+        if not all([section_id, subject_code, subject_name]):
+            return jsonify({'success': False, 'message': 'All fields are required'})
+        
+        if class_type not in ['lecture', 'laboratory', 'both']:
+            return jsonify({'success': False, 'message': 'Invalid class type'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if subject code already exists in this section
+        cursor.execute(
+            "SELECT subject_id FROM subjects WHERE section_id = %s AND subject_code = %s",
+            (section_id, subject_code)
+        )
+        
+        if cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Subject code already exists in this section'})
+        
+        # Insert new subject
+        cursor.execute(
+            """INSERT INTO subjects (section_id, subject_code, subject_name, class_type, units) 
+               VALUES (%s, %s, %s, %s, %s)""",
+            (section_id, subject_code, subject_name, class_type, units)
+        )
+        
+        conn.commit()
+        subject_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Subject added successfully',
+            'subject_id': subject_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding subject: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/update_subject', methods=['POST'])
+@login_required
+def update_subject():
+    """Update an existing subject"""
+    try:
+        data = request.json
+        subject_id = data.get('subject_id')
+        subject_code = data.get('subject_code', '').strip().upper()
+        subject_name = data.get('subject_name', '').strip()
+        class_type = data.get('class_type', 'lecture')
+        units = data.get('units', 3)
+        
+        if not all([subject_id, subject_code, subject_name]):
+            return jsonify({'success': False, 'message': 'All fields are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """UPDATE subjects 
+               SET subject_code = %s, subject_name = %s, class_type = %s, units = %s 
+               WHERE subject_id = %s""",
+            (subject_code, subject_name, class_type, units, subject_id)
+        )
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Subject not found'})
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Subject updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating subject: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/delete_subject', methods=['POST'])
+@login_required
+def delete_subject():
+    """Delete a subject (soft delete by setting status to inactive)"""
+    try:
+        subject_id = request.json.get('subject_id')
+        
+        if not subject_id:
+            return jsonify({'success': False, 'message': 'Subject ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "UPDATE subjects SET status = 'inactive' WHERE subject_id = %s",
+            (subject_id,)
+        )
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Subject not found'})
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Subject deleted successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting subject: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/delete_year_section', methods=['POST'])
+@login_required
+def delete_year_section():
+    """Delete a year section (soft delete)"""
+    try:
+        section_id = request.json.get('section_id')
+        
+        if not section_id:
+            return jsonify({'success': False, 'message': 'Section ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Also deactivate all subjects in this section
+        cursor.execute(
+            "UPDATE subjects SET status = 'inactive' WHERE section_id = %s",
+            (section_id,)
+        )
+        
+        cursor.execute(
+            "UPDATE year_sections SET status = 'inactive' WHERE section_id = %s",
+            (section_id,)
+        )
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Section not found'})
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Year section deleted successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting year section: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
 if __name__ == "__main__":
     # Initialize global variables (no need for global keyword here)
     latest_frame = None

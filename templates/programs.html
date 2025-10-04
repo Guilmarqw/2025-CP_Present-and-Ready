@@ -109,27 +109,28 @@
   </div>
 
   <script>
-    // Global variables for modal callbacks
+    // Global variables
     let confirmCallback = null;
     let confirmData = null;
+    let currentProgramCode = '';
+    let currentProgramName = '';
+    let currentSectionId = null;
+    let editingSubjectId = null;
+    let yearSectionsCache = {};
 
-     console.log('Starting sidebar fetch...');
+    console.log('Starting sidebar fetch...');
     
     // Load sidebar with error handling
     fetch('/sidebar')
         .then(response => {
             console.log('Fetch response status:', response.status);
-            console.log('Fetch response URL:', response.url);
-            
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             return response.text();
         })
         .then(html => {
-            console.log('Sidebar HTML received, length:', html.length);
-            console.log('First 100 chars:', html.substring(0, 100));
-            
+            console.log('Sidebar HTML received');
             document.getElementById('sidebar-container').innerHTML = html;
             
             // Initialize dropdown functionality
@@ -138,14 +139,12 @@
                     e.preventDefault();
                     e.stopPropagation();
                     
-                    // Close all other dropdowns first
                     document.querySelectorAll('.dropdown-content').forEach(content => {
                         if (content !== this.nextElementSibling) {
                             content.style.display = 'none';
                         }
                     });
 
-                    // Toggle current dropdown
                     const content = this.nextElementSibling;
                     if (content) {
                         content.style.display = content.style.display === 'block' ? 'none' : 'block';
@@ -153,7 +152,6 @@
                 });
             });
 
-            // Close dropdowns when clicking outside
             document.addEventListener('click', function(e) {
                 if (!e.target.closest('.dropdown')) {
                     document.querySelectorAll('.dropdown-content').forEach(content => {
@@ -162,13 +160,11 @@
                 }
             });
 
-            // Handle active state
             const currentPath = window.location.pathname;
             document.querySelectorAll('.nav-items a').forEach(link => {
                 const linkPath = link.getAttribute('href');
                 if (currentPath.includes(linkPath) && linkPath !== '#') {
                     link.classList.add('active');
-                    // If link is in dropdown, show parent dropdown
                     const dropdown = link.closest('.dropdown-content');
                     if (dropdown) {
                         dropdown.style.display = 'block';
@@ -178,76 +174,129 @@
         })
         .catch(error => {
             console.error('Sidebar fetch failed:', error);
-            console.error('Error details:', error.message);
-            // Show error in sidebar container for debugging
             document.getElementById('sidebar-container').innerHTML = `
                 <div style="color: red; padding: 20px;">
                     <h3>Sidebar Error</h3>
                     <p>Failed to load sidebar: ${error.message}</p>
-                    <p>Check console for details</p>
                 </div>
             `;
         });
-   
+
+    // Load programs on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadPrograms();
+    });
+
+    // Load programs from backend
+    function loadPrograms() {
+        fetch('/api/get_programs')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayPrograms(data.programs);
+                } else {
+                    showAlertModal('Error', 'Failed to load programs: ' + data.message, true);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading programs:', error);
+                showAlertModal('Error', 'Failed to load programs', true);
+            });
+    }
+
+    // Display programs in table
+    function displayPrograms(programs) {
+        const tbody = document.querySelector('#coursesTable tbody');
+        if (!tbody) return;
+
+        tbody.innerHTML = programs.map(program => `
+            <tr>
+                <td>${program.program_id}</td>
+                <td>${program.program_name}</td>
+                <td>${program.department}</td>
+                <td>${program.total_subjects || 0}</td>
+                <td><span style="color: ${program.status === 'active' ? 'green' : 'red'};">${program.status === 'active' ? 'Active' : 'Inactive'}</span></td>
+                <td>
+                    <a href="#" class="btn-view view-course" 
+                       data-course="${program.program_id}" 
+                       data-name="${program.program_name}">View</a>
+                </td>
+            </tr>
+        `).join('');
+
+        // Add event listeners
+        document.querySelectorAll('.view-course').forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                const programCode = this.getAttribute('data-course');
+                const programName = this.getAttribute('data-name');
+                currentProgramCode = programCode;
+                currentProgramName = programName;
+                
+                document.getElementById('coursesPage').style.display = 'none';
+                loadSubjectManagementPage(programCode, programName);
+            });
+        });
+    }
+
     // Generic Alert Modal Functions
     function showAlertModal(title, message, isError = false) {
-      const modal = document.getElementById('alertModal');
-      const titleEl = document.getElementById('alertModalTitle');
-      const messageEl = document.getElementById('alertModalMessage');
-      
-      if (modal && titleEl && messageEl) {
-        titleEl.innerHTML = isError ? `<i class="fas fa-exclamation-triangle"></i> ${title}` : `<i class="fas fa-info-circle"></i> ${title}`;
-        messageEl.textContent = message;
-        modal.style.display = 'flex';
+        const modal = document.getElementById('alertModal');
+        const titleEl = document.getElementById('alertModalTitle');
+        const messageEl = document.getElementById('alertModalMessage');
         
-        // Add appropriate class for styling
-        if (isError) {
-          modal.classList.add('error-modal');
-        } else {
-          modal.classList.add('success-modal');
+        if (modal && titleEl && messageEl) {
+            titleEl.innerHTML = isError ? `<i class="fas fa-exclamation-triangle"></i> ${title}` : `<i class="fas fa-info-circle"></i> ${title}`;
+            messageEl.textContent = message;
+            modal.style.display = 'flex';
+            
+            if (isError) {
+                modal.classList.add('error-modal');
+            } else {
+                modal.classList.add('success-modal');
+            }
         }
-      }
     }
 
     function hideAlertModal() {
-      const modal = document.getElementById('alertModal');
-      if (modal) {
-        modal.style.display = 'none';
-        modal.classList.remove('error-modal', 'success-modal');
-      }
+        const modal = document.getElementById('alertModal');
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('error-modal', 'success-modal');
+        }
     }
 
     // Generic Confirm Modal Functions
     function showConfirmModal(title, message, callback, data = null) {
-      const modal = document.getElementById('confirmModal');
-      const titleEl = modal.querySelector('.modal-header h3');
-      const messageEl = document.getElementById('confirmModalMessage');
-      
-      if (modal && titleEl && messageEl) {
-        titleEl.textContent = title;
-        messageEl.textContent = message;
-        confirmCallback = callback;
-        confirmData = data;
-        modal.style.display = 'flex';
-      }
+        const modal = document.getElementById('confirmModal');
+        const titleEl = modal.querySelector('.modal-header h3');
+        const messageEl = document.getElementById('confirmModalMessage');
+        
+        if (modal && titleEl && messageEl) {
+            titleEl.innerHTML = `<i class="fas fa-question-circle"></i> ${title}`;
+            messageEl.textContent = message;
+            confirmCallback = callback;
+            confirmData = data;
+            modal.style.display = 'flex';
+        }
     }
 
     function hideConfirmModal() {
-      const modal = document.getElementById('confirmModal');
-      if (modal) {
-        modal.style.display = 'none';
-        confirmCallback = null;
-        confirmData = null;
-      }
+        const modal = document.getElementById('confirmModal');
+        if (modal) {
+            modal.style.display = 'none';
+            confirmCallback = null;
+            confirmData = null;
+        }
     }
 
     function handleConfirmAction() {
-      if (confirmCallback && confirmData) {
-        confirmCallback(confirmData);
-      } else if (confirmCallback) {
-        confirmCallback();
-      }
-      hideConfirmModal();
+        if (confirmCallback && confirmData) {
+            confirmCallback(confirmData);
+        } else if (confirmCallback) {
+            confirmCallback();
+        }
+        hideConfirmModal();
     }
 
     // Subject Management HTML Content
@@ -263,7 +312,7 @@
         <div class="selection-controls">
           <div class="control-group">
             <label for="select-year">Year Level</label>
-            <select id="select-year" onchange="loadSubjects()">
+            <select id="select-year" onchange="loadSections()">
               <option value="" disabled selected>Select Year Level</option>
               <option value="1">1st Year</option>
               <option value="2">2nd Year</option>
@@ -274,13 +323,14 @@
           
           <div class="control-group">
             <label for="select-section">Section</label>
-            <select id="select-section" onchange="loadSubjects()">
+            <select id="select-section" onchange="loadSubjects()" disabled>
               <option value="" disabled selected>Select Section</option>
-              <option value="A">Section A</option>
-              <option value="B">Section B</option>
-              <option value="C">Section C</option>
             </select>
           </div>
+
+          <button id="addSectionBtn" class="btn btn-primary" onclick="showAddSectionModal()">
+            <i class="fas fa-plus"></i> Add Section
+          </button>
 
           <button id="addSubjectBtn" class="btn btn-primary" disabled onclick="showAddSubjectModal()">
             <i class="fas fa-plus"></i> Add Subject
@@ -302,6 +352,7 @@
                   <th>Subject Code</th>
                   <th>Subject Name</th>
                   <th>Class Type</th>
+                  <th>Units</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -316,6 +367,36 @@
         </div>
       </div>
 
+      <!-- Add Section Modal -->
+      <div class="modal" id="addSectionModal">
+        <div class="modal-content" style="width: 500px; max-width: 90%;">
+          <div class="modal-header">
+            <h3>Add New Section</h3>
+            <span class="close" onclick="hideAddSectionModal()">&times;</span>
+          </div>
+          <form id="addSectionForm">
+            <div class="form-group">
+              <label for="section-year">Year Level *</label>
+              <select id="section-year" required>
+                <option value="" disabled selected>Select Year Level</option>
+                <option value="1">1st Year</option>
+                <option value="2">2nd Year</option>
+                <option value="3">3rd Year</option>
+                <option value="4">4th Year</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="section-name">Section Name *</label>
+              <input type="text" id="section-name" placeholder="e.g., A, B, C" required>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" onclick="hideAddSectionModal()">Cancel</button>
+              <button type="button" class="btn btn-success" onclick="handleAddSection()">Add Section</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
       <!-- Add Subject Modal -->
       <div class="modal" id="addSubjectModal">
         <div class="modal-content" style="width: 600px; max-width: 90%;">
@@ -324,10 +405,6 @@
             <span class="close" onclick="hideAddSubjectModal()">&times;</span>
           </div>
           <form id="addSubjectForm">
-            <div id="duplicateWarning" class="duplicate-warning" style="display: none;">
-              <i class="fas fa-exclamation-triangle"></i>
-              Subject code already exists. Changes will update the existing subject.
-            </div>
             <div class="form-group">
               <label for="subject-code">Subject Code *</label>
               <input type="text" id="subject-code" placeholder="e.g., IT101" required>
@@ -337,429 +414,344 @@
               <input type="text" id="subject-name" placeholder="e.g., Introduction to Computing" required>
             </div>
             <div class="form-group">
-              <label>Class Type * (Select one or both)</label>
-              <div class="checkbox-group">
-                <label class="checkbox-label" onclick="toggleClassType('lecture')">
-                  <input type="checkbox" id="class-type-lecture" value="Lecture">
-                  <span>Lecture</span>
-                  <span class="class-type-badge class-type-lecture">LEC</span>
-                </label>
-                <label class="checkbox-label" onclick="toggleClassType('lab')">
-                  <input type="checkbox" id="class-type-lab" value="Lab">
-                  <span>Lab</span>
-                  <span class="class-type-badge class-type-lab">LAB</span>
-                </label>
-              </div>
+              <label for="class-type">Class Type *</label>
+              <select id="class-type" required>
+                <option value="">Select Type</option>
+                <option value="lecture">Lecture</option>
+                <option value="laboratory">Laboratory</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="subject-units">Units *</label>
+              <input type="number" id="subject-units" value="3" min="1" max="6" required>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" onclick="hideAddSubjectModal()">Cancel</button>
-              <button type="button" id="submitBtn" class="btn btn-success" onclick="handleSubmit()">Add Subject</button>
+              <button type="button" id="submitBtn" class="btn btn-success" onclick="handleSubmitSubject()">Add Subject</button>
             </div>
           </form>
         </div>
       </div>
     `;
 
-    // Subject Management JavaScript
-    let subjectsData = {};
-    let currentProgramCode = '';
-    let editingSubject = null;
-
-    // Function to toggle class type selection
-    function toggleClassType(type) {
-      const checkbox = document.getElementById(`class-type-${type}`);
-      const label = checkbox.closest('.checkbox-label');
-      
-      if (checkbox.checked) {
-        label.classList.add('checked');
-      } else {
-        label.classList.remove('checked');
-      }
-      
-      // Validate if at least one is selected
-      validateClassTypeSelection();
+    // Load subject management page
+    function loadSubjectManagementPage(programCode, programName) {
+        const subjectManagementPage = document.getElementById('subjectManagementPage');
+        subjectManagementPage.innerHTML = subjectManagementHTML.replace('PROGRAM_NAME', programName);
+        subjectManagementPage.style.display = 'block';
+        
+        setTimeout(() => {
+            const backBtn = document.getElementById('backToCourses');
+            if (backBtn) {
+                backBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    subjectManagementPage.style.display = 'none';
+                    document.getElementById('coursesPage').style.display = 'block';
+                    yearSectionsCache = {};
+                });
+            }
+        }, 100);
     }
 
-    // Function to validate class type selection
-    function validateClassTypeSelection() {
-      const lectureCheckbox = document.getElementById('class-type-lecture');
-      const labCheckbox = document.getElementById('class-type-lab');
-      const submitBtn = document.getElementById('submitBtn');
-      
-      if (lectureCheckbox && labCheckbox && submitBtn) {
-        const isValid = lectureCheckbox.checked || labCheckbox.checked;
-        submitBtn.disabled = !isValid;
-      }
+    // Load sections when year level changes
+    function loadSections() {
+        const yearLevel = document.getElementById('select-year')?.value;
+        const sectionSelect = document.getElementById('select-section');
+        
+        if (!yearLevel || !sectionSelect) return;
+
+        sectionSelect.disabled = true;
+        sectionSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+
+        fetch(`/api/get_year_sections?program_id=${currentProgramCode}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const sections = data.sections.filter(s => s.year_level == yearLevel);
+                    yearSectionsCache[yearLevel] = sections;
+                    
+                    sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
+                    sections.forEach(section => {
+                        const option = document.createElement('option');
+                        option.value = section.section_id;
+                        option.textContent = section.section_name;
+                        sectionSelect.appendChild(option);
+                    });
+                    
+                    sectionSelect.disabled = false;
+                } else {
+                    showAlertModal('Error', 'Failed to load sections', true);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading sections:', error);
+                showAlertModal('Error', 'Failed to load sections', true);
+            });
     }
 
-    function updateAddButton() {
-      const yearLevel = document.getElementById('select-year')?.value;
-      const section = document.getElementById('select-section')?.value;
-      const addBtn = document.getElementById('addSubjectBtn');
-      if (addBtn) {
-        addBtn.disabled = !(yearLevel && section);
-      }
-    }
-
-    // Function to check if subject code already exists
-    function checkSubjectExists(key, subjectCode) {
-      if (!subjectsData[key]) return null;
-      return subjectsData[key].find(subject => subject.code.toUpperCase() === subjectCode.toUpperCase());
-    }
-
-    // Function to get class types from checkboxes
-    function getSelectedClassTypes() {
-      const lectureCheckbox = document.getElementById('class-type-lecture');
-      const labCheckbox = document.getElementById('class-type-lab');
-      const classTypes = [];
-      
-      if (lectureCheckbox && lectureCheckbox.checked) {
-        classTypes.push('Lecture');
-      }
-      if (labCheckbox && labCheckbox.checked) {
-        classTypes.push('Lab');
-      }
-      
-      return classTypes;
-    }
-
+    // Load subjects for selected section
     function loadSubjects() {
-      const yearLevel = document.getElementById('select-year')?.value;
-      const section = document.getElementById('select-section')?.value;
-      updateAddButton();
-      
-      const subjectsList = document.getElementById('subjectsList');
-      const promptDiv = document.querySelector('.selection-prompt');
-      
-      if (!yearLevel || !section) {
-        // Hide table and show prompt
-        if (subjectsList) subjectsList.style.display = 'none';
-        if (promptDiv) promptDiv.style.display = 'block';
-        return;
-      }
-
-      // Show table and hide prompt
-      if (subjectsList) subjectsList.style.display = 'block';
-      if (promptDiv) promptDiv.style.display = 'none';
-
-      const key = `${currentProgramCode}-${yearLevel}-${section}`;
-      const subjects = subjectsData[key] || [];
-      const tbody = document.getElementById('subjectsTableBody');
-      const noSubjectsMessage = document.getElementById('noSubjectsMessage');
-      
-      if (!tbody || !noSubjectsMessage) return;
-      
-      if (subjects.length === 0) {
-        tbody.innerHTML = '';
-        noSubjectsMessage.style.display = 'block';
-        return;
-      }
-
-      noSubjectsMessage.style.display = 'none';
-      tbody.innerHTML = subjects.map((subject, index) => `
-        <tr>
-          <td class="subject-code">${subject.code}</td>
-          <td>${subject.name}</td>
-          <td>
-            ${subject.classTypes.map(classType => `
-              <span class="class-type-badge class-type-${classType.toLowerCase()}">
-                ${classType}
-              </span>
-            `).join('')}
-          </td>
-          <td class="action-buttons">
-            <button class="btn btn-edit" onclick="editSubject(${index}, '${key}')">
-              <i class="fas fa-edit"></i> Edit
-            </button>
-            <button class="btn btn-danger" onclick="deleteSubject(${index}, '${key}')">
-              <i class="fas fa-trash"></i> Delete
-            </button>
-          </td>
-        </tr>
-      `).join('');
-    }
-
-    function showAddSubjectModal(subject = null) {
-      editingSubject = subject;
-      const modal = document.getElementById('addSubjectModal');
-      const form = document.getElementById('addSubjectForm');
-      const modalTitle = document.getElementById('modalTitle');
-      const submitBtn = document.getElementById('submitBtn');
-      const duplicateWarning = document.getElementById('duplicateWarning');
-      
-      if (!modal || !form || !modalTitle || !submitBtn) return;
-      
-      // Reset form
-      form.reset();
-      duplicateWarning.style.display = 'none';
-      
-      if (subject) {
-        // Edit mode
-        modalTitle.textContent = 'Edit Subject Schedule';
-        submitBtn.textContent = 'Update Subject';
+        const sectionId = document.getElementById('select-section')?.value;
+        const addBtn = document.getElementById('addSubjectBtn');
+        const subjectsList = document.getElementById('subjectsList');
+        const promptDiv = document.querySelector('.selection-prompt');
         
-        document.getElementById('subject-code').value = subject.code;
-        document.getElementById('subject-name').value = subject.name;
+        if (addBtn) addBtn.disabled = !sectionId;
         
-        // Set class type checkboxes
-        subject.classTypes.forEach(classType => {
-          if (classType === 'Lecture') {
-            document.getElementById('class-type-lecture').checked = true;
-            document.querySelector('[onclick="toggleClassType(\'lecture\')"]').classList.add('checked');
-          } else if (classType === 'Lab') {
-            document.getElementById('class-type-lab').checked = true;
-            document.querySelector('[onclick="toggleClassType(\'lab\')"]').classList.add('checked');
-          }
-        });
-        
-        // Enable submit button
-        submitBtn.disabled = false;
-      } else {
-        // Add mode
-        modalTitle.textContent = 'Add New Subject Schedule';
-        submitBtn.textContent = 'Add Subject';
-        submitBtn.disabled = true;
-        
-        // Listen for subject code changes to check duplicates
-        const subjectCodeInput = document.getElementById('subject-code');
-        subjectCodeInput.addEventListener('input', function() {
-          checkForDuplicate(this.value);
-        });
-      }
-      
-      modal.style.display = 'flex';
-      
-      // Add event listeners for checkboxes
-      const lectureCheckbox = document.getElementById('class-type-lecture');
-      const labCheckbox = document.getElementById('class-type-lab');
-      
-      if (lectureCheckbox) lectureCheckbox.addEventListener('change', toggleClassType.bind(null, 'lecture'));
-      if (labCheckbox) labCheckbox.addEventListener('change', toggleClassType.bind(null, 'lab'));
-      
-      // Initial validation
-      validateClassTypeSelection();
-    }
-
-    function checkForDuplicate(subjectCode) {
-      const yearLevel = document.getElementById('select-year')?.value;
-      const section = document.getElementById('select-section')?.value;
-      const duplicateWarning = document.getElementById('duplicateWarning');
-      
-      if (!yearLevel || !section || !subjectCode.trim()) {
-        if (duplicateWarning) duplicateWarning.style.display = 'none';
-        return;
-      }
-      
-      const key = `${currentProgramCode}-${yearLevel}-${section}`;
-      const existingSubject = checkSubjectExists(key, subjectCode.trim());
-      
-      if (duplicateWarning) {
-        if (existingSubject) {
-          duplicateWarning.style.display = 'block';
-        } else {
-          duplicateWarning.style.display = 'none';
+        if (!sectionId) {
+            if (subjectsList) subjectsList.style.display = 'none';
+            if (promptDiv) promptDiv.style.display = 'block';
+            return;
         }
-      }
+
+        currentSectionId = sectionId;
+        
+        if (subjectsList) subjectsList.style.display = 'block';
+        if (promptDiv) promptDiv.style.display = 'none';
+
+        fetch(`/api/get_subjects?section_id=${sectionId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displaySubjects(data.subjects);
+                } else {
+                    showAlertModal('Error', 'Failed to load subjects', true);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading subjects:', error);
+                showAlertModal('Error', 'Failed to load subjects', true);
+            });
+    }
+
+    // Display subjects in table
+    function displaySubjects(subjects) {
+        const tbody = document.getElementById('subjectsTableBody');
+        const noSubjectsMessage = document.getElementById('noSubjectsMessage');
+        
+        if (!tbody || !noSubjectsMessage) return;
+        
+        if (subjects.length === 0) {
+            tbody.innerHTML = '';
+            noSubjectsMessage.style.display = 'block';
+            return;
+        }
+
+        noSubjectsMessage.style.display = 'none';
+        tbody.innerHTML = subjects.map(subject => `
+            <tr>
+                <td class="subject-code">${subject.subject_code}</td>
+                <td>${subject.subject_name}</td>
+                <td>
+                    <span class="class-type-badge class-type-${subject.class_type.toLowerCase()}">
+                        ${subject.class_type.toUpperCase()}
+                    </span>
+                </td>
+                <td>${subject.units}</td>
+                <td class="action-buttons">
+                    <button class="btn btn-edit" onclick="editSubject(${subject.subject_id})">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="btn btn-danger" onclick="deleteSubject(${subject.subject_id}, '${subject.subject_code}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    // Add section modal functions
+    function showAddSectionModal() {
+        const modal = document.getElementById('addSectionModal');
+        const form = document.getElementById('addSectionForm');
+        
+        if (form) form.reset();
+        if (modal) modal.style.display = 'flex';
+    }
+
+    function hideAddSectionModal() {
+        const modal = document.getElementById('addSectionModal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    function handleAddSection() {
+        const yearLevel = document.getElementById('section-year')?.value;
+        const sectionName = document.getElementById('section-name')?.value?.trim().toUpperCase();
+        
+        if (!yearLevel || !sectionName) {
+            showAlertModal('Incomplete Form', 'Please fill in all fields', true);
+            return;
+        }
+
+        fetch('/api/add_year_section', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                program_id: currentProgramCode,
+                year_level: yearLevel,
+                section_name: sectionName
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlertModal('Success', 'Section added successfully!', false);
+                hideAddSectionModal();
+                // Refresh sections if same year is selected
+                const currentYear = document.getElementById('select-year')?.value;
+                if (currentYear == yearLevel) {
+                    loadSections();
+                }
+            } else {
+                showAlertModal('Error', data.message, true);
+            }
+        })
+        .catch(error => {
+            console.error('Error adding section:', error);
+            showAlertModal('Error', 'Failed to add section', true);
+        });
+    }
+
+    // Add/edit subject modal functions
+    function showAddSubjectModal(subjectId = null) {
+        editingSubjectId = subjectId;
+        const modal = document.getElementById('addSubjectModal');
+        const form = document.getElementById('addSubjectForm');
+        const modalTitle = document.getElementById('modalTitle');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        if (!modal || !form) return;
+        
+        form.reset();
+        
+        if (subjectId) {
+            // Edit mode - fetch subject data
+            fetch(`/api/get_subjects?section_id=${currentSectionId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const subject = data.subjects.find(s => s.subject_id === subjectId);
+                        if (subject) {
+                            modalTitle.textContent = 'Edit Subject';
+                            submitBtn.textContent = 'Update Subject';
+                            document.getElementById('subject-code').value = subject.subject_code;
+                            document.getElementById('subject-name').value = subject.subject_name;
+                            document.getElementById('class-type').value = subject.class_type;
+                            document.getElementById('subject-units').value = subject.units;
+                        }
+                    }
+                });
+        } else {
+            modalTitle.textContent = 'Add New Subject';
+            submitBtn.textContent = 'Add Subject';
+        }
+        
+        modal.style.display = 'flex';
     }
 
     function hideAddSubjectModal() {
-      const modal = document.getElementById('addSubjectModal');
-      const form = document.getElementById('addSubjectForm');
-      if (modal) modal.style.display = 'none';
-      if (form) form.reset();
-      editingSubject = null;
-      
-      // Remove event listeners
-      const subjectCodeInput = document.getElementById('subject-code');
-      if (subjectCodeInput) {
-        subjectCodeInput.removeEventListener('input', checkForDuplicate);
-      }
-      
-      // Reset checkbox styling
-      const labels = document.querySelectorAll('.checkbox-label');
-      labels.forEach(label => label.classList.remove('checked'));
+        const modal = document.getElementById('addSubjectModal');
+        if (modal) modal.style.display = 'none';
+        editingSubjectId = null;
     }
 
-    // Updated handler for form submission with duplicate checking
-    function handleSubmit() {
-      console.log('=== FORM SUBMISSION START ===');
-      
-      const yearLevel = document.getElementById('select-year')?.value;
-      const section = document.getElementById('select-section')?.value;
-      if (!yearLevel || !section) {
-        showAlertModal('Selection Required', 'Please select both year level and section first.', true);
-        console.log('❌ Submission failed: Year/Section not selected');
-        return;
-      }
-      
-      const subjectCode = document.getElementById('subject-code')?.value?.toUpperCase().trim();
-      const subjectName = document.getElementById('subject-name')?.value?.trim();
-      const classTypes = getSelectedClassTypes();
-      
-      // Validation
-      if (!subjectCode || !subjectName || classTypes.length === 0) {
-        showAlertModal('Incomplete Form', 'Please fill in all required fields and select at least one class type.', true);
-        console.log('❌ Submission failed: Form incomplete');
-        return;
-      }
-
-      const key = `${currentProgramCode}-${yearLevel}-${section}`;
-      const existingSubject = checkSubjectExists(key, subjectCode);
-      
-      const subject = {
-        code: subjectCode,
-        name: subjectName,
-        classTypes: classTypes
-      };
-
-      console.log('Subject data prepared:', subject);
-
-      if (!subjectsData[key]) {
-        subjectsData[key] = [];
-      }
-      
-      if (editingSubject !== null) {
-        // Update existing subject
-        subjectsData[key][editingSubject.index] = subject;
-        showAlertModal('Success', 'Subject updated successfully!', false);
-      } else if (existingSubject) {
-        // Update existing subject (duplicate found)
-        const existingIndex = subjectsData[key].indexOf(existingSubject);
-        subjectsData[key][existingIndex] = subject;
-        showAlertModal('Updated', `Subject "${subjectCode}" has been updated successfully!`, false);
-      } else {
-        // Add new subject
-        subjectsData[key].push(subject);
-        showAlertModal('Success', 'Subject added successfully!', false);
-      }
-      
-      hideAddSubjectModal();
-      loadSubjects();
-      
-      console.log('✅ Subjects saved for', key, subjectsData[key]);
-      editingSubject = null;
-      
-      console.log('=== FORM SUBMISSION END ===');
-    }
-
-    function editSubject(index, key) {
-      if (!subjectsData[key] || index >= subjectsData[key].length) return;
-      
-      const subject = subjectsData[key][index];
-      subject.index = index;
-      showAddSubjectModal(subject);
-    }
-
-    function deleteSubject(index, key) {
-      if (!subjectsData[key] || index >= subjectsData[key].length) return;
-      
-      const subject = subjectsData[key][index];
-      showConfirmModal(
-        'Delete Subject',
-        `Are you sure you want to delete "${subject.code} - ${subject.name}"? This action cannot be undone.`,
-        function() {
-          subjectsData[key].splice(index, 1);
-          loadSubjects();
-          showAlertModal('Deleted', 'Subject deleted successfully!', false);
+    function handleSubmitSubject() {
+        const subjectCode = document.getElementById('subject-code')?.value?.trim().toUpperCase();
+        const subjectName = document.getElementById('subject-name')?.value?.trim();
+        const classType = document.getElementById('class-type')?.value;
+        const units = document.getElementById('subject-units')?.value;
+        
+        if (!subjectCode || !subjectName || !classType || !units) {
+            showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+            return;
         }
-      );
-    }
 
-    // View Course Button Event Listeners
-    document.addEventListener('DOMContentLoaded', function() {
-      const viewCourseButtons = document.querySelectorAll('.view-course');
-      
-      viewCourseButtons.forEach(button => {
-        button.addEventListener('click', function(e) {
-          e.preventDefault();
-          const programCode = this.getAttribute('data-course');
-          const programName = this.getAttribute('data-name');
-          currentProgramCode = programCode;
-          
-          // Hide courses page
-          document.getElementById('coursesPage').style.display = 'none';
-          
-          // Load subject management page
-          loadSubjectManagementPage(programCode, programName);
+        const endpoint = editingSubjectId ? '/api/update_subject' : '/api/add_subject';
+        const payload = {
+            section_id: currentSectionId,
+            subject_code: subjectCode,
+            subject_name: subjectName,
+            class_type: classType,
+            units: parseInt(units)
+        };
+
+        if (editingSubjectId) {
+            payload.subject_id = editingSubjectId;
+        }
+
+        fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlertModal('Success', editingSubjectId ? 'Subject updated successfully!' : 'Subject added successfully!', false);
+                hideAddSubjectModal();
+                loadSubjects();
+            } else {
+                showAlertModal('Error', data.message, true);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving subject:', error);
+            showAlertModal('Error', 'Failed to save subject', true);
         });
-      });
-    });
+    }
 
-    function loadSubjectManagementPage(programCode, programName) {
-      // Inject HTML
-      const subjectManagementPage = document.getElementById('subjectManagementPage');
-      subjectManagementPage.innerHTML = subjectManagementHTML.replace(
-        'PROGRAM_NAME', programName
-      );
-      subjectManagementPage.style.display = 'block';
-      
-      // Add event listeners for the new content
-      setTimeout(() => {
-        // Back button
-        const backBtn = document.getElementById('backToCourses');
-        if (backBtn) {
-          backBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            subjectManagementPage.style.display = 'none';
-            document.getElementById('coursesPage').style.display = 'block';
-            
-            // Reset selections
-            const yearSelect = document.getElementById('select-year');
-            const sectionSelect = document.getElementById('select-section');
-            if (yearSelect) yearSelect.value = '';
-            if (sectionSelect) sectionSelect.value = '';
-          });
-        }
-        
-        // Select event listeners
-        const yearSelect = document.getElementById('select-year');
-        const sectionSelect = document.getElementById('select-section');
-        if (yearSelect) yearSelect.addEventListener('change', loadSubjects);
-        if (sectionSelect) sectionSelect.addEventListener('change', loadSubjects);
-        
-        // Modal close events
-        const addModalCloseBtn = document.querySelector('#addSubjectModal .close');
-        if (addModalCloseBtn) {
-          addModalCloseBtn.addEventListener('click', hideAddSubjectModal);
-        }
-        
-        // Initialize subjects data for this program if not exists
-        if (!subjectsData[programCode]) {
-          subjectsData[programCode] = {};
-        }
-        
-        // Initialize with prompt visible and table hidden
-        loadSubjects();
-      }, 100);
+    function editSubject(subjectId) {
+        showAddSubjectModal(subjectId);
+    }
+
+    function deleteSubject(subjectId, subjectCode) {
+        showConfirmModal(
+            'Delete Subject',
+            `Are you sure you want to delete "${subjectCode}"? This action cannot be undone.`,
+            function() {
+                fetch('/api/delete_subject', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subject_id: subjectId })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlertModal('Deleted', 'Subject deleted successfully!', false);
+                        loadSubjects();
+                    } else {
+                        showAlertModal('Error', data.message, true);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting subject:', error);
+                    showAlertModal('Error', 'Failed to delete subject', true);
+                });
+            }
+        );
     }
 
     // Close modals when clicking outside
     document.addEventListener('click', function(e) {
-      const addModal = document.getElementById('addSubjectModal');
-      const alertModal = document.getElementById('alertModal');
-      const confirmModal = document.getElementById('confirmModal');
-      
-      if (addModal && e.target === addModal) {
-        hideAddSubjectModal();
-      }
-      
-      if (alertModal && e.target === alertModal) {
-        hideAlertModal();
-      }
-      
-      if (confirmModal && e.target === confirmModal) {
-        hideConfirmModal();
-      }
+        const addModal = document.getElementById('addSubjectModal');
+        const alertModal = document.getElementById('alertModal');
+        const confirmModal = document.getElementById('confirmModal');
+        const sectionModal = document.getElementById('addSectionModal');
+        
+        if (addModal && e.target === addModal) hideAddSubjectModal();
+        if (alertModal && e.target === alertModal) hideAlertModal();
+        if (confirmModal && e.target === confirmModal) hideConfirmModal();
+        if (sectionModal && e.target === sectionModal) hideAddSectionModal();
     });
 
     // Close modals with Escape key
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') {
-        hideAlertModal();
-        hideConfirmModal();
-        hideAddSubjectModal();
-      }
+        if (e.key === 'Escape') {
+            hideAlertModal();
+            hideConfirmModal();
+            hideAddSubjectModal();
+            hideAddSectionModal();
+        }
     });
-  </script>
-</body>
-</html>
+</script>
