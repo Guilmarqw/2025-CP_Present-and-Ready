@@ -4,154 +4,160 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Attendance Summary</title>
-     <link rel="stylesheet" href="{{ url_for('static', filename='Summary.css') }}">
-   <link rel="stylesheet" href="../static/Summary.css">
-</head>
-<style>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../static/Summary.css">
 
-</style>
-<body>
-    <!-- Edit Modal (Hidden by default) -->
+</head>
+<body class="bg-gray-100 font-sans">
+    <!-- Edit Modal -->
     <div class="modal-overlay" id="editModal">
         <div class="modal">
             <div class="modal-header">
-                <h2 class="modal-title">STUDENT ATTENDANCE EDITOR</h2>
+                <h2 class="text-xl font-semibold text-gray-800">Student Attendance Editor</h2>
                 <button class="modal-close" id="closeModal">×</button>
             </div>
-            <div class="modal-content">
-                <div class="search-container">
-                    <input type="text" class="search-input" placeholder="Search student name..." id="studentSearch">
+            <div class="p-6">
+                <input type="text" class="search-input w-full p-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search student name..." id="studentSearch">
+                <div class="flex gap-2 mb-4 flex-wrap">
+                    <button class="attendance-option option-present text-white">Mark Present</button>
+                    <button class="attendance-option option-late text-white">Mark Late</button>
+                    <button class="attendance-option option-absent text-white">Mark Absent</button>
+                    <button class="attendance-option option-excused text-white">Mark Excused</button>
                 </div>
-                <div class="attendance-options">
-                    <button class="attendance-option option-present">MARK PRESENT</button>
-                    <button class="attendance-option option-late">MARK LATE</button>
-                    <button class="attendance-option option-absent">MARK ABSENT</button>
-                </div>
-                <div class="students-container" id="modalStudentsList">
-                    <!-- Students will be populated by JavaScript -->
-                </div>
+                <div class="students-container max-h-96 overflow-y-auto" id="modalStudentsList"></div>
             </div>
-            <div class="modal-actions">
-                <button class="modal-btn modal-btn-cancel" id="modalCancel">Cancel</button>
-                <button class="modal-btn modal-btn-save" id="modalSave">Save Changes</button>
+            <div class="flex justify-end gap-2 p-4 border-t border-gray-200">
+                <button class="modal-btn modal-btn-cancel">Cancel</button>
+                <button class="modal-btn modal-btn-save">Save Changes</button>
             </div>
         </div>
     </div>
 
-    <!-- Confirmation Modal (Hidden by default) -->
+    <!-- Confirmation Modal -->
     <div class="modal-overlay" id="confirmationModal">
-        <div class="modal" style="max-width: 400px;">
+        <div class="modal max-w-md">
             <div class="modal-header">
-                <h2 class="modal-title" id="confirmationTitle">CONFIRM ACTION</h2>
+                <h2 class="text-xl font-semibold text-gray-800" id="confirmationTitle">Confirm Action</h2>
                 <button class="modal-close" id="closeConfirmationModal">×</button>
             </div>
-            <div class="modal-content">
-                <p id="confirmationMessage" style="text-align: center; margin: 20px 0; font-size: 16px; color: #374151;"></p>
+            <div class="p-6">
+                <p id="confirmationMessage" class="text-center text-gray-700 text-base"></p>
             </div>
-            <div class="modal-actions">
+            <div class="flex justify-end gap-2 p-4 border-t border-gray-200">
                 <button class="modal-btn modal-btn-cancel" id="confirmationNo">No</button>
                 <button class="modal-btn modal-btn-save" id="confirmationYes">Yes</button>
             </div>
         </div>
     </div>
-<div class="container">
-        <div class="header">
-            <h1>ATTENDANCE SUMMARY</h1>
-            <div class="header-buttons">
-                <button class="btn btn-edit" id="editBtn">Edit</button>
+
+    <!-- CSV Preview Modal -->
+    <div class="modal-overlay" id="csvPreviewModal" style="display: none;">
+        <div class="modal max-w-2xl">
+            <div class="modal-header">
+                <h2 class="text-xl font-semibold text-gray-800">Attendance Summary Export</h2>
+                <button class="modal-close" id="closeCsvPreview">×</button>
+            </div>
+            <div class="p-6">
+                <div class="mb-4">
+                    <h3 class="text-base font-medium text-gray-800 mb-2">Preview</h3>
+                    <div id="csvPreviewContent" class="bg-gray-50 border border-gray-200 rounded-md p-4 font-mono text-sm whitespace-pre overflow-auto max-h-80"></div>
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                    <button class="modal-btn modal-btn-save" id="downloadCsv">Download CSV</button>
+                    <button class="modal-btn bg-gray-600 text-white" id="printCsv">Print</button>
+                    <button class="modal-btn modal-btn-cancel" id="cancelCsv">Cancel</button>
+                    <button class="modal-btn bg-green-600 text-white" id="confirmSave">Confirm Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container max-w-7xl mx-auto p-6">
+        <div class="header flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Attendance Summary</h1>
+            <div class="flex gap-2">
+                <button class="btn btn-edit">Edit</button>
                 <button class="btn btn-save">Save</button>
                 <button class="btn btn-cancel">Discard</button>
             </div>
         </div>
 
-        <div class="faculty-info">
-            <div class="faculty-row">
-                <div class="faculty-profile">
+        <div class="faculty-info bg-white rounded-lg shadow-sm p-6 mb-6">
+            <div class="flex flex-col md:flex-row gap-6 items-center">
+                <div class="faculty-profile flex items-center gap-4">
                     <div class="faculty-avatar">
                         <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Ccircle cx='30' cy='30' r='30' fill='%23E5E7EB'/%3E%3Ccircle cx='30' cy='24' r='9' fill='%236B7280'/%3E%3Cpath d='M15 45c0-8.25 6.75-15 15-15s15 6.75 15 15' fill='%236B7280'/%3E%3C/svg%3E" alt="Faculty Avatar">
                     </div>
                     <div class="faculty-details">
-                        <div class="faculty-name">Faculty Member's Name</div>
-                        <div class="faculty-title">IT/CS Faculty Member</div>
+                        <div class="faculty-name text-lg font-semibold text-gray-800">Faculty Member's Name</div>
+                        <div class="faculty-title text-sm text-gray-600">IT/CS Faculty Member</div>
                     </div>
                 </div>
-                <div class="subject-info">
-                    <div class="subject-code">IT104</div>
-                    <div class="subject-label">Subject</div>
+                <div class="subject-info text-center">
+                    <div class="subject-code text-lg font-semibold text-gray-800">IT104</div>
+                    <div class="subject-label text-sm text-gray-600">Subject</div>
                 </div>
-                <div class="course-info">
-                    <div class="course-code">BSIT-2C</div>
-                    <div class="course-label">Course & Section</div>
+                <div class="course-info text-center">
+                    <div class="course-code text-lg font-semibold text-gray-800">BSIT-2C</div>
+                    <div class="course-label text-sm text-gray-600">Course & Section</div>
                 </div>
             </div>
         </div>
 
-        <div class="time-section">
-            <div class="time-item">
-                <div class="time-value">1:03pm</div>
-                <div class="time-label">Time Started</div>
+        <div class="time-section bg-white rounded-lg shadow-sm p-6 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="time-item text-center">
+                <div class="time-value text-lg font-semibold text-gray-800">1:03pm</div>
+                <div class="time-label text-sm text-gray-600">Time Started</div>
             </div>
-            <div class="duration-container">
+            <div class="duration-container text-center">
                 <div class="duration-main">
-                    <div class="duration-value">3h:00m:00s</div>
-                    <div class="duration-label">Class Duration</div>
+                    <div class="duration-value text-lg font-semibold text-gray-800">3h:00m:00s</div>
+                    <div class="duration-label text-sm text-gray-600">Class Duration</div>
                 </div>
-                <div class="threshold-container">
-                    <div class="threshold-value">00h:15m:00s</div>
-                    <div class="threshold-label">Late Threshold</div>
+                <div class="threshold-container mt-2">
+                    <div class="threshold-value text-sm font-medium text-gray-700">00h:15m:00s</div>
+                    <div class="threshold-label text-xs text-gray-500">Late Threshold</div>
                 </div>
             </div>
-            <div class="time-item">
-                <div class="time-value">4:03pm</div>
-                <div class="time-label">Time Ended</div>
+            <div class="time-item text-center">
+                <div class="time-value text-lg font-semibold text-gray-800">4:03pm</div>
+                <div class="time-label text-sm text-gray-600">Time Ended</div>
             </div>
         </div>
 
-        <div class="attendance-grid">
-            <div class="attendance-column column-present">
-                <div class="column-header">
-                    <div class="attendance-count count-present">29/36</div>
-                    <div class="attendance-label">Students Present</div>
+        <div class="attendance-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="attendance-column column-present p-6">
+                <div class="column-header mb-4">
+                    <div class="attendance-count count-present text-lg font-semibold text-green-600">29/36</div>
+                    <div class="attendance-label text-sm text-gray-600">Students Present</div>
                 </div>
-                <div class="student-list" id="presentList">
-                    <!-- Students will be populated by JavaScript -->
-                </div>
+                <div class="student-list max-h-96 overflow-y-auto" id="presentList"></div>
             </div>
-
-            <div class="attendance-column column-late">
-                <div class="column-header">
-                    <div class="attendance-count count-late">10/36</div>
-                    <div class="attendance-label">Students Late</div>
+            <div class="attendance-column column-late p-6">
+                <div class="column-header mb-4">
+                    <div class="attendance-count count-late text-lg font-semibold text-yellow-600">10/36</div>
+                    <div class="attendance-label text-sm text-gray-600">Students Late</div>
                 </div>
-                <div class="student-list" id="lateList">
-                    <!-- Students will be populated by JavaScript -->
-                </div>
+                <div class="student-list max-h-96 overflow-y-auto" id="lateList"></div>
             </div>
-            <div class="attendance-column column-absent">
-                <div class="column-header">
-                    <div class="attendance-count count-absent">7/36</div>
-                    <div class="attendance-label">Students Absent</div>
+            <div class="attendance-column column-absent p-6">
+                <div class="column-header mb-4">
+                    <div class="attendance-count count-absent text-lg font-semibold text-red-600">7/36</div>
+                    <div class="attendance-label text-sm text-gray-600">Students Absent</div>
                 </div>
-                <div class="student-list" id="absentList">
-                    <!-- Students will be populated by JavaScript -->
-                </div>
+                <div class="student-list max-h-96 overflow-y-auto" id="absentList"></div>
             </div>
-
-            <div class="attendance-column column-excused">
-                <div class="column-header">
-                    <div class="attendance-count count-excused">0/36</div>
-                    <div class="attendance-label">Students Excused</div>
+            <div class="attendance-column column-excused p-6">
+                <div class="column-header mb-4">
+                    <div class="attendance-count count-excused text-lg font-semibold text-gray-600">0/36</div>
+                    <div class="attendance-label text-sm text-gray-600">Students Excused</div>
                 </div>
-                <div class="student-list" id="excusedList">
-                    <!-- Students will be populated by JavaScript -->
-                </div>
+                <div class="student-list max-h-96 overflow-y-auto" id="excusedList"></div>
             </div>
-</div>
+        </div>
     </div>
 
-    <script 
-    
-    >
+    <script>
         // Sample student data with attendance status
         const allStudents = [
             { name: 'Student Name 1', status: 'present' },
@@ -191,6 +197,7 @@
             { name: 'Student Name 35', status: 'present' },
             { name: 'Student Name 36', status: 'present' }
         ];
+
         // Populate initial lists
         const students = {
             present: allStudents.filter(s => s.status === 'present').map(s => s.name),
@@ -198,16 +205,17 @@
             absent: allStudents.filter(s => s.status === 'absent').map(s => s.name),
             excused: allStudents.filter(s => s.status === 'excused').map(s => s.name)
         };
-function createStudentItem(name, index) {
+
+        function createStudentItem(name, index) {
             const studentItem = document.createElement('div');
-            studentItem.className = 'student-item';
+            studentItem.className = 'student-item flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md';
             
             const avatar = document.createElement('div');
             avatar.className = 'student-avatar';
             avatar.textContent = name.charAt(0).toUpperCase();
             
             const nameDiv = document.createElement('div');
-            nameDiv.className = 'student-name';
+            nameDiv.className = 'student-name text-gray-800';
             nameDiv.textContent = name;
             
             studentItem.appendChild(avatar);
@@ -215,6 +223,7 @@ function createStudentItem(name, index) {
             
             return studentItem;
         }
+
         function populateStudentList(containerId, studentList) {
             const container = document.getElementById(containerId);
             container.innerHTML = '';
@@ -224,26 +233,27 @@ function createStudentItem(name, index) {
                 container.appendChild(studentItem);
             });
         }
-function createModalStudentItem(student) {
+
+        function createModalStudentItem(student) {
             const studentItem = document.createElement('div');
-            studentItem.className = 'modal-student-item';
+            studentItem.className = 'modal-student-item flex items-center justify-between p-3 border-b border-gray-200';
             
             const studentInfo = document.createElement('div');
-            studentInfo.className = 'modal-student-info';
+            studentInfo.className = 'flex items-center gap-3';
             
             const avatar = document.createElement('div');
             avatar.className = 'modal-student-avatar';
             avatar.textContent = student.name.charAt(0).toUpperCase();
             
             const nameDiv = document.createElement('div');
-            nameDiv.className = 'modal-student-name';
+            nameDiv.className = 'modal-student-name text-gray-800';
             nameDiv.textContent = student.name;
             
             studentInfo.appendChild(avatar);
             studentInfo.appendChild(nameDiv);
             
             const checkboxes = document.createElement('div');
-            checkboxes.className = 'attendance-checkboxes';
+            checkboxes.className = 'attendance-checkboxes flex gap-2';
             
             // Present checkbox
             const presentWrapper = document.createElement('div');
@@ -262,6 +272,7 @@ function createModalStudentItem(student) {
             lateCheckbox.dataset.status = 'late';
             lateCheckbox.dataset.student = student.name;
             lateWrapper.appendChild(lateCheckbox);
+            
             // Absent checkbox
             const absentWrapper = document.createElement('div');
             absentWrapper.className = 'checkbox-wrapper';
@@ -284,7 +295,8 @@ function createModalStudentItem(student) {
             checkboxes.appendChild(lateWrapper);
             checkboxes.appendChild(absentWrapper);
             checkboxes.appendChild(excusedWrapper);
-studentItem.appendChild(studentInfo);
+            
+            studentItem.appendChild(studentInfo);
             studentItem.appendChild(checkboxes);
             
             return studentItem;
@@ -299,13 +311,15 @@ studentItem.appendChild(studentInfo);
                 container.appendChild(studentItem);
             });
         }
+
         // Initialize student lists
         populateStudentList('presentList', students.present);
         populateStudentList('lateList', students.late);
         populateStudentList('absentList', students.absent);
         populateStudentList('excusedList', students.excused);
         populateModalStudentsList();
-// Modal functionality
+
+        // Modal functionality
         const editModal = document.getElementById('editModal');
         const editBtn = document.getElementById('editBtn');
         const closeModal = document.getElementById('closeModal');
@@ -368,11 +382,6 @@ studentItem.appendChild(studentInfo);
                 }
             });
         });
-        // Add excused option button
-        const excusedOption = document.createElement('button');
-        excusedOption.className = 'attendance-option option-excused';
-        excusedOption.textContent = 'MARK EXCUSED';
-        document.querySelector('.attendance-options').appendChild(excusedOption);
 
         // Bulk actions
         document.querySelectorAll('.attendance-option').forEach(btn => {
@@ -380,7 +389,8 @@ studentItem.appendChild(studentInfo);
                 const status = btn.classList.contains('option-present') ? 'present' :
                               btn.classList.contains('option-late') ? 'late' :
                               btn.classList.contains('option-absent') ? 'absent' : 'excused';
-// Get visible students (in case search is active)
+                
+                // Get visible students (in case search is active)
                 const visibleStudents = document.querySelectorAll('.modal-student-item:not([style*="display: none"])');
                 
                 visibleStudents.forEach(studentItem => {
@@ -401,6 +411,7 @@ studentItem.appendChild(studentInfo);
                 });
             });
         });
+
         // Confirmation modal functionality
         const confirmationModal = document.getElementById('confirmationModal');
         const closeConfirmationModal = document.getElementById('closeConfirmationModal');
@@ -410,7 +421,7 @@ studentItem.appendChild(studentInfo);
         const confirmationMessage = document.getElementById('confirmationMessage');
 
         function showConfirmation(action, message, callback) {
-            confirmationTitle.textContent = `CONFIRM ${action.toUpperCase()}`;
+            confirmationTitle.textContent = `Confirm ${action.toUpperCase()}`;
             confirmationMessage.textContent = message;
             confirmationModal.style.display = 'flex';
             
@@ -431,6 +442,7 @@ studentItem.appendChild(studentInfo);
                 confirmationModal.style.display = 'none';
             }
         });
+
         modalSave.addEventListener('click', () => {
             // Update the main lists based on new statuses
             const updatedStudents = {
@@ -457,33 +469,8 @@ studentItem.appendChild(studentInfo);
             
             alert('Attendance updated successfully!');
         });
-        // Add CSV Preview Modal
-        const csvPreviewModal = document.createElement('div');
-        csvPreviewModal.className = 'modal-overlay';
-        csvPreviewModal.id = 'csvPreviewModal';
-        csvPreviewModal.style.display = 'none';
-        csvPreviewModal.innerHTML = `
-            <div class="modal" style="max-width: 800px; max-height: 90vh;">
-                <div class="modal-header">
-                    <h2 class="modal-title">ATTENDANCE SUMMARY EXPORT</h2>
-                    <button class="modal-close" id="closeCsvPreview">×</button>
-                </div>
-                <div class="modal-content">
-                    <div style="margin-bottom: 20px;">
-                        <h3 style="font-size: 16px; color: #374151; margin-bottom: 10px;">Preview</h3>
-                        <div id="csvPreviewContent" style="background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 15px; font-family: monospace; font-size: 12px; white-space: pre; overflow: auto; max-height: 300px;"></div>
-                    </div>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button class="modal-btn modal-btn-save" id="downloadCsv">Download CSV</button>
-                        <button class="modal-btn" style="background: #6B7280; color: white;" id="printCsv">Print</button>
-                        <button class="modal-btn modal-btn-cancel" id="cancelCsv">Cancel</button>
-                        <button class="modal-btn" style="background: #16A34A; color: white;" id="confirmSave">Confirm Save</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(csvPreviewModal);
-// CSV Preview functionality
+
+        // CSV Preview functionality
         function showCsvPreview() {
             const subjectCode = document.querySelector('.subject-code').textContent;
             const courseCode = document.querySelector('.course-code').textContent;
@@ -497,23 +484,24 @@ studentItem.appendChild(studentInfo);
             const csvContent = csvHeader + csvRows;
             
             document.getElementById('csvPreviewContent').textContent = csvContent;
-            csvPreviewModal.style.display = 'flex';
+            document.getElementById('csvPreviewModal').style.display = 'flex';
         }
 
         // Close CSV preview modal
         document.getElementById('closeCsvPreview').addEventListener('click', () => {
-            csvPreviewModal.style.display = 'none';
+            document.getElementById('csvPreviewModal').style.display = 'none';
         });
 
         document.getElementById('cancelCsv').addEventListener('click', () => {
-            csvPreviewModal.style.display = 'none';
+            document.getElementById('csvPreviewModal').style.display = 'none';
         });
 
-        csvPreviewModal.addEventListener('click', (e) => {
-            if (e.target === csvPreviewModal) {
-                csvPreviewModal.style.display = 'none';
+        document.getElementById('csvPreviewModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('csvPreviewModal')) {
+                document.getElementById('csvPreviewModal').style.display = 'none';
             }
         });
+
         // Download CSV
         document.getElementById('downloadCsv').addEventListener('click', () => {
             const subjectCode = document.querySelector('.subject-code').textContent;
@@ -540,19 +528,20 @@ studentItem.appendChild(studentInfo);
                 document.body.removeChild(link);
             }
             
-            csvPreviewModal.style.display = 'none';
+            document.getElementById('csvPreviewModal').style.display = 'none';
             alert('Attendance summary downloaded as CSV!');
         });
 
         // Confirm Save button
         document.getElementById('confirmSave').addEventListener('click', () => {
-            csvPreviewModal.style.display = 'none';
+            document.getElementById('csvPreviewModal').style.display = 'none';
             showConfirmation('save', 'Do you really want to save the attendance summary?', function() {
                 confirmationModal.style.display = 'none';
                 alert('Attendance summary saved successfully!');
             });
         });
-// Print CSV
+
+        // Print CSV
         document.getElementById('printCsv').addEventListener('click', () => {
             const subjectCode = document.querySelector('.subject-code').textContent;
             const courseCode = document.querySelector('.course-code').textContent;
@@ -589,17 +578,20 @@ studentItem.appendChild(studentInfo);
             printWindow.document.close();
             printWindow.print();
         });
+
         // Add button functionality
         document.querySelector('.btn-save').addEventListener('click', function() {
             showCsvPreview();
         });
-document.querySelector('.btn-cancel').addEventListener('click', function() {
+
+        document.querySelector('.btn-cancel').addEventListener('click', function() {
             showConfirmation('discard', 'Do you really want to discard changes? Unsaved changes will be lost.', function() {
                 confirmationModal.style.display = 'none';
                 console.log('Changes discarded');
             });
         });
-// Update time every second (for demonstration)
+
+        // Update time every second
         function updateCurrentTime() {
             const now = new Date();
             const timeString = now.toLocaleTimeString('en-US', { 
@@ -607,9 +599,10 @@ document.querySelector('.btn-cancel').addEventListener('click', function() {
                 minute: '2-digit',
                 hour12: true 
             }).toLowerCase();
+            // Note: Time elements are static in this demo, so not updating them
         }
 
-        setInterval(updateCurrentTime, 1000);</script>
-
+        setInterval(updateCurrentTime, 1000);
+    </script>
 </body>
 </html>
