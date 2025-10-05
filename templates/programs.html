@@ -6,72 +6,304 @@
   <title>Management - Programs</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="../static/programs.css" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='programs.css') }}">
+  <style>
+    /* Modal styles to ensure visibility */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal.active {
+      display: flex !important;
+    }
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 5px;
+      width: 500px;
+      max-width: 90%;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .btn {
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background-color: #007bff;
+      color: white;
+      border: none;
+    }
+    .btn-secondary {
+      background-color: #6c757d;
+      color: white;
+      border: none;
+    }
+    .btn-success {
+      background-color: #28a745;
+      color: white;
+      border: none;
+    }
+    .btn-danger {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    .close {
+      cursor: pointer;
+      font-size: 20px;
+    }
+    .courses-table, .years-table, .semesters-table {
+      margin-top: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #f4f4f4;
+    }
+    .action-buttons {
+      display: flex;
+      gap: 5px;
+    }
+  </style>
 </head>
 <body>
 <!-- Sidebar -->
-    <div id="sidebar-container"></div>
+<div id="sidebar-container"></div>
 
-  <!-- Main Content -->
-  <div class="main-content">
-    <!-- Courses Page -->
-    <div class="page-container" id="coursesPage">
-      <div class="header">
-        <h2><i class="fas fa-book"></i> Course Management</h2>
-      </div>
-
-      <div class="courses-table">
-        <h3>Available Programs</h3>
-        <table id="coursesTable">
-          <thead>
-            <tr>
-              <th>Program Code</th>
-              <th>Program Name</th>
-              <th>Department</th>
-              <th>Total Courses</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>IT</td>
-              <td>Information Technology</td>
-              <td>College of Computer Studies</td>
-              <td>45</td>
-              <td><span style="color: green;">Active</span></td>
-              <td>
-                <a href="#" class="btn-view view-course" data-course="IT" data-name="Information Technology">View</a>
-              </td>
-            </tr>
-            <tr>
-              <td>CS</td>
-              <td>Computer Science</td>
-              <td>College of Computer Studies</td>
-              <td>48</td>
-              <td><span style="color: green;">Active</span></td>
-              <td>
-                <a href="#" class="btn-view view-course" data-course="CS" data-name="Computer Science">View</a>
-              </td>
-            </tr>
-            <tr>
-              <td>ACT</td>
-              <td>Associate in Computer Technology</td>
-              <td>College of Computer Studies</td>
-              <td>40</td>
-              <td><span style="color: green;">Active</span></td>
-              <td>
-                <a href="#" class="btn-view view-course" data-course="ACT" data-name="Associate in Computer Technology">View</a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+<!-- Main Content -->
+<div class="main-content">
+  <!-- Programs Page -->
+  <div class="page-container" id="programsPage">
+    <div class="header">
+      <h2><i class="fas fa-book"></i> Programs Management</h2>
+      <button id="addProgramBtn" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Add Program
+      </button>
     </div>
 
-    <!-- Subject Management Page - Loaded via JavaScript -->
-    <div class="page-container" id="subjectManagementPage" style="display: none;">
-      <!-- Content will be loaded here -->
+    <div class="courses-table">
+      <h3>Available Programs</h3>
+      <table id="programsTable">
+        <thead>
+          <tr>
+            <th>Program Code</th>
+            <th>Program Name</th>
+            <th>Department</th>
+            <th>Total Courses</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>IT</td>
+            <td>Information Technology</td>
+            <td>College of Computer Studies</td>
+            <td>45</td>
+            <td><span style="color: green;">Active</span></td>
+            <td class="action-buttons">
+              <a href="#" class="btn btn-view view-program" data-program="IT" data-name="Information Technology" title="View">
+                <i class="fas fa-eye"></i>
+              </a>
+              <button class="btn btn-edit" onclick="editProgram('IT')" title="Edit">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn btn-danger" onclick="deleteProgram('IT', 'Information Technology')" title="Delete">
+                <i class="fas fa-trash"></i>
+              </button>
+            </td>
+          </tr>
+          <tr>
+            <td>CS</td>
+            <td>Computer Science</td>
+            <td>College of Computer Studies</td>
+            <td>48</td>
+            <td><span style="color: green;">Active</span></td>
+            <td class="action-buttons">
+              <a href="#" class="btn btn-view view-program" data-program="CS" data-name="Computer Science" title="View">
+                <i class="fas fa-eye"></i>
+              </a>
+              <button class="btn btn-edit" onclick="editProgram('CS')" title="Edit">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn btn-danger" onclick="deleteProgram('CS', 'Computer Science')" title="Delete">
+                <i class="fas fa-trash"></i>
+              </button>
+            </td>
+          </tr>
+          <tr>
+            <td>ACT</td>
+            <td>Associate in Computer Technology</td>
+            <td>College of Computer Studies</td>
+            <td>40</td>
+            <td><span style="color: green;">Active</span></td>
+            <td class="action-buttons">
+              <a href="#" class="btn btn-view view-program" data-program="ACT" data-name="Associate in Computer Technology" title="View">
+                <i class="fas fa-eye"></i>
+              </a>
+              <button class="btn btn-edit" onclick="editProgram('ACT')" title="Edit">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn btn-danger" onclick="deleteProgram('ACT', 'Associate in Computer Technology')" title="Delete">
+                <i class="fas fa-trash"></i>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Academic Year Management Page -->
+  <div class="page-container" id="academicYearManagementPage" style="display: none;">
+    <div class="header">
+      <h2><i class="fas fa-calendar-alt"></i> Academic Year Management - PROGRAM_NAME</h2>
+      <a href="#" id="backToProgramsFromYear" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Programs
+      </a>
+    </div>
+    <div class="years-table">
+      <h3>Available Academic Years</h3>
+      <button id="addAcademicYearBtn" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Add Academic Year
+      </button>
+      <table id="academicYearsTable">
+        <thead>
+          <tr>
+            <th>Academic Year</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Semester Management Page -->
+  <div class="page-container" id="semesterManagementPage" style="display: none;">
+    <div class="header">
+      <h2><i class="fas fa-calendar"></i> Semester Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
+      <a href="#" id="backToAcademicYears" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Academic Years
+      </a>
+    </div>
+    <div class="semesters-table">
+      <h3>Available Semesters</h3>
+      <button id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
+        <i class="fas fa-plus"></i> Add Semester
+      </button>
+      <table id="semestersTable">
+        <thead>
+          <tr>
+            <th>Semester</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Subject Management Page -->
+  <div class="page-container" id="subjectManagementPage" style="display: none;">
+    <div class="header">
+      <h2><i class="fas fa-book"></i> Subject Management - PROGRAM_NAME</h2>
+      <a href="#" id="backToSemesters" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Semesters
+      </a>
+    </div>
+
+    <div class="dashboard-content">
+      <div class="selection-controls">
+        <div class="control-group">
+          <label for="select-year-level">Year Level</label>
+          <select id="select-year-level" onchange="loadSections()">
+            <option value="" disabled selected>Select Year Level</option>
+            <option value="1">1st Year</option>
+            <option value="2">2nd Year</option>
+            <option value="3">3rd Year</option>
+            <option value="4">4th Year</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="select-section">Section</label>
+          <select id="select-section" onchange="loadSubjects()" disabled>
+            <option value="" disabled selected>Select Section</option>
+          </select>
+        </div>
+
+        <button id="addSectionBtn" class="btn btn-primary" onclick="showAddSectionModal()">
+          <i class="fas fa-plus"></i> Add Section
+        </button>
+
+        <button id="addSubjectBtn" class="btn btn-primary" disabled onclick="showAddSubjectModal()">
+          <i class="fas fa-plus"></i> Add Subject
+        </button>
+      </div>
+
+      <div class="selection-prompt">
+        <i class="fas fa-calendar-alt"></i>
+        <h4>Select Year Level and Section</h4>
+        <p>Please select a year level and section from the dropdowns above to view and manage subject schedules.</p>
+      </div>
+
+      <div class="subjects-list" id="subjectsList" style="display: none;">
+        <h3>Subjects Schedule</h3>
+        <div class="table-container">
+          <table id="subjectsTable" class="subjects-table">
+            <thead>
+              <tr>
+                <th>Subject Code</th>
+                <th>Subject Name</th>
+                <th>Class Type</th>
+                <th>Units</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="subjectsTableBody"></tbody>
+          </table>
+        </div>
+        <div id="noSubjectsMessage" style="text-align: center; padding: 20px; color: #666; display: none;">
+          No subjects added yet for this year level and section.
+        </div>
+      </div>
     </div>
   </div>
 
@@ -108,650 +340,1515 @@
     </div>
   </div>
 
-  <script>
-    // Global variables
-    let confirmCallback = null;
-    let confirmData = null;
-    let currentProgramCode = '';
-    let currentProgramName = '';
-    let currentSectionId = null;
-    let editingSubjectId = null;
-    let yearSectionsCache = {};
+  <!-- Add Program Modal -->
+  <div class="modal" id="addProgramModal">
+    <div class="modal-content" style="width: 500px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Add New Program</h3>
+        <span class="close" onclick="hideAddProgramModal()">&times;</span>
+      </div>
+      <form id="addProgramForm">
+        <div class="form-group">
+          <label for="program-code-add">Program Code *</label>
+          <input type="text" id="program-code-add" placeholder="e.g., IT, CS" required>
+        </div>
+        <div class="form-group">
+          <label for="program-name-add">Program Name *</label>
+          <input type="text" id="program-name-add" placeholder="e.g., Information Technology" required>
+        </div>
+        <div class="form-group">
+          <label for="department-add">Department *</label>
+          <input type="text" id="department-add" placeholder="e.g., College of Computer Studies" required>
+        </div>
+        <div class="form-group">
+          <label for="program-status-add">Status *</label>
+          <select id="program-status-add" required>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideAddProgramModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleAddProgram()">Add Program</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-    console.log('Starting sidebar fetch...');
-    
-    // Load sidebar with error handling
-    fetch('/sidebar')
-        .then(response => {
-            console.log('Fetch response status:', response.status);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.text();
-        })
-        .then(html => {
-            console.log('Sidebar HTML received');
-            document.getElementById('sidebar-container').innerHTML = html;
-            
-            // Initialize dropdown functionality
-            document.querySelectorAll(".dropdown-btn").forEach(btn => {
-                btn.addEventListener("click", function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        if (content !== this.nextElementSibling) {
-                            content.style.display = 'none';
-                        }
-                    });
+  <!-- Edit Program Modal -->
+  <div class="modal" id="editProgramModal">
+    <div class="modal-content" style="width: 500px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Edit Program</h3>
+        <span class="close" onclick="hideEditProgramModal()">&times;</span>
+      </div>
+      <form id="editProgramForm">
+        <div class="form-group">
+          <label for="program-code-edit">Program Code *</label>
+          <input type="text" id="program-code-edit" readonly>
+        </div>
+        <div class="form-group">
+          <label for="program-name-edit">Program Name *</label>
+          <input type="text" id="program-name-edit" placeholder="e.g., Information Technology" required>
+        </div>
+        <div class="form-group">
+          <label for="department-edit">Department *</label>
+          <input type="text" id="department-edit" placeholder="e.g., College of Computer Studies" required>
+        </div>
+        <div class="form-group">
+          <label for="program-status-edit">Status *</label>
+          <select id="program-status-edit" required>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideEditProgramModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleEditProgram()">Update Program</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-                    const content = this.nextElementSibling;
-                    if (content) {
-                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
+  <!-- Add Academic Year Modal -->
+  <div class="modal" id="addAcademicYearModal">
+    <div class="modal-content" style="width: 500px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Add New Academic Year</h3>
+        <span class="close" onclick="hideAddAcademicYearModal()">&times;</span>
+      </div>
+      <form id="addAcademicYearForm">
+        <div class="form-group">
+          <label for="academic-year-add">Academic Year *</label>
+          <input type="text" id="academic-year-add" placeholder="e.g., 2024-2025" pattern="\d{4}-\d{4}" title="Format: YYYY-YYYY" required>
+        </div>
+        <div class="form-group">
+          <label for="academic-year-status-add">Status *</label>
+          <select id="academic-year-status-add" required>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideAddAcademicYearModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleAddAcademicYear()">Add Academic Year</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Academic Year Modal -->
+  <div class="modal" id="editAcademicYearModal">
+    <div class="modal-content" style="width: 500px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Edit Academic Year</h3>
+        <span class="close" onclick="hideEditAcademicYearModal()">&times;</span>
+      </div>
+      <form id="editAcademicYearForm">
+        <div class="form-group">
+          <label for="academic-year-edit">Academic Year *</label>
+          <input type="text" id="academic-year-edit" readonly>
+        </div>
+        <div class="form-group">
+          <label for="academic-year-status-edit">Status *</label>
+          <select id="academic-year-status-edit" required>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideEditAcademicYearModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleEditAcademicYear()">Update Academic Year</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Semester Modal -->
+  <div class="modal" id="addSemesterModal">
+    <div class="modal-content" style="width: 500px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Add New Semester</h3>
+        <span class="close" onclick="hideAddSemesterModal()">&times;</span>
+      </div>
+      <form id="addSemesterForm">
+        <div class="form-group">
+          <label for="semester-number-add">Semester *</label>
+          <select id="semester-number-add" required>
+            <option value="" disabled selected>Select Semester</option>
+            <option value="1">1st Semester</option>
+            <option value="2">2nd Semester</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="semester-status-add">Status *</label>
+          <select id="semester-status-add" required>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideAddSemesterModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleAddSemester()">Add Semester</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Semester Modal -->
+  <div class="modal" id="editSemesterModal">
+    <div class="modal-content" style="width: 500px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Edit Semester</h3>
+        <span class="close" onclick="hideEditSemesterModal()">&times;</span>
+      </div>
+      <form id="editSemesterForm">
+        <div class="form-group">
+          <label for="semester-number-edit">Semester *</label>
+          <input type="text" id="semester-number-edit" readonly>
+        </div>
+        <div class="form-group">
+          <label for="semester-status-edit">Status *</label>
+          <select id="semester-status-edit" required>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideEditSemesterModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleEditSemester()">Update Semester</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Section Modal -->
+  <div class="modal" id="addSectionModal">
+    <div class="modal-content" style="width: 500px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Add New Section</h3>
+        <span class="close" onclick="hideAddSectionModal()">&times;</span>
+      </div>
+      <form id="addSectionForm">
+        <div class="form-group">
+          <label for="section-year-level">Year Level *</label>
+          <select id="section-year-level" required>
+            <option value="" disabled selected>Select Year Level</option>
+            <option value="1">1st Year</option>
+            <option value="2">2nd Year</option>
+            <option value="3">3rd Year</option>
+            <option value="4">4th Year</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="section-name">Section Name *</label>
+          <input type="text" id="section-name" placeholder="e.g., A, B, C" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideAddSectionModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleAddSection()">Add Section</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Subject Modal -->
+  <div class="modal" id="addSubjectModal">
+    <div class="modal-content" style="width: 600px; max-width: 90%;">
+      <div class="modal-header">
+        <h3 id="modalTitle">Add New Subject Schedule</h3>
+        <span class="close" onclick="hideAddSubjectModal()">&times;</span>
+      </div>
+      <form id="addSubjectForm">
+        <div class="form-group">
+          <label for="subject-code">Subject Code *</label>
+          <input type="text" id="subject-code" placeholder="e.g., IT101" required>
+        </div>
+        <div class="form-group">
+          <label for="subject-name">Subject Name *</label>
+          <input type="text" id="subject-name" placeholder="e.g., Introduction to Computing" required>
+        </div>
+        <div class="form-group">
+          <label for="class-type">Class Type *</label>
+          <select id="class-type" required>
+            <option value="">Select Type</option>
+            <option value="lecture">Lecture</option>
+            <option value="laboratory">Laboratory</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="subject-units">Units *</label>
+          <input type="number" id="subject-units" value="3" min="1" max="6" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideAddSubjectModal()">Cancel</button>
+          <button type="button" id="submitBtn" class="btn btn-success" onclick="handleSubmitSubject()">Add Subject</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+// Global variables
+let confirmCallback = null;
+let confirmData = null;
+let currentProgramCode = '';
+let currentProgramName = '';
+let currentAcademicYear = '';
+let currentSemester = '';
+let currentSectionId = null;
+let editingSubjectId = null;
+let editingProgramId = null;
+let editingAcademicYearId = null;
+let editingSemesterId = null;
+let yearSectionsCache = {};
+
+console.log('Starting sidebar fetch...');
+
+// Load sidebar with error handling
+fetch('/sidebar')
+    .then(response => {
+        console.log('Fetch response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.text();
+    })
+    .then(html => {
+        console.log('Sidebar HTML received');
+        document.getElementById('sidebar-container').innerHTML = html;
+        
+        document.querySelectorAll(".dropdown-btn").forEach(btn => {
+            btn.addEventListener("click", function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                document.querySelectorAll('.dropdown-content').forEach(content => {
+                    if (content !== this.nextElementSibling) {
+                        content.style.display = 'none';
                     }
                 });
-            });
 
-            document.addEventListener('click', function(e) {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        content.style.display = 'none';
-                    });
+                const content = this.nextElementSibling;
+                if (content) {
+                    content.style.display = content.style.display === 'block' ? 'none' : 'block';
                 }
             });
-
-            const currentPath = window.location.pathname;
-            document.querySelectorAll('.nav-items a').forEach(link => {
-                const linkPath = link.getAttribute('href');
-                if (currentPath.includes(linkPath) && linkPath !== '#') {
-                    link.classList.add('active');
-                    const dropdown = link.closest('.dropdown-content');
-                    if (dropdown) {
-                        dropdown.style.display = 'block';
-                    }
-                }
-            });
-        })
-        .catch(error => {
-            console.error('Sidebar fetch failed:', error);
-            document.getElementById('sidebar-container').innerHTML = `
-                <div style="color: red; padding: 20px;">
-                    <h3>Sidebar Error</h3>
-                    <p>Failed to load sidebar: ${error.message}</p>
-                </div>
-            `;
         });
 
-    // Load programs on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        loadPrograms();
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.dropdown')) {
+                document.querySelectorAll('.dropdown-content').forEach(content => {
+                    content.style.display = 'none';
+                });
+            }
+        });
+
+        const currentPath = window.location.pathname;
+        document.querySelectorAll('.nav-items a').forEach(link => {
+            const linkPath = link.getAttribute('href');
+            if (currentPath.includes(linkPath) && linkPath !== '#') {
+                link.classList.add('active');
+                const dropdown = link.closest('.dropdown-content');
+                if (dropdown) {
+                    dropdown.style.display = 'block';
+                }
+            }
+        });
+    })
+    .catch(error => {
+        console.error('Sidebar fetch failed:', error);
+        document.getElementById('sidebar-container').innerHTML = `
+            <div style="color: red; padding: 20px;">
+                <h3>Sidebar Error</h3>
+                <p>Failed to load sidebar: ${error.message}</p>
+            </div>
+        `;
     });
 
-    // Load programs from backend
-    function loadPrograms() {
-        fetch('/api/get_programs')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    displayPrograms(data.programs);
-                } else {
-                    showAlertModal('Error', 'Failed to load programs: ' + data.message, true);
-                }
-            })
-            .catch(error => {
-                console.error('Error loading programs:', error);
-                showAlertModal('Error', 'Failed to load programs', true);
-            });
-    }
+// Load programs on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadPrograms();
+});
 
-    // Display programs in table
-    function displayPrograms(programs) {
-        const tbody = document.querySelector('#coursesTable tbody');
-        if (!tbody) return;
-
-        tbody.innerHTML = programs.map(program => `
-            <tr>
-                <td>${program.program_id}</td>
-                <td>${program.program_name}</td>
-                <td>${program.department}</td>
-                <td>${program.total_subjects || 0}</td>
-                <td><span style="color: ${program.status === 'active' ? 'green' : 'red'};">${program.status === 'active' ? 'Active' : 'Inactive'}</span></td>
-                <td>
-                    <a href="#" class="btn-view view-course" 
-                       data-course="${program.program_id}" 
-                       data-name="${program.program_name}">View</a>
-                </td>
-            </tr>
-        `).join('');
-
-        // Add event listeners
-        document.querySelectorAll('.view-course').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.preventDefault();
-                const programCode = this.getAttribute('data-course');
-                const programName = this.getAttribute('data-name');
-                currentProgramCode = programCode;
-                currentProgramName = programName;
-                
-                document.getElementById('coursesPage').style.display = 'none';
-                loadSubjectManagementPage(programCode, programName);
-            });
-        });
-    }
-
-    // Generic Alert Modal Functions
-    function showAlertModal(title, message, isError = false) {
-        const modal = document.getElementById('alertModal');
-        const titleEl = document.getElementById('alertModalTitle');
-        const messageEl = document.getElementById('alertModalMessage');
-        
-        if (modal && titleEl && messageEl) {
-            titleEl.innerHTML = isError ? `<i class="fas fa-exclamation-triangle"></i> ${title}` : `<i class="fas fa-info-circle"></i> ${title}`;
-            messageEl.textContent = message;
-            modal.style.display = 'flex';
-            
-            if (isError) {
-                modal.classList.add('error-modal');
-            } else {
-                modal.classList.add('success-modal');
-            }
-        }
-    }
-
-    function hideAlertModal() {
-        const modal = document.getElementById('alertModal');
-        if (modal) {
-            modal.style.display = 'none';
-            modal.classList.remove('error-modal', 'success-modal');
-        }
-    }
-
-    // Generic Confirm Modal Functions
-    function showConfirmModal(title, message, callback, data = null) {
-        const modal = document.getElementById('confirmModal');
-        const titleEl = modal.querySelector('.modal-header h3');
-        const messageEl = document.getElementById('confirmModalMessage');
-        
-        if (modal && titleEl && messageEl) {
-            titleEl.innerHTML = `<i class="fas fa-question-circle"></i> ${title}`;
-            messageEl.textContent = message;
-            confirmCallback = callback;
-            confirmData = data;
-            modal.style.display = 'flex';
-        }
-    }
-
-    function hideConfirmModal() {
-        const modal = document.getElementById('confirmModal');
-        if (modal) {
-            modal.style.display = 'none';
-            confirmCallback = null;
-            confirmData = null;
-        }
-    }
-
-    function handleConfirmAction() {
-        if (confirmCallback && confirmData) {
-            confirmCallback(confirmData);
-        } else if (confirmCallback) {
-            confirmCallback();
-        }
-        hideConfirmModal();
-    }
-
-    // Subject Management HTML Content
-    const subjectManagementHTML = `
-      <div class="header">
-        <h2><i class="fas fa-book"></i> Subject Management - PROGRAM_NAME</h2>
-        <a href="#" id="backToCourses" class="back-btn">
-          <i class="fas fa-arrow-left"></i> Back to Courses
-        </a>
-      </div>
-
-      <div class="dashboard-content">
-        <div class="selection-controls">
-          <div class="control-group">
-            <label for="select-year">Year Level</label>
-            <select id="select-year" onchange="loadSections()">
-              <option value="" disabled selected>Select Year Level</option>
-              <option value="1">1st Year</option>
-              <option value="2">2nd Year</option>
-              <option value="3">3rd Year</option>
-              <option value="4">4th Year</option>
-            </select>
-          </div>
-          
-          <div class="control-group">
-            <label for="select-section">Section</label>
-            <select id="select-section" onchange="loadSubjects()" disabled>
-              <option value="" disabled selected>Select Section</option>
-            </select>
-          </div>
-
-          <button id="addSectionBtn" class="btn btn-primary" onclick="showAddSectionModal()">
-            <i class="fas fa-plus"></i> Add Section
-          </button>
-
-          <button id="addSubjectBtn" class="btn btn-primary" disabled onclick="showAddSubjectModal()">
-            <i class="fas fa-plus"></i> Add Subject
-          </button>
-        </div>
-
-        <div class="selection-prompt">
-          <i class="fas fa-calendar-alt"></i>
-          <h4>Select Year and Section</h4>
-          <p>Please select a year level and section from the dropdowns above to view and manage subject schedules.</p>
-        </div>
-
-        <div class="subjects-list" id="subjectsList" style="display: none;">
-          <h3>Subjects Schedule</h3>
-          <div class="table-container">
-            <table id="subjectsTable" class="subjects-table">
-              <thead>
-                <tr>
-                  <th>Subject Code</th>
-                  <th>Subject Name</th>
-                  <th>Class Type</th>
-                  <th>Units</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="subjectsTableBody">
-                <!-- Subjects will be listed here -->
-              </tbody>
-            </table>
-          </div>
-          <div id="noSubjectsMessage" style="text-align: center; padding: 20px; color: #666; display: none;">
-            No subjects added yet for this year and section.
-          </div>
-        </div>
-      </div>
-
-      <!-- Add Section Modal -->
-      <div class="modal" id="addSectionModal">
-        <div class="modal-content" style="width: 500px; max-width: 90%;">
-          <div class="modal-header">
-            <h3>Add New Section</h3>
-            <span class="close" onclick="hideAddSectionModal()">&times;</span>
-          </div>
-          <form id="addSectionForm">
-            <div class="form-group">
-              <label for="section-year">Year Level *</label>
-              <select id="section-year" required>
-                <option value="" disabled selected>Select Year Level</option>
-                <option value="1">1st Year</option>
-                <option value="2">2nd Year</option>
-                <option value="3">3rd Year</option>
-                <option value="4">4th Year</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="section-name">Section Name *</label>
-              <input type="text" id="section-name" placeholder="e.g., A, B, C" required>
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" onclick="hideAddSectionModal()">Cancel</button>
-              <button type="button" class="btn btn-success" onclick="handleAddSection()">Add Section</button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- Add Subject Modal -->
-      <div class="modal" id="addSubjectModal">
-        <div class="modal-content" style="width: 600px; max-width: 90%;">
-          <div class="modal-header">
-            <h3 id="modalTitle">Add New Subject Schedule</h3>
-            <span class="close" onclick="hideAddSubjectModal()">&times;</span>
-          </div>
-          <form id="addSubjectForm">
-            <div class="form-group">
-              <label for="subject-code">Subject Code *</label>
-              <input type="text" id="subject-code" placeholder="e.g., IT101" required>
-            </div>
-            <div class="form-group">
-              <label for="subject-name">Subject Name *</label>
-              <input type="text" id="subject-name" placeholder="e.g., Introduction to Computing" required>
-            </div>
-            <div class="form-group">
-              <label for="class-type">Class Type *</label>
-              <select id="class-type" required>
-                <option value="">Select Type</option>
-                <option value="lecture">Lecture</option>
-                <option value="laboratory">Laboratory</option>
-                <option value="both">Both</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="subject-units">Units *</label>
-              <input type="number" id="subject-units" value="3" min="1" max="6" required>
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" onclick="hideAddSubjectModal()">Cancel</button>
-              <button type="button" id="submitBtn" class="btn btn-success" onclick="handleSubmitSubject()">Add Subject</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    `;
-
-    // Load subject management page
-    function loadSubjectManagementPage(programCode, programName) {
-        const subjectManagementPage = document.getElementById('subjectManagementPage');
-        subjectManagementPage.innerHTML = subjectManagementHTML.replace('PROGRAM_NAME', programName);
-        subjectManagementPage.style.display = 'block';
-        
-        setTimeout(() => {
-            const backBtn = document.getElementById('backToCourses');
-            if (backBtn) {
-                backBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    subjectManagementPage.style.display = 'none';
-                    document.getElementById('coursesPage').style.display = 'block';
-                    yearSectionsCache = {};
-                });
-            }
-        }, 100);
-    }
-
-    // Load sections when year level changes
-    function loadSections() {
-        const yearLevel = document.getElementById('select-year')?.value;
-        const sectionSelect = document.getElementById('select-section');
-        
-        if (!yearLevel || !sectionSelect) return;
-
-        sectionSelect.disabled = true;
-        sectionSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
-
-        fetch(`/api/get_year_sections?program_id=${currentProgramCode}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const sections = data.sections.filter(s => s.year_level == yearLevel);
-                    yearSectionsCache[yearLevel] = sections;
-                    
-                    sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
-                    sections.forEach(section => {
-                        const option = document.createElement('option');
-                        option.value = section.section_id;
-                        option.textContent = section.section_name;
-                        sectionSelect.appendChild(option);
-                    });
-                    
-                    sectionSelect.disabled = false;
-                } else {
-                    showAlertModal('Error', 'Failed to load sections', true);
-                }
-            })
-            .catch(error => {
-                console.error('Error loading sections:', error);
-                showAlertModal('Error', 'Failed to load sections', true);
-            });
-    }
-
-    // Load subjects for selected section
-    function loadSubjects() {
-        const sectionId = document.getElementById('select-section')?.value;
-        const addBtn = document.getElementById('addSubjectBtn');
-        const subjectsList = document.getElementById('subjectsList');
-        const promptDiv = document.querySelector('.selection-prompt');
-        
-        if (addBtn) addBtn.disabled = !sectionId;
-        
-        if (!sectionId) {
-            if (subjectsList) subjectsList.style.display = 'none';
-            if (promptDiv) promptDiv.style.display = 'block';
-            return;
-        }
-
-        currentSectionId = sectionId;
-        
-        if (subjectsList) subjectsList.style.display = 'block';
-        if (promptDiv) promptDiv.style.display = 'none';
-
-        fetch(`/api/get_subjects?section_id=${sectionId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    displaySubjects(data.subjects);
-                } else {
-                    showAlertModal('Error', 'Failed to load subjects', true);
-                }
-            })
-            .catch(error => {
-                console.error('Error loading subjects:', error);
-                showAlertModal('Error', 'Failed to load subjects', true);
-            });
-    }
-
-    // Display subjects in table
-    function displaySubjects(subjects) {
-        const tbody = document.getElementById('subjectsTableBody');
-        const noSubjectsMessage = document.getElementById('noSubjectsMessage');
-        
-        if (!tbody || !noSubjectsMessage) return;
-        
-        if (subjects.length === 0) {
-            tbody.innerHTML = '';
-            noSubjectsMessage.style.display = 'block';
-            return;
-        }
-
-        noSubjectsMessage.style.display = 'none';
-        tbody.innerHTML = subjects.map(subject => `
-            <tr>
-                <td class="subject-code">${subject.subject_code}</td>
-                <td>${subject.subject_name}</td>
-                <td>
-                    <span class="class-type-badge class-type-${subject.class_type.toLowerCase()}">
-                        ${subject.class_type.toUpperCase()}
-                    </span>
-                </td>
-                <td>${subject.units}</td>
-                <td class="action-buttons">
-                    <button class="btn btn-edit" onclick="editSubject(${subject.subject_id})">
-                        <i class="fas fa-edit"></i> Edit
-                    </button>
-                    <button class="btn btn-danger" onclick="deleteSubject(${subject.subject_id}, '${subject.subject_code}')">
-                        <i class="fas fa-trash"></i> Delete
-                    </button>
-                </td>
-            </tr>
-        `).join('');
-    }
-
-    // Add section modal functions
-    function showAddSectionModal() {
-        const modal = document.getElementById('addSectionModal');
-        const form = document.getElementById('addSectionForm');
-        
-        if (form) form.reset();
-        if (modal) modal.style.display = 'flex';
-    }
-
-    function hideAddSectionModal() {
-        const modal = document.getElementById('addSectionModal');
-        if (modal) modal.style.display = 'none';
-    }
-
-    function handleAddSection() {
-        const yearLevel = document.getElementById('section-year')?.value;
-        const sectionName = document.getElementById('section-name')?.value?.trim().toUpperCase();
-        
-        if (!yearLevel || !sectionName) {
-            showAlertModal('Incomplete Form', 'Please fill in all fields', true);
-            return;
-        }
-
-        fetch('/api/add_year_section', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                program_id: currentProgramCode,
-                year_level: yearLevel,
-                section_name: sectionName
-            })
-        })
+// Load programs from backend
+function loadPrograms() {
+    fetch('/api/get_programs')
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlertModal('Success', 'Section added successfully!', false);
-                hideAddSectionModal();
-                // Refresh sections if same year is selected
-                const currentYear = document.getElementById('select-year')?.value;
-                if (currentYear == yearLevel) {
-                    loadSections();
-                }
+                displayPrograms(data.programs);
             } else {
-                showAlertModal('Error', data.message, true);
+                showAlertModal('Error', 'Failed to load programs: ' + data.message, true);
             }
         })
         .catch(error => {
-            console.error('Error adding section:', error);
-            showAlertModal('Error', 'Failed to add section', true);
+            console.error('Error loading programs:', error);
+            showAlertModal('Error', 'Failed to load programs', true);
+        });
+}
+
+// Display programs in table
+function displayPrograms(programs) {
+    const tbody = document.querySelector('#programsTable tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = programs.map(program => `
+        <tr>
+            <td>${program.program_id}</td>
+            <td>${program.program_name}</td>
+            <td>${program.department}</td>
+            <td>${program.total_subjects || 0}</td>
+            <td><span style="color: ${program.status === 'active' ? 'green' : 'red'};">${program.status === 'active' ? 'Active' : 'Inactive'}</span></td>
+            <td class="action-buttons">
+                <a href="#" class="btn btn-view view-program" 
+                   data-program="${program.program_id}" 
+                   data-name="${program.program_name}" 
+                   title="View">
+                    <i class="fas fa-eye"></i>
+                </a>
+                <button class="btn btn-edit" 
+                        onclick="editProgram('${program.program_id}')" 
+                        title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger" 
+                        onclick="deleteProgram('${program.program_id}', '${program.program_name}')" 
+                        title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+
+    document.querySelectorAll('.view-program').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const programCode = this.getAttribute('data-program');
+            const programName = this.getAttribute('data-name');
+            console.log('Viewing program:', programCode, programName);
+            currentProgramCode = programCode;
+            currentProgramName = programName;
+            
+            document.getElementById('programsPage').style.display = 'none';
+            loadAcademicYearManagementPage(programCode, programName);
+        });
+    });
+}
+
+// Academic Year Management Functions
+function loadAcademicYearManagementPage(programCode, programName) {
+    const academicYearManagementPage = document.getElementById('academicYearManagementPage');
+    academicYearManagementPage.innerHTML = academicYearManagementPage.innerHTML.replace('PROGRAM_NAME', programName);
+    academicYearManagementPage.style.display = 'block';
+    
+    loadAcademicYears();
+    
+    const backBtn = document.getElementById('backToProgramsFromYear');
+    if (backBtn) {
+        backBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            academicYearManagementPage.style.display = 'none';
+            document.getElementById('programsPage').style.display = 'block';
+            yearSectionsCache = {};
         });
     }
 
-    // Add/edit subject modal functions
-    function showAddSubjectModal(subjectId = null) {
-        editingSubjectId = subjectId;
-        const modal = document.getElementById('addSubjectModal');
-        const form = document.getElementById('addSubjectForm');
-        const modalTitle = document.getElementById('modalTitle');
-        const submitBtn = document.getElementById('submitBtn');
-        
-        if (!modal || !form) return;
-        
-        form.reset();
-        
-        if (subjectId) {
-            // Edit mode - fetch subject data
-            fetch(`/api/get_subjects?section_id=${currentSectionId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        const subject = data.subjects.find(s => s.subject_id === subjectId);
-                        if (subject) {
-                            modalTitle.textContent = 'Edit Subject';
-                            submitBtn.textContent = 'Update Subject';
-                            document.getElementById('subject-code').value = subject.subject_code;
-                            document.getElementById('subject-name').value = subject.subject_name;
-                            document.getElementById('class-type').value = subject.class_type;
-                            document.getElementById('subject-units').value = subject.units;
-                        }
-                    }
-                });
-        } else {
-            modalTitle.textContent = 'Add New Subject';
-            submitBtn.textContent = 'Add Subject';
+    // Attach event listener to Add Academic Year button
+    const addButton = document.getElementById('addAcademicYearBtn');
+    if (addButton) {
+        addButton.addEventListener('click', showAddAcademicYearModal);
+        console.log('Add Academic Year button event listener attached');
+    } else {
+        console.error('Add Academic Year button not found');
+    }
+}
+
+function loadAcademicYears() {
+    fetch(`/api/get_academic_years?program_id=${currentProgramCode}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayAcademicYears(data.academic_years);
+            } else {
+                showAlertModal('Error', 'Failed to load academic years: ' + data.message, true);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading academic years:', error);
+            showAlertModal('Error', 'Failed to load academic years', true);
+        });
+}
+
+function displayAcademicYears(academicYears) {
+    const tbody = document.querySelector('#academicYearsTable tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = academicYears.map(year => `
+        <tr>
+            <td>${year.academic_year}</td>
+            <td><span style="color: ${year.status === 'active' ? 'green' : 'red'};">${year.status === 'active' ? 'Active' : 'Inactive'}</span></td>
+            <td class="action-buttons">
+                <a href="#" class="btn btn-view view-academic-year" 
+                   data-academic-year="${year.academic_year}" 
+                   title="View">
+                    <i class="fas fa-eye"></i>
+                </a>
+                <button class="btn btn-edit" 
+                        onclick="editAcademicYear('${year.academic_year}')" 
+                        title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger" 
+                        onclick="deleteAcademicYear('${year.academic_year}')" 
+                        title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+
+    document.querySelectorAll('.view-academic-year').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const academicYear = this.getAttribute('data-academic-year');
+            currentAcademicYear = academicYear;
+            document.getElementById('academicYearManagementPage').style.display = 'none';
+            loadSemesterManagementPage(currentProgramCode, currentProgramName, academicYear);
+        });
+    });
+}
+
+function showAddAcademicYearModal() {
+    console.log('showAddAcademicYearModal called');
+    const modal = document.getElementById('addAcademicYearModal');
+    const form = document.getElementById('addAcademicYearForm');
+    
+    if (!modal) {
+        console.error('Modal with ID addAcademicYearModal not found');
+        return;
+    }
+    if (!form) {
+        console.error('Form with ID addAcademicYearForm not found');
+        return;
+    }
+    
+    form.reset();
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+    console.log('Modal should be visible now');
+}
+
+function hideAddAcademicYearModal() {
+    const modal = document.getElementById('addAcademicYearModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+function handleAddAcademicYear() {
+    const academicYearInput = document.getElementById('academic-year-add');
+    const statusInput = document.getElementById('academic-year-status-add');
+    const academicYear = academicYearInput?.value?.trim();
+    const status = statusInput?.value;
+    
+    console.log('handleAddAcademicYear called with:', {
+        academicYear,
+        status,
+        currentProgramCode
+    });
+    
+    if (!academicYearInput || !statusInput) {
+        console.error('Form inputs not found:', {
+            academicYearInput: !!academicYearInput,
+            statusInput: !!statusInput
+        });
+        showAlertModal('Error', 'Form inputs are missing', true);
+        return;
+    }
+
+    if (!academicYear || !status) {
+        console.error('Missing form inputs:', { academicYear, status });
+        showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+        return;
+    }
+
+    if (!/^\d{4}-\d{4}$/.test(academicYear)) {
+        console.error('Invalid academic year format:', academicYear);
+        showAlertModal('Invalid Format', 'Academic year must be in YYYY-YYYY format', true);
+        return;
+    }
+
+    if (!currentProgramCode) {
+        console.error('Program code is not set');
+        showAlertModal('Error', 'No program selected. Please select a program first.', true);
+        return;
+    }
+
+    console.log('Sending request to /api/add_academic_year with:', {
+        program_id: currentProgramCode,
+        academic_year: academicYear,
+        status: status
+    });
+
+    fetch('/api/add_academic_year', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            program_id: currentProgramCode,
+            academic_year: academicYear,
+            status: status
+        })
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+        return response.json();
+    })
+    .then(data => {
+        console.log('Response data:', data);
+        if (data.success) {
+            showAlertModal('Success', 'Academic year added successfully!', false);
+            hideAddAcademicYearModal();
+            loadAcademicYears();
+        } else {
+            showAlertModal('Error', data.message || 'Failed to add academic year', true);
+        }
+    })
+    .catch(error => {
+        console.error('Error adding academic year:', error);
+        showAlertModal('Error', `Failed to add academic year: ${error.message}`, true);
+    });
+}
+
+function showEditAcademicYearModal(academicYear) {
+    editingAcademicYearId = academicYear;
+    const modal = document.getElementById('editAcademicYearModal');
+    const form = document.getElementById('editAcademicYearForm');
+    
+    if (!modal || !form) return;
+    
+    form.reset();
+    
+    fetch(`/api/get_academic_years?program_id=${currentProgramCode}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const year = data.academic_years.find(y => y.academic_year === academicYear);
+                if (year) {
+                    document.getElementById('academic-year-edit').value = year.academic_year;
+                    document.getElementById('academic-year-status-edit').value = year.status;
+                }
+                modal.classList.add('active');
+                modal.style.display = 'flex';
+            } else {
+                showAlertModal('Error', 'Failed to load academic year data', true);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching academic year:', error);
+            showAlertModal('Error', 'Failed to load academic year data', true);
+        });
+}
+
+function hideEditAcademicYearModal() {
+    const modal = document.getElementById('editAcademicYearModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+    editingAcademicYearId = null;
+}
+
+function handleEditAcademicYear() {
+    const academicYear = document.getElementById('academic-year-edit')?.value;
+    const status = document.getElementById('academic-year-status-edit')?.value;
+    
+    if (!academicYear || !status) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+        return;
+    }
+
+    fetch('/api/update_academic_year', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            program_id: currentProgramCode,
+            academic_year: academicYear,
+            status: status
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlertModal('Success', 'Academic year updated successfully!', false);
+            hideEditAcademicYearModal();
+            loadAcademicYears();
+        } else {
+            showAlertModal('Error', data.message, true);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating academic year:', error);
+        showAlertModal('Error', 'Failed to update academic year', true);
+    });
+}
+
+function editAcademicYear(academicYear) {
+    showEditAcademicYearModal(academicYear);
+}
+
+function deleteAcademicYear(academicYear) {
+    showConfirmModal(
+        'Delete Academic Year',
+        `Are you sure you want to delete academic year ${academicYear}? This action cannot be undone.`,
+        function() {
+            fetch('/api/delete_academic_year', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ program_id: currentProgramCode, academic_year: academicYear })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlertModal('Deleted', 'Academic year deleted successfully!', false);
+                    loadAcademicYears();
+                } else {
+                    showAlertModal('Error', data.message, true);
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting academic year:', error);
+                showAlertModal('Error', 'Failed to delete academic year', true);
+            });
+        }
+    );
+}
+
+// Semester Management Functions
+function loadSemesterManagementPage(programCode, programName, academicYear) {
+    const semesterManagementPage = document.getElementById('semesterManagementPage');
+    semesterManagementPage.innerHTML = semesterManagementPage.innerHTML
+        .replace('PROGRAM_NAME', programName)
+        .replace('ACADEMIC_YEAR', academicYear);
+    semesterManagementPage.style.display = 'block';
+    
+    loadSemesters();
+    
+    const backBtn = document.getElementById('backToAcademicYears');
+    if (backBtn) {
+        backBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            semesterManagementPage.style.display = 'none';
+            document.getElementById('academicYearManagementPage').style.display = 'block';
+        });
+    }
+}
+
+function loadSemesters() {
+    fetch(`/api/get_semesters?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displaySemesters(data.semesters);
+            } else {
+                showAlertModal('Error', 'Failed to load semesters: ' + data.message, true);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading semesters:', error);
+            showAlertModal('Error', 'Failed to load semesters', true);
+        });
+}
+
+function displaySemesters(semesters) {
+    const tbody = document.querySelector('#semestersTable tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = semesters.map(semester => `
+        <tr>
+            <td>${semester.semester_number}</td>
+            <td><span style="color: ${semester.status === 'active' ? 'green' : 'red'};">${semester.status === 'active' ? 'Active' : 'Inactive'}</span></td>
+            <td class="action-buttons">
+                <a href="#" class="btn btn-view view-semester" 
+                   data-semester="${semester.semester_number}" 
+                   title="View">
+                    <i class="fas fa-eye"></i>
+                </a>
+                <button class="btn btn-edit" 
+                        onclick="editSemester('${semester.semester_number}')" 
+                        title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger" 
+                        onclick="deleteSemester('${semester.semester_number}')" 
+                        title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+
+    document.querySelectorAll('.view-semester').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const semesterNumber = this.getAttribute('data-semester');
+            currentSemester = semesterNumber;
+            document.getElementById('semesterManagementPage').style.display = 'none';
+            loadSubjectManagementPage(currentProgramCode, currentProgramName);
+        });
+    });
+}
+
+function showAddSemesterModal() {
+    const modal = document.getElementById('addSemesterModal');
+    const form = document.getElementById('addSemesterForm');
+    
+    if (form) form.reset();
+    if (modal) {
+        modal.classList.add('active');
         modal.style.display = 'flex';
     }
+}
 
-    function hideAddSubjectModal() {
-        const modal = document.getElementById('addSubjectModal');
-        if (modal) modal.style.display = 'none';
-        editingSubjectId = null;
+function hideAddSemesterModal() {
+    const modal = document.getElementById('addSemesterModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+function handleAddSemester() {
+    const semesterNumber = document.getElementById('semester-number-add')?.value;
+    const status = document.getElementById('semester-status-add')?.value;
+    
+    if (!semesterNumber || !status) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+        return;
     }
 
-    function handleSubmitSubject() {
-        const subjectCode = document.getElementById('subject-code')?.value?.trim().toUpperCase();
-        const subjectName = document.getElementById('subject-name')?.value?.trim();
-        const classType = document.getElementById('class-type')?.value;
-        const units = document.getElementById('subject-units')?.value;
-        
-        if (!subjectCode || !subjectName || !classType || !units) {
-            showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
-            return;
-        }
-
-        const endpoint = editingSubjectId ? '/api/update_subject' : '/api/add_subject';
-        const payload = {
-            section_id: currentSectionId,
-            subject_code: subjectCode,
-            subject_name: subjectName,
-            class_type: classType,
-            units: parseInt(units)
-        };
-
-        if (editingSubjectId) {
-            payload.subject_id = editingSubjectId;
-        }
-
-        fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+    fetch('/api/add_semester', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            program_id: currentProgramCode,
+            academic_year: currentAcademicYear,
+            semester_number: semesterNumber,
+            status: status
         })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlertModal('Success', 'Semester added successfully!', false);
+            hideAddSemesterModal();
+            loadSemesters();
+        } else {
+            showAlertModal('Error', data.message, true);
+        }
+    })
+    .catch(error => {
+        console.error('Error adding semester:', error);
+        showAlertModal('Error', 'Failed to add semester', true);
+    });
+}
+
+function showEditSemesterModal(semesterNumber) {
+    editingSemesterId = semesterNumber;
+    const modal = document.getElementById('editSemesterModal');
+    const form = document.getElementById('editSemesterForm');
+    
+    if (!modal || !form) return;
+    
+    form.reset();
+    
+    fetch(`/api/get_semesters?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlertModal('Success', editingSubjectId ? 'Subject updated successfully!' : 'Subject added successfully!', false);
-                hideAddSubjectModal();
-                loadSubjects();
+                const semester = data.semesters.find(s => s.semester_number === semesterNumber);
+                if (semester) {
+                    document.getElementById('semester-number-edit').value = semester.semester_number;
+                    document.getElementById('semester-status-edit').value = semester.status;
+                }
+                modal.classList.add('active');
+                modal.style.display = 'flex';
             } else {
-                showAlertModal('Error', data.message, true);
+                showAlertModal('Error', 'Failed to load semester data', true);
             }
         })
         .catch(error => {
-            console.error('Error saving subject:', error);
-            showAlertModal('Error', 'Failed to save subject', true);
+            console.error('Error fetching semester:', error);
+            showAlertModal('Error', 'Failed to load semester data', true);
         });
+}
+
+function hideEditSemesterModal() {
+    const modal = document.getElementById('editSemesterModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+    editingSemesterId = null;
+}
+
+function handleEditSemester() {
+    const semesterNumber = document.getElementById('semester-number-edit')?.value;
+    const status = document.getElementById('semester-status-edit')?.value;
+    
+    if (!semesterNumber || !status) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+        return;
     }
 
-    function editSubject(subjectId) {
-        showAddSubjectModal(subjectId);
-    }
-
-    function deleteSubject(subjectId, subjectCode) {
-        showConfirmModal(
-            'Delete Subject',
-            `Are you sure you want to delete "${subjectCode}"? This action cannot be undone.`,
-            function() {
-                fetch('/api/delete_subject', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subject_id: subjectId })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        showAlertModal('Deleted', 'Subject deleted successfully!', false);
-                        loadSubjects();
-                    } else {
-                        showAlertModal('Error', data.message, true);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error deleting subject:', error);
-                    showAlertModal('Error', 'Failed to delete subject', true);
-                });
-            }
-        );
-    }
-
-    // Close modals when clicking outside
-    document.addEventListener('click', function(e) {
-        const addModal = document.getElementById('addSubjectModal');
-        const alertModal = document.getElementById('alertModal');
-        const confirmModal = document.getElementById('confirmModal');
-        const sectionModal = document.getElementById('addSectionModal');
-        
-        if (addModal && e.target === addModal) hideAddSubjectModal();
-        if (alertModal && e.target === alertModal) hideAlertModal();
-        if (confirmModal && e.target === confirmModal) hideConfirmModal();
-        if (sectionModal && e.target === sectionModal) hideAddSectionModal();
-    });
-
-    // Close modals with Escape key
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            hideAlertModal();
-            hideConfirmModal();
-            hideAddSubjectModal();
-            hideAddSectionModal();
+    fetch('/api/update_semester', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            program_id: currentProgramCode,
+            academic_year: currentAcademicYear,
+            semester_number: semesterNumber,
+            status: status
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlertModal('Success', 'Semester updated successfully!', false);
+            hideEditSemesterModal();
+            loadSemesters();
+        } else {
+            showAlertModal('Error', data.message, true);
         }
+    })
+    .catch(error => {
+        console.error('Error updating semester:', error);
+        showAlertModal('Error', 'Failed to update semester', true);
     });
+}
+
+function editSemester(semesterNumber) {
+    showEditSemesterModal(semesterNumber);
+}
+
+function deleteSemester(semesterNumber) {
+    showConfirmModal(
+        'Delete Semester',
+        `Are you sure you want to delete semester ${semesterNumber}? This action cannot be undone.`,
+        function() {
+            fetch('/api/delete_semester', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    program_id: currentProgramCode, 
+                    academic_year: currentAcademicYear, 
+                    semester_number: semesterNumber 
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlertModal('Deleted', 'Semester deleted successfully!', false);
+                    loadSemesters();
+                } else {
+                    showAlertModal('Error', data.message, true);
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting semester:', error);
+                showAlertModal('Error', 'Failed to delete semester', true);
+            });
+        }
+    );
+}
+
+// Subject Management Functions
+function loadSubjectManagementPage(programCode, programName) {
+    const subjectManagementPage = document.getElementById('subjectManagementPage');
+    subjectManagementPage.innerHTML = subjectManagementPage.innerHTML.replace('PROGRAM_NAME', programName);
+    subjectManagementPage.style.display = 'block';
+    
+    setTimeout(() => {
+        const backBtn = document.getElementById('backToSemesters');
+        if (backBtn) {
+            backBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                subjectManagementPage.style.display = 'none';
+                document.getElementById('semesterManagementPage').style.display = 'block';
+                yearSectionsCache = {};
+            });
+        }
+    }, 100);
+}
+
+function loadSections() {
+    const yearLevel = document.getElementById('select-year-level')?.value;
+    const sectionSelect = document.getElementById('select-section');
+    
+    if (!yearLevel || !sectionSelect) {
+        if (sectionSelect) {
+            sectionSelect.disabled = true;
+            sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
+        }
+        return;
+    }
+
+    sectionSelect.disabled = true;
+    sectionSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+
+    fetch(`/api/get_year_sections?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}&semester=${currentSemester}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const sections = data.sections.filter(s => s.year_level == yearLevel);
+                yearSectionsCache[`${yearLevel}_${currentSemester}`] = sections;
+                
+                sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
+                sections.forEach(section => {
+                    const option = document.createElement('option');
+                    option.value = section.section_id;
+                    option.textContent = section.section_name;
+                    sectionSelect.appendChild(option);
+                });
+                
+                sectionSelect.disabled = false;
+            } else {
+                showAlertModal('Error', 'Failed to load sections', true);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading sections:', error);
+            showAlertModal('Error', 'Failed to load sections', true);
+        });
+}
+
+function loadSubjects() {
+    const sectionId = document.getElementById('select-section')?.value;
+    const addBtn = document.getElementById('addSubjectBtn');
+    const subjectsList = document.getElementById('subjectsList');
+    const promptDiv = document.querySelector('.selection-prompt');
+    
+    if (addBtn) addBtn.disabled = !sectionId;
+    
+    if (!sectionId) {
+        if (subjectsList) subjectsList.style.display = 'none';
+        if (promptDiv) promptDiv.style.display = 'block';
+        return;
+    }
+
+    currentSectionId = sectionId;
+    
+    if (subjectsList) subjectsList.style.display = 'block';
+    if (promptDiv) promptDiv.style.display = 'none';
+
+    fetch(`/api/get_subjects?section_id=${sectionId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displaySubjects(data.subjects);
+            } else {
+                showAlertModal('Error', 'Failed to load subjects', true);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading subjects:', error);
+            showAlertModal('Error', 'Failed to load subjects', true);
+        });
+}
+
+function displaySubjects(subjects) {
+    const tbody = document.getElementById('subjectsTableBody');
+    const noSubjectsMessage = document.getElementById('noSubjectsMessage');
+    
+    if (!tbody || !noSubjectsMessage) return;
+    
+    if (subjects.length === 0) {
+        tbody.innerHTML = '';
+        noSubjectsMessage.style.display = 'block';
+        return;
+    }
+
+    noSubjectsMessage.style.display = 'none';
+    tbody.innerHTML = subjects.map(subject => `
+        <tr>
+            <td class="subject-code">${subject.subject_code}</td>
+            <td>${subject.subject_name}</td>
+            <td>
+                <span class="class-type-badge class-type-${subject.class_type.toLowerCase()}">
+                    ${subject.class_type.toUpperCase()}
+                </span>
+            </td>
+            <td>${subject.units}</td>
+            <td class="action-buttons">
+                <button class="btn btn-edit" onclick="editSubject(${subject.subject_id})" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger" onclick="deleteSubject(${subject.subject_id}, '${subject.subject_code}')" title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function showAddSectionModal() {
+    const modal = document.getElementById('addSectionModal');
+    const form = document.getElementById('addSectionForm');
+    
+    if (form) form.reset();
+    if (modal) {
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+    }
+}
+
+function hideAddSectionModal() {
+    const modal = document.getElementById('addSectionModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+function handleAddSection() {
+    const yearLevel = document.getElementById('section-year-level')?.value;
+    const sectionName = document.getElementById('section-name')?.value?.trim().toUpperCase();
+    
+    if (!yearLevel || !sectionName) {
+        showAlertModal('Incomplete Form', 'Please fill in all fields', true);
+        return;
+    }
+
+    fetch('/api/add_year_section', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            program_id: currentProgramCode,
+            academic_year: currentAcademicYear,
+            semester: currentSemester,
+            year_level: yearLevel,
+            section_name: sectionName
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlertModal('Success', 'Section added successfully!', false);
+            hideAddSectionModal();
+            const currentYearLevel = document.getElementById('select-year-level')?.value;
+            if (currentYearLevel == yearLevel) {
+                loadSections();
+            }
+        } else {
+            showAlertModal('Error', data.message, true);
+        }
+    })
+    .catch(error => {
+        console.error('Error adding section:', error);
+        showAlertModal('Error', 'Failed to add section', true);
+    });
+}
+
+function showAddSubjectModal(subjectId = null) {
+    editingSubjectId = subjectId;
+    const modal = document.getElementById('addSubjectModal');
+    const form = document.getElementById('addSubjectForm');
+    const modalTitle = document.getElementById('modalTitle');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    if (!modal || !form) return;
+    
+    form.reset();
+    
+    if (subjectId) {
+        fetch(`/api/get_subjects?section_id=${currentSectionId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const subject = data.subjects.find(s => s.subject_id === subjectId);
+                    if (subject) {
+                        modalTitle.textContent = 'Edit Subject';
+                        submitBtn.textContent = 'Update Subject';
+                        document.getElementById('subject-code').value = subject.subject_code;
+                        document.getElementById('subject-name').value = subject.subject_name;
+                        document.getElementById('class-type').value = subject.class_type;
+                        document.getElementById('subject-units').value = subject.units;
+                    }
+                }
+                modal.classList.add('active');
+                modal.style.display = 'flex';
+            });
+    } else {
+        modalTitle.textContent = 'Add New Subject';
+        submitBtn.textContent = 'Add Subject';
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+    }
+}
+
+function hideAddSubjectModal() {
+    const modal = document.getElementById('addSubjectModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+    editingSubjectId = null;
+}
+
+function handleSubmitSubject() {
+    const subjectCode = document.getElementById('subject-code')?.value?.trim().toUpperCase();
+    const subjectName = document.getElementById('subject-name')?.value?.trim();
+    const classType = document.getElementById('class-type')?.value;
+    const units = document.getElementById('subject-units')?.value;
+    
+    if (!subjectCode || !subjectName || !classType || !units) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+        return;
+    }
+
+    const endpoint = editingSubjectId ? '/api/update_subject' : '/api/add_subject';
+    const payload = {
+        section_id: currentSectionId,
+        subject_code: subjectCode,
+        subject_name: subjectName,
+        class_type: classType,
+        units: parseInt(units)
+    };
+
+    if (editingSubjectId) {
+        payload.subject_id = editingSubjectId;
+    }
+
+    fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlertModal('Success', editingSubjectId ? 'Subject updated successfully!' : 'Subject added successfully!', false);
+            hideAddSubjectModal();
+            loadSubjects();
+        } else {
+            showAlertModal('Error', data.message, true);
+        }
+    })
+    .catch(error => {
+        console.error('Error saving subject:', error);
+        showAlertModal('Error', 'Failed to save subject', true);
+    });
+}
+
+function editSubject(subjectId) {
+    showAddSubjectModal(subjectId);
+}
+
+function deleteSubject(subjectId, subjectCode) {
+    showConfirmModal(
+        'Delete Subject',
+        `Are you sure you want to delete "${subjectCode}"? This action cannot be undone.`,
+        function() {
+            fetch('/api/delete_subject', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subject_id: subjectId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlertModal('Deleted', 'Subject deleted successfully!', false);
+                    loadSubjects();
+                } else {
+                    showAlertModal('Error', data.message, true);
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting subject:', error);
+                showAlertModal('Error', 'Failed to delete subject', true);
+            });
+        }
+    );
+}
+
+// Generic Alert Modal Functions
+function showAlertModal(title, message, isError = false) {
+    const modal = document.getElementById('alertModal');
+    const titleEl = document.getElementById('alertModalTitle');
+    const messageEl = document.getElementById('alertModalMessage');
+    
+    if (modal && titleEl && messageEl) {
+        titleEl.innerHTML = isError ? `<i class="fas fa-exclamation-triangle"></i> ${title}` : `<i class="fas fa-info-circle"></i> ${title}`;
+        messageEl.textContent = message;
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+        
+        if (isError) {
+            modal.classList.add('error-modal');
+        } else {
+            modal.classList.add('success-modal');
+        }
+    }
+}
+
+function hideAlertModal() {
+    const modal = document.getElementById('alertModal');
+    if (modal) {
+        modal.classList.remove('active', 'error-modal', 'success-modal');
+        modal.style.display = 'none';
+    }
+}
+
+// Generic Confirm Modal Functions
+function showConfirmModal(title, message, callback, data = null) {
+    const modal = document.getElementById('confirmModal');
+    const titleEl = modal.querySelector('.modal-header h3');
+    const messageEl = document.getElementById('confirmModalMessage');
+    
+    if (modal && titleEl && messageEl) {
+        titleEl.innerHTML = `<i class="fas fa-question-circle"></i> ${title}`;
+        messageEl.textContent = message;
+        confirmCallback = callback;
+        confirmData = data;
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+    }
+}
+
+function hideConfirmModal() {
+    const modal = document.getElementById('confirmModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+        confirmCallback = null;
+        confirmData = null;
+    }
+}
+
+function handleConfirmAction() {
+    if (confirmCallback && confirmData) {
+        confirmCallback(confirmData);
+    } else if (confirmCallback) {
+        confirmCallback();
+    }
+    hideConfirmModal();
+}
+
+// Program Modal Functions
+function showAddProgramModal() {
+    const modal = document.getElementById('addProgramModal');
+    const form = document.getElementById('addProgramForm');
+    
+    if (form) form.reset();
+    if (modal) {
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+    }
+}
+
+function hideAddProgramModal() {
+    const modal = document.getElementById('addProgramModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+function handleAddProgram() {
+    const programCode = document.getElementById('program-code-add')?.value?.trim().toUpperCase();
+    const programName = document.getElementById('program-name-add')?.value?.trim();
+    const department = document.getElementById('department-add')?.value?.trim();
+    const status = document.getElementById('program-status-add')?.value;
+    
+    if (!programCode || !programName || !department || !status) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+        return;
+    }
+
+    fetch('/api/add_program', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            program_id: programCode,
+            program_name: programName,
+            department: department,
+            status: status
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlertModal('Success', 'Program added successfully!', false);
+            hideAddProgramModal();
+            loadPrograms();
+        } else {
+            showAlertModal('Error', data.message, true);
+        }
+    })
+    .catch(error => {
+        console.error('Error adding program:', error);
+        showAlertModal('Error', 'Failed to add program', true);
+    });
+}
+
+function showEditProgramModal(programId) {
+    editingProgramId = programId;
+    const modal = document.getElementById('editProgramModal');
+    const form = document.getElementById('editProgramForm');
+    
+    if (!modal || !form) return;
+    
+    form.reset();
+    
+    fetch(`/api/get_programs`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const program = data.programs.find(p => p.program_id === programId);
+                if (program) {
+                    document.getElementById('program-code-edit').value = program.program_id;
+                    document.getElementById('program-name-edit').value = program.program_name;
+                    document.getElementById('department-edit').value = program.department;
+                    document.getElementById('program-status-edit').value = program.status;
+                }
+                modal.classList.add('active');
+                modal.style.display = 'flex';
+            } else {
+                showAlertModal('Error', 'Failed to load program data', true);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching program:', error);
+            showAlertModal('Error', 'Failed to load program data', true);
+        });
+}
+
+function hideEditProgramModal() {
+    const modal = document.getElementById('editProgramModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+    editingProgramId = null;
+}
+
+function handleEditProgram() {
+    const programCode = document.getElementById('program-code-edit')?.value?.trim().toUpperCase();
+    const programName = document.getElementById('program-name-edit')?.value?.trim();
+    const department = document.getElementById('department-edit')?.value?.trim();
+    const status = document.getElementById('program-status-edit')?.value;
+    
+    if (!programCode || !programName || !department || !status) {
+        showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+        return;
+    }
+
+    fetch('/api/update_program', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            program_id: programCode,
+            program_name: programName,
+            department: department,
+            status: status
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlertModal('Success', 'Program updated successfully!', false);
+            hideEditProgramModal();
+            loadPrograms();
+        } else {
+            showAlertModal('Error', data.message, true);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating program:', error);
+        showAlertModal('Error', 'Failed to update program', true);
+    });
+}
+
+function editProgram(programId) {
+    showEditProgramModal(programId);
+}
+
+function deleteProgram(programId, programName) {
+    showConfirmModal(
+        'Delete Program',
+        `Are you sure you want to delete "${programName}"? This action cannot be undone.`,
+        function() {
+            fetch('/api/delete_program', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ program_id: programId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlertModal('Deleted', 'Program deleted successfully!', false);
+                    loadPrograms();
+                } else {
+                    showAlertModal('Error', data.message, true);
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting program:', error);
+                showAlertModal('Error', 'Failed to delete program', true);
+            });
+        }
+    );
+}
+
+// Close modals when clicking outside
+document.addEventListener('click', function(e) {
+    const addSubjectModal = document.getElementById('addSubjectModal');
+    const alertModal = document.getElementById('alertModal');
+    const confirmModal = document.getElementById('confirmModal');
+    const sectionModal = document.getElementById('addSectionModal');
+    const addProgramModal = document.getElementById('addProgramModal');
+    const editProgramModal = document.getElementById('editProgramModal');
+    const addAcademicYearModal = document.getElementById('addAcademicYearModal');
+    const editAcademicYearModal = document.getElementById('editAcademicYearModal');
+    const addSemesterModal = document.getElementById('addSemesterModal');
+    const editSemesterModal = document.getElementById('editSemesterModal');
+    
+    if (addSubjectModal && e.target === addSubjectModal && !e.target.closest('#addSubjectBtn')) hideAddSubjectModal();
+    if (alertModal && e.target === alertModal) hideAlertModal();
+    if (confirmModal && e.target === confirmModal) hideConfirmModal();
+    if (sectionModal && e.target === sectionModal && !e.target.closest('#addSectionBtn')) hideAddSectionModal();
+    if (addProgramModal && e.target === addProgramModal && !e.target.closest('#addProgramBtn')) hideAddProgramModal();
+    if (editProgramModal && e.target === editProgramModal) hideEditProgramModal();
+    if (addAcademicYearModal && e.target === addAcademicYearModal && !e.target.closest('#addAcademicYearBtn')) hideAddAcademicYearModal();
+    if (editAcademicYearModal && e.target === editAcademicYearModal) hideEditAcademicYearModal();
+    if (addSemesterModal && e.target === addSemesterModal && !e.target.closest('#addSemesterBtn')) hideAddSemesterModal();
+    if (editSemesterModal && e.target === editSemesterModal) hideEditSemesterModal();
+});
+
+// Close modals with Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        hideAlertModal();
+        hideConfirmModal();
+        hideAddSubjectModal();
+        hideAddSectionModal();
+        hideAddProgramModal();
+        hideEditProgramModal();
+        hideAddAcademicYearModal();
+        hideEditAcademicYearModal();
+        hideAddSemesterModal();
+        hideEditSemesterModal();
+    }
+});
+
+// Attach event listener for Add Program button
+document.getElementById('addProgramBtn')?.addEventListener('click', showAddProgramModal);
 </script>
+</body>
+</html>
