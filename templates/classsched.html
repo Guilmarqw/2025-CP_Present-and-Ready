@@ -293,12 +293,14 @@
         });
 
     // Global variables
-    let currentProgramId = '';
-    let currentSectionId = null;
-    let yearSectionsCache = {};
-    let subjectsCache = {};
-    let pendingSchedules = [];
-    let allSchedules = [];
+let currentProgramId = '';
+let currentSectionId = null;
+let currentAcademicYear = '';
+let currentSemester = '';
+let yearSectionsCache = {};
+let subjectsCache = {};
+let pendingSchedules = [];
+let allSchedules = [];
 
     // DOM Elements
     const modalOverlay = document.getElementById('modalOverlay');
@@ -349,12 +351,14 @@
         loadAllSchedules();
     });
 
-    // Program change handler
-    programSelect.addEventListener('change', function() {
-        currentProgramId = this.value;
-        loadYearSections();
-        resetDependentFields(['yearSection', 'subjectCode', 'classType', 'room']);
-    });
+// Program change handler
+programSelect.addEventListener('change', function() {
+    currentProgramId = this.value;
+    if (currentProgramId) {
+        loadActivePeriod();
+    }
+    resetDependentFields(['yearSection', 'subjectCode', 'classType', 'room']);
+});
 
     // Year section change handler
     yearSectionSelect.addEventListener('change', function() {
@@ -398,6 +402,99 @@
         if (el) el.addEventListener('change', updateAddScheduleButton);
     });
 
+function loadActivePeriod() {
+    if (!currentProgramId) {
+        console.log('No program selected');
+        return;
+    }
+    
+    console.log('Loading active period for program:', currentProgramId);
+    
+    fetch(`/api/get_active_period?program_id=${currentProgramId}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log('Active period response:', data);
+            
+            if (data.success && data.active_period) {
+                currentAcademicYear = data.active_period.academic_year;
+                currentSemester = data.active_period.semester;
+                console.log(`Loaded active period: ${currentAcademicYear} - ${currentSemester}`);
+                loadYearSections();
+            } else {
+                console.error('No active period found:', data.message);
+                showModal(
+                    'No active academic year/semester set for this program.\n\n' +
+                    'Please go to the Programs page and:\n' +
+                    '1. Click on the program\n' +
+                    '2. Add an academic year if none exists\n' +
+                    '3. Add semesters to that year\n' +
+                    '4. Use "Switch Academic Year" to set one as active',
+                    'Setup Required'
+                );
+                resetDependentFields(['yearSection', 'subjectCode', 'classType', 'room']);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading active period:', error);
+            showModal('Failed to load active period. Please check console for details.', 'Error');
+            resetDependentFields(['yearSection', 'subjectCode', 'classType', 'room']);
+        });
+}
+
+function loadYearSections() {
+    if (!currentProgramId || !currentAcademicYear || !currentSemester) {
+        console.warn('Missing required parameters:', {
+            program: currentProgramId,
+            year: currentAcademicYear,
+            semester: currentSemester
+        });
+        return;
+    }
+    
+    console.log(`Loading sections for: ${currentProgramId}, ${currentAcademicYear}, ${currentSemester}`);
+    
+    yearSectionSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+    yearSectionSelect.disabled = true;
+    
+    fetch(`/api/get_year_sections?program_id=${currentProgramId}&academic_year=${encodeURIComponent(currentAcademicYear)}&semester=${encodeURIComponent(currentSemester)}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log('Year sections response:', data);
+            
+            if (data.success) {
+                yearSectionsCache = data.sections;
+                
+                yearSectionSelect.innerHTML = '<option value="" disabled selected>-- Choose Year & Section --</option>';
+                
+                if (data.sections.length === 0) {
+                    yearSectionSelect.innerHTML += '<option value="" disabled>No sections found for this semester</option>';
+                    showModal(
+                        `No sections found for ${currentAcademicYear} - ${currentSemester}.\n\n` +
+                        'Please add sections in the Programs page first.',
+                        'No Sections'
+                    );
+                } else {
+                    data.sections.forEach(section => {
+                        const option = document.createElement('option');
+                        option.value = section.section_id;
+                        option.dataset.sectionId = section.section_id;
+                        option.textContent = `${section.year_level}${getOrdinalSuffix(section.year_level)} Year - Section ${section.section_name}`;
+                        yearSectionSelect.appendChild(option);
+                    });
+                    yearSectionSelect.disabled = false;
+                }
+            } else {
+                showModal('Failed to load year sections: ' + data.message, 'Error');
+                yearSectionSelect.innerHTML = '<option value="" disabled selected>Error loading sections</option>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading year sections:', error);
+            showModal('Failed to load year sections: ' + error.message, 'Error');
+            yearSectionSelect.innerHTML = '<option value="" disabled selected>Error loading sections</option>';
+        });
+}
+
     function resetDependentFields(fields) {
         const fieldMap = {
             'yearSection': yearSectionSelect,
@@ -415,38 +512,6 @@
         });
         
         updateAddScheduleButton();
-    }
-
-    function loadYearSections() {
-        if (!currentProgramId) return;
-        
-        yearSectionSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
-        yearSectionSelect.disabled = true;
-        
-        fetch(`/api/get_year_sections?program_id=${currentProgramId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    yearSectionsCache = data.sections;
-                    
-                    yearSectionSelect.innerHTML = '<option value="" disabled selected>-- Choose Year & Section --</option>';
-                    data.sections.forEach(section => {
-                        const option = document.createElement('option');
-                        option.value = section.section_id;
-                        option.dataset.sectionId = section.section_id;
-                        option.textContent = `${section.year_level}${getOrdinalSuffix(section.year_level)} Year - Section ${section.section_name}`;
-                        yearSectionSelect.appendChild(option);
-                    });
-                    
-                    yearSectionSelect.disabled = false;
-                } else {
-                    showModal('Failed to load year sections: ' + data.message, 'Error');
-                }
-            })
-            .catch(error => {
-                console.error('Error loading year sections:', error);
-                showModal('Failed to load year sections', 'Error');
-            });
     }
 
     // Add this after loading subjects

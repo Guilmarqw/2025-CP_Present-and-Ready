@@ -71,14 +71,12 @@
                 <h3>Add Schedule</h3>
                 <form id="scheduleForm" onsubmit="return false;">
                     <div class="course-selection">
-                        <div>
-                            <label for="course">Course</label>
-                            <select id="course" onchange="loadSections()">
-                                <option value="" disabled selected>Select Course</option>
-                                <option value="CS">BS Computer Science</option>
-                                <option value="IT">BS Information Technology</option>
-                            </select>
-                        </div>
+<div>
+    <label for="course">Course</label>
+    <select id="course" onchange="loadSections()">
+        <option value="" disabled selected>Loading courses...</option>
+    </select>
+</div>
                         <div>
                             <label for="yearLevel">Year Level</label>
                             <select id="yearLevel" onchange="loadSections()">
@@ -155,6 +153,21 @@ let selectedScheduleIds = new Set();
 let currentFacultyId = null;
 let currentSectionId = null;
 
+
+// Add these missing function declarations at the top with other global functions
+window.showPhase2 = showPhase2;
+window.loadSections = loadSections;
+window.loadClassSchedule = loadClassSchedule;
+
+// Also add this function that's referenced but not defined
+function checkConflicts() {
+    // This function is called but not defined - add basic implementation
+    console.log('Faculty member selected, checking for conflicts...');
+    // You can implement conflict checking logic here later
+    updateSaveButton();
+}
+
+
 // Define global functions
 function showPhase1() {
     console.log('showPhase1 called');
@@ -172,6 +185,30 @@ function showPhase1() {
     loadFacultyWithSchedules();
 }
 window.showPhase1 = showPhase1;
+
+async function loadActivePrograms() {
+    try {
+        const response = await fetch('/api/get_active_programs');
+        const data = await response.json();
+        
+        if (data.success) {
+            const courseSelect = document.getElementById('course');
+            courseSelect.innerHTML = '<option value="" disabled selected>Select Course</option>';
+            
+            data.programs.forEach(program => {
+                const option = document.createElement('option');
+                option.value = program.program_id;
+                option.textContent = program.program_name;
+                courseSelect.appendChild(option);
+            });
+        } else {
+            showModal('Failed to load courses');
+        }
+    } catch (error) {
+        console.error('Error loading active programs:', error);
+        showModal('Failed to load courses');
+    }
+}
 
 function showPhase2() {
     console.log('showPhase2 called');
@@ -193,10 +230,10 @@ function showPhase2() {
     selectedScheduleIds.clear();
     currentSectionId = null;
     
-    // Load all faculty for dropdown
+    // Load active programs and all faculty for dropdown
+    loadActivePrograms();
     loadAllFaculty();
 }
-window.showPhase2 = showPhase2;
 
 // Load sidebar with error handling
 fetch('/sidebar')
@@ -361,9 +398,30 @@ async function loadSections() {
     }
     
     try {
-        // Fetch sections based on course and year level
-        const response = await fetch(`/api/get_sections?program_id=${course}&year_level=${yearLevel}`);
+        console.log('Loading sections for:', { course, yearLevel });
+        
+        // First, get the active academic year and semester for this program
+        const activePeriodResponse = await fetch(`/api/get_active_period?program_id=${course}`);
+        const activePeriodData = await activePeriodResponse.json();
+        
+        console.log('Active period response:', activePeriodData);
+        
+        if (!activePeriodData.success || !activePeriodData.active_period) {
+            showModal('No active academic period found for this program');
+            sectionSelect.disabled = true;
+            sectionSelect.innerHTML = '<option value="" disabled selected>No active period</option>';
+            return;
+        }
+        
+        const { academic_year, semester } = activePeriodData.active_period;
+        
+        console.log('Active period:', { academic_year, semester });
+        
+        // Fetch sections based on course, year level, and active semester
+        const response = await fetch(`/api/get_sections?program_id=${course}&year_level=${yearLevel}&academic_year=${academic_year}&semester=${encodeURIComponent(semester)}`);
         const data = await response.json();
+        
+        console.log('Sections response:', data);
         
         if (data.success && data.sections.length > 0) {
             sectionSelect.disabled = false;
@@ -372,19 +430,23 @@ async function loadSections() {
             data.sections.forEach(section => {
                 const option = document.createElement('option');
                 option.value = section.section_id;
-                option.textContent = section.section_name;
+                option.textContent = `${section.section_name} (${academic_year} - ${semester})`;
                 sectionSelect.appendChild(option);
             });
+            
+            console.log(`Loaded ${data.sections.length} sections`);
         } else {
             sectionSelect.disabled = true;
-            sectionSelect.innerHTML = '<option value="" disabled selected>No sections available</option>';
+            sectionSelect.innerHTML = '<option value="" disabled selected>No sections available for active period</option>';
+            console.log('No sections found for criteria:', { course, yearLevel, academic_year, semester });
         }
     } catch (error) {
         console.error('Error loading sections:', error);
         showModal('Failed to load sections');
     }
 }
-window.loadSections = loadSections;
+
+
 
 async function loadClassSchedule() {
     const sectionId = document.getElementById('section').value;
@@ -411,7 +473,6 @@ async function loadClassSchedule() {
         showModal('Failed to load class schedule');
     }
 }
-window.loadClassSchedule = loadClassSchedule;
 
 function renderScheduleGrid(schedules) {
     const calendar = document.getElementById('classSchedule');
