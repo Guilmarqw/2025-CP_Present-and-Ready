@@ -7,6 +7,7 @@
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="../static/Summary.css">
 
+
 </head>
 <body class="bg-gray-100 font-sans">
     <!-- Edit Modal -->
@@ -27,8 +28,8 @@
                 <div class="students-container max-h-96 overflow-y-auto" id="modalStudentsList"></div>
             </div>
             <div class="flex justify-end gap-2 p-4 border-t border-gray-200">
-                <button class="modal-btn modal-btn-cancel">Cancel</button>
-                <button class="modal-btn modal-btn-save">Save Changes</button>
+                <button class="modal-btn modal-btn-cancel" id="modalCancel">Cancel</button>
+                <button class="modal-btn modal-btn-save" id="modalSave">Save Changes</button>
             </div>
         </div>
     </div>
@@ -52,7 +53,7 @@
 
     <!-- CSV Preview Modal -->
     <div class="modal-overlay" id="csvPreviewModal" style="display: none;">
-        <div class="modal max-w-2xl">
+        <div class="modal max-w-3xl">
             <div class="modal-header">
                 <h2 class="text-xl font-semibold text-gray-800">Attendance Summary Export</h2>
                 <button class="modal-close" id="closeCsvPreview">×</button>
@@ -60,13 +61,23 @@
             <div class="p-6">
                 <div class="mb-4">
                     <h3 class="text-base font-medium text-gray-800 mb-2">Preview</h3>
-                    <div id="csvPreviewContent" class="bg-gray-50 border border-gray-200 rounded-md p-4 font-mono text-sm whitespace-pre overflow-auto max-h-80"></div>
+                    <div class="bg-gray-50 border border-gray-200 rounded-md p-4 overflow-x-auto">
+                        <table class="csv-preview-table" id="csvPreviewContent">
+                            <thead>
+                                <tr>
+                                    <th>Student Name</th>
+                                    <th>Time Marked</th>
+                                    <th>Attendance Category</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
                 </div>
                 <div class="flex gap-2 flex-wrap">
                     <button class="modal-btn modal-btn-save" id="downloadCsv">Download CSV</button>
                     <button class="modal-btn bg-gray-600 text-white" id="printCsv">Print</button>
                     <button class="modal-btn modal-btn-cancel" id="cancelCsv">Cancel</button>
-                    <button class="modal-btn bg-green-600 text-white" id="confirmSave">Confirm Save</button>
                 </div>
             </div>
         </div>
@@ -76,9 +87,10 @@
         <div class="header flex justify-between items-center mb-6">
             <h1 class="text-3xl font-bold text-gray-800">Attendance Summary</h1>
             <div class="flex gap-2">
-                <button class="btn btn-edit">Edit</button>
-                <button class="btn btn-save">Save</button>
-                <button class="btn btn-cancel">Discard</button>
+                <button class="btn btn-edit" id="editBtn">Edit</button>
+                <button class="btn btn-save" id="saveBtn">Save</button>
+                <button class="btn btn-cancel" id="discardBtn">Discard</button>
+                <button class="btn btn-export" id="exportBtn">Export as CSV</button>
             </div>
         </div>
 
@@ -198,6 +210,12 @@
             { name: 'Student Name 36', status: 'present' }
         ];
 
+        // Store original student data for discard functionality
+        let originalStudents = JSON.parse(JSON.stringify(allStudents));
+
+        // Track if changes have been made
+        let hasChanges = false;
+
         // Populate initial lists
         const students = {
             present: allStudents.filter(s => s.status === 'present').map(s => s.name),
@@ -255,46 +273,16 @@
             const checkboxes = document.createElement('div');
             checkboxes.className = 'attendance-checkboxes flex gap-2';
             
-            // Present checkbox
-            const presentWrapper = document.createElement('div');
-            presentWrapper.className = 'checkbox-wrapper';
-            const presentCheckbox = document.createElement('div');
-            presentCheckbox.className = `attendance-checkbox checkbox-present ${student.status === 'present' ? 'checked' : ''}`;
-            presentCheckbox.dataset.status = 'present';
-            presentCheckbox.dataset.student = student.name;
-            presentWrapper.appendChild(presentCheckbox);
-            
-            // Late checkbox
-            const lateWrapper = document.createElement('div');
-            lateWrapper.className = 'checkbox-wrapper';
-            const lateCheckbox = document.createElement('div');
-            lateCheckbox.className = `attendance-checkbox checkbox-late ${student.status === 'late' ? 'checked' : ''}`;
-            lateCheckbox.dataset.status = 'late';
-            lateCheckbox.dataset.student = student.name;
-            lateWrapper.appendChild(lateCheckbox);
-            
-            // Absent checkbox
-            const absentWrapper = document.createElement('div');
-            absentWrapper.className = 'checkbox-wrapper';
-            const absentCheckbox = document.createElement('div');
-            absentCheckbox.className = `attendance-checkbox checkbox-absent ${student.status === 'absent' ? 'checked' : ''}`;
-            absentCheckbox.dataset.status = 'absent';
-            absentCheckbox.dataset.student = student.name;
-            absentWrapper.appendChild(absentCheckbox);
-            
-            // Excused checkbox
-            const excusedWrapper = document.createElement('div');
-            excusedWrapper.className = 'checkbox-wrapper';
-            const excusedCheckbox = document.createElement('div');
-            excusedCheckbox.className = `attendance-checkbox checkbox-excused ${student.status === 'excused' ? 'checked' : ''}`;
-            excusedCheckbox.dataset.status = 'excused';
-            excusedCheckbox.dataset.student = student.name;
-            excusedWrapper.appendChild(excusedCheckbox);
-            
-            checkboxes.appendChild(presentWrapper);
-            checkboxes.appendChild(lateWrapper);
-            checkboxes.appendChild(absentWrapper);
-            checkboxes.appendChild(excusedWrapper);
+            ['present', 'late', 'absent', 'excused'].forEach(status => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'checkbox-wrapper';
+                const checkbox = document.createElement('div');
+                checkbox.className = `attendance-checkbox checkbox-${status} ${student.status === status ? 'checked' : ''}`;
+                checkbox.dataset.status = status;
+                checkbox.dataset.student = student.name;
+                wrapper.appendChild(checkbox);
+                checkboxes.appendChild(wrapper);
+            });
             
             studentItem.appendChild(studentInfo);
             studentItem.appendChild(checkboxes);
@@ -302,11 +290,15 @@
             return studentItem;
         }
 
-        function populateModalStudentsList() {
+        function populateModalStudentsList(searchTerm = '') {
             const container = document.getElementById('modalStudentsList');
             container.innerHTML = '';
             
-            allStudents.forEach(student => {
+            const filteredStudents = searchTerm 
+                ? allStudents.filter(student => student.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                : allStudents;
+                
+            filteredStudents.forEach(student => {
                 const studentItem = createModalStudentItem(student);
                 container.appendChild(studentItem);
             });
@@ -328,6 +320,7 @@
         const studentSearch = document.getElementById('studentSearch');
 
         editBtn.addEventListener('click', () => {
+            populateModalStudentsList();
             editModal.style.display = 'flex';
         });
 
@@ -336,28 +329,30 @@
         });
 
         modalCancel.addEventListener('click', () => {
-            editModal.style.display = 'none';
+            showConfirmation('cancel', 'Do you want to discard unsaved changes?', () => {
+                editModal.style.display = 'none';
+                confirmationModal.style.display = 'none';
+            });
         });
 
         editModal.addEventListener('click', (e) => {
             if (e.target === editModal) {
-                editModal.style.display = 'none';
+                modalCancel.click();
             }
         });
 
         // Checkbox functionality
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('attendance-checkbox')) {
+                hasChanges = true;
                 const studentName = e.target.dataset.student;
                 const newStatus = e.target.dataset.status;
                 
-                // Update student status
                 const student = allStudents.find(s => s.name === studentName);
                 if (student) {
                     student.status = newStatus;
                 }
                 
-                // Update all checkboxes for this student
                 const studentCheckboxes = document.querySelectorAll(`[data-student="${studentName}"]`);
                 studentCheckboxes.forEach(cb => {
                     cb.classList.remove('checked');
@@ -370,27 +365,17 @@
 
         // Search functionality
         studentSearch.addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            const studentItems = document.querySelectorAll('.modal-student-item');
-            
-            studentItems.forEach(item => {
-                const studentName = item.querySelector('.modal-student-name').textContent.toLowerCase();
-                if (studentName.includes(searchTerm)) {
-                    item.style.display = 'flex';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
+            populateModalStudentsList(e.target.value);
         });
 
         // Bulk actions
         document.querySelectorAll('.attendance-option').forEach(btn => {
             btn.addEventListener('click', () => {
+                hasChanges = true;
                 const status = btn.classList.contains('option-present') ? 'present' :
-                              btn.classList.contains('option-late') ? 'late' :
-                              btn.classList.contains('option-absent') ? 'absent' : 'excused';
+                             btn.classList.contains('option-late') ? 'late' :
+                             btn.classList.contains('option-absent') ? 'absent' : 'excused';
                 
-                // Get visible students (in case search is active)
                 const visibleStudents = document.querySelectorAll('.modal-student-item:not([style*="display: none"])');
                 
                 visibleStudents.forEach(studentItem => {
@@ -400,7 +385,6 @@
                         student.status = status;
                     }
                     
-                    // Update checkboxes
                     const checkboxes = studentItem.querySelectorAll('.attendance-checkbox');
                     checkboxes.forEach(cb => {
                         cb.classList.remove('checked');
@@ -421,12 +405,13 @@
         const confirmationMessage = document.getElementById('confirmationMessage');
 
         function showConfirmation(action, message, callback) {
-            confirmationTitle.textContent = `Confirm ${action.toUpperCase()}`;
+            confirmationTitle.textContent = `Confirm ${action.charAt(0).toUpperCase() + action.slice(1)}`;
             confirmationMessage.textContent = message;
             confirmationModal.style.display = 'flex';
-            
-            // Store the callback function
-            confirmationYes.onclick = callback;
+            confirmationYes.onclick = () => {
+                callback();
+                confirmationModal.style.display = 'none';
+            };
         }
 
         closeConfirmationModal.addEventListener('click', () => {
@@ -439,12 +424,12 @@
 
         confirmationModal.addEventListener('click', (e) => {
             if (e.target === confirmationModal) {
-                confirmationModal.style.display = 'none';
+                confirmationNo.click();
             }
         });
 
-        modalSave.addEventListener('click', () => {
-            // Update the main lists based on new statuses
+        // Save functionality
+        function saveChanges() {
             const updatedStudents = {
                 present: allStudents.filter(s => s.status === 'present').map(s => s.name),
                 late: allStudents.filter(s => s.status === 'late').map(s => s.name),
@@ -452,42 +437,93 @@
                 excused: allStudents.filter(s => s.status === 'excused').map(s => s.name)
             };
             
-            // Update counts
             document.querySelector('.count-present').textContent = `${updatedStudents.present.length}/36`;
             document.querySelector('.count-late').textContent = `${updatedStudents.late.length}/36`;
             document.querySelector('.count-absent').textContent = `${updatedStudents.absent.length}/36`;
             document.querySelector('.count-excused').textContent = `${updatedStudents.excused.length}/36`;
             
-            // Repopulate lists
             populateStudentList('presentList', updatedStudents.present);
             populateStudentList('lateList', updatedStudents.late);
             populateStudentList('absentList', updatedStudents.absent);
             populateStudentList('excusedList', updatedStudents.excused);
             
-            // Close modal
-            editModal.style.display = 'none';
-            
-            alert('Attendance updated successfully!');
+            originalStudents = JSON.parse(JSON.stringify(allStudents));
+            hasChanges = false;
+        }
+
+        modalSave.addEventListener('click', () => {
+            if (hasChanges) {
+                showConfirmation('save', 'Do you want to save the attendance changes?', () => {
+                    saveChanges();
+                    editModal.style.display = 'none';
+                    alert('Attendance updated successfully!');
+                });
+            } else {
+                editModal.style.display = 'none';
+            }
         });
 
-        // CSV Preview functionality
-        function showCsvPreview() {
+        document.getElementById('saveBtn').addEventListener('click', () => {
+            if (hasChanges) {
+                showConfirmation('save', 'Do you want to save the attendance summary?', () => {
+                    saveChanges();
+                    alert('Attendance summary saved successfully!');
+                });
+            } else {
+                alert('No changes to save.');
+            }
+        });
+
+        document.getElementById('discardBtn').addEventListener('click', () => {
+            if (hasChanges) {
+                showConfirmation('discard', 'Do you really want to discard changes? Unsaved changes will be lost.', () => {
+                    allStudents.forEach((student, index) => {
+                        student.status = originalStudents[index].status;
+                    });
+                    hasChanges = false;
+                    populateModalStudentsList();
+                    saveChanges();
+                    alert('Changes discarded.');
+                });
+            } else {
+                alert('No changes to discard.');
+            }
+        });
+
+        // CSV Export functionality
+        function generateCsvContent() {
             const subjectCode = document.querySelector('.subject-code').textContent;
             const courseCode = document.querySelector('.course-code').textContent;
             const currentTime = new Date().toLocaleString();
             
             const csvHeader = 'Student Name,Time Marked,Attendance Category\n';
             const csvRows = allStudents.map(student => {
-                return `"${student.name}","${currentTime}","${student.status}"`;
+                return `"${student.name.replace(/"/g, '""')}","${currentTime}","${student.status}"`;
             }).join('\n');
             
-            const csvContent = csvHeader + csvRows;
+            return { content: csvHeader + csvRows, fileName: `${subjectCode}_${courseCode.replace(' ', '_')}.csv` };
+        }
+
+        function showCsvPreview() {
+            const currentTime = new Date().toLocaleString();
+            const tbody = document.querySelector('#csvPreviewContent tbody');
+            tbody.innerHTML = '';
             
-            document.getElementById('csvPreviewContent').textContent = csvContent;
+            allStudents.forEach(student => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${student.name}</td>
+                    <td>${currentTime}</td>
+                    <td>${student.status}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            
             document.getElementById('csvPreviewModal').style.display = 'flex';
         }
 
-        // Close CSV preview modal
+        document.getElementById('exportBtn').addEventListener('click', showCsvPreview);
+
         document.getElementById('closeCsvPreview').addEventListener('click', () => {
             document.getElementById('csvPreviewModal').style.display = 'none';
         });
@@ -502,57 +538,25 @@
             }
         });
 
-        // Download CSV
         document.getElementById('downloadCsv').addEventListener('click', () => {
-            const subjectCode = document.querySelector('.subject-code').textContent;
-            const courseCode = document.querySelector('.course-code').textContent;
-            const currentTime = new Date().toISOString();
-            
-            const csvHeader = 'Student Name,Time Marked,Attendance Category\n';
-            const csvRows = allStudents.map(student => {
-                return `"${student.name}","${currentTime}","${student.status}"`;
-            }).join('\n');
-            
-            const csvContent = csvHeader + csvRows;
-            const fileName = `${subjectCode}_${courseCode.replace(' ', '_')}.csv`;
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const { content, fileName } = generateCsvContent();
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
-            
-            if (link.download !== undefined) {
-                const url = URL.createObjectURL(blob);
-                link.setAttribute('href', url);
-                link.setAttribute('download', fileName);
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-            
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', fileName);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
             document.getElementById('csvPreviewModal').style.display = 'none';
             alert('Attendance summary downloaded as CSV!');
         });
 
-        // Confirm Save button
-        document.getElementById('confirmSave').addEventListener('click', () => {
-            document.getElementById('csvPreviewModal').style.display = 'none';
-            showConfirmation('save', 'Do you really want to save the attendance summary?', function() {
-                confirmationModal.style.display = 'none';
-                alert('Attendance summary saved successfully!');
-            });
-        });
-
-        // Print CSV
         document.getElementById('printCsv').addEventListener('click', () => {
             const subjectCode = document.querySelector('.subject-code').textContent;
             const courseCode = document.querySelector('.course-code').textContent;
             const currentTime = new Date().toLocaleString();
-            
-            const csvHeader = 'Student Name,Time Marked,Attendance Category\n';
-            const csvRows = allStudents.map(student => {
-                return `"${student.name}","${currentTime}","${student.status}"`;
-            }).join('\n');
-            
-            const csvContent = csvHeader + csvRows;
             
             const printWindow = window.open('', '_blank');
             printWindow.document.write(`
@@ -561,9 +565,12 @@
                         <title>${subjectCode} ${courseCode} - Attendance Summary</title>
                         <style>
                             body { font-family: Arial, sans-serif; margin: 20px; }
-                            pre { background: #f5f5f5; padding: 15px; border-radius: 5px; }
                             .header { text-align: center; margin-bottom: 20px; }
                             .timestamp { color: #666; font-size: 14px; }
+                            table { width: 100%; border-collapse: collapse; font-size: 12pt; }
+                            th, td { border: 1px solid #000; padding: 8pt; text-align: left; }
+                            th { background-color: #eee; font-weight: 600; }
+                            tr:nth-child(even) { background-color: #f8f8f8; }
                         </style>
                     </head>
                     <body>
@@ -571,24 +578,30 @@
                             <h1>${subjectCode} - ${courseCode}</h1>
                             <div class="timestamp">Attendance Summary - ${currentTime}</div>
                         </div>
-                        <pre>${csvContent}</pre>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Student Name</th>
+                                    <th>Time Marked</th>
+                                    <th>Attendance Category</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${allStudents.map(student => `
+                                    <tr>
+                                        <td>${student.name}</td>
+                                        <td>${currentTime}</td>
+                                        <td>${student.status}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
                     </body>
                 </html>
             `);
             printWindow.document.close();
             printWindow.print();
-        });
-
-        // Add button functionality
-        document.querySelector('.btn-save').addEventListener('click', function() {
-            showCsvPreview();
-        });
-
-        document.querySelector('.btn-cancel').addEventListener('click', function() {
-            showConfirmation('discard', 'Do you really want to discard changes? Unsaved changes will be lost.', function() {
-                confirmationModal.style.display = 'none';
-                console.log('Changes discarded');
-            });
+            document.getElementById('csvPreviewModal').style.display = 'none';
         });
 
         // Update time every second
@@ -599,7 +612,6 @@
                 minute: '2-digit',
                 hour12: true 
             }).toLowerCase();
-            // Note: Time elements are static in this demo, so not updating them
         }
 
         setInterval(updateCurrentTime, 1000);

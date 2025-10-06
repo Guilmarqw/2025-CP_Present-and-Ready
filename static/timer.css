@@ -1,4 +1,4 @@
- * {
+       * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
@@ -132,12 +132,12 @@
 
         .input-section {
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: 1fr;
             gap: 24px;
             margin-bottom: 32px;
         }
 
-        .input-form-group, .file-upload-group {
+        .input-form-group {
             background-color: white;
             padding: 24px;
             border-radius: 12px;
@@ -176,11 +176,6 @@
         input[readonly] {
             background-color: #e2e8f0;
             cursor: not-allowed;
-        }
-
-        .file-upload input[type="file"] {
-            border: 1px dashed #e2e8f0;
-            padding: 10px;
         }
 
         #startBtn {
