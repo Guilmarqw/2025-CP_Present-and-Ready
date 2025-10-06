@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 06, 2025 at 03:05 AM
+-- Generation Time: Oct 06, 2025 at 04:12 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -108,7 +108,8 @@ CREATE TABLE `admins` (
 --
 
 INSERT INTO `admins` (`admin_id`, `first_name`, `last_name`, `middle_name`, `email`, `password_hash`, `role`, `status`, `created_at`, `updated_at`) VALUES
-('ADMIN001', 'Super', 'Administrator', NULL, 'admin@wmsu.edu.ph', '$2b$12$wzBzr61nxMXGJLkRtfb/V.Qa0KlGhlAoIpIVb8T2HEh4s2fj9bGEe', 'super_admin', 'active', '2025-09-27 00:49:59', '2025-09-27 14:14:25');
+('ADMIN001', 'Super', 'Administrator', NULL, 'admin@wmsu.edu.ph', '$2b$12$wzBzr61nxMXGJLkRtfb/V.Qa0KlGhlAoIpIVb8T2HEh4s2fj9bGEe', 'super_admin', 'active', '2025-09-27 00:49:59', '2025-09-27 14:14:25'),
+('ADMIN002', 'Regular', 'Admin', NULL, 'admin2@wmsu.edu.ph', '$2b$12$xKW4tqQEhqzzlMWmB2Mc5OCa./W8t2yk2hmMN3e2PFXZ5s9OsrCe2', 'admin', 'active', '2025-10-06 02:10:22', '2025-10-06 02:10:22');
 
 -- --------------------------------------------------------
 
@@ -475,7 +476,7 @@ CREATE TABLE `user_sessions` (
 --
 
 INSERT INTO `user_sessions` (`id`, `user_id`, `user_type`, `session_token`, `expires_at`, `created_at`) VALUES
-(72, 'ADMIN001', 'admin', 'd9opoRRrKSOqeh4um-_jOelo2k3IdfcDuFvi7GIHDVQ', '2025-10-06 15:57:17', '2025-10-05 15:57:17');
+(74, 'ADMIN002', 'admin', 'wAcZ4yEL4Op5jL4f0bQA2X93b0lw6dp0zvPf5i-GLvc', '2025-10-07 02:11:48', '2025-10-06 02:11:48');
 
 -- --------------------------------------------------------
 
@@ -763,7 +764,7 @@ ALTER TABLE `subjects`
 -- AUTO_INCREMENT for table `user_sessions`
 --
 ALTER TABLE `user_sessions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=73;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=75;
 
 --
 -- AUTO_INCREMENT for table `year_sections`

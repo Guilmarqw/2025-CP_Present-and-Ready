@@ -7,36 +7,65 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/sidebar.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
+
 </head>
 <body>
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="logo">
-            <h1>Admin Side</h1>
+            <h1 id="sidebar-title">Admin Dashboard</h1>
         </div>
         <div class="user-info">
             <div class="avatar">
                 <i class="fas fa-user"></i>
             </div>
-            <div class="name">Unknown User</div>
-            <div class="role">Admin</div>
+            <div class="name" id="user-name">{{ first_name }} {{ last_name }}</div>
+            <div class="role" id="user-role">
+                {% if user_role == 'super_admin' %}
+                    Super Administrator
+                {% elif user_role == 'admin' %}
+                    Administrator
+                {% elif user_role == 'moderator' %}
+                    Moderator
+                {% elif user_role == 'faculty' %}
+                    Faculty Member
+                {% else %}
+                    User
+                {% endif %}
+            </div>
         </div>
         <ul class="nav-items">
             <li class="timer-item">
                 <a href="/timer"><i class="fas fa-stopwatch"></i> <span>Go to Timer</span></a>
             </li>
             <li><a href="/AdminDB"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
-            <li class="dropdown">
+            
+            <!-- Management Section - Show based on role -->
+            {% if user_role in ['super_admin', 'admin', 'moderator'] %}
+            <li class="dropdown" id="management-section">
                 <a href="#" class="dropdown-btn">
                     <i class="fas fa-graduation-cap"></i> <span>Management</span>
                     <i class="fas fa-chevron-down" style="margin-left: auto;"></i>
                 </a>
-                <ul class="dropdown-content">
-                    <li><a href="/programs"><i class="fas fa-scroll"></i> <span>Programs</span></a></li>
-                    <li><a href="/schedule"><i class="fas fa-calendar-check"></i> <span>Faculty Member Schedules</span></a></li>
-                    <li><a href="/classsched"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a></li>                
+                <ul class="dropdown-content" id="management-dropdown">
+                    <!-- Programs - Only for super_admin -->
+                    {% if user_role == 'super_admin' %}
+                    <li id="programs-item">
+                        <a href="/programs"><i class="fas fa-scroll"></i> <span>Programs</span></a>
+                    </li>
+                    {% endif %}
+                    <!-- Faculty Schedules - For super_admin, admin, moderator -->
+                    <li id="faculty-schedule-item">
+                        <a href="/schedule"><i class="fas fa-calendar-check"></i> <span>Faculty Member Schedules</span></a>
+                    </li>
+                    <!-- Class Schedules - For super_admin, admin, moderator -->
+                    <li id="class-schedule-item">
+                        <a href="/classsched"><i class="fas fa-calendar-alt"></i> <span>Class Schedules</span></a>
+                    </li>                
                 </ul>
             </li>
+            {% endif %}
+            
             <li><a href="/FacultyDB"><i class="fas fa-chalkboard-teacher"></i> <span>Faculty Members List</span></a></li>
             <li><a href="/StudentDB"><i class="fas fa-user-graduate"></i> <span>Students List</span></a></li>
             <li><a href="/settings"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
@@ -45,34 +74,127 @@
     </aside>
 
     <script>
+        // Debug: Check what user data is available
+        console.log('User Data from Template:', {
+            firstName: '{{ first_name }}',
+            lastName: '{{ last_name }}',
+            role: '{{ user_role }}',
+            userType: '{{ user_type }}'
+        });
+
+        // Function to handle dropdown functionality
         function initSidebar() {
+            console.log('Initializing sidebar dropdowns...');
+            
+            // Initialize all dropdowns as closed
+            document.querySelectorAll('.dropdown-content').forEach(dropdown => {
+                dropdown.style.display = 'none';
+            });
+            
+            // Dropdown functionality
             document.querySelectorAll(".dropdown-btn").forEach(btn => {
                 btn.addEventListener("click", function(e) {
                     e.preventDefault();
                     const content = this.nextElementSibling;
-                    content.style.display = (content.style.display === 'block') ? 'none' : 'block';
+                    const isVisible = content.style.display === 'block';
+                    
+                    // Close all other dropdowns
+                    document.querySelectorAll('.dropdown-content').forEach(otherContent => {
+                        if (otherContent !== content) {
+                            otherContent.style.display = 'none';
+                            // Reset other chevrons
+                            const otherBtn = otherContent.previousElementSibling;
+                            const otherChevron = otherBtn?.querySelector('.fa-chevron-down');
+                            if (otherChevron) {
+                                otherChevron.style.transform = 'rotate(0deg)';
+                            }
+                        }
+                    });
+                    
+                    // Toggle current dropdown
+                    content.style.display = isVisible ? 'none' : 'block';
+                    
+                    // Rotate chevron icon
+                    const chevron = this.querySelector('.fa-chevron-down');
+                    if (chevron) {
+                        chevron.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(180deg)';
+                    }
                 });
             });
 
+            // Set active link based on current path
             const currentPath = window.location.pathname;
+            console.log('Current path:', currentPath);
+            
             document.querySelectorAll('.nav-items a').forEach(link => {
-                const linkPath = link.getAttribute('href').replace('../Admin', '');
-                if (currentPath.includes(linkPath) && linkPath !== '#') {
+                const linkPath = link.getAttribute('href');
+                if (linkPath === '#') return; // Skip dropdown buttons
+                
+                if (currentPath === linkPath || (linkPath !== '/' && currentPath.startsWith(linkPath))) {
                     link.classList.add('active');
-                    const dropdown = link.closest('.dropdown-content');
-                    if (dropdown) dropdown.style.display = 'block';
+                    console.log('Active link:', linkPath);
+                    
+                    // Auto-expand dropdown if this link is in a dropdown
+                    const dropdownContent = link.closest('.dropdown-content');
+                    if (dropdownContent) {
+                        dropdownContent.style.display = 'block';
+                        const dropdownBtn = dropdownContent.previousElementSibling;
+                        const chevron = dropdownBtn.querySelector('.fa-chevron-down');
+                        if (chevron) {
+                            chevron.style.transform = 'rotate(180deg)';
+                        }
+                        console.log('Expanded dropdown for active link');
+                    }
                 }
             });
+
+            // Debug: Check if management section exists and is visible
+            const managementSection = document.getElementById('management-section');
+            if (managementSection) {
+                console.log('Management section found, display style:', managementSection.style.display);
+                console.log('Management dropdown items:', document.querySelectorAll('#management-dropdown li').length);
+            } else {
+                console.log('Management section NOT found - user role might not have access');
+            }
+
+            console.log('Sidebar initialization complete');
         }
 
+        // Initialize when DOM is ready
         if (document.readyState !== 'loading') {
             initSidebar();
         } else {
             document.addEventListener('DOMContentLoaded', initSidebar);
         }
-    </script>
-</body>
-</html>
+
+        // Update sidebar title based on role
+        function updateSidebarTitle() {
+            const sidebarTitle = document.getElementById('sidebar-title');
+            const userRole = '{{ user_role }}';
+            const userType = '{{ user_type }}';
+            
+            if (userType === 'faculty') {
+                sidebarTitle.textContent = 'Faculty Dashboard';
+            } else {
+                switch(userRole) {
+                    case 'super_admin':
+                        sidebarTitle.textContent = 'Super Admin Dashboard';
+                        break;
+                    case 'admin':
+                        sidebarTitle.textContent = 'Admin Dashboard';
+                        break;
+                    case 'moderator':
+                        sidebarTitle.textContent = 'Moderator Dashboard';
+                        break;
+                    default:
+                        sidebarTitle.textContent = 'Admin Dashboard';
+                }
+            }
+            console.log('Sidebar title set to:', sidebarTitle.textContent);
+        }
+        
+        // Call backup title update
+        updateSidebarTitle();
     </script>
 </body>
 </html>

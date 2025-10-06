@@ -2,7 +2,7 @@
 import bcrypt
 
 # Generate the correct hash for @101Pok3r5610
-password = "@101Pok3r5610e"
+password = "admin123"
 password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 print(f"Password: {password}")
 print(f"Hash: {password_hash.decode('utf-8')}")
