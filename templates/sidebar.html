@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/sidebar.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
-
 </head>
 <body>
     <!-- Sidebar -->
@@ -27,7 +26,7 @@
                     Administrator
                 {% elif user_role == 'moderator' %}
                     Moderator
-                {% elif user_role == 'faculty' %}
+                {% elif user_type == 'faculty' %}
                     Faculty Member
                 {% else %}
                     User
@@ -40,8 +39,8 @@
             </li>
             <li><a href="/AdminDB"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
             
-            <!-- Management Section - Show based on role -->
-            {% if user_role in ['super_admin', 'admin', 'moderator'] %}
+            <!-- Management Section - Show only for super_admin, admin, moderator, NOT for faculty -->
+            {% if user_role in ['super_admin', 'admin', 'moderator'] and user_type != 'faculty' %}
             <li class="dropdown" id="management-section">
                 <a href="#" class="dropdown-btn">
                     <i class="fas fa-graduation-cap"></i> <span>Management</span>
@@ -66,7 +65,11 @@
             </li>
             {% endif %}
             
+            <!-- Faculty Members List - Show for super_admin, admin, moderator, but NOT for faculty user_type -->
+            {% if user_role in ['super_admin', 'admin', 'moderator'] and user_type != 'faculty' %}
             <li><a href="/FacultyDB"><i class="fas fa-chalkboard-teacher"></i> <span>Faculty Members List</span></a></li>
+            {% endif %}
+            
             <li><a href="/StudentDB"><i class="fas fa-user-graduate"></i> <span>Students List</span></a></li>
             <li><a href="/settings"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
             <li><a href="/logout" id="signout-btn"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
@@ -75,12 +78,22 @@
 
     <script>
         // Debug: Check what user data is available
+        console.log('=== SIDEBAR DEBUG INFO ===');
         console.log('User Data from Template:', {
             firstName: '{{ first_name }}',
             lastName: '{{ last_name }}',
             role: '{{ user_role }}',
             userType: '{{ user_type }}'
         });
+
+        // Check user permissions
+        const userRole = '{{ user_role }}';
+        const userType = '{{ user_type }}';
+        
+        console.log('User Role:', userRole);
+        console.log('User Type:', userType);
+        console.log('Has Management Access:', userRole in ['super_admin', 'admin', 'moderator'] && userType != 'faculty');
+        console.log('Has Faculty List Access:', userRole in ['super_admin', 'admin', 'moderator'] && userType != 'faculty');
 
         // Function to handle dropdown functionality
         function initSidebar() {
@@ -148,15 +161,6 @@
                 }
             });
 
-            // Debug: Check if management section exists and is visible
-            const managementSection = document.getElementById('management-section');
-            if (managementSection) {
-                console.log('Management section found, display style:', managementSection.style.display);
-                console.log('Management dropdown items:', document.querySelectorAll('#management-dropdown li').length);
-            } else {
-                console.log('Management section NOT found - user role might not have access');
-            }
-
             console.log('Sidebar initialization complete');
         }
 
@@ -195,6 +199,8 @@
         
         // Call backup title update
         updateSidebarTitle();
+
+        
     </script>
 </body>
 </html>

@@ -144,6 +144,18 @@
         </div>
     </div>
 
+<!-- Confirmation Modal -->
+<div class="modal-overlay" id="confirmationModal">
+    <div class="modal">
+        <h3 id="confirmationTitle">Confirm Action</h3>
+        <p id="confirmationMessage">Are you sure you want to proceed?</p>
+        <div class="confirmation-buttons">
+            <button id="confirmCancel" class="btn-cancel">Cancel</button>
+            <button id="confirmOk" class="btn-confirm">Yes, Continue</button>
+        </div>
+    </div>
+</div>
+
     <script>
 console.log('Starting sidebar fetch...');
 
@@ -152,12 +164,49 @@ let allFaculty = [];
 let selectedScheduleIds = new Set();
 let currentFacultyId = null;
 let currentSectionId = null;
-
+let currentConfirmationCallback = null;
 
 // Add these missing function declarations at the top with other global functions
 window.showPhase2 = showPhase2;
 window.loadSections = loadSections;
 window.loadClassSchedule = loadClassSchedule;
+
+function showConfirmation(message, callback, title = 'Confirm Action') {
+    const modal = document.getElementById('confirmationModal');
+    const messageEl = document.getElementById('confirmationMessage');
+    const titleEl = document.getElementById('confirmationTitle');
+    
+    if (modal && messageEl && titleEl) {
+        messageEl.textContent = message;
+        titleEl.textContent = title;
+        currentConfirmationCallback = callback;
+        modal.style.display = 'flex';
+    }
+}
+
+// Initialize confirmation modal
+function initializeConfirmationModal() {
+    const confirmationModal = document.getElementById('confirmationModal');
+    const confirmCancel = document.getElementById('confirmCancel');
+    const confirmOk = document.getElementById('confirmOk');
+    
+    if (confirmCancel) {
+        confirmCancel.addEventListener('click', () => {
+            confirmationModal.style.display = 'none';
+            currentConfirmationCallback = null;
+        });
+    }
+    
+    if (confirmOk) {
+        confirmOk.addEventListener('click', () => {
+            confirmationModal.style.display = 'none';
+            if (currentConfirmationCallback) {
+                currentConfirmationCallback();
+            }
+            currentConfirmationCallback = null;
+        });
+    }
+}
 
 // Also add this function that's referenced but not defined
 function checkConflicts() {
@@ -167,7 +216,48 @@ function checkConflicts() {
     updateSaveButton();
 }
 
-
+async function loadFacultyWithSchedules() {
+    try {
+        const response = await fetch('/api/get_faculty_with_schedules');
+        const data = await response.json();
+        
+        if (data.success) {
+            const tbody = document.querySelector('#scheduleTable tbody');
+            tbody.innerHTML = '';
+            
+            if (data.faculty && data.faculty.length > 0) {
+                data.faculty.forEach(faculty => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${faculty.full_name}</td>
+                        <td>${faculty.subject_count || 0}</td>
+                        <td>${faculty.meeting_count || 0}</td>
+                        <td class="action-btns">
+                            <button class="btn-view-schedule" title="View Schedule" onclick="viewFacultySchedule('${faculty.faculty_id}', '${faculty.full_name}')">
+                                <i class="fas fa-calendar-alt"></i>
+                            </button>
+                            <button class="delete" title="Unassign All" onclick="unassignAllSchedules('${faculty.faculty_id}')">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td colspan="4" style="text-align: center; color: #666; padding: 20px;">
+                        No faculty with schedules found
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading faculty with schedules:', error);
+        showModal('Failed to load faculty schedules', 'info');
+    }
+}
 // Define global functions
 function showPhase1() {
     console.log('showPhase1 called');
@@ -186,27 +276,54 @@ function showPhase1() {
 }
 window.showPhase1 = showPhase1;
 
+function formatTime12Hour(time24) {
+    const [hours, minutes] = time24.split(':');
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${minutes}${ampm}`;
+}
+
 async function loadActivePrograms() {
     try {
         const response = await fetch('/api/get_active_programs');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
         
         if (data.success) {
             const courseSelect = document.getElementById('course');
-            courseSelect.innerHTML = '<option value="" disabled selected>Select Course</option>';
-            
-            data.programs.forEach(program => {
-                const option = document.createElement('option');
-                option.value = program.program_id;
-                option.textContent = program.program_name;
-                courseSelect.appendChild(option);
-            });
+            if (courseSelect) {
+                courseSelect.innerHTML = '<option value="" disabled selected>Select Course</option>';
+                
+                if (data.programs && data.programs.length > 0) {
+                    data.programs.forEach(program => {
+                        const option = document.createElement('option');
+                        option.value = program.program_id;
+                        option.textContent = program.program_name;
+                        courseSelect.appendChild(option);
+                    });
+                } else {
+                    console.warn('No programs found');
+                    const option = document.createElement('option');
+                    option.value = "";
+                    option.textContent = "No programs available";
+                    option.disabled = true;
+                    courseSelect.appendChild(option);
+                }
+            } else {
+                console.error('Course select element not found');
+            }
         } else {
-            showModal('Failed to load courses');
+            console.error('Failed to load courses:', data.message);
+            showModal('Failed to load courses: ' + (data.message || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error loading active programs:', error);
-        showModal('Failed to load courses');
+        showModal('Failed to load courses: ' + error.message);
     }
 }
 
@@ -310,19 +427,29 @@ async function loadUnassignedFaculty() {
             const tbody = document.querySelector('#unassignedTable tbody');
             tbody.innerHTML = '';
             
-            data.faculty.forEach(faculty => {
+            if (data.faculty.length === 0) {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${faculty.full_name}</td>
-                    <td>${faculty.department || 'N/A'}</td>
-                    <td>
-                        <button class="add-schedule-btn" onclick="assignFaculty(${faculty.faculty_id})">
-                            <i class="fas fa-plus"></i> Assign
-                        </button>
+                    <td colspan="3" style="text-align: center; color: #666; padding: 20px;">
+                        No unassigned faculty members
                     </td>
                 `;
                 tbody.appendChild(tr);
-            });
+            } else {
+                data.faculty.forEach(faculty => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${faculty.full_name}</td>
+                        <td>${faculty.department || 'N/A'}</td>
+                        <td>
+                            <button class="add-schedule-btn" onclick="assignFaculty('${faculty.faculty_id}')">
+                                <i class="fas fa-plus"></i> Assign
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
         }
     } catch (error) {
         console.error('Error loading unassigned faculty:', error);
@@ -330,36 +457,27 @@ async function loadUnassignedFaculty() {
     }
 }
 
-async function loadFacultyWithSchedules() {
+async function viewFacultySchedule(facultyId, facultyName) {
     try {
-        const response = await fetch('/api/get_faculty_with_schedules');
+        console.log(`Fetching schedules for faculty ${facultyId}...`);
+        
+        const response = await fetch(`/api/get_faculty_all_schedules?faculty_id=${facultyId}`);
         const data = await response.json();
         
+        console.log('API Response:', data);
+        
         if (data.success) {
-            const tbody = document.querySelector('#scheduleTable tbody');
-            tbody.innerHTML = '';
-            
-            data.faculty.forEach(faculty => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${faculty.full_name}</td>
-                    <td>${faculty.subject_count}</td>
-                    <td>${faculty.meeting_count}</td>
-                    <td class="action-btns">
-                        <button class="btn-view-schedule" title="View Schedule" onclick="viewFacultySchedule(${faculty.faculty_id}, '${faculty.full_name}')">
-                            <i class="fas fa-calendar-alt"></i>
-                        </button>
-                        <button class="delete" title="Unassign All" onclick="unassignAllSchedules(${faculty.faculty_id})">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+            if (!data.schedules || data.schedules.length === 0) {
+                showModal(`No scheduled classes found for ${facultyName}`, 'info');
+                return;
+            }
+            displayFacultyScheduleModal(facultyName, data.schedules);
+        } else {
+            showModal(data.message || 'Failed to load faculty schedule', 'info');
         }
     } catch (error) {
-        console.error('Error loading faculty with schedules:', error);
-        showModal('Failed to load faculty schedules');
+        console.error('Error viewing faculty schedule:', error);
+        showModal('Failed to load faculty schedule: ' + error.message, 'info');
     }
 }
 
@@ -373,12 +491,18 @@ async function loadAllFaculty() {
             const select = document.getElementById('facultyMember');
             select.innerHTML = '<option value="" disabled selected>Select Faculty Member</option>';
             
-            data.faculty.forEach(faculty => {
-                const option = document.createElement('option');
-                option.value = faculty.faculty_id;
-                option.textContent = faculty.full_name;
-                select.appendChild(option);
-            });
+            if (data.faculty && data.faculty.length > 0) {
+                data.faculty.forEach(faculty => {
+                    const option = document.createElement('option');
+                    option.value = faculty.faculty_id;
+                    option.textContent = faculty.full_name || `${faculty.first_name} ${faculty.last_name}`;
+                    select.appendChild(option);
+                });
+            } else {
+                select.innerHTML = '<option value="" disabled selected>No faculty members found</option>';
+            }
+        } else {
+            showModal(data.message || 'Failed to load faculty list');
         }
     } catch (error) {
         console.error('Error loading all faculty:', error);
@@ -393,60 +517,52 @@ async function loadSections() {
     
     if (!course || !yearLevel) {
         sectionSelect.disabled = true;
-        sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
+        sectionSelect.innerHTML = '<option value="" disabled selected>Select Course and Year First</option>';
         return;
     }
     
     try {
-        console.log('Loading sections for:', { course, yearLevel });
-        
-        // First, get the active academic year and semester for this program
         const activePeriodResponse = await fetch(`/api/get_active_period?program_id=${course}`);
         const activePeriodData = await activePeriodResponse.json();
         
-        console.log('Active period response:', activePeriodData);
-        
-        if (!activePeriodData.success || !activePeriodData.active_period) {
-            showModal('No active academic period found for this program');
+        if (!activePeriodData.success) {
             sectionSelect.disabled = true;
-            sectionSelect.innerHTML = '<option value="" disabled selected>No active period</option>';
+            sectionSelect.innerHTML = '<option value="" disabled selected>No active period found</option>';
+            showModal(activePeriodData.message || 'No active academic period');
             return;
         }
         
         const { academic_year, semester } = activePeriodData.active_period;
         
-        console.log('Active period:', { academic_year, semester });
-        
-        // Fetch sections based on course, year level, and active semester
-        const response = await fetch(`/api/get_sections?program_id=${course}&year_level=${yearLevel}&academic_year=${academic_year}&semester=${encodeURIComponent(semester)}`);
+        const response = await fetch(`/api/get_sections_with_semester?program_id=${course}&year_level=${yearLevel}&academic_year=${academic_year}&semester=${encodeURIComponent(semester)}`);
         const data = await response.json();
         
-        console.log('Sections response:', data);
-        
-        if (data.success && data.sections.length > 0) {
+        if (data.success) {
             sectionSelect.disabled = false;
             sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
             
-            data.sections.forEach(section => {
-                const option = document.createElement('option');
-                option.value = section.section_id;
-                option.textContent = `${section.section_name} (${academic_year} - ${semester})`;
-                sectionSelect.appendChild(option);
-            });
-            
-            console.log(`Loaded ${data.sections.length} sections`);
+            if (data.sections && data.sections.length > 0) {
+                data.sections.forEach(section => {
+                    const option = document.createElement('option');
+                    option.value = section.section_id;
+                    option.textContent = section.section_name;
+                    sectionSelect.appendChild(option);
+                });
+            } else {
+                sectionSelect.innerHTML = '<option value="" disabled selected>No sections available</option>';
+            }
         } else {
             sectionSelect.disabled = true;
-            sectionSelect.innerHTML = '<option value="" disabled selected>No sections available for active period</option>';
-            console.log('No sections found for criteria:', { course, yearLevel, academic_year, semester });
+            sectionSelect.innerHTML = '<option value="" disabled selected>Failed to load sections</option>';
+            showModal(data.message || 'Failed to load sections');
         }
     } catch (error) {
         console.error('Error loading sections:', error);
-        showModal('Failed to load sections');
+        sectionSelect.disabled = true;
+        sectionSelect.innerHTML = '<option value="" disabled selected>Error loading sections</option>';
+        showModal('Network error loading sections');
     }
 }
-
-
 
 async function loadClassSchedule() {
     const sectionId = document.getElementById('section').value;
@@ -485,13 +601,20 @@ function renderScheduleGrid(schedules) {
     // Get unique time slots from schedules
     const timeSlots = new Set();
     schedules.forEach(s => {
-        timeSlots.add(`${s.start_time.substring(0, 5)} - ${s.end_time.substring(0, 5)}`);
+        const startFormatted = formatTime12Hour(s.start_time.substring(0, 5));
+        const endFormatted = formatTime12Hour(s.end_time.substring(0, 5));
+        timeSlots.add(`${startFormatted} - ${endFormatted}`);
     });
     
-    // Sort time slots properly (convert to minutes for accurate sorting)
+    // Sort time slots properly
     const sortedTimeSlots = Array.from(timeSlots).sort((a, b) => {
         const timeToMinutes = (timeStr) => {
-            const [hours, minutes] = timeStr.split(':').map(Number);
+            const match = timeStr.match(/(\d+):(\d+)(AM|PM)/);
+            let hours = parseInt(match[1]);
+            const minutes = parseInt(match[2]);
+            const period = match[3];
+            if (period === 'PM' && hours !== 12) hours += 12;
+            if (period === 'AM' && hours === 12) hours = 0;
             return hours * 60 + minutes;
         };
         
@@ -499,6 +622,7 @@ function renderScheduleGrid(schedules) {
         const bStart = timeToMinutes(b.split(' - ')[0]);
         return aStart - bStart;
     });
+    
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     
     sortedTimeSlots.forEach(time => {
@@ -508,12 +632,11 @@ function renderScheduleGrid(schedules) {
         calendar.appendChild(timeCell);
         
         days.forEach(day => {
-            const [startTime, endTime] = time.split(' - ');
-            const schedule = schedules.find(s =>
-                s.day_of_week === day &&
-                s.start_time.substring(0, 5) === startTime &&
-                s.end_time.substring(0, 5) === endTime
-            );
+            const schedule = schedules.find(s => {
+                const schedStartFormatted = formatTime12Hour(s.start_time.substring(0, 5));
+                const schedEndFormatted = formatTime12Hour(s.end_time.substring(0, 5));
+                return s.day_of_week === day && `${schedStartFormatted} - ${schedEndFormatted}` === time;
+            });
             
             const scheduleCell = document.createElement('div');
             scheduleCell.className = 'schedule-cell';
@@ -611,28 +734,58 @@ window.saveSchedule = saveSchedule;
 
 async function viewFacultySchedule(facultyId, facultyName) {
     try {
-        const response = await fetch(`/api/get_faculty_schedule?faculty_id=${facultyId}`);
+        console.log(`Fetching schedules for faculty ${facultyId}...`);
+        
+        const response = await fetch(`/api/get_faculty_all_schedules?faculty_id=${facultyId}`);
         const data = await response.json();
         
+        console.log('API Response:', data);
+        
         if (data.success) {
-            displayFacultyScheduleModal(facultyName, data.subjects);
+            if (!data.schedules || data.schedules.length === 0) {
+                showModal(`No scheduled classes found for ${facultyName}`);
+                return;
+            }
+            displayFacultyScheduleModal(facultyName, data.schedules);
+        } else {
+            showModal(data.message || 'Failed to load faculty schedule');
         }
     } catch (error) {
         console.error('Error viewing faculty schedule:', error);
-        showModal('Failed to load faculty schedule');
+        showModal('Failed to load faculty schedule: ' + error.message);
     }
 }
 window.viewFacultySchedule = viewFacultySchedule;
 
-function displayFacultyScheduleModal(facultyName, subjects) {
+function displayFacultyScheduleModal(facultyName, schedules) {
     const modal = document.getElementById('scheduleOverviewModal');
     const content = document.getElementById('overviewContent');
     
-    content.innerHTML = `<h4>${facultyName}</h4>`;
+    content.innerHTML = '';
     
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const header = document.createElement('h4');
+    header.textContent = facultyName;
+    header.style.marginBottom = '20px';
+    header.style.color = '#333';
+    content.appendChild(header);
+    
+    if (!schedules || schedules.length === 0) {
+        const noData = document.createElement('p');
+        noData.textContent = 'No scheduled classes found for this faculty member.';
+        noData.style.textAlign = 'center';
+        noData.style.padding = '20px';
+        noData.style.color = '#666';
+        content.appendChild(noData);
+        modal.style.display = 'block';
+        return;
+    }
+    
+    console.log('Rendering schedules:', schedules);
+    
     const calendar = document.createElement('div');
     calendar.className = 'weekly-calendar';
+    
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     
     days.forEach(day => {
         const dayCol = document.createElement('div');
@@ -643,20 +796,40 @@ function displayFacultyScheduleModal(facultyName, subjects) {
         dayHeader.textContent = day;
         dayCol.appendChild(dayHeader);
         
-        subjects.forEach(subject => {
-            const dayMeetings = subject.meetings.filter(m => m.day === day);
-            dayMeetings.forEach(meeting => {
+        const daySchedules = schedules.filter(schedule => schedule.day === day);
+        
+        if (daySchedules.length === 0) {
+            const noClass = document.createElement('div');
+            noClass.className = 'no-class';
+            noClass.textContent = 'No classes';
+            dayCol.appendChild(noClass);
+        } else {
+            daySchedules.forEach(schedule => {
                 const scheduleItem = document.createElement('div');
                 scheduleItem.className = 'schedule-item';
+                
                 scheduleItem.innerHTML = `
-                    <strong>${subject.subject_code} - ${subject.subject_name}</strong><br>
-                    ${subject.program} ${subject.year_level}-${subject.section}<br>
-                    ${meeting.start_time} - ${meeting.end_time}<br>
-                    Room: ${meeting.room || 'TBA'}
+                    <div class="subject-code">${schedule.subject_code}</div>
+                    <div class="subject-name">${schedule.subject_name}</div>
+                    <div class="class-info">${schedule.program} ${schedule.year_level}-${schedule.section}</div>
+                    <div class="time-info">${schedule.start_time} - ${schedule.end_time}</div>
+                    <div class="room-info">Room: ${schedule.room || 'TBA'}</div>
+                    ${schedule.class_type ? `<div class="type-info">${schedule.class_type}</div>` : ''}
                 `;
+                
+                const unassignBtn = document.createElement('button');
+                unassignBtn.className = 'unassign-single-btn';
+                unassignBtn.innerHTML = '<i class="fas fa-times"></i>';
+                unassignBtn.title = 'Unassign this schedule';
+                unassignBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    unassignSpecificSchedules(schedule.faculty_id, [schedule.schedule_id]);
+                };
+                scheduleItem.appendChild(unassignBtn);
+                
                 dayCol.appendChild(scheduleItem);
             });
-        });
+        }
         
         calendar.appendChild(dayCol);
     });
@@ -666,76 +839,81 @@ function displayFacultyScheduleModal(facultyName, subjects) {
 }
 
 async function unassignAllSchedules(facultyId) {
-    if (!confirm('Are you sure you want to unassign all schedules for this faculty member?')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/unassign_faculty_from_schedule', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                faculty_id: parseInt(facultyId)
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showModal(`Unassigned ${data.affected_rows} schedule(s)`);
-            // Reload both tables after successful deletion
-            setTimeout(() => {
-                loadUnassignedFaculty();
-                loadFacultyWithSchedules();
-            }, 1000);
-        } else {
-            showModal(data.message || 'Failed to unassign schedules');
-        }
-    } catch (error) {
-        console.error('Error unassigning schedules:', error);
-        showModal('Failed to unassign schedules');
-    }
+    showConfirmation(
+        'Are you sure you want to unassign all schedules for this faculty member?',
+        async () => {
+            try {
+                const response = await fetch('/api/unassign_faculty_from_schedule', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        faculty_id: facultyId.toString()
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showModal(`Successfully unassigned ${data.affected_rows} schedule(s)`, 'success');
+                    // Close modal if open
+                    const modal = document.getElementById('scheduleOverviewModal');
+                    if (modal) modal.style.display = 'none';
+                    // Reload both tables
+                    await loadUnassignedFaculty();
+                    await loadFacultyWithSchedules();
+                } else {
+                    showModal(data.message || 'Failed to unassign schedules', 'info');
+                }
+            } catch (error) {
+                console.error('Error unassigning schedules:', error);
+                showModal('Failed to unassign schedules: ' + error.message, 'info');
+            }
+        },
+        'Unassign All Schedules'
+    );
 }
 window.unassignAllSchedules = unassignAllSchedules;
 
 async function unassignSpecificSchedules(facultyId, scheduleIds) {
-    if (!confirm('Are you sure you want to unassign the selected schedule(s)?')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/unassign_faculty_from_schedule', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                faculty_id: parseInt(facultyId),
-                schedule_ids: scheduleIds
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            showModal(`Unassigned ${data.affected_rows} schedule(s)`);
-            // Reload schedule view
-            const modal = document.getElementById('scheduleOverviewModal');
-            if (modal && modal.style.display === 'block') {
-                modal.style.display = 'none';
+    showConfirmation(
+        'Are you sure you want to unassign the selected schedule(s)?',
+        async () => {
+            try {
+                const response = await fetch('/api/unassign_faculty_from_schedule', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        faculty_id: facultyId.toString(),
+                        schedule_ids: scheduleIds.map(id => parseInt(id))
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showModal(`Successfully unassigned ${data.affected_rows} schedule(s)`, 'success');
+                    // Close modal
+                    const modal = document.getElementById('scheduleOverviewModal');
+                    if (modal) modal.style.display = 'none';
+                    // Reload tables
+                    await loadUnassignedFaculty();
+                    await loadFacultyWithSchedules();
+                } else {
+                    showModal(data.message || 'Failed to unassign schedules', 'info');
+                }
+            } catch (error) {
+                console.error('Error unassigning schedules:', error);
+                showModal('Failed to unassign schedules: ' + error.message, 'info');
             }
-            loadUnassignedFaculty();
-            loadFacultyWithSchedules();
-        } else {
-            showModal(data.message || 'Failed to unassign schedules');
-        }
-    } catch (error) {
-        console.error('Error unassigning schedules:', error);
-        showModal('Failed to unassign schedules');
-    }
+        },
+        'Unassign Schedule'
+    );
 }
+
 window.unassignSpecificSchedules = unassignSpecificSchedules;
 
 function assignFaculty(facultyId) {
@@ -757,15 +935,31 @@ function updateSaveButton() {
     }
 }
 
-function showModal(message) {
+function showModal(message, type = 'info') {
     const modalOverlay = document.getElementById('modalOverlay');
     const modalMessage = document.getElementById('modalMessage');
+    const modalTitle = document.getElementById('modalTitle');
+    const modal = document.querySelector('.modal');
     
-    if (modalMessage && modalOverlay) {
+    if (modalMessage && modalOverlay && modalTitle && modal) {
+        // Remove previous type classes
+        modal.classList.remove('success', 'info', 'warning');
+        // Add current type class
+        modal.classList.add(type);
+        
+        // Set appropriate title based on type
+        const titles = {
+            'success': 'Success',
+            'info': 'Information', 
+            'warning': 'Notice'
+        };
+        
+        modalTitle.textContent = titles[type] || 'Information';
         modalMessage.textContent = message;
         modalOverlay.style.display = 'flex';
     }
 }
+
 window.showModal = showModal;
 
 // Initialize schedule functionality
@@ -792,10 +986,156 @@ function initializeScheduleApp() {
         });
     }
     
+    // Initialize confirmation modal
+    initializeConfirmationModal();
+    
     // Load initial data
     loadUnassignedFaculty();
     loadFacultyWithSchedules();
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Fetch unassigned faculty for Unassigned Faculty Members Overview
+    fetchUnassignedFaculty();
+    // Fetch assigned faculty for Current Schedule List
+    fetchAssignedFacultySchedules();
+
+    function fetchUnassignedFaculty() {
+        fetch('/api/get_unassigned_faculty', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + localStorage.getItem('session_token')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const facultyTable = document.querySelector('#unassigned-faculty-table tbody');
+                const warningDiv = document.querySelector('.warning-message');
+                
+                facultyTable.innerHTML = '';
+                warningDiv.textContent = `Unassigned ${data.unassigned_count} faculty member(s)`;
+                
+                data.faculty.forEach(faculty => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${faculty.full_name}</td>
+                        <td>${faculty.department}</td>
+                        <td><button onclick="openAddScheduleModal('${faculty.faculty_id}')">Add Schedule</button></td>
+                    `;
+                    facultyTable.appendChild(row);
+                });
+            } else {
+                console.error('Error fetching unassigned faculty:', data.message);
+                document.querySelector('.warning-message').textContent = 'Error fetching unassigned faculty';
+            }
+        })
+        .catch(error => {
+            console.error('Fetch error:', error);
+            document.querySelector('.warning-message').textContent = 'Error fetching unassigned faculty';
+        });
+    }
+
+    function fetchAssignedFacultySchedules() {
+        fetch('/api/get_assigned_faculty_schedules', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + localStorage.getItem('session_token')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const scheduleTable = document.querySelector('#current-schedule-table tbody');
+                scheduleTable.innerHTML = '';
+                
+                data.faculty_schedules.forEach(faculty => {
+                    const row = document.createElement('tr');
+                    const meetings = faculty.schedules.map(s => s.meetings).join(', ');
+                    row.innerHTML = `
+                        <td>${faculty.faculty_name}</td>
+                        <td>${faculty.schedules[0].subject}</td>
+                        <td>${meetings}</td>
+                        <td><button onclick="editSchedule('${faculty.faculty_name}')">Edit</button></td>
+                    `;
+                    scheduleTable.appendChild(row);
+                });
+            } else {
+                console.error('Error fetching assigned schedules:', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Fetch error:', error);
+        });
+    }
+
+    function fetchFacultySchedules(facultyId) {
+        fetch(`/api/get_faculty_all_schedules?faculty_id=${facultyId}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + localStorage.getItem('session_token')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            const overviewDiv = document.querySelector('.faculty-schedule-overview');
+            if (data.success && data.schedules.length > 0) {
+                overviewDiv.innerHTML = data.schedules.map(schedule => `
+                    <div>${schedule.subject_name} (${schedule.subject_code}) - ${schedule.day} ${schedule.start_time} - ${schedule.end_time} in ${schedule.room}</div>
+                `).join('');
+            } else {
+                overviewDiv.textContent = 'No scheduled classes found for this faculty member.';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching schedules:', error);
+            overviewDiv.textContent = 'Error fetching schedules';
+        });
+    }
+
+    // Update schedule form time cells to show AM/PM
+    function updateScheduleForm() {
+        fetch('/api/get_faculty_all_schedules?faculty_id=2022-01376', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + localStorage.getItem('session_token')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.schedules.length > 0) {
+                const timeCells = document.querySelectorAll('.time-cell');
+                timeCells.forEach(cell => {
+                    const day = cell.dataset.day;
+                    const schedule = data.schedules.find(s => s.day === day);
+                    if (schedule) {
+                        cell.textContent = `${schedule.start_time} - ${schedule.end_time}`;
+                    } else {
+                        cell.textContent = '';
+                    }
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error updating schedule form:', error);
+        });
+    }
+
+    // Call to update schedule form on load
+    updateScheduleForm();
+
+    window.openAddScheduleModal = function(facultyId) {
+        console.log('Opening add schedule modal for faculty:', facultyId);
+    };
+
+    window.editSchedule = function(facultyName) {
+        console.log('Editing schedule for:', facultyName);
+    };
+});
     </script>
 </body>
 </html>

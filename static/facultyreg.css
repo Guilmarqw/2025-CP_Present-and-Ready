@@ -251,3 +251,17 @@
         gap: 8px;
       }
     }
+
+#video {
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+    background: #000;
+    transform: scaleX(-1); /* Mirror effect */
+}
+
+#canvas {
+    width: 100%;
+    height: auto;
+    transform: scaleX(-1); /* Mirror effect for canvas if needed */
+}

@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - Faculty Members</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../static/FacultyDB.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='FacultyDB.css') }}">
 </head>
 <body>
@@ -30,9 +29,9 @@
                     <label for="departmentFilter">Department</label>
                     <select id="departmentFilter">
                         <option value="">All Departments</option>
-                        <option value="cs">Computer Science</option>
-                        <option value="it">Information Technology</option>
-                        <option value="se">Software Engineering</option>
+                        <option value="Computer Science">Computer Science</option>
+                        <option value="Information Technology">Information Technology</option>
+                        <option value="Software Engineering">Software Engineering</option>
                     </select>
                 </div>
                 
@@ -48,34 +47,17 @@
                         <th>Name</th>
                         <th>ID Number</th>
                         <th>Department</th>
+                        <th>Designation</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <tr>
-                        <td><img src="https://ui-avatars.com/api/?name=Dr.+Sarah+Johnson&background=random" class="faculty-photo" alt="Faculty Photo"></td>
-                        <td>Dr. Sarah Johnson</td>
-                        <td>INST-001</td>
-                        <td>Computer Science</td>
-                        <td class="action-buttons">
-                            <button class="action-btn edit-btn" data-id="1"><i class="fas fa-edit"></i></button>
-                            <button class="action-btn view-btn" data-id="1"><i class="fas fa-eye"></i></button>
-                            <button class="action-btn delete-btn" data-id="1"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><img src="https://ui-avatars.com/api/?name=Prof.+Michael+Chen&background=random" class="faculty-photo" alt="Faculty Photo"></td>
-                        <td>Prof. Michael Chen</td>
-                        <td>INST-002</td>
-                        <td>Information Technology</td>
-                        <td class="action-buttons">
-                            <button class="action-btn edit-btn" data-id="2"><i class="fas fa-edit"></i></button>
-                            <button class="action-btn view-btn" data-id="2"><i class="fas fa-eye"></i></button>
-                            <button class="action-btn delete-btn" data-id="2"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
+                <tbody id="facultyTableBody">
+                    <!-- Faculty data will be loaded here -->
                 </tbody>
             </table>
+            
+            <!-- Pagination -->
+            <div id="facultyPagination" class="pagination-container"></div>
         </div>
     </main>
 
@@ -152,97 +134,146 @@
         </div>
     </div>
 
-    <!-- Active Faculty Invites Modal -->
-    <div id="activeFacultyInvitesModal" class="modal">
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h2 class="modal-title">Active Faculty Invite Links</h2>
-                <span class="close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="invites-container">
-                    <div id="activeFacultyInvitesList">
-                        <!-- Will be populated by JavaScript -->
+<!-- Edit Faculty Member Modal -->
+<div id="editFacultyMemberModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h2 class="modal-title">Edit Faculty Member</h2>
+            <span class="close">&times;</span>
+        </div>
+        <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+            <form id="editFacultyMemberForm">
+                <input type="hidden" id="editFacultyId">
+                
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editFirstName">First Name *</label>
+                        <input type="text" id="editFirstName" placeholder="Enter first name" required>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editMiddleName">Middle Name</label>
+                        <input type="text" id="editMiddleName" placeholder="Enter middle name">
                     </div>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn btn-cancel">Close</button>
-                <button class="modal-btn btn-refresh" onclick="loadActiveFacultyInvites()">
-                    <i class="fas fa-sync-alt"></i> Refresh
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Edit Faculty Member Modal -->
-    <div id="editFacultyMemberModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Edit Faculty Member</h2>
-                <span class="close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <form id="editFacultyMemberForm">
-                    <input type="hidden" id="editId">
-                    <div class="form-group">
-                        <label for="editName">Faculty Member Name</label>
-                        <input type="text" id="editName" placeholder="Enter faculty member name" required>
+                
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editLastName">Last Name *</label>
+                        <input type="text" id="editLastName" placeholder="Enter last name" required>
                     </div>
-                    <div class="form-group">
-                        <label for="editIdNumber">ID Number</label>
-                        <input type="text" id="editIdNumber" placeholder="Enter ID number" required>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editFacultyIdNumber">ID Number *</label>
+                        <input type="text" id="editFacultyIdNumber" placeholder="Enter ID number" required>
                     </div>
-                    <div class="form-group">
-                        <label for="editDepartment">Department</label>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editEmail">Email *</label>
+                    <input type="email" id="editEmail" placeholder="Enter email" required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editDepartment">Department *</label>
                         <select id="editDepartment" required>
                             <option value="">Select Department</option>
-                            <option value="CS">Computer Science</option>
-                            <option value="IT">Information Technology</option>
-                            <option value="SE">Software Engineering</option>
+                            <option value="Computer Science">Computer Science</option>
+                            <option value="Information Technology">Information Technology</option>
+                            <option value="Software Engineering">Software Engineering</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="editSpecialization">Specialization</label>
-                        <input type="text" id="editSpecialization" placeholder="Enter specialization">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editDesignation">Designation *</label>
+                        <input type="text" id="editDesignation" placeholder="Enter designation" required>
                     </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn btn-cancel">Cancel</button>
-                <button class="modal-btn btn-submit" id="submitEditFacultyMember">Save Changes</button>
-            </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editRole">Role *</label>
+                        <select id="editRole" required>
+                            <option value="">Select Role</option>
+                            <option value="super_admin">Super Admin</option>
+                            <option value="admin">Admin</option>
+                            <option value="moderator">Moderator</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editStatus">Status</label>
+                        <select id="editStatus">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn btn-cancel">Cancel</button>
+            <button class="modal-btn btn-submit" id="submitEditFacultyMember">Save Changes</button>
         </div>
     </div>
+</div>
 
     <!-- View Faculty Member Modal -->
     <div id="viewFacultyMemberModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h2 class="modal-title">Faculty Member Details</h2>
                 <span class="close">&times;</span>
             </div>
             <div class="modal-body">
                 <div class="faculty-details">
-                    <div class="detail-row">
-                        <span class="detail-label">Name:</span>
-                        <span class="detail-value" id="viewName"></span>
+                    <div class="detail-header">
+                        <img id="viewPhoto" src="" class="faculty-photo-large" alt="Faculty Photo">
+                        <div class="detail-title">
+                            <h3 id="viewFullName"></h3>
+                            <span class="detail-badge" id="viewStatusBadge"></span>
+                        </div>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-label">ID Number:</span>
-                        <span class="detail-value" id="viewId"></span>
+                    
+                    <div class="detail-section">
+                        <h4>Personal Information</h4>
+                        <div class="detail-row">
+                            <span class="detail-label">First Name:</span>
+                            <span class="detail-value" id="viewFirstName"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Middle Name:</span>
+                            <span class="detail-value" id="viewMiddleName"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Last Name:</span>
+                            <span class="detail-value" id="viewLastName"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">ID Number:</span>
+                            <span class="detail-value" id="viewIdNumber"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Email:</span>
+                            <span class="detail-value" id="viewEmail"></span>
+                        </div>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Department:</span>
-                        <span class="detail-value" id="viewDepartment"></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Specialization:</span>
-                        <span class="detail-value" id="viewSpecialization"></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Status:</span>
-                        <span class="detail-value" id="viewStatus">Active</span>
+                    
+                    <div class="detail-section">
+                        <h4>Professional Information</h4>
+                        <div class="detail-row">
+                            <span class="detail-label">Department:</span>
+                            <span class="detail-value" id="viewDepartment"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Designation:</span>
+                            <span class="detail-value" id="viewDesignation"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Role:</span>
+                            <span class="detail-value" id="viewRole"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Status:</span>
+                            <span class="detail-value" id="viewStatus"></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -270,15 +301,15 @@
     </div>
 
     <!-- Alert Modal -->
-<div id="alertModal" class="alert-modal" style="z-index: 10000;">
-    <div class="alert-content" style="position: relative; z-index: 10001;">
-        <div class="alert-icon" id="alertIcon">
-            <i class="fas fa-check-circle success-icon"></i>
+    <div id="alertModal" class="alert-modal" style="z-index: 10000;">
+        <div class="alert-content" style="position: relative; z-index: 10001;">
+            <div class="alert-icon" id="alertIcon">
+                <i class="fas fa-check-circle success-icon"></i>
+            </div>
+            <p class="alert-message" id="alertMessage"></p>
+            <button class="alert-btn" id="alertButton">OK</button>
         </div>
-        <p class="alert-message" id="alertMessage"></p>
-        <button class="alert-btn" id="alertButton">OK</button>
     </div>
-</div>
 
     <script>
         // Global variables for data management
@@ -325,7 +356,7 @@
         }
 
         function displayFaculty(faculty) {
-            const tbody = document.querySelector('.faculty-table tbody');
+            const tbody = document.getElementById('facultyTableBody');
             if (!tbody) return;
             
             tbody.innerHTML = '';
@@ -333,7 +364,7 @@
             if (faculty.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="5" style="text-align: center; padding: 20px;">
+                        <td colspan="6" style="text-align: center; padding: 20px;">
                             <i class="fas fa-users"></i><br>
                             No faculty members found
                         </td>
@@ -345,14 +376,24 @@
             faculty.forEach(facultyMember => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td><img src="${facultyMember.photo}" class="faculty-photo" alt="Faculty Photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random'"></td>
+                    <td>
+                        <img src="${facultyMember.photo}" class="faculty-photo" alt="Faculty Photo" 
+                             onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random'">
+                    </td>
                     <td>${facultyMember.name}</td>
                     <td>${facultyMember.idNumber}</td>
                     <td>${facultyMember.department}</td>
+                    <td>${facultyMember.designation}</td>
                     <td class="action-buttons">
-                        <button class="action-btn edit-btn" data-id="${facultyMember.id}"><i class="fas fa-edit"></i></button>
-                        <button class="action-btn view-btn" data-id="${facultyMember.id}"><i class="fas fa-eye"></i></button>
-                        <button class="action-btn delete-btn" data-id="${facultyMember.id}"><i class="fas fa-trash"></i></button>
+                        <button class="action-btn edit-btn" data-id="${facultyMember.id}" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="action-btn view-btn" data-id="${facultyMember.id}" title="View">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="action-btn delete-btn" data-id="${facultyMember.id}" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -443,11 +484,11 @@
         }
 
         function showLoadingState(message) {
-            const tbody = document.querySelector('.faculty-table tbody');
+            const tbody = document.getElementById('facultyTableBody');
             if (tbody) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="5" style="text-align: center; padding: 20px;">
+                        <td colspan="6" style="text-align: center; padding: 20px;">
                             <i class="fas fa-spinner fa-spin"></i><br>
                             ${message}
                         </td>
@@ -506,20 +547,8 @@
                 const faculty = allFaculty.find(f => f.id === facultyId);
 
                 if (faculty) {
-                    const editId = document.getElementById('editId');
-                    const editName = document.getElementById('editName');
-                    const editIdNumber = document.getElementById('editIdNumber');
-                    const editDepartment = document.getElementById('editDepartment');
-                    const editSpecialization = document.getElementById('editSpecialization');
-
-                    if (editId && editName && editIdNumber && editDepartment && editSpecialization) {
-                        editId.value = faculty.id;
-                        editName.value = faculty.name;
-                        editIdNumber.value = faculty.idNumber;
-                        editDepartment.value = faculty.department;
-                        editSpecialization.value = faculty.designation;
-                        openModal(editFacultyMemberModal);
-                    }
+                    populateEditForm(faculty);
+                    openModal(editFacultyMemberModal);
                 }
             });
             
@@ -528,18 +557,8 @@
                 const faculty = allFaculty.find(f => f.id === facultyId);
 
                 if (faculty) {
-                    const viewName = document.getElementById('viewName');
-                    const viewId = document.getElementById('viewId');
-                    const viewDepartment = document.getElementById('viewDepartment');
-                    const viewSpecialization = document.getElementById('viewSpecialization');
-
-                    if (viewName && viewId && viewDepartment && viewSpecialization) {
-                        viewName.textContent = faculty.name;
-                        viewId.textContent = faculty.idNumber;
-                        viewDepartment.textContent = faculty.department;
-                        viewSpecialization.textContent = faculty.designation;
-                        openModal(viewFacultyMemberModal);
-                    }
+                    populateViewModal(faculty);
+                    openModal(viewFacultyMemberModal);
                 }
             });
             
@@ -556,6 +575,68 @@
                     }
                 }
             });
+        }
+
+// Populate edit form with faculty data - FIXED VERSION
+function populateEditForm(faculty) {
+    console.log('Populating edit form with faculty:', faculty);
+    
+    // Parse the name into components
+    let firstName = '';
+    let middleName = '';
+    let lastName = '';
+    
+    if (faculty.name) {
+        const nameParts = faculty.name.split(' ');
+        if (nameParts.length === 1) {
+            firstName = nameParts[0];
+        } else if (nameParts.length === 2) {
+            firstName = nameParts[0];
+            lastName = nameParts[1];
+        } else if (nameParts.length >= 3) {
+            firstName = nameParts[0];
+            lastName = nameParts[nameParts.length - 1];
+            middleName = nameParts.slice(1, nameParts.length - 1).join(' ');
+        }
+    }
+    
+    document.getElementById('editFacultyId').value = faculty.id;
+    document.getElementById('editFirstName').value = firstName;
+    document.getElementById('editMiddleName').value = middleName;
+    document.getElementById('editLastName').value = lastName;
+    document.getElementById('editFacultyIdNumber').value = faculty.idNumber || '';
+    document.getElementById('editEmail').value = faculty.email || '';
+    document.getElementById('editDepartment').value = faculty.department || '';
+    document.getElementById('editDesignation').value = faculty.designation || '';
+    document.getElementById('editRole').value = faculty.role || 'moderator';
+    document.getElementById('editStatus').value = faculty.status || 'active';
+}
+
+        // Populate view modal with faculty data
+        function populateViewModal(faculty) {
+            // Set photo
+            const photoElement = document.getElementById('viewPhoto');
+            photoElement.src = faculty.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(faculty.name)}&background=random`;
+            photoElement.alt = faculty.name;
+            
+            // Set names
+            document.getElementById('viewFullName').textContent = faculty.name;
+            document.getElementById('viewFirstName').textContent = faculty.firstName || 'N/A';
+            document.getElementById('viewMiddleName').textContent = faculty.middleName || 'N/A';
+            document.getElementById('viewLastName').textContent = faculty.lastName || 'N/A';
+            
+            // Set other details
+            document.getElementById('viewIdNumber').textContent = faculty.idNumber || 'N/A';
+            document.getElementById('viewEmail').textContent = faculty.email || 'N/A';
+            document.getElementById('viewDepartment').textContent = faculty.department || 'N/A';
+            document.getElementById('viewDesignation').textContent = faculty.designation || 'N/A';
+            document.getElementById('viewRole').textContent = faculty.role || 'N/A';
+            document.getElementById('viewStatus').textContent = faculty.status || 'N/A';
+            
+            // Set status badge
+            const statusBadge = document.getElementById('viewStatusBadge');
+            statusBadge.textContent = faculty.status === 'active' ? 'Active' : 'Inactive';
+            statusBadge.className = `detail-badge ${faculty.status === 'active' ? 'active' : 'inactive'}`;
         }
 
         // Event Listeners
@@ -589,50 +670,57 @@
             }
         });
 
-        // Edit faculty member functionality
-        if (submitEditFacultyMember) {
-            submitEditFacultyMember.addEventListener('click', async function() {
-                const id = document.getElementById('editId')?.value;
-                const name = document.getElementById('editName')?.value;
-                const idNumber = document.getElementById('editIdNumber')?.value;
-                const department = document.getElementById('editDepartment')?.value;
-                const specialization = document.getElementById('editSpecialization')?.value;
-                
-                if (name && idNumber && department) {
-                    try {
-                        const [firstName, ...lastNameParts] = name.split(' ');
-                        const lastName = lastNameParts.join(' ');
-                        
-                        const response = await fetch('/api/update_faculty', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                faculty_id: id,
-                                first_name: firstName,
-                                last_name: lastName,
-                                department: department,
-                                designation: specialization
-                            })
-                        });
-                        
-                        const data = await response.json();
-                        
-                        if (data.success) {
-                            showAlert(`Faculty member ${name} updated successfully!`);
-                            closeModal(editFacultyMemberModal);
-                            loadFacultyFromDatabase();
-                        } else {
-                            showAlert(data.message || 'Failed to update faculty member', false);
-                        }
-                    } catch (error) {
-                        console.error('Error updating faculty member:', error);
-                        showAlert('Error updating faculty member', false);
-                    }
-                } else {
-                    showAlert('Please fill all required fields', false);
-                }
-            });
+// Edit faculty member functionality - FIXED VERSION
+if (submitEditFacultyMember) {
+    submitEditFacultyMember.addEventListener('click', async function() {
+        const facultyId = document.getElementById('editFacultyId')?.value;
+        const firstName = document.getElementById('editFirstName')?.value;
+        const middleName = document.getElementById('editMiddleName')?.value;
+        const lastName = document.getElementById('editLastName')?.value;
+        const idNumber = document.getElementById('editFacultyIdNumber')?.value;
+        const email = document.getElementById('editEmail')?.value;
+        const department = document.getElementById('editDepartment')?.value;
+        const designation = document.getElementById('editDesignation')?.value;
+        const role = document.getElementById('editRole')?.value;
+        const status = document.getElementById('editStatus')?.value;
+        
+        if (!firstName || !lastName || !idNumber || !email || !department || !designation || !role) {
+            showAlert('Please fill all required fields', false);
+            return;
         }
+        
+        try {
+            const response = await fetch('/api/update_faculty', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    faculty_id: facultyId,
+                    first_name: firstName,
+                    last_name: lastName,
+                    middle_name: middleName || '',
+                    department: department,
+                    designation: designation,
+                    email: email,
+                    role: role,
+                    status: status
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showAlert(`Faculty member ${firstName} ${lastName} updated successfully!`);
+                closeModal(editFacultyMemberModal);
+                loadFacultyFromDatabase();
+            } else {
+                showAlert(data.message || 'Failed to update faculty member', false);
+            }
+        } catch (error) {
+            console.error('Error updating faculty member:', error);
+            showAlert('Error updating faculty member: ' + error.message, false);
+        }
+    });
+}
 
         // Delete faculty member functionality
         if (confirmDelete) {
@@ -684,7 +772,7 @@
             });
         }
 
-        // Faculty invite functionality - simplified like StudentDB
+        // Faculty invite functionality
         function initializeFacultyInviteModal() {
             const generateBtn = document.getElementById('generate-faculty-link-btn');
             const durationInputs = document.querySelectorAll('#facultyDurationDays, #facultyDurationHours, #facultyDurationMinutes');
@@ -831,203 +919,79 @@
             }
         }
 
-        function openActiveFacultyInvitesModal() {
-            const modal = document.getElementById('activeFacultyInvitesModal');
-            if (modal) {
-                openModal(modal);
-                loadActiveFacultyInvites();
-            }
-        }
-
-        function loadActiveFacultyInvites() {
-            fetch('/api/get_active_invites')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const facultyInvites = data.invites.filter(invite => invite.type === 'faculty');
-                    displayActiveFacultyInvites(facultyInvites);
-                } else {
-                    showAlert('Failed to load active faculty invites', false);
-                }
-            })
-            .catch(error => {
-                console.error('Error loading faculty invites:', error);
-                showAlert('Error loading active faculty invites', false);
-            });
-        }
-
-        function displayActiveFacultyInvites(invites) {
-    const container = document.getElementById('activeFacultyInvitesList');
-    if (!container) return;
-    
-    if (invites.length === 0) {
-        container.innerHTML = '<p>No active faculty invites found.</p>';
-        return;
-    }
-    
-    container.innerHTML = invites.map(invite => {
-        // Calculate actual expiration time from creation time + duration
-        const createdAt = new Date(invite.created_at);
-        const expiresAt = new Date(invite.expires_at);
-        
-        // Calculate time remaining
-        const now = new Date();
-        const timeRemaining = expiresAt - now;
-        const minutesRemaining = Math.floor(timeRemaining / 60000);
-        const hoursRemaining = Math.floor(minutesRemaining / 60);
-        const daysRemaining = Math.floor(hoursRemaining / 24);
-        
-        let timeRemainingText;
-        if (daysRemaining > 0) {
-            timeRemainingText = `${daysRemaining}d ${hoursRemaining % 24}h remaining`;
-        } else if (hoursRemaining > 0) {
-            timeRemainingText = `${hoursRemaining}h ${minutesRemaining % 60}m remaining`;
-        } else if (minutesRemaining > 0) {
-            timeRemainingText = `${minutesRemaining}m remaining`;
-        } else {
-            timeRemainingText = 'Expired';
-        }
-        
-        return `
-            <div class="invite-item">
-                <div class="invite-item-header">
-                    <span class="invite-type-badge">FACULTY</span>
-                    <span class="time-remaining ${minutesRemaining < 60 ? 'expiring' : ''}">${timeRemainingText}</span>
-                </div>
-                <div class="invite-link-display">
-                    <input type="text" value="${invite.link}" readonly>
-                    <button class="btn-copy-small" onclick="copyFacultyInviteLink('${invite.link}')">
-                        <i class="fas fa-copy"></i>
-                    </button>
-                </div>
-                <div style="font-size: 12px; color: #666; margin: 8px 0;">
-                    <div><strong>Created:</strong> ${createdAt.toLocaleString()}</div>
-                    <div><strong>Expires:</strong> ${expiresAt.toLocaleString()}</div>
-                    <div><strong>Link will expire in:</strong> ${timeRemainingText}</div>
-                </div>
-                <div class="invite-actions">
-                    <button class="btn-revoke" onclick="revokeFacultyInvite('${invite.token}')">
-                        <i class="fas fa-ban"></i> Revoke
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-        function copyFacultyInviteLink(link) {
-            navigator.clipboard.writeText(link).then(() => {
-                showAlert('Faculty link copied to clipboard!', true);
-            });
-        }
-
-        function revokeFacultyInvite(token) {
-            if (!confirm('Are you sure you want to revoke this faculty invite?')) return;
-            
-            fetch('/api/revoke_invite', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showAlert('Faculty invite revoked successfully!', true);
-                    loadActiveFacultyInvites();
-                } else {
-                    showAlert(data.message || 'Failed to revoke faculty invite', false);
-                }
-            })
-            .catch(error => {
-                console.error('Error revoking faculty invite:', error);
-                showAlert('Error revoking faculty invite', false);
-            });
-        }
-
-        function isExpiringSoon(timeRemaining) {
-            return timeRemaining.includes('m') && !timeRemaining.includes('h') && !timeRemaining.includes('d');
-        }
-
-         console.log('Starting sidebar fetch...');
-    
-    // Load sidebar with error handling
-    fetch('/sidebar')
-        .then(response => {
-            console.log('Fetch response status:', response.status);
-            console.log('Fetch response URL:', response.url);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.text();
-        })
-        .then(html => {
-            console.log('Sidebar HTML received, length:', html.length);
-            console.log('First 100 chars:', html.substring(0, 100));
-            
-            document.getElementById('sidebar-container').innerHTML = html;
-            
-            // Initialize dropdown functionality
-            document.querySelectorAll(".dropdown-btn").forEach(btn => {
-                btn.addEventListener("click", function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
+        // Load sidebar
+        function loadSidebar() {
+            fetch('/sidebar')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    document.getElementById('sidebar-container').innerHTML = html;
                     
-                    // Close all other dropdowns first
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        if (content !== this.nextElementSibling) {
-                            content.style.display = 'none';
+                    // Initialize dropdown functionality
+                    document.querySelectorAll(".dropdown-btn").forEach(btn => {
+                        btn.addEventListener("click", function(e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            // Close all other dropdowns first
+                            document.querySelectorAll('.dropdown-content').forEach(content => {
+                                if (content !== this.nextElementSibling) {
+                                    content.style.display = 'none';
+                                }
+                            });
+
+                            // Toggle current dropdown
+                            const content = this.nextElementSibling;
+                            if (content) {
+                                content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                            }
+                        });
+                    });
+
+                    // Close dropdowns when clicking outside
+                    document.addEventListener('click', function(e) {
+                        if (!e.target.closest('.dropdown')) {
+                            document.querySelectorAll('.dropdown-content').forEach(content => {
+                                content.style.display = 'none';
+                            });
                         }
                     });
 
-                    // Toggle current dropdown
-                    const content = this.nextElementSibling;
-                    if (content) {
-                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
-                    }
-                });
-            });
-
-            // Close dropdowns when clicking outside
-            document.addEventListener('click', function(e) {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        content.style.display = 'none';
+                    // Handle active state
+                    const currentPath = window.location.pathname;
+                    document.querySelectorAll('.nav-items a').forEach(link => {
+                        const linkPath = link.getAttribute('href');
+                        if (currentPath.includes(linkPath) && linkPath !== '#') {
+                            link.classList.add('active');
+                            // If link is in dropdown, show parent dropdown
+                            const dropdown = link.closest('.dropdown-content');
+                            if (dropdown) {
+                                dropdown.style.display = 'block';
+                            }
+                        }
                     });
-                }
-            });
-
-            // Handle active state
-            const currentPath = window.location.pathname;
-            document.querySelectorAll('.nav-items a').forEach(link => {
-                const linkPath = link.getAttribute('href');
-                if (currentPath.includes(linkPath) && linkPath !== '#') {
-                    link.classList.add('active');
-                    // If link is in dropdown, show parent dropdown
-                    const dropdown = link.closest('.dropdown-content');
-                    if (dropdown) {
-                        dropdown.style.display = 'block';
-                    }
-                }
-            });
-        })
-        .catch(error => {
-            console.error('Sidebar fetch failed:', error);
-            console.error('Error details:', error.message);
-            // Show error in sidebar container for debugging
-            document.getElementById('sidebar-container').innerHTML = `
-                <div style="color: red; padding: 20px;">
-                    <h3>Sidebar Error</h3>
-                    <p>Failed to load sidebar: ${error.message}</p>
-                    <p>Check console for details</p>
-                </div>
-            `;
-        });
+                })
+                .catch(error => {
+                    console.error('Sidebar fetch failed:', error);
+                    document.getElementById('sidebar-container').innerHTML = `
+                        <div style="color: red; padding: 20px;">
+                            <h3>Sidebar Error</h3>
+                            <p>Failed to load sidebar: ${error.message}</p>
+                            <p>Check console for details</p>
+                        </div>
+                    `;
+                });
+        }
 
         // Initialize everything
         document.addEventListener('DOMContentLoaded', function() {
             initializeFacultyInviteModal();
             loadFacultyFromDatabase();
+            loadSidebar();
         });
     </script>
 </body>

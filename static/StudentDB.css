@@ -655,3 +655,64 @@
     color: #dc3545;
     font-weight: bold;
 }
+
+/* Student photo in view modal */
+.student-photo-large {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 4px solid #007bff;
+    margin: 0 auto;
+    display: block;
+}
+
+/* Detail header layout */
+.detail-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #eee;
+}
+
+.detail-title {
+    text-align: center;
+}
+
+.detail-title h3 {
+    margin: 0 0 8px 0;
+    color: #333;
+    font-size: 1.4em;
+}
+
+/* For smaller screens */
+@media (max-width: 768px) {
+    .student-photo-large {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .detail-title h3 {
+        font-size: 1.2em;
+    }
+}
+
+/* For very small screens */
+@media (max-width: 480px) {
+    .student-photo-large {
+        width: 80px;
+        height: 80px;
+        border-width: 3px;
+    }
+}
+
+.modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 25px;
+    max-height: 70vh;
+}

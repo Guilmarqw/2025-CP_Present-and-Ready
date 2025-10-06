@@ -166,88 +166,153 @@
         </div>
     </div>
 
-    <!-- Edit Student Modal -->
-    <div id="editStudentModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Edit Student</h2>
-                <span class="close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <form id="editStudentForm">
-                    <input type="hidden" id="editId">
-                    <div class="form-group">
-                        <label for="editName">Student Name</label>
-                        <input type="text" id="editName" placeholder="Enter student name" required>
+<!-- Edit Student Modal -->
+<div id="editStudentModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h2 class="modal-title">Edit Student</h2>
+            <span class="close">&times;</span>
+        </div>
+        <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+            <form id="editStudentForm">
+                <input type="hidden" id="editStudentId">
+                
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editFirstName">First Name *</label>
+                        <input type="text" id="editFirstName" placeholder="Enter first name" required>
                     </div>
-                    <div class="form-group">
-                        <label for="editIdNumber">ID Number</label>
-                        <input type="text" id="editIdNumber" placeholder="Enter ID number" required>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editMiddleName">Middle Name</label>
+                        <input type="text" id="editMiddleName" placeholder="Enter middle name">
                     </div>
-                    <div class="form-group">
-                        <label for="editCourse">Course</label>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editLastName">Last Name *</label>
+                        <input type="text" id="editLastName" placeholder="Enter last name" required>
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editStudentIdNumber">ID Number *</label>
+                        <input type="text" id="editStudentIdNumber" placeholder="Enter ID number" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editEmail">Email *</label>
+                    <input type="email" id="editEmail" placeholder="Enter email" required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editCourse">Course *</label>
                         <select id="editCourse" required>
                             <option value="">Select Course</option>
                             <option value="BSCS">BSCS</option>
                             <option value="BSIT">BSIT</option>
-                            <option value="BSIS">BSIS</option>
+                            <option value="ACT">ACT</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="editSection">Section</label>
+                    <div class="form-group" style="flex: 1;">
+                        <label for="editSection">Year & Section *</label>
                         <select id="editSection" required>
                             <option value="">Select Section</option>
+                            <option value="1A">1A</option>
+                            <option value="1B">1B</option>
+                            <option value="1C">1C</option>
+                            <option value="2A">2A</option>
+                            <option value="2B">2B</option>
+                            <option value="2C">2C</option>
                             <option value="3A">3A</option>
                             <option value="3B">3B</option>
                             <option value="3C">3C</option>
                             <option value="4A">4A</option>
+                            <option value="4B">4B</option>
+                            <option value="4C">4C</option>
                         </select>
                     </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn btn-cancel">Cancel</button>
-                <button class="modal-btn btn-submit" id="submitEditStudent">Save Changes</button>
-            </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editStatus">Status</label>
+                    <select id="editStatus">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn btn-cancel">Cancel</button>
+            <button class="modal-btn btn-submit" id="submitEditStudent">Save Changes</button>
         </div>
     </div>
+</div>
 
-    <!-- View Student Modal -->
-    <div id="viewStudentModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Student Details</h2>
-                <span class="close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="student-details">
+<!-- View Student Modal -->
+<div id="viewStudentModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h2 class="modal-title">Student Details</h2>
+            <span class="close">&times;</span>
+        </div>
+        <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+            <div class="student-details">
+                <div class="detail-header">
+                    <img id="viewPhoto" src="" class="student-photo-large" alt="Student Photo">
+                    <div class="detail-title">
+                        <h3 id="viewFullName"></h3>
+                        <span class="detail-badge" id="viewStatusBadge"></span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4>Personal Information</h4>
                     <div class="detail-row">
-                        <span class="detail-label">Name:</span>
-                        <span class="detail-value" id="viewName"></span>
+                        <span class="detail-label">First Name:</span>
+                        <span class="detail-value" id="viewFirstName"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Middle Name:</span>
+                        <span class="detail-value" id="viewMiddleName"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Last Name:</span>
+                        <span class="detail-value" id="viewLastName"></span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">ID Number:</span>
-                        <span class="detail-value" id="viewId"></span>
+                        <span class="detail-value" id="viewIdNumber"></span>
                     </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Email:</span>
+                        <span class="detail-value" id="viewEmail"></span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4>Academic Information</h4>
                     <div class="detail-row">
                         <span class="detail-label">Course:</span>
                         <span class="detail-value" id="viewCourse"></span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Section:</span>
+                        <span class="detail-label">Year & Section:</span>
                         <span class="detail-value" id="viewSection"></span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Status:</span>
-                        <span class="detail-value" id="viewStatus">Active</span>
+                        <span class="detail-value" id="viewStatus"></span>
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="modal-btn btn-cancel">Close</button>
-            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="modal-btn btn-cancel">Close</button>
         </div>
     </div>
+</div>
 
     <!-- Delete Confirmation Modal -->
     <div id="deleteStudentModal" class="modal">
@@ -590,7 +655,7 @@ function showAlert(message, isSuccess = true) {
     }
 }
 
-// Add event listeners to a table row
+// Add event listeners to a table row - FIXED VERSION
 function addEventListenersToRow(row) {
     const editBtn = row.querySelector('.edit-btn');
     const viewBtn = row.querySelector('.view-btn');
@@ -599,49 +664,27 @@ function addEventListenersToRow(row) {
     editBtn?.addEventListener('click', function() {
         const studentId = this.getAttribute('data-id');
         const student = allStudents.find(s => s.id === studentId);
-        
+
         if (student) {
-            const editId = document.getElementById('editId');
-            const editName = document.getElementById('editName');
-            const editIdNumber = document.getElementById('editIdNumber');
-            const editCourse = document.getElementById('editCourse');
-            const editSection = document.getElementById('editSection');
-            
-            if (editId && editName && editIdNumber && editCourse && editSection) {
-                editId.value = student.id;
-                editName.value = student.name;
-                editIdNumber.value = student.idNumber;
-                editCourse.value = student.course;
-                editSection.value = student.yearSection;
-                openModal(editStudentModal);
-            }
+            populateEditForm(student);
+            openModal(editStudentModal);
         }
     });
     
     viewBtn?.addEventListener('click', function() {
         const studentId = this.getAttribute('data-id');
         const student = allStudents.find(s => s.id === studentId);
-        
+
         if (student) {
-            const viewName = document.getElementById('viewName');
-            const viewId = document.getElementById('viewId');
-            const viewCourse = document.getElementById('viewCourse');
-            const viewSection = document.getElementById('viewSection');
-            
-            if (viewName && viewId && viewCourse && viewSection) {
-                viewName.textContent = student.name;
-                viewId.textContent = student.idNumber;
-                viewCourse.textContent = student.course;
-                viewSection.textContent = student.yearSection;
-                openModal(viewStudentModal);
-            }
+            populateViewModal(student);
+            openModal(viewStudentModal);
         }
     });
     
     deleteBtn?.addEventListener('click', function() {
         const studentId = this.getAttribute('data-id');
         const student = allStudents.find(s => s.id === studentId);
-        
+
         if (student) {
             const deleteStudentName = document.getElementById('deleteStudentName');
             if (deleteStudentName && confirmDelete) {
@@ -680,47 +723,52 @@ window.addEventListener('click', function(event) {
     }
 });
 
-// Edit student functionality
+// Edit student functionality - FIXED VERSION
 if (submitEditStudent) {
     submitEditStudent.addEventListener('click', async function() {
-        const id = document.getElementById('editId')?.value;
-        const name = document.getElementById('editName')?.value;
-        const idNumber = document.getElementById('editIdNumber')?.value;
+        const studentId = document.getElementById('editStudentId')?.value;
+        const firstName = document.getElementById('editFirstName')?.value;
+        const middleName = document.getElementById('editMiddleName')?.value;
+        const lastName = document.getElementById('editLastName')?.value;
+        const idNumber = document.getElementById('editStudentIdNumber')?.value;
+        const email = document.getElementById('editEmail')?.value;
         const course = document.getElementById('editCourse')?.value;
-        const section = document.getElementById('editSection')?.value;
+        const yearSection = document.getElementById('editSection')?.value;
+        const status = document.getElementById('editStatus')?.value;
         
-        if (name && idNumber && course && section) {
-            try {
-                const [firstName, ...lastNameParts] = name.split(' ');
-                const lastName = lastNameParts.join(' ');
-                
-                const response = await fetch('/api/update_student', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        student_id: id,
-                        first_name: firstName,
-                        last_name: lastName,
-                        course: course,
-                        year_section: section
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showAlert(`Student ${name} updated successfully!`);
-                    closeModal(editStudentModal);
-                    loadStudentsFromDatabase();
-                } else {
-                    showAlert(data.message || 'Failed to update student', false);
-                }
-            } catch (error) {
-                console.error('Error updating student:', error);
-                showAlert('Error updating student', false);
+        if (!firstName || !lastName || !idNumber || !email || !course || !yearSection) {
+            showAlert('Please fill all required fields', false);
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/update_student', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    student_id: studentId,
+                    first_name: firstName,
+                    last_name: lastName,
+                    middle_name: middleName || '',
+                    course: course,
+                    year_section: yearSection,
+                    email: email,
+                    status: status
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showAlert(`Student ${firstName} ${lastName} updated successfully!`);
+                closeModal(editStudentModal);
+                loadStudentsFromDatabase();
+            } else {
+                showAlert(data.message || 'Failed to update student', false);
             }
-        } else {
-            showAlert('Please fill all fields', false);
+        } catch (error) {
+            console.error('Error updating student:', error);
+            showAlert('Error updating student: ' + error.message, false);
         }
     });
 }
@@ -774,6 +822,66 @@ filterInputs.forEach(filter => {
         loadStudentsFromDatabase();
     });
 });
+
+// Populate view modal with student data - FIXED VERSION
+function populateViewModal(student) {
+    // Set photo
+    const photoElement = document.getElementById('viewPhoto');
+    photoElement.src = student.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`;
+    photoElement.alt = student.name;
+    
+    // Set names
+    document.getElementById('viewFullName').textContent = student.name;
+    document.getElementById('viewFirstName').textContent = student.firstName || 'N/A';
+    document.getElementById('viewMiddleName').textContent = student.middleName || 'N/A';
+    document.getElementById('viewLastName').textContent = student.lastName || 'N/A';
+    
+    // Set other details
+    document.getElementById('viewIdNumber').textContent = student.idNumber || 'N/A';
+    document.getElementById('viewEmail').textContent = student.email || 'N/A';
+    document.getElementById('viewCourse').textContent = student.course || 'N/A';
+    document.getElementById('viewSection').textContent = student.yearSection || 'N/A';
+    document.getElementById('viewStatus').textContent = student.status || 'N/A';
+    
+    // Set status badge
+    const statusBadge = document.getElementById('viewStatusBadge');
+    statusBadge.textContent = student.status === 'active' ? 'Active' : 'Inactive';
+    statusBadge.className = `detail-badge ${student.status === 'active' ? 'active' : 'inactive'}`;
+}
+
+// Populate edit form with student data - FIXED VERSION
+function populateEditForm(student) {
+    console.log('Populating edit form with student:', student);
+    
+    // Parse the name into components
+    let firstName = '';
+    let middleName = '';
+    let lastName = '';
+    
+    if (student.name) {
+        const nameParts = student.name.split(' ');
+        if (nameParts.length === 1) {
+            firstName = nameParts[0];
+        } else if (nameParts.length === 2) {
+            firstName = nameParts[0];
+            lastName = nameParts[1];
+        } else if (nameParts.length >= 3) {
+            firstName = nameParts[0];
+            lastName = nameParts[nameParts.length - 1];
+            middleName = nameParts.slice(1, nameParts.length - 1).join(' ');
+        }
+    }
+    
+    document.getElementById('editStudentId').value = student.id;
+    document.getElementById('editFirstName').value = firstName;
+    document.getElementById('editMiddleName').value = middleName;
+    document.getElementById('editLastName').value = lastName;
+    document.getElementById('editStudentIdNumber').value = student.idNumber || '';
+    document.getElementById('editEmail').value = student.email || '';
+    document.getElementById('editCourse').value = student.course || '';
+    document.getElementById('editSection').value = student.yearSection || '';
+    document.getElementById('editStatus').value = student.status || 'active';
+}
 
 // Student invite functionality
 function initializeStudentInviteModal() {

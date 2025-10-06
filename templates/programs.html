@@ -715,12 +715,21 @@ function displayAcademicYearsForSwitch(years, currentYear, programId) {
     const container = document.getElementById('academicYearsContainer');
     const listDiv = document.getElementById('academicYearsList');
     const infoDiv = document.getElementById('currentPeriodInfo');
+    const currentText = document.getElementById('currentPeriodText');
     
     if (years.length === 0) {
         container.innerHTML = '<p style="text-align: center; color: #666;">No academic years found.</p>';
         listDiv.style.display = 'block';
         infoDiv.style.display = 'none';
         return;
+    }
+    
+    // Show current active period
+    if (currentYear) {
+        currentText.textContent = `${currentYear}`;
+        infoDiv.style.display = 'block';
+    } else {
+        infoDiv.style.display = 'none';
     }
     
     // Display all years with selection
@@ -734,7 +743,15 @@ function displayAcademicYearsForSwitch(years, currentYear, programId) {
                         Sections: ${year.section_count || 0} | Subjects: ${year.subject_count || 0}
                     </div>
                 </div>
-                <i class="fas fa-chevron-right" style="font-size: 20px; color: #666;"></i>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    ${!year.is_current ? 
+                        `<button class="btn btn-primary" onclick="event.stopPropagation(); activateAcademicYear('${programId}', '${year.academic_year}')" style="padding: 6px 12px; font-size: 13px;">
+                            Set Active
+                         </button>` : 
+                        '<i class="fas fa-check-circle" style="font-size: 20px; color: #28a745;"></i>'
+                    }
+                    <i class="fas fa-chevron-right" style="font-size: 20px; color: #666;"></i>
+                </div>
             </div>
         </div>
     `).join('');
@@ -743,19 +760,25 @@ function displayAcademicYearsForSwitch(years, currentYear, programId) {
 }
 
 function selectAcademicYearForSwitch(programId, academicYear) {
-    // Load semesters for this academic year
-    fetch(`/api/get_semesters_for_switch?program_id=${programId}&academic_year=${academicYear}`)
-        .then(response => response.json())
+    console.log('Selecting academic year:', { programId, academicYear });
+    
+    fetch(`/api/get_semesters_for_switch?program_id=${programId}&academic_year=${encodeURIComponent(academicYear)}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
                 displaySemestersForSwitch(data.semesters, data.current_semester, programId, academicYear);
             } else {
-                showAlertModal('Error', data.message, true);
+                showAlertModal('Error', data.message || 'Failed to load semesters', true);
             }
         })
         .catch(error => {
             console.error('Error loading semesters:', error);
-            showAlertModal('Error', 'Failed to load semesters', true);
+            showAlertModal('Error', 'Failed to load semesters: ' + error.message, true);
         });
 }
 
@@ -773,53 +796,68 @@ function activateSemester(programId, academicYear, semesterNumber) {
                     semester_number: semesterNumber
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
                     showAlertModal('Success', data.message, false);
                     // Reload the semester list to show updated active status
                     selectAcademicYearForSwitch(programId, academicYear);
-                    loadPrograms(); // Refresh main programs list
+                    // Update the current period info
+                    const currentText = document.getElementById('currentPeriodText');
+                    if (currentText) {
+                        currentText.textContent = `${academicYear} - ${semesterNumber}`;
+                    }
                 } else {
-                    showAlertModal('Error', data.message, true);
+                    showAlertModal('Error', data.message || 'Failed to activate semester', true);
                 }
             })
             .catch(error => {
                 console.error('Error activating semester:', error);
-                showAlertModal('Error', 'Failed to activate semester', true);
+                showAlertModal('Error', 'Failed to activate semester: ' + error.message, true);
             });
         }
     );
 }
 
-function activateAcademicYear(yearId, yearName) {
-    const programId = document.getElementById('switch-program-select').value;
-    
+function activateAcademicYear(programId, academicYear) {
     showConfirmModal(
-        'Switch Academic Year',
-        `Are you sure you want to set "${yearName}" as the active academic year? This will affect all curriculum displays for this program.`,
+        'Set Active Academic Year',
+        `Set "${academicYear}" as the active academic year? This will determine what academic period is displayed throughout the system.`,
         function() {
             fetch('/api/set_active_academic_year', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     program_id: programId,
-                    academic_year_id: yearId
+                    academic_year: academicYear
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
-                    showAlertModal('Success', `Academic year "${yearName}" is now active!`, false);
-                    loadAcademicYearsForSwitch(); // Refresh the list
-                    loadPrograms(); // Refresh main programs list
+                    showAlertModal('Success', data.message, false);
+                    // Reload the academic years list to show updated active status
+                    const programSelect = document.getElementById('switch-program-select');
+                    if (programSelect && programSelect.value === programId) {
+                        loadAcademicYearsForSwitch();
+                    }
                 } else {
-                    showAlertModal('Error', data.message, true);
+                    showAlertModal('Error', data.message || 'Failed to activate academic year', true);
                 }
             })
             .catch(error => {
                 console.error('Error activating academic year:', error);
-                showAlertModal('Error', 'Failed to activate academic year', true);
+                showAlertModal('Error', 'Failed to activate academic year: ' + error.message, true);
             });
         }
     );
@@ -1298,20 +1336,29 @@ function displaySemestersForSwitch(semesters, currentSemester, programId, academ
     if (currentSemester) {
         currentText.textContent = `${academicYear} - ${currentSemester}`;
         infoDiv.style.display = 'block';
+    } else {
+        infoDiv.style.display = 'none';
     }
     
-    // Display all semesters with selection
+    // Display all semesters - ALL semesters should be visible, just highlight the active one
     container.innerHTML = semesters.map(sem => `
-        <div class="semester-option" style="padding: 12px; margin: 8px 0; border: 2px solid ${sem.is_current ? '#007bff' : '#ddd'}; border-radius: 5px; cursor: pointer; background: ${sem.is_current ? '#e3f2fd' : '#fff'};" onclick="activateSemester('${programId}', '${academicYear}', '${sem.semester_number}')">
+        <div class="semester-option" style="padding: 12px; margin: 8px 0; border: 2px solid ${sem.is_current ? '#007bff' : '#ddd'}; border-radius: 5px; cursor: pointer; background: ${sem.is_current ? '#e3f2fd' : '#fff'};">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
+                <div style="flex: 1;" onclick="selectAcademicYearForSwitch('${programId}', '${academicYear}')">
                     <strong style="font-size: 16px;">${sem.semester_number}</strong>
                     ${sem.is_current ? '<span style="margin-left: 10px; padding: 2px 8px; background: #007bff; color: white; border-radius: 3px; font-size: 11px;">ACTIVE</span>' : ''}
                     <div style="margin-top: 3px; color: #666; font-size: 13px;">
-                        ${sem.section_count} sections | ${sem.subject_count} subjects
+                        ${sem.section_count || 0} sections | ${sem.subject_count || 0} subjects
                     </div>
                 </div>
-                ${!sem.is_current ? '<button class="btn btn-primary" onclick="event.stopPropagation();" style="padding: 6px 12px; font-size: 13px;">Set Active</button>' : '<i class="fas fa-check-circle" style="font-size: 20px; color: #007bff;"></i>'}
+                <div>
+                    ${!sem.is_current ? 
+                        `<button class="btn btn-primary" onclick="activateSemester('${programId}', '${academicYear}', '${sem.semester_number}')" style="padding: 6px 12px; font-size: 13px;">
+                            Set Active
+                         </button>` : 
+                        '<i class="fas fa-check-circle" style="font-size: 20px; color: #007bff;"></i>'
+                    }
+                </div>
             </div>
         </div>
     `).join('');

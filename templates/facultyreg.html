@@ -88,15 +88,16 @@
       </div>
     </div>
 
-    <!-- Step 4 -->
+<!-- Step 4 -->
 <div id="step4" class="hidden">
     <div class="header">FACE SCAN</div>
     <div class="content">
         <h2>Facial Biometrics Detection</h2>
         <div class="scan-instruction" id="scanInstruction">Please look straight at the camera</div>
         <div class="face-scan">
-            <video id="video" autoplay playsinline></video>
-            <canvas id="canvas" style="display: none;"></canvas>
+            <!-- Added mirror effect with transform: scaleX(-1) -->
+            <video id="video" autoplay playsinline style="transform: scaleX(-1);"></video>
+            <canvas id="canvas" style="display: none; transform: scaleX(-1);"></canvas>
         </div>
         <div class="scan-progress">
             <div class="progress-step" id="step-frontal"></div>

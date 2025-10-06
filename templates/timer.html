@@ -5,14 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">   
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="../static/timer.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='timer.css') }}">
-
+        <link rel="stylesheet" href="../static/timer.css">
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.34/moment-timezone-with-data.min.js"></script>
     <title>Class Attendance Timer</title>
 </head>
 <body>
     <div class="header">
-        <img src="../static/images/logo.png" alt="University Logo" class="logo">
+        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="University Logo" class="logo">
         <h1 class="title">Class Attendance Timer</h1>
         <a href="/AdminDB" class="header-btn">
             <span class="material-icons">dashboard</span>
@@ -24,6 +26,17 @@
             <label><input type="radio" name="timerMode" value="default" checked> Use Default Settings</label>
             <label><input type="radio" name="timerMode" value="custom"> Customize Timer</label>
         </div>
+        
+        <!-- RTSP Input Section -->
+        <div class="rtsp-section">
+            <h3 class="group-title">Camera Settings</h3>
+            <div class="input-group">
+                <input type="text" id="rtspUrl" placeholder="Enter RTSP URL (e.g., rtsp://192.168.1.100:554/stream)" value="">
+                <button type="button" id="testRtspBtn" class="test-btn">Test Camera</button>
+            </div>
+            <small class="rtsp-hint">Example: rtsp://username:password@ip_address:port/stream</small>
+        </div>
+
         <div class="timer-container">
             <div class="main-timer-container">
                 <h3 class="group-title">Class Session Timer</h3>
@@ -82,11 +95,11 @@
                 </div>
             </div>
         </div>
-        <a href="/camfootage" style="text-decoration: none;">
-            <button id="startBtn">Start Session</button>
-        </a>
+        
+        <button id="startBtn">Start Session</button>
     </div>
 
+    <!-- Warning Modal -->
     <div class="warning-modal" id="thresholdWarningModal">
         <div class="warning-modal-content">
             <span class="material-icons warning-icon">warning</span>
@@ -98,271 +111,535 @@
         </div>
     </div>
 
+    <!-- Custom Modal -->
+    <div id="customModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Title</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p id="modalMessage">Message</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-confirm">OK</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // Sample default data (assumed from admin side)
-        const defaultSettings = {
-            timer: {
-                session: { hours: "01", minutes: "00", seconds: "00" },
-                threshold: { hours: "00", minutes: "10", seconds: "00" }
-            },
-            classDetails: {
-                instructor: "Dr. John Smith",
-                subjectCode: "CS101",
-                yearLevel: "1st Year",
-                course: "BSCS",
-                section: "A"
-            }
-        };
+// Global variables
+let timerInterval;
+let startTime;
+let isRunning = false;
+let sessionDuration;
+let lateThreshold;
 
-        // Sample subject data
-        const subjectData = {
-            "CS101": { year: "1st Year", course: "BSCS", sections: ["A", "B", "C"] },
-            "CS201": { year: "2nd Year", course: "BSCS", sections: ["A", "B"] },
-            "CS301": { year: "3rd Year", course: "BSCS", sections: ["A", "B", "C", "D"] },
-            "CS401": { year: "4th Year", course: "BSCS", sections: ["A", "B"] },
-            "IT101": { year: "1st Year", course: "BSIT", sections: ["A", "B"] },
-            "IT201": { year: "2nd Year", course: "BSIT", sections: ["A", "B", "C"] },
-            "IT301": { year: "3rd Year", course: "BSIT", sections: ["A", "B"] },
-            "IT401": { year: "4th Year", course: "BSIT", sections: ["A"] },
-            "EE101": { year: "1st Year", course: "BSEE", sections: ["A", "B", "C"] },
-            "EE201": { year: "2nd Year", course: "BSEE", sections: ["A", "B"] }
-        };
-
-        document.addEventListener('DOMContentLoaded', function() {
-            // Load default settings (in practice, this could come from localStorage or a backend)
-            localStorage.setItem('classSettings', JSON.stringify(defaultSettings));
-
-            // Populate class details
-            const settings = JSON.parse(localStorage.getItem('classSettings')) || defaultSettings;
-            document.getElementById('subjectInstructor').value = settings.classDetails.instructor;
-            document.getElementById('subjectCode').value = settings.classDetails.subjectCode;
-            document.getElementById('yearLevel').value = settings.classDetails.yearLevel;
-            document.getElementById('course').value = settings.classDetails.course;
-            
-            // Populate subject code dropdown
-            const subjectCodeDropdown = document.getElementById('subjectCode');
-            for (const code in subjectData) {
-                const option = document.createElement('option');
-                option.value = code;
-                option.textContent = code;
-                subjectCodeDropdown.appendChild(option);
-            }
-            
-            // Populate section dropdown based on subject code
-            const sectionDropdown = document.getElementById('courseSection');
-            sectionDropdown.innerHTML = '<option value="" selected disabled>Select Section</option>';
-            if (settings.classDetails.subjectCode && subjectData[settings.classDetails.subjectCode]) {
-                subjectData[settings.classDetails.subjectCode].sections.forEach(section => {
-                    const option = document.createElement('option');
-                    option.value = section;
-                    option.textContent = section;
-                    sectionDropdown.appendChild(option);
-                });
-                sectionDropdown.value = settings.classDetails.section;
-            }
-
-            // Populate timer inputs with default values
-            document.getElementById('sessionHours').value = settings.timer.session.hours;
-            document.getElementById('sessionMinutes').value = settings.timer.session.minutes;
-            document.getElementById('sessionSeconds').value = settings.timer.session.seconds;
-            document.getElementById('thresholdHours').value = settings.timer.threshold.hours;
-            document.getElementById('thresholdMinutes').value = settings.timer.threshold.minutes;
-            document.getElementById('thresholdSeconds').value = settings.timer.threshold.seconds;
-
-            // Handle radio button toggle
-            const timerModeRadios = document.querySelectorAll('input[name="timerMode"]');
-            timerModeRadios.forEach(radio => {
-                radio.addEventListener('change', function() {
-                    const isCustom = this.value === 'custom';
-                    document.querySelectorAll('.time-unit input').forEach(input => {
-                        if (isCustom) {
-                            input.removeAttribute('readonly');
-                        } else {
-                            input.setAttribute('readonly', 'readonly');
-                            // Restore default timer values
-                            input.value = settings.timer[input.id.includes('threshold') ? 'threshold' : 'session'][input.id.replace(/^(session|threshold)/, '').toLowerCase()];
-                        }
-                    });
-                });
-            });
-        });
-
-        let timerInterval;
-        let startTime;
-        let isRunning = false;
-        let sessionDuration;
-        let lateThreshold;
-
-        function validateTimeInputs() {
-            const timerMode = document.querySelector('input[name="timerMode"]:checked').value;
-            if (timerMode === 'default') return true; // Skip validation for default settings
-
-            const mainSeconds = 
-                parseInt(document.getElementById('sessionHours').value) * 3600 +
-                parseInt(document.getElementById('sessionMinutes').value) * 60 +
-                parseInt(document.getElementById('sessionSeconds').value);
-
-            const thresholdSeconds = 
-                parseInt(document.getElementById('thresholdHours').value) * 3600 +
-                parseInt(document.getElementById('thresholdMinutes').value) * 60 +
-                parseInt(document.getElementById('thresholdSeconds').value);
-
-            if (thresholdSeconds >= mainSeconds) {
-                document.getElementById('thresholdWarningModal').style.display = 'flex';
-                return false;
-            }
-            return true;
-        }
-
-        function adjustThreshold() {
-            const settings = JSON.parse(localStorage.getItem('classSettings')) || defaultSettings;
-            document.getElementById('thresholdHours').value = settings.timer.threshold.hours;
-            document.getElementById('thresholdMinutes').value = settings.timer.threshold.minutes;
-            document.getElementById('thresholdSeconds').value = settings.timer.threshold.seconds;
-            document.getElementById('thresholdWarningModal').style.display = 'none';
-        }
-
-        document.getElementById('startBtn').addEventListener('click', function(event) {
-            const settings = {
-                timer: {
-                    session: {
-                        hours: document.getElementById('sessionHours').value,
-                        minutes: document.getElementById('sessionMinutes').value,
-                        seconds: document.getElementById('sessionSeconds').value
-                    },
-                    threshold: {
-                        hours: document.getElementById('thresholdHours').value,
-                        minutes: document.getElementById('thresholdMinutes').value,
-                        seconds: document.getElementById('thresholdSeconds').value
-                    }
-                },
-                classDetails: {
-                    instructor: document.getElementById('subjectInstructor').value,
-                    subjectCode: document.getElementById('subjectCode').value,
-                    yearLevel: document.getElementById('yearLevel').value,
-                    course: document.getElementById('course').value,
-                    section: document.getElementById('courseSection').value
-                }
-            };
-            
-            localStorage.setItem('classSettings', JSON.stringify(settings));
-            
-            if (!settings.classDetails.instructor || 
-                !settings.classDetails.subjectCode || 
-                !settings.classDetails.yearLevel ||
-                !settings.classDetails.course ||
-                !settings.classDetails.section) {
-                alert('Please fill in all class details');
-                event.preventDefault();
-                return;
-            }
-            
-            const totalSeconds = 
-                parseInt(settings.timer.session.hours) * 3600 + 
-                parseInt(settings.timer.session.minutes) * 60 + 
-                parseInt(settings.timer.session.seconds);
-                
-            if (totalSeconds === 0) {
-                alert('Please set a class duration');
-                event.preventDefault();
-                return;
-            }
-
-            if (!validateTimeInputs()) {
-                event.preventDefault();
-                return;
-            }
-
-            if (!isRunning) {
-                sessionDuration = totalSeconds * 1000;
-                lateThreshold = (
-                    parseInt(document.getElementById('thresholdHours').value) * 3600 +
-                    parseInt(document.getElementById('thresholdMinutes').value) * 60 +
-                    parseInt(document.getElementById('thresholdSeconds').value)
-                ) * 1000;
-
-                startTime = new Date();
-                timerInterval = setInterval(updateTimer, 1000);
-                this.textContent = 'Stop Session';
-                isRunning = true;
-
-                document.querySelectorAll('.time-unit input').forEach(input => {
-                    input.setAttribute('readonly', 'readonly');
-                });
-                document.querySelectorAll('input[name="timerMode"]').forEach(radio => {
-                    radio.disabled = true;
-                });
+document.addEventListener('DOMContentLoaded', async function() {
+    const timerModeRadios = document.querySelectorAll('input[name="timerMode"]');
+    
+    // Handle mode switching
+    timerModeRadios.forEach(radio => {
+        radio.addEventListener('change', async function() {
+            if (this.value === 'default') {
+                await loadDefaultSettings();
             } else {
-                clearInterval(timerInterval);
-                this.textContent = 'Start Session';
-                isRunning = false;
-
-                document.querySelectorAll('.time-unit input').forEach(input => {
-                    if (document.querySelector('input[name="timerMode"]:checked').value === 'custom') {
-                        input.removeAttribute('readonly');
-                    }
-                });
-                document.querySelectorAll('input[name="timerMode"]').forEach(radio => {
-                    radio.disabled = false;
-                });
+                await loadCustomSettings();
             }
         });
+    });
+    
+    // RTSP Test button
+    document.getElementById('testRtspBtn').addEventListener('click', testRtspConnection);
+    
+    // Start button
+    document.getElementById('startBtn').addEventListener('click', startSession);
+    
+    // Load default mode on startup
+    await loadDefaultSettings();
+});
 
-        function updateTimer() {
-            const now = new Date();
-            const diff = now - startTime;
-            
-            if (diff >= sessionDuration) {
-                clearInterval(timerInterval);
-                document.getElementById('startBtn').textContent = 'Start Session';
-                isRunning = false;
-                document.querySelectorAll('.time-unit input').forEach(input => {
-                    if (document.querySelector('input[name="timerMode"]:checked').value === 'custom') {
-                        input.removeAttribute('readonly');
-                    }
-                });
-                document.querySelectorAll('input[name="timerMode"]').forEach(radio => {
-                    radio.disabled = false;
-                });
+async function loadDefaultSettings() {
+    try {
+        showLoading('Loading current class...');
+        
+        const response = await fetch('/api/get_current_class');
+        const data = await response.json();
+        
+        hideLoading();
+        
+        if (!data.success) {
+            if (data.message === 'User not logged in') {
+                showLoginRequired();
                 return;
             }
-
-            const remaining = sessionDuration - diff;
-            const hours = Math.floor(remaining / 3600000);
-            const minutes = Math.floor((remaining % 3600000) / 60000);
-            const seconds = Math.floor((remaining % 60000) / 1000);
-
-            document.getElementById('sessionHours').value = String(hours).padStart(2, '0');
-            document.getElementById('sessionMinutes').value = String(minutes).padStart(2, '0');
-            document.getElementById('sessionSeconds').value = String(seconds).padStart(2, '0');
-
-            if (diff >= lateThreshold) {
-                document.getElementById('mainTimer').classList.add('late');
-            }
+            showModal('Error', data.message);
+            return;
         }
+        
+        // Display logged-in user info
+        if (data.logged_in_user) {
+            document.getElementById('subjectInstructor').value = data.logged_in_user;
+        }
+        
+        if (!data.has_class) {
+            showModal('No Class Scheduled', 
+                data.message + '\n\nPlease use Customize Timer mode for makeup classes.', 
+                () => {
+                    document.querySelector('input[value="custom"]').checked = true;
+                    loadCustomSettings();
+                });
+            return;
+        }
+        
+        const classInfo = data.class_info;
+        const timer = data.timer;
+        
+        // Populate enhanced class details
+        document.getElementById('subjectInstructor').value = data.logged_in_user;
+        document.getElementById('subjectInstructor').setAttribute('readonly', true);
+        
+        // Format year level with ordinal suffix
+        document.getElementById('yearLevel').value = `${classInfo.year_level}${getOrdinalSuffix(classInfo.year_level)} Year`;
+        document.getElementById('course').value = classInfo.program_name;
+        
+        // Populate subject dropdown with enhanced information
+        const subjectDropdown = document.getElementById('subjectCode');
+        subjectDropdown.innerHTML = `<option value="${classInfo.schedule_id}" selected>${classInfo.subject_with_type} - ${classInfo.subject_name}</option>`;
+        subjectDropdown.disabled = true;
+        
+        // Populate section dropdown
+        const sectionDropdown = document.getElementById('courseSection');
+        sectionDropdown.innerHTML = `<option value="${classInfo.section_name}" selected>Section ${classInfo.section_name}</option>`;
+        sectionDropdown.disabled = true;
+        
+        // Set timer values
+        document.getElementById('sessionHours').value = timer.session.hours;
+        document.getElementById('sessionMinutes').value = timer.session.minutes;
+        document.getElementById('sessionSeconds').value = timer.session.seconds;
+        document.getElementById('sessionHours').setAttribute('readonly', true);
+        document.getElementById('sessionMinutes').setAttribute('readonly', true);
+        document.getElementById('sessionSeconds').setAttribute('readonly', true);
+        
+        // Threshold is editable
+        document.getElementById('thresholdHours').removeAttribute('readonly');
+        document.getElementById('thresholdMinutes').removeAttribute('readonly');
+        document.getElementById('thresholdSeconds').removeAttribute('readonly');
+        
+        // Store schedule_id for session start
+        document.getElementById('startBtn').dataset.scheduleId = classInfo.schedule_id;
+        
+        // Show class details in console for debugging
+        console.log('Current Class Loaded:', {
+            instructor: data.logged_in_user,
+            subject: classInfo.subject_with_type,
+            program: classInfo.program_name,
+            year: classInfo.year_level,
+            section: classInfo.section_name,
+            class_type: classInfo.class_type_display,
+            time: `${classInfo.start_time} - ${classInfo.end_time}`
+        });
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Error loading default settings:', error);
+        showModal('Error', 'Failed to load class schedule: ' + error.message);
+    }
+}
 
+async function loadCustomSettings() {
+    try {
+        showLoading('Loading schedules...');
+        
+        // Fetch faculty schedules with enhanced details
+        const response = await fetch('/api/get_faculty_schedules_for_timer');
+        const data = await response.json();
+        
+        hideLoading();
+        
+        if (!data.success) {
+            if (data.message === 'User not logged in') {
+                showLoginRequired();
+                return;
+            }
+            showModal('Error', data.message);
+            return;
+        }
+        
+        // Auto-fill instructor name with logged-in user
+        document.getElementById('subjectInstructor').value = data.logged_in_user || 'Instructor';
+        document.getElementById('subjectInstructor').removeAttribute('readonly');
+        
+        // Populate subject dropdown with enhanced information
+        const subjectDropdown = document.getElementById('subjectCode');
+        subjectDropdown.innerHTML = '<option value="" selected disabled>Select Subject Code</option>';
+        
+        if (data.schedules && data.schedules.length > 0) {
+            const uniqueSubjects = {};
+            data.schedules.forEach(sched => {
+                const key = `${sched.schedule_id}-${sched.subject_code}`;
+                if (!uniqueSubjects[key]) {
+                    uniqueSubjects[key] = sched;
+                }
+            });
+            
+            Object.values(uniqueSubjects).forEach(sched => {
+                const option = document.createElement('option');
+                option.value = sched.schedule_id;
+                
+                // Enhanced display with class type
+                let subjectDisplay = sched.subject_code;
+                if (sched.class_type === 'lecture') {
+                    subjectDisplay += ' (Lecture)';
+                } else if (sched.class_type === 'laboratory') {
+                    subjectDisplay += ' (Laboratory)';
+                }
+                subjectDisplay += ` - ${sched.subject_name}`;
+                
+                option.textContent = subjectDisplay;
+                option.dataset.year = sched.year_level;
+                option.dataset.program = sched.program_name || sched.program;
+                option.dataset.section = sched.section_name || sched.section;
+                option.dataset.classType = sched.class_type;
+                subjectDropdown.appendChild(option);
+            });
+        } else {
+            subjectDropdown.innerHTML = '<option value="" selected disabled>No schedules available</option>';
+        }
+        
+        subjectDropdown.disabled = false;
+        subjectDropdown.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            if (selectedOption.value) {
+                // Set year level with ordinal suffix
+                document.getElementById('yearLevel').value = `${selectedOption.dataset.year}${getOrdinalSuffix(selectedOption.dataset.year)} Year`;
+                
+                // Set program name
+                document.getElementById('course').value = selectedOption.dataset.program;
+                
+                // Set section
+                const sectionDropdown = document.getElementById('courseSection');
+                sectionDropdown.innerHTML = `<option value="${selectedOption.dataset.section}" selected>Section ${selectedOption.dataset.section}</option>`;
+                
+                console.log('Selected Class:', {
+                    year: selectedOption.dataset.year,
+                    program: selectedOption.dataset.program,
+                    section: selectedOption.dataset.section,
+                    classType: selectedOption.dataset.classType
+                });
+            }
+        });
+        
+        // Make all timer inputs editable
         document.querySelectorAll('.time-unit input').forEach(input => {
-            input.addEventListener('input', function() {
-                if (this.hasAttribute('readonly')) return; // Skip if readonly
-                let value = parseInt(this.value);
-                if (isNaN(value)) value = 0;
-                if (this.id.includes('Hours')) {
-                    value = Math.min(23, Math.max(0, value));
-                } else {
-                    value = Math.min(59, Math.max(0, value));
-                }
-                this.value = String(value).padStart(2, '0');
-            });
+            input.removeAttribute('readonly');
         });
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Error loading custom settings:', error);
+        showModal('Error', 'Failed to load schedules: ' + error.message);
+    }
+}
 
-        document.querySelectorAll('.threshold-container .time-unit input').forEach(input => {
-            input.addEventListener('change', function() {
-                if (document.querySelector('input[name="timerMode"]:checked').value === 'custom') {
-                    validateTimeInputs();
-                }
-            });
+function showLoginRequired() {
+    showModal('Login Required', 
+        'You need to be logged in to use this feature. Please log in and try again.',
+        () => {
+            window.location.href = '/login';
         });
+}
+
+function showLoading(message) {
+    let loading = document.getElementById('loadingIndicator');
+    if (!loading) {
+        loading = document.createElement('div');
+        loading.id = 'loadingIndicator';
+        loading.className = 'loading-indicator';
+        loading.innerHTML = `
+            <div class="loading-spinner"></div>
+            <div class="loading-text">${message}</div>
+        `;
+        document.body.appendChild(loading);
+    }
+    loading.style.display = 'flex';
+}
+
+function hideLoading() {
+    const loading = document.getElementById('loadingIndicator');
+    if (loading) {
+        loading.style.display = 'none';
+    }
+}
+
+// Add this CSS for loading indicator
+const loadingStyles = `
+.loading-indicator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    z-index: 9999;
+}
+.loading-spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #007bff;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 10px;
+}
+.loading-text {
+    color: #333;
+    font-size: 16px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+`;
+
+// Inject loading styles
+const styleSheet = document.createElement('style');
+styleSheet.textContent = loadingStyles;
+document.head.appendChild(styleSheet);
+
+function testRtspConnection() {
+    const rtspUrl = document.getElementById('rtspUrl').value.trim();
+    
+    if (!rtspUrl) {
+        showModal('Error', 'Please enter an RTSP URL');
+        return;
+    }
+    
+    localStorage.setItem('rtspUrl', rtspUrl);
+    
+    const testUrl = `/camfootage?test=true&rtsp=${encodeURIComponent(rtspUrl)}`;
+    window.open(testUrl, '_blank');
+}
+
+async function startSession(event) {
+    const timerMode = document.querySelector('input[name="timerMode"]:checked').value;
+    const rtspUrl = document.getElementById('rtspUrl').value.trim();
+    
+    if (!rtspUrl) {
+        showModal('Error', 'Please enter RTSP URL for camera feed');
+        return;
+    }
+    
+    // First, set the RTSP URL in the backend
+    try {
+        showLoading('Connecting to camera...');
+        
+        const rtspResponse = await fetch('/api/set_rtsp_url', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ rtsp_url: rtspUrl })
+        });
+        
+        const rtspData = await rtspResponse.json();
+        
+        hideLoading();
+        
+        if (!rtspData.success) {
+            const useAnyway = confirm(`Failed to connect to RTSP URL: ${rtspData.message}\n\nDo you want to continue anyway? The system will use the fallback feed.`);
+            if (!useAnyway) {
+                return;
+            }
+            // Continue with fallback feed
+        } else {
+            showModal('Success', 'Camera connected successfully!', null, false, 2000);
+        }
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Error setting RTSP URL:', error);
+        const useAnyway = confirm('Could not set RTSP URL. Do you want to continue with fallback feed?');
+        if (!useAnyway) {
+            return;
+        }
+    }
+    
+    // Save to localStorage for persistence
+    localStorage.setItem('rtspUrl', rtspUrl);
+    
+    const settings = {
+        timer: {
+            session: {
+                hours: document.getElementById('sessionHours').value,
+                minutes: document.getElementById('sessionMinutes').value,
+                seconds: document.getElementById('sessionSeconds').value
+            },
+            threshold: {
+                hours: document.getElementById('thresholdHours').value,
+                minutes: document.getElementById('thresholdMinutes').value,
+                seconds: document.getElementById('thresholdSeconds').value
+            }
+        },
+        classDetails: {
+            instructor: document.getElementById('subjectInstructor').value,
+            subjectCode: document.getElementById('subjectCode').value,
+            yearLevel: document.getElementById('yearLevel').value,
+            course: document.getElementById('course').value,
+            section: document.getElementById('courseSection').value
+        },
+        rtspUrl: rtspUrl,
+        mode: timerMode,
+        scheduleId: document.getElementById('startBtn').dataset.scheduleId || document.getElementById('subjectCode').value
+    };
+    
+    localStorage.setItem('classSettings', JSON.stringify(settings));
+    
+    // Validation
+    if (!settings.classDetails.instructor || 
+        !settings.classDetails.subjectCode || 
+        !settings.classDetails.section) {
+        showModal('Validation Error', 'Please fill in all class details');
+        return;
+    }
+    
+    const totalSeconds = 
+        parseInt(settings.timer.session.hours) * 3600 + 
+        parseInt(settings.timer.session.minutes) * 60 + 
+        parseInt(settings.timer.session.seconds);
+        
+    if (totalSeconds === 0) {
+        showModal('Validation Error', 'Please set a class duration');
+        return;
+    }
+
+    if (!validateTimeInputs()) {
+        return;
+    }
+
+    // Redirect to camfootage with enhanced parameters
+    const params = new URLSearchParams({
+        schedule_id: settings.scheduleId,
+        instructor: settings.classDetails.instructor,
+        subject: settings.classDetails.subjectCode,
+        year_level: settings.classDetails.yearLevel,
+        program: settings.classDetails.course,
+        section: settings.classDetails.section,
+        duration: totalSeconds,
+        threshold: (parseInt(settings.timer.threshold.hours) * 3600 + 
+                   parseInt(settings.timer.threshold.minutes) * 60 + 
+                   parseInt(settings.timer.threshold.seconds)),
+        rtsp_url: encodeURIComponent(rtspUrl),
+        mode: timerMode
+    });
+    
+    // Add a small delay to ensure camera is ready
+    setTimeout(() => {
+        window.location.href = `/camfootage?${params.toString()}`;
+    }, 500);
+}
+
+function validateTimeInputs() {
+    const timerMode = document.querySelector('input[name="timerMode"]:checked').value;
+    if (timerMode === 'default') return true;
+
+    const mainSeconds = 
+        parseInt(document.getElementById('sessionHours').value) * 3600 +
+        parseInt(document.getElementById('sessionMinutes').value) * 60 +
+        parseInt(document.getElementById('sessionSeconds').value);
+
+    const thresholdSeconds = 
+        parseInt(document.getElementById('thresholdHours').value) * 3600 +
+        parseInt(document.getElementById('thresholdMinutes').value) * 60 +
+        parseInt(document.getElementById('thresholdSeconds').value);
+
+    if (thresholdSeconds >= mainSeconds) {
+        document.getElementById('thresholdWarningModal').style.display = 'flex';
+        return false;
+    }
+    return true;
+}
+
+function adjustThreshold() {
+    document.getElementById('thresholdHours').value = '00';
+    document.getElementById('thresholdMinutes').value = '15';
+    document.getElementById('thresholdSeconds').value = '00';
+    document.getElementById('thresholdWarningModal').style.display = 'none';
+}
+
+function getOrdinalSuffix(num) {
+    num = parseInt(num);
+    const j = num % 10, k = num % 100;
+    if (j == 1 && k != 11) return "st";
+    if (j == 2 && k != 12) return "nd";
+    if (j == 3 && k != 13) return "rd";
+    return "th";
+}
+
+function showModal(title, message, onConfirm = null, showCancel = false, autoClose = null) {
+    const modal = document.getElementById('customModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalMessage = document.getElementById('modalMessage');
+    const confirmBtn = modal.querySelector('.btn-confirm');
+    const cancelBtn = modal.querySelector('.btn-cancel') || document.createElement('button');
+    
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+    modal.style.display = 'flex';
+    
+    // Set up confirm button
+    confirmBtn.textContent = 'OK';
+    confirmBtn.onclick = () => {
+        modal.style.display = 'none';
+        if (onConfirm) onConfirm();
+    };
+    
+    // Handle auto-close
+    if (autoClose) {
+        setTimeout(() => {
+            modal.style.display = 'none';
+            if (onConfirm) onConfirm();
+        }, autoClose);
+    }
+    
+    const closeBtn = modal.querySelector('.close');
+    closeBtn.onclick = () => {
+        modal.style.display = 'none';
+    };
+    
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    };
+}
+
+// Input validation for time fields
+document.querySelectorAll('.time-unit input').forEach(input => {
+    input.addEventListener('input', function() {
+        if (this.hasAttribute('readonly')) return;
+        let value = parseInt(this.value);
+        if (isNaN(value)) value = 0;
+        if (this.id.includes('Hours')) {
+            value = Math.min(23, Math.max(0, value));
+        } else {
+            value = Math.min(59, Math.max(0, value));
+        }
+        this.value = String(value).padStart(2, '0');
+    });
+});
+
+document.querySelectorAll('.threshold-container .time-unit input').forEach(input => {
+    input.addEventListener('change', function() {
+        if (document.querySelector('input[name="timerMode"]:checked').value === 'custom') {
+            validateTimeInputs();
+        }
+    });
+});
     </script>
-
 </body>
 </html>

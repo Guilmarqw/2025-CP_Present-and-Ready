@@ -14,11 +14,12 @@ import smtplib
 import random
 import string
 import json
+import secrets
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
-from flask import Flask, Response, g, make_response, render_template, request, jsonify, redirect, url_for, send_from_directory
+from flask import Flask, Response, g, make_response, render_template, request, jsonify, redirect, url_for, send_from_directory, session
 from flask_cors import CORS
 import logging
 from werkzeug.utils import secure_filename
@@ -36,7 +37,7 @@ import hashlib
 # =========================
 # CONFIG
 # =========================
-RTSP_URL = "rtsp://admin:@101Pok3r5610@192.168.1.64:554/Streaming/Channels/101"
+current_rtsp_url = None
 WEIGHTS_PATH = "yolov8n-face.pt"
 STREAM_WIDTH, STREAM_HEIGHT = 3840, 2160
 DETECT_EVERY = 8  # Default value, will be adjusted dynamically
@@ -191,7 +192,7 @@ def authenticate_user(email, password):
         # Check faculty table if not found in admins
         if not user:
             cursor.execute(
-                "SELECT faculty_id as user_id, first_name, last_name, password_hash, role, 'faculty' as user_type FROM faculty WHERE email = %s AND status = 'active'",
+                "SELECT faculty_id as user_id, first_name, last_name, password_hash, role, 'faculty' as user_type FROM faculty WHERE email = %s AND status = 'active'",  # FIX: Make sure this returns 'faculty' as user_type
                 (email,)
             )
             user = cursor.fetchone()
@@ -214,7 +215,7 @@ def authenticate_user(email, password):
     except Exception as e:
         logger.error(f"Authentication error: {e}")
         return None
-
+    
 def create_user_session(user_id, user_type):
     """Create a new user session"""
     try:
@@ -730,9 +731,13 @@ logger.info(f"Using device: {DEVICE}  |  Model: {WEIGHTS_PATH}")
 cap_lock = threading.Lock()
 cap = None
 
-def open_stream():
-    """Modified to handle connection failures gracefully without webcam fallback"""
-    global cap, camera_available, use_dummy_feed
+def open_stream(rtsp_url=None):
+    global cap, camera_available, use_dummy_feed, current_rtsp_url
+    
+    # Use provided URL or fallback to a default
+    if not rtsp_url:
+        # You can set a default here if needed, or use None
+        rtsp_url = "rtsp://username:password@ip:port/stream"  # Default template
     
     try:
         with cap_lock:
@@ -742,7 +747,7 @@ def open_stream():
                 except Exception:
                     pass
                     
-            cap = cv2.VideoCapture(RTSP_URL)
+            cap = cv2.VideoCapture(rtsp_url)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, STREAM_WIDTH)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, STREAM_HEIGHT)
@@ -753,7 +758,8 @@ def open_stream():
                 if ret and test_frame is not None:
                     camera_available = True
                     use_dummy_feed = False
-                    logger.info("RTSP stream connected successfully.")
+                    current_rtsp_url = rtsp_url  # Store the current URL
+                    logger.info(f"RTSP stream connected successfully: {rtsp_url}")
                     return True
                 else:
                     cap.release()
@@ -763,18 +769,19 @@ def open_stream():
                 raise Exception("Cannot open RTSP stream")
                 
     except Exception as e:
-        logger.warning(f"RTSP connection failed: {e}")
-        logger.info("Switching to dummy feed mode - Flask app will continue running")
+        logger.warning(f"RTSP connection failed for {rtsp_url}: {e}")
+        logger.info("Switching to dummy feed mode")
         camera_available = False
         use_dummy_feed = True
         cap = None
-        logger.info("No camera available - using dummy feed")
-        return True  # Continue app execution with dummy feed
+        current_rtsp_url = None
+        return False
+
 
 
 def grabber():
-    """Modified grabber to handle dummy feed and connection retries"""
-    global latest_frame, stop_flag, camera_available, use_dummy_feed, cap
+    """Modified grabber to handle dynamic RTSP URLs"""
+    global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url
     empty_count = 0
     retry_interval = 0
     
@@ -782,14 +789,14 @@ def grabber():
         if use_dummy_feed:
             # Use dummy frame when no camera
             latest_frame = create_dummy_frame()
-            time.sleep(0.1)  # Slower refresh for dummy feed
+            time.sleep(0.1)
             
-            # Periodically try to reconnect to RTSP
+            # Periodically try to reconnect to last RTSP URL
             retry_interval += 1
-            if retry_interval > 100:  # Try every ~10 seconds
+            if retry_interval > 100 and current_rtsp_url:  # Try every ~10 seconds
                 retry_interval = 0
-                logger.info("Attempting to reconnect to RTSP...")
-                if open_stream():
+                logger.info(f"Attempting to reconnect to RTSP: {current_rtsp_url}")
+                if open_stream(current_rtsp_url):
                     continue
             continue
             
@@ -807,8 +814,10 @@ def grabber():
                 logger.warning("Camera connection lost. Attempting reconnection...")
                 time.sleep(RECONNECT_COOLDOWN)
                 
-                # Try to reconnect
-                if not open_stream():
+                # Try to reconnect to last known URL
+                if current_rtsp_url and open_stream(current_rtsp_url):
+                    logger.info("Reconnected to RTSP stream")
+                else:
                     logger.warning("Reconnection failed - switching to dummy feed")
                     camera_available = False
                     use_dummy_feed = True
@@ -1430,11 +1439,13 @@ def refresh_with_detections(frame, rgb, frame_idx):
 # Flask streaming & API
 # =========================
 app = Flask(__name__)
-app.template_folder = 'templates'  # Add this line
-app.static_folder = 'static'       # Add this line
+app.secret_key = 'face-attendance-system-secret-key-2025'  # Add this line
+app.template_folder = 'templates'
+app.static_folder = 'static'
 CORS(app)
-
 # Add these Flask routes for authentication
+
+app.secret_key = os.environ.get('SECRET_KEY', 'fallback-secret-key-change-in-production')
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -1459,6 +1470,14 @@ def login():
         if not session_token:
             return jsonify({'success': False, 'message': 'Failed to create session'})
         
+        # Set Flask session
+        session['user_id'] = user['user_id']
+        session['user_type'] = user['user_type']
+        session['first_name'] = user['first_name']
+        session['last_name'] = user['last_name']
+        session['role'] = user.get('role', '')
+        session.permanent = True  # Make session persistent
+        
         # Determine redirect URL based on role
         redirect_url = '/AdminDB'  # Default for admins and faculty
         if user['user_type'] == 'student':
@@ -1478,7 +1497,7 @@ def login():
         })
         
         # Set session token as a cookie
-        resp.set_cookie('session_token', session_token, httponly=True, secure=False, samesite='Strict')  # secure=False for non-HTTPS testing
+        resp.set_cookie('session_token', session_token, httponly=True, secure=False, samesite='Strict')
         return resp
         
     except Exception as e:
@@ -2750,34 +2769,48 @@ def update_student():
         student_id = data.get('student_id')
         first_name = data.get('first_name')
         last_name = data.get('last_name')
+        middle_name = data.get('middle_name', '')
         course = data.get('course')
         year_section = data.get('year_section')
+        email = data.get('email')
+        status = data.get('status', 'active')
         
-        if not all([student_id, first_name, last_name, course, year_section]):
-            return jsonify({'success': False, 'message': 'All fields are required'})
+        if not all([student_id, first_name, last_name, course, year_section, email]):
+            return jsonify({'success': False, 'message': 'All required fields are missing'})
             
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            """UPDATE students 
-               SET first_name = %s, last_name = %s, course = %s, year_section = %s 
-               WHERE student_id = %s""",
-            (first_name, last_name, course, year_section, student_id)
-        )
-        if cursor.rowcount == 0:
+        
+        # Check if student exists
+        cursor.execute("SELECT student_id FROM students WHERE student_id = %s", (student_id,))
+        if not cursor.fetchone():
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Student not found'})
-            
+        
+        # Update student with all fields
+        cursor.execute(
+            """UPDATE students 
+               SET first_name = %s, last_name = %s, middle_name = %s, 
+                   course = %s, year_section = %s, email = %s, 
+                   status = %s, updated_at = NOW()
+               WHERE student_id = %s""",
+            (first_name, last_name, middle_name, course, year_section, 
+             email, status, student_id)
+        )
+        
         conn.commit()
         cursor.close()
         conn.close()
         
-        load_known_faces_from_db()  # Refresh known faces if name changed
+        # Refresh known faces
+        load_known_faces_from_db()
+        
         return jsonify({'success': True, 'message': 'Student updated successfully'})
+        
     except Exception as e:
-        logger.error(f"Error updating student: {e}")
-        return jsonify({'success': False, 'message': str(e)})
+        logger.error(f"Error updating student: {str(e)}")
+        return jsonify({'success': False, 'message': f'Database error: {str(e)}'})
 
 @app.route('/api/delete_student', methods=['POST'])
 def delete_student():
@@ -2819,34 +2852,53 @@ def update_faculty():
         faculty_id = data.get('faculty_id')
         first_name = data.get('first_name')
         last_name = data.get('last_name')
+        middle_name = data.get('middle_name', '')
         department = data.get('department')
         designation = data.get('designation')
-
-        if not all([faculty_id, first_name, last_name, department, designation]):
-            return jsonify({'success': False, 'message': 'All fields are required'})
+        email = data.get('email')
+        role = data.get('role', 'moderator')
+        status = data.get('status', 'active')
+        
+        # Debug logging
+        logger.info(f"Updating faculty: {faculty_id}, {first_name} {last_name}")
+        
+        if not all([faculty_id, first_name, last_name, department, designation, email]):
+            return jsonify({'success': False, 'message': 'All required fields are missing'})
             
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            """UPDATE faculty 
-               SET first_name = %s, last_name = %s, department = %s, designation = %s 
-               WHERE faculty_id = %s""",
-            (first_name, last_name, department, designation, faculty_id)
-        )
-        if cursor.rowcount == 0:
+        
+        # Check if faculty exists
+        cursor.execute("SELECT faculty_id FROM faculty WHERE faculty_id = %s", (faculty_id,))
+        if not cursor.fetchone():
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Faculty Member not found'})
-            
+        
+        # Update faculty with all fields
+        cursor.execute(
+            """UPDATE faculty 
+               SET first_name = %s, last_name = %s, middle_name = %s, 
+                   department = %s, designation = %s, email = %s, 
+                   role = %s, status = %s, updated_at = NOW()
+               WHERE faculty_id = %s""",
+            (first_name, last_name, middle_name, department, designation, 
+             email, role, status, faculty_id)
+        )
+        
         conn.commit()
         cursor.close()
         conn.close()
         
-        load_known_faculties_from_db()  # Refresh
+        # Refresh known faces
+        load_known_faculties_from_db()
+        
+        logger.info(f"Successfully updated faculty: {faculty_id}")
         return jsonify({'success': True, 'message': 'Faculty Member updated successfully'})
+        
     except Exception as e:
-        logger.error(f"Error updating faculty: {e}")
-        return jsonify({'success': False, 'message': str(e)})
+        logger.error(f"Error updating faculty: {str(e)}")
+        return jsonify({'success': False, 'message': f'Database error: {str(e)}'})
 
 @app.route('/api/delete_faculty', methods=['POST'])
 def delete_faculty():
@@ -3547,7 +3599,16 @@ def reconnect_camera():
 @app.route('/timer')
 @login_required
 def timer_page():
-    return render_template('Timer.html')
+    user = g.get('user', {})
+    user_data = {
+        'user_id': user.get('user_id', ''),
+        'first_name': user.get('first_name', ''),
+        'last_name': user.get('last_name', ''),
+        'middle_name': '',
+        'user_role': user.get('role', ''),
+        'user_type': user.get('user_type', '')
+    }
+    return render_template('Timer.html', **user_data)
 
 @app.route('/camfootage')
 @login_required
@@ -3570,18 +3631,47 @@ def sidebar_page():
 @app.route('/api/get_user_info', methods=['GET'])
 @login_required
 def get_user_info():
-    """Get current user information for frontend"""
-    user = g.get('user', {})
-    return jsonify({
-        'success': True,
-        'user': {
-            'id': user.get('user_id'),
-            'first_name': user.get('first_name'),
-            'last_name': user.get('last_name'),
-            'role': user.get('role'),
-            'user_type': user.get('user_type')
-        }
-    })
+    """Get current user information"""
+    try:
+        user_id = session.get('user_id')
+        user_role = session.get('role')
+        faculty_id = session.get('faculty_id')
+        
+        print(f"Debug get_user_info - user_id: {user_id}, role: {user_role}, faculty_id: {faculty_id}")
+        
+        if not user_id:
+            return jsonify({'success': False, 'message': 'User not logged in'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        if user_role == 'faculty':
+            # Use faculty_id if available, otherwise use user_id
+            actual_faculty_id = faculty_id if faculty_id else user_id
+            cursor.execute("""
+                SELECT faculty_id as id, first_name, last_name, email, department
+                FROM faculty WHERE faculty_id = %s
+            """, (actual_faculty_id,))
+        elif user_role == 'admin':
+            cursor.execute("""
+                SELECT admin_id as id, username as first_name, '' as last_name, email, 'Administration' as department
+                FROM admin WHERE admin_id = %s
+            """, (user_id,))
+        else:
+            return jsonify({'success': False, 'message': 'Invalid user role'})
+        
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if user:
+            return jsonify({'success': True, 'user': user})
+        else:
+            return jsonify({'success': False, 'message': 'User not found'})
+            
+    except Exception as e:
+        logger.error(f"Error getting user info: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/summary')
 @login_required
@@ -3813,30 +3903,48 @@ def video_feed():
 @app.route('/api/logout', methods=['POST'])
 def logout():
     try:
+        # Get session token from cookie
         session_token = request.cookies.get('session_token')
         
+        # Clear Flask session
+        session.clear()
+        
+        # Delete session from database if token exists
         if session_token:
-            # Delete session from database
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM user_sessions WHERE session_token = %s",
-                (session_token,)
-            )
-            conn.commit()
-            cursor.close()
-            conn.close()
-            logger.info(f"Session {session_token[:8]}... deleted")
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM user_sessions WHERE session_token = %s",
+                    (session_token,)
+                )
+                conn.commit()
+                cursor.close()
+                conn.close()
+                logger.info(f"Session token deleted from database: {session_token[:8]}...")
+            except Exception as db_error:
+                logger.error(f"Error deleting session from database: {db_error}")
         
         # Create response that clears the cookie
-        resp = jsonify({'success': True, 'message': 'Logged out successfully'})
+        resp = jsonify({
+            'success': True, 
+            'message': 'Logged out successfully',
+            'redirect_url': '/login'
+        })
+        
+        # Clear the session cookie
         resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
         
+        logger.info("User logged out successfully")
         return resp
         
     except Exception as e:
         logger.error(f"Logout error: {e}")
-        return jsonify({'success': False, 'message': 'Logout failed'})
+        return jsonify({
+            'success': False, 
+            'message': 'Logout failed',
+            'redirect_url': '/login'
+        })
 
 @app.route('/login')
 @logout_required
@@ -3846,22 +3954,42 @@ def login_page_alt():
 @app.route('/logout')
 def logout_page():
     """Direct logout route that redirects to login"""
-    session_token = request.cookies.get('session_token')
-    
-    if session_token:
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM user_sessions WHERE session_token = %s", (session_token,))
-            conn.commit()
-            cursor.close()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Logout error: {e}")
-    
-    resp = make_response(redirect(url_for('login_page')))
-    resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
-    return resp
+    try:
+        # Get session token from cookie
+        session_token = request.cookies.get('session_token')
+        
+        # Clear Flask session
+        session.clear()
+        
+        # Delete session from database if token exists
+        if session_token:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM user_sessions WHERE session_token = %s",
+                    (session_token,)
+                )
+                conn.commit()
+                cursor.close()
+                conn.close()
+                logger.info(f"Direct logout - session token deleted: {session_token[:8]}...")
+            except Exception as db_error:
+                logger.error(f"Error deleting session in direct logout: {db_error}")
+        
+        # Create redirect response that clears the cookie
+        resp = make_response(redirect(url_for('login_page')))
+        resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
+        
+        logger.info("User logged out via direct logout route")
+        return resp
+        
+    except Exception as e:
+        logger.error(f"Direct logout error: {e}")
+        # Still redirect to login even if there's an error
+        resp = make_response(redirect(url_for('login_page')))
+        resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
+        return resp
 
 # ==========================================
 # PROGRAMS MANAGEMENT API ROUTES
@@ -3951,7 +4079,18 @@ def update_academic_year():
 # Add these authentication functions after the imports and before the Flask routes
 
 def get_current_user():
-    """Get current user from session token"""
+    """Get current user from session token - FIXED VERSION with logout handling"""
+    # First check Flask session
+    if 'user_id' in session and 'user_type' in session:
+        return {
+            'user_id': session['user_id'],
+            'user_type': session['user_type'],
+            'first_name': session.get('first_name', ''),
+            'last_name': session.get('last_name', ''),
+            'role': session.get('role', '')
+        }
+    
+    # Fallback to cookie-based session token
     session_token = request.cookies.get('session_token')
     if not session_token:
         return None
@@ -3986,9 +4125,25 @@ def get_current_user():
         user = cursor.fetchone()
         cursor.close()
         conn.close()
+        
+        # If no user found, clear any existing session data
+        if not user:
+            session.clear()
+            return None
+        
+        # Store in Flask session for future requests
+        session['user_id'] = user['user_id']
+        session['user_type'] = user['user_type']
+        session['first_name'] = user['first_name']
+        session['last_name'] = user['last_name']
+        session['role'] = user['role']
+        
         return user
+        
     except Exception as e:
         logger.error(f"Error getting current user: {e}")
+        # Clear session on error
+        session.clear()
         return None
 
 def login_required(f):
@@ -4074,7 +4229,7 @@ def get_semesters():
         
         academic_year_id = result['academic_year_id']
         
-        # Get semesters
+        # Get semesters with better error handling
         cursor.execute("""
             SELECT 
                 semester_id,
@@ -4088,6 +4243,7 @@ def get_semesters():
                     WHEN 'Summer' THEN 1
                     WHEN '1st Semester' THEN 2
                     WHEN '2nd Semester' THEN 3
+                    ELSE 4
                 END
         """, (academic_year_id,))
         
@@ -5136,7 +5292,7 @@ def check_room_availability():
 @app.route('/api/get_unassigned_faculty', methods=['GET'])
 @login_required
 def get_unassigned_faculty():
-    """Get faculty members who don't have any schedules assigned"""
+    """Get faculty members who don't have any active schedules assigned"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -5151,7 +5307,8 @@ def get_unassigned_faculty():
             FROM faculty f
             WHERE f.status = 'active'
             AND NOT EXISTS (
-                SELECT 1 FROM faculty_schedules fs 
+                SELECT 1 
+                FROM faculty_schedules fs 
                 WHERE fs.faculty_id = f.faculty_id 
                 AND fs.status = 'active'
             )
@@ -5159,18 +5316,23 @@ def get_unassigned_faculty():
         """)
         
         faculty = cursor.fetchall()
+        unassigned_count = len(faculty)
         
-        # Format names
         for f in faculty:
             f['full_name'] = f"{f['first_name']} {f['last_name']}"
         
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'faculty': faculty})
+        logger.info(f"Found {unassigned_count} unassigned faculty member(s)")
+        return jsonify({
+            'success': True,
+            'faculty': faculty,
+            'unassigned_count': unassigned_count
+        })
         
     except Exception as e:
-        logger.error(f"Error fetching unassigned faculty: {e}")
+        logger.error(f"Error fetching unassigned faculty: {e}", exc_info=True)
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/get_all_faculty', methods=['GET'])
@@ -5379,10 +5541,100 @@ def assign_faculty_to_schedule():
         logger.error(f"Error assigning faculty to schedule: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
+@app.route('/api/get_faculty_schedules_for_timer', methods=['GET'])
+@login_required
+def get_faculty_schedules_for_timer():
+    """Get schedules for the logged-in faculty member for timer"""
+    try:
+        user_id = session.get('user_id')
+        user_type = session.get('user_type')
+        
+        if not user_id or not user_type:
+            return jsonify({'success': False, 'message': 'User not logged in'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get logged in user's name
+        logged_in_user = ""
+        if user_type == 'admin':
+            cursor.execute("SELECT first_name, last_name, middle_name FROM admins WHERE admin_id = %s", (user_id,))
+            user_data = cursor.fetchone()
+            if user_data:
+                logged_in_user = f"{user_data['first_name']} {user_data['last_name']}"
+                if user_data['middle_name']:
+                    logged_in_user = f"{user_data['first_name']} {user_data['middle_name']} {user_data['last_name']}"
+        elif user_type == 'faculty':
+            cursor.execute("SELECT first_name, last_name, middle_name FROM faculty WHERE faculty_id = %s", (user_id,))
+            user_data = cursor.fetchone()
+            if user_data:
+                logged_in_user = f"{user_data['first_name']} {user_data['last_name']}"
+                if user_data['middle_name']:
+                    logged_in_user = f"{user_data['first_name']} {user_data['middle_name']} {user_data['last_name']}"
+
+        if user_type == 'admin':
+            # Admin can see all schedules
+            cursor.execute("""
+                SELECT DISTINCT
+                    cs.schedule_id,
+                    cs.day_of_week,
+                    cs.class_type,
+                    s.subject_code,
+                    s.subject_name,
+                    ys.year_level,
+                    ys.section_name,
+                    p.program_name,
+                    CONCAT(f.first_name, ' ', f.last_name) as instructor_name
+                FROM class_schedules cs
+                JOIN subjects s ON cs.subject_id = s.subject_id
+                JOIN year_sections ys ON cs.section_id = ys.section_id
+                JOIN programs p ON ys.program_id = p.program_id
+                LEFT JOIN faculty_schedules fs ON cs.schedule_id = fs.schedule_id
+                LEFT JOIN faculty f ON fs.faculty_id = f.faculty_id
+                WHERE cs.status = 'active'
+                ORDER BY s.subject_code
+            """)
+        else:
+            # Faculty member sees only their schedules
+            cursor.execute("""
+                SELECT 
+                    cs.schedule_id,
+                    cs.day_of_week,
+                    cs.class_type,
+                    s.subject_code,
+                    s.subject_name,
+                    ys.year_level,
+                    ys.section_name,
+                    p.program_name,
+                    CONCAT(f.first_name, ' ', f.last_name) as instructor_name
+                FROM faculty_schedules fs
+                JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+                JOIN subjects s ON cs.subject_id = s.subject_id
+                JOIN year_sections ys ON cs.section_id = ys.section_id
+                JOIN programs p ON ys.program_id = p.program_id
+                JOIN faculty f ON fs.faculty_id = f.faculty_id
+                WHERE fs.faculty_id = %s AND cs.status = 'active'
+                ORDER BY s.subject_code
+            """, (user_id,))
+        
+        schedules = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'schedules': schedules,
+            'logged_in_user': logged_in_user
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting faculty schedules for timer: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)})
+
 @app.route('/api/get_faculty_schedule', methods=['GET'])
 @login_required
 def get_faculty_schedule():
-    """Get all schedules assigned to a specific faculty member"""
+    """Get all schedules assigned to a specific faculty member - FIXED VERSION"""
     try:
         faculty_id = request.args.get('faculty_id')
         
@@ -5392,6 +5644,25 @@ def get_faculty_schedule():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
+        # First check if faculty has any assignments
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM faculty_schedules 
+            WHERE faculty_id = %s AND status = 'active'
+        """, (faculty_id,))
+        
+        count_result = cursor.fetchone()
+        if not count_result or count_result['count'] == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': True,
+                'schedules': [],
+                'subjects': [],
+                'message': 'No schedules assigned to this faculty member'
+            })
+        
+        # Get detailed schedule information
         cursor.execute("""
             SELECT 
                 cs.schedule_id,
@@ -5400,6 +5671,7 @@ def get_faculty_schedule():
                 cs.end_time,
                 cs.room,
                 cs.class_type,
+                s.subject_id,
                 s.subject_code,
                 s.subject_name,
                 s.units,
@@ -5408,13 +5680,20 @@ def get_faculty_schedule():
                 p.program_name,
                 p.program_id,
                 fs.faculty_schedule_id,
-                fs.assigned_date
+                sem.semester_number,
+                ay.academic_year
             FROM faculty_schedules fs
-            JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
-            JOIN subjects s ON cs.subject_id = s.subject_id
-            JOIN year_sections ys ON cs.section_id = ys.section_id
-            JOIN programs p ON ys.program_id = p.program_id
-            WHERE fs.faculty_id = %s AND fs.status = 'active' AND cs.status = 'active'
+            INNER JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+            INNER JOIN subjects s ON cs.subject_id = s.subject_id
+            INNER JOIN year_sections ys ON cs.section_id = ys.section_id
+            INNER JOIN programs p ON ys.program_id = p.program_id
+            INNER JOIN semesters sem ON ys.semester_id = sem.semester_id
+            INNER JOIN academic_years ay ON ys.academic_year_id = ay.academic_year_id
+            WHERE fs.faculty_id = %s 
+            AND fs.status = 'active'
+            AND cs.status = 'active'
+            AND s.status = 'active'
+            AND ys.status = 'active'
             ORDER BY 
                 FIELD(cs.day_of_week, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
                 cs.start_time
@@ -5422,27 +5701,44 @@ def get_faculty_schedule():
         
         schedules = cursor.fetchall()
         
+        cursor.close()
+        conn.close()
+        
+        if not schedules:
+            return jsonify({
+                'success': True,
+                'schedules': [],
+                'subjects': [],
+                'message': 'No active schedules found for this faculty member'
+            })
+        
         # Format time fields
         for schedule in schedules:
-            if schedule['start_time']:
+            if schedule.get('start_time'):
                 schedule['start_time'] = str(schedule['start_time'])
-            if schedule['end_time']:
+            if schedule.get('end_time'):
                 schedule['end_time'] = str(schedule['end_time'])
         
         # Group by subject
         subjects = {}
         for schedule in schedules:
-            key = f"{schedule['subject_code']}-{schedule['section_name']}"
-            if key not in subjects:
-                subjects[key] = {
+            subject_key = f"{schedule['subject_code']}_{schedule['section_name']}_{schedule['semester_number']}"
+            
+            if subject_key not in subjects:
+                subjects[subject_key] = {
+                    'subject_id': schedule['subject_id'],
                     'subject_code': schedule['subject_code'],
                     'subject_name': schedule['subject_name'],
                     'program': schedule['program_name'],
                     'year_level': schedule['year_level'],
                     'section': schedule['section_name'],
+                    'semester': schedule['semester_number'],
+                    'academic_year': schedule['academic_year'],
                     'meetings': []
                 }
-            subjects[key]['meetings'].append({
+            
+            subjects[subject_key]['meetings'].append({
+                'schedule_id': schedule['schedule_id'],
                 'day': schedule['day_of_week'],
                 'start_time': schedule['start_time'],
                 'end_time': schedule['end_time'],
@@ -5450,27 +5746,33 @@ def get_faculty_schedule():
                 'class_type': schedule['class_type']
             })
         
-        cursor.close()
-        conn.close()
+        subjects_list = list(subjects.values())
+        
+        logger.info(f"Found {len(subjects_list)} subjects with {len(schedules)} meetings for faculty {faculty_id}")
         
         return jsonify({
             'success': True,
             'schedules': schedules,
-            'subjects': list(subjects.values())
+            'subjects': subjects_list
         })
         
     except Exception as e:
-        logger.error(f"Error fetching faculty schedule: {e}")
-        return jsonify({'success': False, 'message': str(e)})
+        logger.error(f"Error fetching faculty schedule: {e}", exc_info=True)
+        return jsonify({
+            'success': False, 
+            'message': str(e),
+            'schedules': [],
+            'subjects': []
+        })
 
 @app.route('/api/unassign_faculty_from_schedule', methods=['POST'])
 @login_required
 def unassign_faculty_from_schedule():
-    """Remove faculty assignment from schedule(s)"""
+    """Remove faculty assignment from schedule(s) - FIXED VERSION"""
     try:
         data = request.json
         faculty_id = data.get('faculty_id')
-        schedule_ids = data.get('schedule_ids')
+        schedule_ids = data.get('schedule_ids', [])
         
         if not faculty_id:
             return jsonify({'success': False, 'message': 'Faculty ID is required'})
@@ -5482,15 +5784,14 @@ def unassign_faculty_from_schedule():
             # Unassign specific schedules
             placeholders = ','.join(['%s'] * len(schedule_ids))
             query = f"""
-                UPDATE faculty_schedules 
-                SET status = 'inactive' 
+                DELETE FROM faculty_schedules 
                 WHERE faculty_id = %s AND schedule_id IN ({placeholders})
             """
             cursor.execute(query, [faculty_id] + schedule_ids)
         else:
-            # Unassign all schedules for this faculty
+            # Unassign all schedules for this faculty - HARD DELETE
             cursor.execute(
-                "UPDATE faculty_schedules SET status = 'inactive' WHERE faculty_id = %s",
+                "DELETE FROM faculty_schedules WHERE faculty_id = %s",
                 (faculty_id,)
             )
         
@@ -5548,7 +5849,7 @@ def get_sections():
 @app.route('/api/get_faculty_with_schedules', methods=['GET'])
 @login_required
 def get_faculty_with_schedules():
-    """Get all faculty members with their schedule counts"""
+    """Get all faculty members with their schedule counts - FIXED VERSION"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -5559,15 +5860,14 @@ def get_faculty_with_schedules():
                 CONCAT(f.first_name, ' ', f.last_name) as full_name,
                 f.department,
                 f.designation,
-                COUNT(DISTINCT s.subject_id) as subject_count,
-                COUNT(DISTINCT fs.schedule_id) as meeting_count
+                COUNT(DISTINCT fs.schedule_id) as meeting_count,
+                COUNT(DISTINCT s.subject_id) as subject_count
             FROM faculty f
-            LEFT JOIN faculty_schedules fs ON f.faculty_id = fs.faculty_id AND fs.status = 'active'
+            LEFT JOIN faculty_schedules fs ON f.faculty_id = fs.faculty_id
             LEFT JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id AND cs.status = 'active'
-            LEFT JOIN subjects s ON cs.subject_id = s.subject_id
+            LEFT JOIN subjects s ON cs.subject_id = s.subject_id AND s.status = 'active'
             WHERE f.status = 'active'
             GROUP BY f.faculty_id
-            HAVING meeting_count > 0
             ORDER BY f.last_name, f.first_name
         """)
         
@@ -5579,12 +5879,12 @@ def get_faculty_with_schedules():
         
     except Exception as e:
         logger.error(f"Error fetching faculty with schedules: {e}")
-        return jsonify({'success': False, 'message': str(e)}) 
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/get_academic_years_for_program', methods=['GET'])
 @login_required
 def get_academic_years_for_program():
-    """Get all academic years for a program with their statistics"""
+    """Get academic years for a program with section and subject counts - SHOW ALL YEARS"""
     try:
         program_id = request.args.get('program_id')
         
@@ -5594,85 +5894,91 @@ def get_academic_years_for_program():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get all academic years with stats
+        # Get ALL academic years for this program (don't filter by status)
         cursor.execute("""
             SELECT 
-                ay.academic_year_id,
                 ay.academic_year,
-                ay.is_current,
+                ay.academic_year_id,
                 ay.status,
                 COUNT(DISTINCT ys.section_id) as section_count,
-                COUNT(DISTINCT s.subject_id) as subject_count
+                COUNT(DISTINCT sub.subject_id) as subject_count
             FROM academic_years ay
             LEFT JOIN year_sections ys ON ay.academic_year_id = ys.academic_year_id AND ys.status = 'active'
-            LEFT JOIN subjects s ON ys.section_id = s.section_id AND s.status = 'active'
-            WHERE ay.program_id = %s AND ay.status = 'active'
-            GROUP BY ay.academic_year_id
+            LEFT JOIN subjects sub ON ys.section_id = sub.section_id AND sub.status = 'active'
+            WHERE ay.program_id = %s
+            GROUP BY ay.academic_year_id, ay.academic_year, ay.status
             ORDER BY ay.academic_year DESC
         """, (program_id,))
         
-        years = cursor.fetchall()
+        academic_years = cursor.fetchall()
         
-        # Get current active year
+        # Find the current active academic year (should be only one)
         current_year = None
-        for year in years:
-            if year['is_current']:
+        for year in academic_years:
+            if year['status'] == 'active':
                 current_year = year['academic_year']
                 break
         
         cursor.close()
         conn.close()
         
+        # Format response - include ALL years
+        formatted_years = []
+        for year in academic_years:
+            formatted_years.append({
+                'academic_year': year['academic_year'],
+                'academic_year_id': year['academic_year_id'],
+                'section_count': year['section_count'] or 0,
+                'subject_count': year['subject_count'] or 0,
+                'is_current': year['academic_year'] == current_year
+            })
+        
         return jsonify({
             'success': True,
-            'academic_years': years,
+            'academic_years': formatted_years,
             'current_year': current_year
         })
         
     except Exception as e:
-        logger.error(f"Error fetching academic years: {e}")
+        logger.error(f"Error fetching academic years for program: {e}")
         return jsonify({'success': False, 'message': str(e)})
+
 
 @app.route('/api/set_active_academic_year', methods=['POST'])
 @login_required
 def set_active_academic_year():
-    """Set an academic year as the active/current year for a program"""
+    """Set an academic year as active for a program - PROPERLY MANAGE ACTIVE STATUS"""
     try:
         data = request.json
         program_id = data.get('program_id')
-        academic_year_id = data.get('academic_year_id')
+        academic_year = data.get('academic_year')
         
-        if not all([program_id, academic_year_id]):
-            return jsonify({'success': False, 'message': 'Program ID and Academic Year ID are required'})
+        if not all([program_id, academic_year]):
+            return jsonify({'success': False, 'message': 'All fields are required'})
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Deactivate all other years for this program
-        cursor.execute("""
-            UPDATE academic_years 
-            SET is_current = FALSE 
-            WHERE program_id = %s
-        """, (program_id,))
+        # First, set ALL academic years for this program to inactive
+        cursor.execute(
+            "UPDATE academic_years SET status = 'inactive' WHERE program_id = %s",
+            (program_id,)
+        )
         
-        # Activate the selected year
-        cursor.execute("""
-            UPDATE academic_years 
-            SET is_current = TRUE 
-            WHERE academic_year_id = %s AND program_id = %s
-        """, (academic_year_id, program_id))
-        
-        if cursor.rowcount == 0:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Academic year not found'})
+        # Then set ONLY the selected academic year to active
+        cursor.execute(
+            "UPDATE academic_years SET status = 'active' WHERE program_id = %s AND academic_year = %s",
+            (program_id, academic_year)
+        )
         
         conn.commit()
         cursor.close()
         conn.close()
         
-        logger.info(f"Set academic year {academic_year_id} as active for program {program_id}")
-        return jsonify({'success': True, 'message': 'Academic year activated successfully'})
+        return jsonify({
+            'success': True,
+            'message': f'Successfully set {academic_year} as active academic year'
+        })
         
     except Exception as e:
         logger.error(f"Error setting active academic year: {e}")
@@ -5791,60 +6097,277 @@ def get_year_sections():
         logger.error(f"Error fetching year sections: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/get_programs', methods=['GET'])
-@login_required
-@role_required(['super_admin'])  # Only super_admin can add programs
-def get_programs():
-    """Get all programs with their statistics"""
+@app.route('/api/check_database_tables', methods=['GET'])
+def check_database_tables():
+    """Check if required database tables exist"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
         
-        # First, let's see what we have in the database
-        cursor.execute("SELECT * FROM programs WHERE status = 'active'")
-        programs = cursor.fetchall()
+        tables_to_check = ['programs', 'academic_years', 'semesters', 'year_sections', 'subjects']
+        table_status = {}
         
-        # For each program, count its subjects
-        for program in programs:
-            program_id = program['program_id']
-            
-            # Count sections
-            cursor.execute("""
-                SELECT COUNT(*) as count 
-                FROM year_sections 
-                WHERE program_id = %s AND status = 'active'
-            """, (program_id,))
-            program['total_sections'] = cursor.fetchone()['count']
-            
-            # Count subjects through year_sections
-            cursor.execute("""
-                SELECT COUNT(DISTINCT s.subject_id) as count
-                FROM subjects s
-                INNER JOIN year_sections ys ON s.section_id = ys.section_id
-                WHERE ys.program_id = %s 
-                AND s.status = 'active' 
-                AND ys.status = 'active'
-            """, (program_id,))
-            program['total_subjects'] = cursor.fetchone()['count']
-            
-            # Count students
-            cursor.execute("""
-                SELECT COUNT(*) as count 
-                FROM students 
-                WHERE course LIKE %s AND status = 'active'
-            """, (f'%{program["program_name"]}%',))
-            program['total_students'] = cursor.fetchone()['count']
-            
-            logger.info(f"Program {program_id}: sections={program['total_sections']}, subjects={program['total_subjects']}, students={program['total_students']}")
+        for table in tables_to_check:
+            cursor.execute(f"SHOW TABLES LIKE '{table}'")
+            table_status[table] = cursor.fetchone() is not None
         
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'programs': programs})
+        return jsonify({
+            'success': True,
+            'tables': table_status,
+            'all_tables_exist': all(table_status.values())
+        })
+        
+    except Exception as e:
+        logger.error(f"Error checking database tables: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    
+@app.route('/api/initialize_default_data', methods=['POST'])
+@login_required
+@role_required(['super_admin'])
+def initialize_default_data():
+    """Initialize default programs and academic years if they don't exist"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if programs exist
+        cursor.execute("SELECT COUNT(*) as count FROM programs")
+        program_count = cursor.fetchone()[0]
+        
+        if program_count == 0:
+            # Insert default programs
+            default_programs = [
+                ('CS', 'Bachelor of Science in Computer Science', 'College of Computing Studies'),
+                ('IT', 'Bachelor of Science in Information Technology', 'College of Computing Studies'),
+                ('ACT', 'Associate in Computer Technology', 'College of Computing Studies')
+            ]
+            
+            cursor.executemany(
+                "INSERT INTO programs (program_id, program_name, department, status) VALUES (%s, %s, %s, 'active')",
+                default_programs
+            )
+            logger.info("Added default programs")
+        
+        # Check if academic years exist
+        cursor.execute("SELECT COUNT(*) as count FROM academic_years")
+        year_count = cursor.fetchone()[0]
+        
+        if year_count == 0:
+            # Get a program ID to associate with
+            cursor.execute("SELECT program_id FROM programs LIMIT 1")
+            program_result = cursor.fetchone()
+            
+            if program_result:
+                program_id = program_result[0]
+                current_year = datetime.now().year
+                academic_year = f"{current_year}-{current_year + 1}"
+                
+                # Insert default academic year
+                cursor.execute(
+                    "INSERT INTO academic_years (program_id, academic_year, is_current, status) VALUES (%s, %s, TRUE, 'active')",
+                    (program_id, academic_year)
+                )
+                logger.info(f"Added default academic year: {academic_year}")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Default data initialized successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error initializing default data: {e}")
+        return jsonify({'success': False, 'message': str(e)})    
+
+@app.route('/api/get_programs', methods=['GET'])
+@login_required
+def get_programs():
+    """Get all programs with their statistics per semester - fixed version"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Simple query first to check if we can get basic program data
+        cursor.execute("""
+            SELECT 
+                program_id,
+                program_name,
+                department,
+                status,
+                created_at
+            FROM programs 
+            WHERE status = 'active'
+            ORDER BY program_name
+        """)
+        
+        programs = cursor.fetchall()
+        
+        # If no programs found, return empty array but success
+        if not programs:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': True, 
+                'programs': [],
+                'message': 'No programs found'
+            })
+        
+        # Get all active semesters
+        cursor.execute("""
+            SELECT DISTINCT semester_number 
+            FROM semesters 
+            WHERE status = 'active'
+            ORDER BY 
+                CASE semester_number
+                    WHEN 'Summer' THEN 1
+                    WHEN '1st Semester' THEN 2
+                    WHEN '2nd Semester' THEN 3
+                    ELSE 4
+                END
+        """)
+        semesters = [s['semester_number'] for s in cursor.fetchall()]
+        
+        # For each program, get statistics per semester
+        for program in programs:
+            program_id = program['program_id']
+            program['semesters'] = {}
+            
+            for semester in semesters:
+                try:
+                    # Count sections for this program and semester
+                    cursor.execute("""
+                        SELECT COUNT(DISTINCT ys.section_id) as section_count
+                        FROM year_sections ys
+                        JOIN semesters s ON ys.semester_id = s.semester_id
+                        WHERE ys.program_id = %s 
+                        AND s.semester_number = %s
+                        AND ys.status = 'active'
+                        AND s.status = 'active'
+                    """, (program_id, semester))
+                    
+                    section_result = cursor.fetchone()
+                    section_count = section_result['section_count'] if section_result else 0
+                    
+                    # Count subjects for this program and semester
+                    cursor.execute("""
+                        SELECT COUNT(DISTINCT sub.subject_id) as subject_count
+                        FROM subjects sub
+                        JOIN year_sections ys ON sub.section_id = ys.section_id
+                        JOIN semesters s ON ys.semester_id = s.semester_id
+                        WHERE ys.program_id = %s 
+                        AND s.semester_number = %s
+                        AND sub.status = 'active'
+                        AND ys.status = 'active'
+                        AND s.status = 'active'
+                    """, (program_id, semester))
+                    
+                    subject_result = cursor.fetchone()
+                    subject_count = subject_result['subject_count'] if subject_result else 0
+                    
+                    program['semesters'][semester] = {
+                        'section_count': section_count,
+                        'subject_count': subject_count
+                    }
+                    
+                except Exception as e:
+                    logger.warning(f"Error counting for program {program_id} semester {semester}: {e}")
+                    program['semesters'][semester] = {
+                        'section_count': 0,
+                        'subject_count': 0
+                    }
+            
+            # Also get total counts (across all semesters)
+            try:
+                # Total sections
+                cursor.execute("""
+                    SELECT COUNT(*) as count 
+                    FROM year_sections 
+                    WHERE program_id = %s AND status = 'active'
+                """, (program_id,))
+                result = cursor.fetchone()
+                program['total_sections'] = result['count'] if result else 0
+            except Exception as e:
+                logger.warning(f"Error counting total sections for program {program_id}: {e}")
+                program['total_sections'] = 0
+            
+            try:
+                # Total subjects
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT s.subject_id) as count
+                    FROM subjects s
+                    INNER JOIN year_sections ys ON s.section_id = ys.section_id
+                    WHERE ys.program_id = %s 
+                    AND s.status = 'active' 
+                    AND ys.status = 'active'
+                """, (program_id,))
+                result = cursor.fetchone()
+                program['total_subjects'] = result['count'] if result else 0
+            except Exception as e:
+                logger.warning(f"Error counting total subjects for program {program_id}: {e}")
+                program['total_subjects'] = 0
+            
+            logger.info(f"Program {program_id}: {program['program_name']} - Semesters: {program['semesters']}")
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True, 
+            'programs': programs,
+            'semesters': semesters,  # Return available semesters for frontend
+            'total_count': len(programs)
+        })
         
     except Exception as e:
         logger.error(f"Error fetching programs: {e}", exc_info=True)
-        return jsonify({'success': False, 'message': str(e)})
+        # Return empty array instead of failing completely
+        return jsonify({
+            'success': True,  # Still return success so frontend doesn't break
+            'programs': [],
+            'semesters': [],
+            'message': f'Error loading programs: {str(e)}'
+        })
+
+@app.route('/api/get_courses_simple', methods=['GET'])
+@login_required
+def get_courses_simple():
+    """Simple endpoint to get courses for dropdowns in schedule page"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                program_id as id,
+                program_name as name,
+                program_id as code
+            FROM programs 
+            WHERE status = 'active'
+            ORDER BY program_name
+        """)
+        
+        courses = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'courses': courses
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching simple courses: {e}")
+        return jsonify({
+            'success': False, 
+            'message': str(e),
+            'courses': []
+        })
 
 @app.route('/api/add_program', methods=['POST'])
 @login_required
@@ -5954,6 +6477,689 @@ def delete_program():
     except Exception as e:
         logger.error(f"Error deleting program: {e}")
         return jsonify({'success': False, 'message': str(e)})        
+
+@app.route('/api/get_current_class', methods=['GET'])
+@login_required
+def get_current_class():
+    """Get current class for logged-in faculty member with enhanced details"""
+    try:
+        user_id = session.get('user_id')
+        user_type = session.get('user_type')
+        
+        if not user_id or not user_type:
+            return jsonify({'success': False, 'message': 'User not logged in'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get current day and time
+        current_day = datetime.now().strftime('%A')  # Monday, Tuesday, etc.
+        current_time = datetime.now().strftime('%H:%M:%S')
+        
+        # Get logged in user's name based on user type
+        logged_in_user = ""
+        if user_type == 'admin':
+            cursor.execute("SELECT first_name, last_name, middle_name FROM admins WHERE admin_id = %s", (user_id,))
+            user_data = cursor.fetchone()
+            if user_data:
+                logged_in_user = f"{user_data['first_name']} {user_data['last_name']}"
+                if user_data['middle_name']:
+                    logged_in_user = f"{user_data['first_name']} {user_data['middle_name']} {user_data['last_name']}"
+        elif user_type == 'faculty':
+            cursor.execute("SELECT first_name, last_name, middle_name FROM faculty WHERE faculty_id = %s", (user_id,))
+            user_data = cursor.fetchone()
+            if user_data:
+                logged_in_user = f"{user_data['first_name']} {user_data['last_name']}"
+                if user_data['middle_name']:
+                    logged_in_user = f"{user_data['first_name']} {user_data['middle_name']} {user_data['last_name']}"
+
+        if user_type == 'admin':
+            # Admin can see all current classes
+            cursor.execute("""
+                SELECT DISTINCT
+                    cs.schedule_id,
+                    cs.day_of_week,
+                    cs.start_time,
+                    cs.end_time,
+                    cs.room,
+                    cs.class_type,
+                    s.subject_code,
+                    s.subject_name,
+                    ys.year_level,
+                    ys.section_name,
+                    p.program_name,
+                    p.program_id,
+                    CONCAT(f.first_name, ' ', f.last_name) as instructor_name
+                FROM class_schedules cs
+                JOIN subjects s ON cs.subject_id = s.subject_id
+                JOIN year_sections ys ON cs.section_id = ys.section_id
+                JOIN programs p ON ys.program_id = p.program_id
+                LEFT JOIN faculty_schedules fs ON cs.schedule_id = fs.schedule_id
+                LEFT JOIN faculty f ON fs.faculty_id = f.faculty_id
+                WHERE cs.status = 'active'
+                AND cs.day_of_week = %s
+                AND cs.start_time <= %s
+                AND cs.end_time >= %s
+                ORDER BY cs.start_time
+                LIMIT 1
+            """, (current_day, current_time, current_time))
+        else:
+            # Faculty member sees only their current classes
+            cursor.execute("""
+                SELECT 
+                    cs.schedule_id,
+                    cs.day_of_week,
+                    cs.start_time,
+                    cs.end_time,
+                    cs.room,
+                    cs.class_type,
+                    s.subject_code,
+                    s.subject_name,
+                    ys.year_level,
+                    ys.section_name,
+                    p.program_name,
+                    p.program_id,
+                    CONCAT(f.first_name, ' ', f.last_name) as instructor_name
+                FROM faculty_schedules fs
+                JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+                JOIN subjects s ON cs.subject_id = s.subject_id
+                JOIN year_sections ys ON cs.section_id = ys.section_id
+                JOIN programs p ON ys.program_id = p.program_id
+                JOIN faculty f ON fs.faculty_id = f.faculty_id
+                WHERE fs.faculty_id = %s 
+                AND cs.status = 'active'
+                AND cs.day_of_week = %s
+                AND cs.start_time <= %s
+                AND cs.end_time >= %s
+                ORDER BY cs.start_time
+                LIMIT 1
+            """, (user_id, current_day, current_time, current_time))
+        
+        current_class = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if current_class:
+            # Format class type
+            if current_class['class_type'] == 'lecture':
+                current_class['class_type_display'] = 'Lecture'
+                current_class['subject_with_type'] = f"{current_class['subject_code']} (Lecture)"
+            elif current_class['class_type'] == 'laboratory':
+                current_class['class_type_display'] = 'Laboratory'
+                current_class['subject_with_type'] = f"{current_class['subject_code']} (Laboratory)"
+            else:
+                current_class['class_type_display'] = current_class['class_type'].title()
+                current_class['subject_with_type'] = current_class['subject_code']
+            
+            # Calculate duration from start and end times
+            start_time = datetime.strptime(str(current_class['start_time']), '%H:%M:%S')
+            end_time = datetime.strptime(str(current_class['end_time']), '%H:%M:%S')
+            duration = end_time - start_time
+            total_seconds = int(duration.total_seconds())
+            
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+            
+            return jsonify({
+                'success': True,
+                'has_class': True,
+                'class_info': current_class,
+                'timer': {
+                    'session': {
+                        'hours': str(hours).zfill(2),
+                        'minutes': str(minutes).zfill(2),
+                        'seconds': str(seconds).zfill(2)
+                    },
+                    'threshold': {
+                        'hours': '00',
+                        'minutes': '10',
+                        'seconds': '00'
+                    }
+                },
+                'logged_in_user': logged_in_user,
+                'current_day': current_day,
+                'current_time': current_time
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'has_class': False,
+                'message': f'No classes scheduled for {current_day} at {current_time}',
+                'logged_in_user': logged_in_user,
+                'current_day': current_day,
+                'current_time': current_time
+            })
+        
+    except Exception as e:
+        logger.error(f"Error getting current class: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_assigned_faculty_schedules', methods=['GET'])
+@login_required
+@role_required(['super_admin', 'admin'])
+def get_assigned_faculty_schedules():
+    """Get all faculty members with their assigned schedules for Current Schedule List"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT DISTINCT
+                f.faculty_id,
+                CONCAT(f.first_name, ' ', f.last_name) AS faculty_name,
+                s.subject_code,
+                s.subject_name,
+                cs.day_of_week AS day,
+                TIME_FORMAT(cs.start_time, '%I:%M %p') AS start_time,
+                TIME_FORMAT(cs.end_time, '%I:%M %p') AS end_time,
+                cs.room
+            FROM faculty f
+            JOIN faculty_schedules fs ON f.faculty_id = fs.faculty_id
+            JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+            JOIN subjects s ON cs.subject_id = s.subject_id
+            JOIN year_sections ys ON cs.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            JOIN semesters sem ON ys.semester_id = sem.semester_id
+            JOIN academic_years ay ON sem.academic_year_id = ay.academic_year_id
+            WHERE fs.status = 'active'
+            AND cs.status = 'active'
+            AND ay.is_current = TRUE
+            ORDER BY f.last_name, f.first_name, cs.day_of_week, cs.start_time
+        """)
+        
+        schedules = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        # Group schedules by faculty for display
+        faculty_schedules = {}
+        for schedule in schedules:
+            faculty_id = schedule['faculty_id']
+            if faculty_id not in faculty_schedules:
+                faculty_schedules[faculty_id] = {
+                    'faculty_name': schedule['faculty_name'],
+                    'schedules': []
+                }
+            faculty_schedules[faculty_id]['schedules'].append({
+                'subject': f"{schedule['subject_code']} - {schedule['subject_name']}",
+                'meetings': f"{schedule['day']} {schedule['start_time']}-{schedule['end_time']} ({schedule['room']})"
+            })
+        
+        result = list(faculty_schedules.values())
+        logger.info(f"Found {len(result)} faculty with assigned schedules")
+        return jsonify({
+            'success': True,
+            'faculty_schedules': result
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching assigned faculty schedules: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_faculty_all_schedules', methods=['GET'])
+@login_required
+def get_faculty_all_schedules():
+    """Get all assigned schedules for a faculty member - SIMPLE CAST FIX"""
+    try:
+        faculty_id = request.args.get('faculty_id')
+        
+        if not faculty_id:
+            return jsonify({'success': False, 'message': 'Faculty ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Use CAST to ensure proper time handling
+        cursor.execute("""
+            SELECT 
+                cs.schedule_id,
+                cs.day_of_week as day,
+                TIME_FORMAT(CAST(cs.start_time AS TIME), '%h:%i %p') as start_time,
+                TIME_FORMAT(CAST(cs.end_time AS TIME), '%h:%i %p') as end_time,
+                cs.room,
+                cs.class_type,
+                s.subject_code,
+                s.subject_name,
+                ys.year_level,
+                ys.section_name as section,
+                p.program_name as program,
+                p.program_id,
+                sem.semester_number,
+                ay.academic_year,
+                fs.faculty_id
+            FROM faculty_schedules fs
+            INNER JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
+            INNER JOIN subjects s ON cs.subject_id = s.subject_id
+            INNER JOIN year_sections ys ON cs.section_id = ys.section_id
+            INNER JOIN programs p ON ys.program_id = p.program_id
+            INNER JOIN semesters sem ON ys.semester_id = sem.semester_id
+            INNER JOIN academic_years ay ON ys.academic_year_id = ay.academic_year_id
+            WHERE fs.faculty_id = %s
+            ORDER BY 
+                FIELD(cs.day_of_week, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+                cs.start_time
+        """, (faculty_id,))
+        
+        schedules = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Found {len(schedules)} schedules for faculty {faculty_id}")
+        
+        return jsonify({
+            'success': True,
+            'schedules': schedules,
+            'count': len(schedules)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching faculty schedule: {e}", exc_info=True)
+        return jsonify({
+            'success': False, 
+            'message': str(e),
+            'schedules': []
+        })
+    
+@app.route('/api/start_class_session', methods=['POST'])
+@login_required
+def start_class_session():
+    """Start a class session (for attendance tracking)"""
+    try:
+        user = g.get('user', {})
+        if user.get('user_type') != 'faculty':
+            return jsonify({'success': False, 'message': 'Only faculty can start sessions'})
+        
+        data = request.json
+        schedule_id = data.get('schedule_id')
+        session_type = data.get('session_type', 'default')  # 'default' or 'custom'
+        late_threshold_minutes = data.get('late_threshold_minutes', 15)
+        
+        faculty_id = user['user_id']
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Record session start
+        cursor.execute("""
+            INSERT INTO class_sessions 
+            (faculty_id, schedule_id, session_date, start_time, end_time, late_threshold_minutes, session_type, status)
+            SELECT 
+                %s, cs.schedule_id, CURDATE(), CURTIME(), cs.end_time, %s, %s, 'ongoing'
+            FROM class_schedules cs
+            WHERE cs.schedule_id = %s
+        """, (faculty_id, late_threshold_minutes, session_type, schedule_id))
+        
+        session_id = cursor.lastrowid
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Class session started',
+            'session_id': session_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting session: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_active_programs', methods=['GET'])
+@login_required
+def get_active_programs():
+    """Get all active programs"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT program_id, program_name, department 
+            FROM programs 
+            WHERE status = 'active'
+            ORDER BY program_name
+        """)
+        
+        programs = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'programs': programs})
+        
+    except Exception as e:
+        logger.error(f"Error fetching active programs: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    
+@app.route('/api/get_semesters_for_switch', methods=['GET'])
+@login_required
+def get_semesters_for_switch():
+    """Get semesters for switch modal with section and subject counts - SHOW ALL SEMESTERS"""
+    try:
+        program_id = request.args.get('program_id')
+        academic_year = request.args.get('academic_year')
+        
+        if not program_id or not academic_year:
+            return jsonify({'success': False, 'message': 'Program ID and academic year are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get academic_year_id first
+        cursor.execute(
+            "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
+            (program_id, academic_year)
+        )
+        
+        academic_year_result = cursor.fetchone()
+        if not academic_year_result:
+            return jsonify({'success': False, 'message': 'Academic year not found'})
+        
+        academic_year_id = academic_year_result['academic_year_id']
+        
+        # Get ALL semesters for this academic year (don't filter by status)
+        cursor.execute("""
+            SELECT 
+                s.semester_number,
+                s.semester_id,
+                s.status,
+                COUNT(DISTINCT ys.section_id) as section_count,
+                COUNT(DISTINCT sub.subject_id) as subject_count
+            FROM semesters s
+            LEFT JOIN year_sections ys ON s.semester_id = ys.semester_id AND ys.status = 'active'
+            LEFT JOIN subjects sub ON ys.section_id = sub.section_id AND sub.status = 'active'
+            WHERE s.academic_year_id = %s
+            GROUP BY s.semester_id, s.semester_number, s.status
+            ORDER BY 
+                CASE s.semester_number
+                    WHEN 'Summer' THEN 1
+                    WHEN '1st Semester' THEN 2
+                    WHEN '2nd Semester' THEN 3
+                    ELSE 4
+                END
+        """, (academic_year_id,))
+        
+        semesters = cursor.fetchall()
+        
+        # Find the current active semester (should be only one)
+        current_semester = None
+        for semester in semesters:
+            if semester['status'] == 'active':
+                current_semester = semester['semester_number']
+                break
+        
+        cursor.close()
+        conn.close()
+        
+        # Format response - include ALL semesters
+        formatted_semesters = []
+        for semester in semesters:
+            formatted_semesters.append({
+                'semester_number': semester['semester_number'],
+                'semester_id': semester['semester_id'],
+                'section_count': semester['section_count'] or 0,
+                'subject_count': semester['subject_count'] or 0,
+                'is_current': semester['semester_number'] == current_semester
+            })
+        
+        return jsonify({
+            'success': True,
+            'semesters': formatted_semesters,
+            'current_semester': current_semester
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching semesters for switch: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/set_active_semester', methods=['POST'])
+@login_required
+def set_active_semester():
+    """Set a semester as active for a program - PROPERLY MANAGE ACTIVE STATUS"""
+    try:
+        data = request.json
+        program_id = data.get('program_id')
+        academic_year = data.get('academic_year')
+        semester_number = data.get('semester_number')
+        
+        if not all([program_id, academic_year, semester_number]):
+            return jsonify({'success': False, 'message': 'All fields are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get academic_year_id
+        cursor.execute(
+            "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
+            (program_id, academic_year)
+        )
+        
+        academic_year_result = cursor.fetchone()
+        if not academic_year_result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Academic year not found'})
+        
+        academic_year_id = academic_year_result[0]
+        
+        # Get semester_id
+        cursor.execute(
+            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s",
+            (academic_year_id, semester_number)
+        )
+        
+        semester_result = cursor.fetchone()
+        if not semester_result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Semester not found'})
+        
+        semester_id = semester_result[0]
+        
+        # First, set ALL semesters in this academic year to inactive
+        cursor.execute(
+            "UPDATE semesters SET status = 'inactive' WHERE academic_year_id = %s",
+            (academic_year_id,)
+        )
+        
+        # Then set ONLY the selected semester to active
+        cursor.execute(
+            "UPDATE semesters SET status = 'active' WHERE semester_id = %s",
+            (semester_id,)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully set {semester_number} {academic_year} as active period'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error setting active semester: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_active_period', methods=['GET'])
+@login_required
+def get_active_period():
+    """Get active academic year and semester for a program"""
+    try:
+        program_id = request.args.get('program_id')
+        
+        if not program_id:
+            return jsonify({'success': False, 'message': 'Program ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get current academic year
+        cursor.execute("""
+            SELECT academic_year 
+            FROM academic_years 
+            WHERE program_id = %s AND is_current = TRUE AND status = 'active'
+            LIMIT 1
+        """, (program_id,))
+        
+        academic_year_result = cursor.fetchone()
+        
+        if not academic_year_result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'No active academic year found'})
+        
+        academic_year = academic_year_result['academic_year']
+        
+        # Get academic_year_id
+        cursor.execute("""
+            SELECT academic_year_id 
+            FROM academic_years 
+            WHERE program_id = %s AND academic_year = %s AND status = 'active'
+        """, (program_id, academic_year))
+        
+        academic_year_id_result = cursor.fetchone()
+        
+        if not academic_year_id_result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Academic year not found'})
+        
+        academic_year_id = academic_year_id_result['academic_year_id']
+        
+        # Get current semester (you might need to adjust this logic based on your semester system)
+        cursor.execute("""
+            SELECT semester_number 
+            FROM semesters 
+            WHERE academic_year_id = %s AND status = 'active'
+            ORDER BY 
+                CASE semester_number
+                    WHEN '1st Semester' THEN 1
+                    WHEN '2nd Semester' THEN 2
+                    WHEN 'Summer' THEN 3
+                    ELSE 4
+                END
+            LIMIT 1
+        """, (academic_year_id,))
+        
+        semester_result = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if not semester_result:
+            return jsonify({'success': False, 'message': 'No active semester found'})
+        
+        return jsonify({
+            'success': True,
+            'active_period': {
+                'academic_year': academic_year,
+                'semester': semester_result['semester_number']
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting active period: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    
+@app.route('/api/get_sections_with_semester', methods=['GET'])
+@login_required
+def get_sections_with_semester():
+    """Get sections filtered by program, year level, academic year, and semester"""
+    try:
+        program_id = request.args.get('program_id')
+        year_level = request.args.get('year_level')
+        academic_year = request.args.get('academic_year')
+        semester = request.args.get('semester')
+        
+        if not all([program_id, year_level, academic_year, semester]):
+            return jsonify({'success': False, 'message': 'All parameters are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get academic_year_id
+        cursor.execute(
+            "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
+            (program_id, academic_year)
+        )
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Academic year not found'})
+        
+        academic_year_id = result['academic_year_id']
+        
+        # Get semester_id
+        cursor.execute(
+            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s",
+            (academic_year_id, semester)
+        )
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Semester not found'})
+        
+        semester_id = result['semester_id']
+        
+        # Get sections for this specific semester - FIXED QUERY
+        cursor.execute("""
+            SELECT 
+                ys.section_id,
+                ys.section_name,
+                ys.year_level,
+                ys.program_id
+            FROM year_sections ys
+            WHERE ys.program_id = %s 
+            AND ys.year_level = %s 
+            AND ys.semester_id = %s
+            AND ys.status = 'active'
+            ORDER BY ys.section_name
+        """, (program_id, year_level, semester_id))
+        
+        sections = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Found {len(sections)} sections for program {program_id}, year {year_level}, {semester} {academic_year}")
+        return jsonify({'success': True, 'sections': sections})
+        
+    except Exception as e:
+        logger.error(f"Error fetching sections with semester: {e}")
+        return jsonify({'success': False, 'message': str(e)})   
+
+@app.route('/api/set_rtsp_url', methods=['POST'])
+@login_required
+def set_rtsp_url():
+    """Set the RTSP URL dynamically"""
+    try:
+        data = request.json
+        rtsp_url = data.get('rtsp_url')
+        
+        if not rtsp_url:
+            return jsonify({'success': False, 'message': 'RTSP URL is required'})
+        
+        # Try to connect to the new RTSP URL
+        if open_stream(rtsp_url):
+            return jsonify({
+                'success': True, 
+                'message': 'RTSP URL updated successfully',
+                'camera_available': camera_available
+            })
+        else:
+            return jsonify({
+                'success': False, 
+                'message': 'Failed to connect to RTSP URL',
+                'camera_available': camera_available
+            })
+            
+    except Exception as e:
+        logger.error(f"Error setting RTSP URL: {e}")
+        return jsonify({'success': False, 'message': str(e)})
 
 if __name__ == "__main__":
     # Initialize global variables (no need for global keyword here)
