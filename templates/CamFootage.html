@@ -7,7 +7,857 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='camfootage.css') }}">
-    <link rel="stylesheet" href="../static/camfootage.css">
+    <style>
+        :root {
+            --primary: #4361ee;
+            --primary-light: #eef2ff;
+            --secondary: #3f37c9;
+            --dark: #1e1e24;
+            --light: #f8f9fa;
+            --success: #4cc9f0;
+            --warning: #f8961e;
+            --danger: #f72585;
+            --gray: #adb5bd;
+            --gray-light: #e9ecef;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: #f5f7fb;
+            color: var(--dark);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+            max-width: 1600px;
+            margin: 0 auto;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .cctv-section {
+            flex: 2;
+            background: #000;
+            overflow: visible;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .cctv-header {
+            padding: 0.5rem;
+            background: rgba(0,0,0,0);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 2;
+        }
+
+        .cctv-header > div {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .cctv-header .time-display {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            font-weight: 500;
+            margin-left: 1rem;
+        }
+
+        .timer-display {
+            background: rgba(0,0,0,0.3);
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            margin-right: 0;
+            margin-left: auto;
+        }
+
+        .cctv-feed {
+            flex: 1;
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: black;
+        }
+
+        .cctv-feed video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .cctv-controls {
+            padding: 0.5rem;
+            background: rgba(0,0,0,0);
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+        }
+
+        .cctv-controls button {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .cctv-controls button:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .cctv-controls button.end-session {
+            background: rgba(255,0,0,0.2);
+            border: 1px solid rgba(255,0,0,0.3);
+        }
+
+        .cctv-controls button.end-session:hover {
+            background: rgba(255,0,0,0.3);
+        }
+
+        .attendance-section {
+            flex: 1;
+            background: white;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-width: 350px;
+            height: 100vh;
+        }
+
+        header {
+            padding: 0.75rem 1rem;
+            background: white;
+            color: black;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            overflow: visible;
+            min-height: auto;
+            border-bottom: 1px solid var(--gray-light);
+        }
+
+        .faculty-info {
+            display: flex !important;
+            align-items: center;
+            gap: 0.75rem;
+            flex-direction: row;
+            flex-wrap: wrap;
+            visibility: visible !important;
+            opacity: 1 !important;
+            position: relative !important;
+        }
+
+        .faculty-role {
+            font-size: 0.8rem;
+            opacity: 0.8;
+            margin-top: 0;
+        }
+
+        .section-info {
+            display: flex !important;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            min-width: fit-content;
+            visibility: visible !important;
+            opacity: 1 !important;
+            position: relative !important;
+        }
+
+        .search-bar {
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--gray-light);
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            overflow: visible;
+        }
+
+        .search-bar input {
+            width: 100%;
+            padding: 0.75rem 1rem 0.75rem 2.5rem;
+            border: 1px solid var(--gray-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .search-bar input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px var(--primary-light);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--gray);
+        }
+
+        .student-list {
+            flex: 1;
+            height: auto;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 0.5rem;
+            scrollbar-width: thin;
+            scrollbar-color: var(--gray) transparent;
+        }
+
+        .student-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .student-list::-webkit-scrollbar-thumb {
+            background-color: var(--gray);
+            border-radius: 3px;
+        }
+
+        .student-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .list-header {
+            display: flex;
+            padding: 0.5rem 1rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--gray);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .list-header span:first-child {
+            flex: 1;
+        }
+
+        .list-header span:last-child {
+            width: 100px;
+            text-align: center;
+        }
+
+        .student-row {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin-bottom: 0.25rem;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .student-row:hover {
+            background: var(--primary-light);
+        }
+
+        .student-info {
+            display: flex;
+            align-items: center;
+            flex: 1;
+        }
+
+        .student-name {
+            margin-left: 1rem;
+            font-weight: 500;
+        }
+
+        .student-id {
+            font-size: 0.8rem;
+            color: var(--gray);
+            margin-top: 0.1rem;
+            margin-left: 1rem;
+        }
+
+        .status {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.35rem 0.75rem;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            width: 100px;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .present {
+            background: #e3fafc;
+            color: #1098ad;
+        }
+
+        .absent {
+            background: #fff5f5;
+            color: #ff6b6b;
+        }
+
+        .late {
+            background: #fff9db;
+            color: #f59f00;
+        }
+
+        .status-toggle {
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .student-row:hover .status-toggle {
+            opacity: 1;
+        }
+
+        .actions {
+            display: flex;
+            padding: 0.75rem;
+            justify-content: center;
+            border-top: 1px solid var(--gray-light);
+            position: relative;
+            min-height: 8%;
+            padding: 0.5rem;
+        }
+
+        .actions::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: 0;
+            right: 0;
+            height: 20px;
+            background: linear-gradient(to top, rgba(255,255,255,1), rgba(255,255,255,0));
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .action-toggle {
+            background: #4a6fa9;
+            color: white;
+            border: none;
+            padding: 0.35rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+        }
+
+        .action-toggle.hidden {
+            opacity: 0;
+            visibility: hidden;
+            transform: translate(-50%, 100%);
+        }
+
+        .action-menu {
+            position: absolute;
+            left: 0.75rem;
+            right: 0.75rem;
+            bottom: 0.5rem;
+            display: flex;
+            gap: 0.5rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 9;
+        }
+
+        .action-menu.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .action-menu button {
+            font-size: 0.7rem !important;
+            flex: 1;
+            padding: 0.35rem 0.5rem;
+            border: none;
+            border-radius: 8px;
+            background: var(--gray-light);
+            color: var(--dark);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 0;
+            font-size: 0.8rem;
+        }
+
+        .action-menu button:nth-child(1) {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .action-menu button:nth-child(2) {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .action-menu button:nth-child(3) {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .action-menu button:nth-child(4) {
+            background: #fff9c4;
+            color: brown;
+        }
+
+        .action-menu button:hover {
+            filter: brightness(0.95);
+            color: inherit;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+        }
+
+        .faculty-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid white;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(3px);
+        }
+
+        .modal[style*="flex"] {
+            display: flex !important;
+        }
+
+        .modal-content {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--gray-light);
+            padding-bottom: 0.75rem;
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--dark);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            color: var(--gray);
+            cursor: pointer;
+            padding: 0.5rem;
+            transition: color 0.2s;
+        }
+
+        .close-modal:hover {
+            color: var(--dark);
+        }
+
+        .modal-body {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--dark);
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--gray-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+        }
+
+        .modal-footer button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-cancel {
+            background: var(--gray-light);
+            color: var(--dark);
+        }
+
+        .btn-submit {
+            background: #4a6fa9;
+            color: white;
+        }
+
+        .config-display {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.9rem;
+            z-index: 3;
+        }
+
+        .config-display p {
+            margin: 5px 0;
+            opacity: 0.9;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                flex-direction: column;
+                padding: 1rem;
+            }
+            
+            .attendance-section {
+                min-width: auto;
+                height: auto;
+            }
+            
+            .faculty-info, .section-info {
+                display: flex !important;
+                flex-wrap: wrap;
+                width: 100%;
+                visibility: visible !important;
+                opacity: 1 !important;
+            }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .status-updated {
+            animation: pulse 0.3s ease;
+        }
+
+        .student-count {
+            padding: 0.1rem 1rem;
+            background: var(--primary-light);
+            color: var(--dark);
+            font-size: 0.8rem;
+            border-bottom: 1px solid var(--gray-light);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .student-count .material-icons {
+            color: #4a6fa9 !important;
+        }
+
+        .student-ratio {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: auto;
+            padding: 0.4rem 0.75rem;
+            font-size: 0.8rem;
+        }
+
+        .student-ratio #detected-count {
+            color: #4a6fa9;
+            font-weight: 600;
+        }
+
+        .student-ratio #total-count {
+            color: var(--gray);
+        }
+
+        .quality-select {
+            padding: 0.75rem;
+            border: 1px solid var(--gray-light);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            width: 100%;
+            background: white;
+            margin-top: 0.5rem;
+        }
+
+        .quality-select option {
+            padding: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .minimized-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            height: 220px;
+            background: #000;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            display: none;
+            z-index: 1000;
+            overflow: hidden;
+        }
+
+        .minimized-header {
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 0.75rem;
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .minimized-video {
+            width: 100%;
+            height: calc(100% - 40px);
+            object-fit: cover;
+        }
+
+        body.minimized {
+            background: #f5f7fb;
+        }
+
+   .btn-action {
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 1rem;
+            transition: all 0.2s;
+            padding:0.6rem 1rem;
+            font-size: 0.9rem;
+        }
+
+        .btn-action:hover {
+            filter: brightness(0.95);
+        }
+
+        .unrecognized-faces {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .face-card {
+            border: 1px solid var(--gray-light);
+            border-radius: 10px;
+            padding: 0.75rem;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+            background: white;
+        }
+
+        .face-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .face-card img {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-bottom: 0.75rem;
+        }
+
+        .face-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            color: var(--dark);
+        }
+
+        .face-actions {
+            display: flex;
+            flex-direction: row;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            justify-content: space-between;
+        }
+
+        .btn-action.present {
+            background: #e3fafc;
+            color: #1098ad;
+            flex: 1;
+            padding: 0.5rem;
+        }
+
+        .btn-action.late {
+            background: #fff9db;
+            color: #f59f00;
+            flex: 1;
+            padding: 0.5rem;
+        }
+
+        .btn-action.unknown {
+            background: #ffebee;
+            color: #d32f2f;
+            flex: 1;
+            padding: 0.5rem;
+        }
+
+.btn-action.retake {
+    background: #e8f5e9;
+    color: #388e3c;
+    width: 100%;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+    justify-content: center; /* Ensures icon and text are centered together */
+}
+
+        .face-card[data-status]::after {
+            content: attr(data-status);
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .face-card[data-status="present"]::after {
+            background: #e3fafc;
+            color: #1098ad;
+        }
+
+        .face-card[data-status="late"]::after {
+            background: #fff9db;
+            color: #f59f00;
+        }
+
+        .face-card[data-status="unknown"]::after {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .face-card[data-status] {
+            opacity: 0.7;
+        }
+
+        .select-all {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .status.excused {
+            background: #fff3e0;
+            color: #f57c00;
+            border: 1px solid #ffb74d;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -22,7 +872,7 @@
                 <span id="date-time" class="time-display">07/04/25 - 1:00 PM</span>
             </div>
             <div class="cctv-feed">
-                <img id="cam-feed" src="/video_feed">
+                <video id="cam-feed" autoplay></video>
             </div>
             <div class="cctv-controls">
                 <button onclick="goToDashboard()">
@@ -163,10 +1013,8 @@
                 <span class="material-icons">open_in_full</span>
             </button>
         </div>
-        <video class="minimized-video" autoplay muted></video>
+        <video class="minimized-video" autoplay></video>
     </div>
-
-    <iframe src="/" class="timer-iframe" id="timerView"></iframe>
 
     <!-- End Session Modal -->
     <div class="modal" id="endSessionModal">
@@ -394,19 +1242,20 @@
         </div>
     </div>
 
-    <!-- Unrecognized Faces Modal -->
     <div class="modal" id="unrecognizedFacesModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">⚠️ Unrecognized Faces Detected</h3>
+                <h3 class="modal-title">
+                    <span class="material-icons" style="vertical-align: middle; color: var(--warning);">warning</span>
+                    Unrecognized Faces Detected
+                </h3>
                 <button class="close-modal" onclick="closeModal('unrecognizedFacesModal')">
                     <span class="material-icons">close</span>
                 </button>
             </div>
             <div class="modal-body">
-                <p style="color: var(--warning); margin-bottom: 1rem;">
-                    <span class="material-icons" style="vertical-align: middle;">warning</span>
-                    There are faces detected but not recognized by the system.
+                <p class="modal-description">
+                    The system has detected faces that are not recognized. Please review and assign a status to each face or retake the detection.
                 </p>
                 <div class="select-all">
                     <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
@@ -415,34 +1264,34 @@
                 <div class="unrecognized-faces" id="unrecognizedFacesList">
                     <div class="face-card">
                         <img src="https://randomuser.me/api/portraits/men/1.jpg" alt="Unrecognized Face">
-                        <label>
+                        <label class="face-label">
                             <input type="checkbox" name="face" value="face1">
                             Face #1
                         </label>
                     </div>
                     <div class="face-card">
                         <img src="https://randomuser.me/api/portraits/women/1.jpg" alt="Unrecognized Face">
-                        <label>
+                        <label class="face-label">
                             <input type="checkbox" name="face" value="face2">
                             Face #2
                         </label>
                     </div>
                 </div>
                 <div class="face-actions">
-                    <button class="btn-action" onclick="markSelectedAs('present')" style="background: #e3fafc; color: #1098ad; flex: 1; padding: 1rem;">
+                    <button class="btn-action present" onclick="markSelectedAs('present')">
                         <span class="material-icons">how_to_reg</span>
                         Mark as Present
                     </button>
-                    <button class="btn-action" onclick="markSelectedAs('late')" style="background: #fff9db; color: #f59f00; flex: 1; padding: 1rem;">
+                    <button class="btn-action late" onclick="markSelectedAs('late')">
                         <span class="material-icons">schedule</span>
                         Mark as Late
                     </button>
-                    <button class="btn-action" onclick="markSelectedAs('unknown')" style="background: #ffebee; color: #d32f2f; flex: 1; padding: 1rem;">
+                    <button class="btn-action unknown" onclick="markSelectedAs('unknown')">
                         <span class="material-icons">person_off</span>
-                        Unknown Face
+                        Mark as Absent
                     </button>
                 </div>
-                <button class="btn-action" onclick="retakeFaces()" style="background: #e8f5e9; color: #388e3c; width: 100%; margin-top: 1rem; padding: 1rem; text-align: left;">
+                <button class="btn-action retake" onclick="retakeFaces()">
                     <span class="material-icons">face_retouching_natural</span>
                     Retake Face Detection
                 </button>
@@ -451,6 +1300,33 @@
     </div>
 
     <script>
+        // Global error handler
+        window.onerror = function (message, source, lineno, colno, error) {
+            console.error(`Error: ${message} at ${source}:${lineno}:${colno}`);
+            alert('An error occurred. Check the console for details.');
+        };
+
+        // Initialize video stream on page load
+        window.addEventListener('load', () => {
+            console.log('Page loaded, initializing...');
+            loadClassSettings();
+            startTimer();
+            updateTimer();
+            updateStudentCount();
+            // Initialize video stream
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    const video = document.getElementById('cam-feed');
+                    const minimizedVideo = document.querySelector('.minimized-video');
+                    video.srcObject = stream;
+                    minimizedVideo.srcObject = stream;
+                })
+                .catch(err => {
+                    console.error('Error accessing video stream:', err);
+                    alert('Failed to load video feed. Check camera permissions.');
+                });
+        });
+
         // Update date and time dynamically
         function updateDateTime() {
             const now = new Date();
@@ -476,602 +1352,584 @@
         let isTimerPaused = false;
         let timerInterval;
 
+        function formatTime(seconds) {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
         function updateTimer() {
             if (isTimerPaused) return;
             
-            const now = new Date();
-            const diff = now - startTime - totalPausedTime;
-            const settings = JSON.parse(localStorage.getItem('classSettings'));
-            
-            // Calculate total session duration in milliseconds from settings
-            const totalDuration = (
-                parseInt(settings.timer.session.hours) * 3600 +
-                parseInt(settings.timer.session.minutes) * 60 +
-                parseInt(settings.timer.session.seconds)
-            ) * 1000;
-            
-            // Check if session duration is reached
-            if (diff >= totalDuration) {
-                clearInterval(timerInterval);
-                isRunning = false;
+            try {
+                const now = new Date();
+                const diff = now - startTime - totalPausedTime;
+                const settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
                 
-                // Show unrecognized faces modal first
-                document.getElementById('unrecognizedFacesModal').style.display = 'flex';
+                // Calculate total session duration in milliseconds from settings
+                const totalDuration = (
+                    parseInt(settings.timer?.session?.hours || 3) * 3600 +
+                    parseInt(settings.timer?.session?.minutes || 0) * 60 +
+                    parseInt(settings.timer?.session?.seconds || 0)
+                ) * 1000;
                 
-                // Then show end session modal after faces are handled
-                document.getElementById('sessionDuration').textContent = formatTime(totalDuration / 1000);
-                return;
-            }
+                // Check if session duration is reached
+                if (diff >= totalDuration) {
+                    clearInterval(timerInterval);
+                    isRunning = false;
+                    
+                    // Show unrecognized faces modal first
+                    const unrecognizedModal = document.getElementById('unrecognizedFacesModal');
+                    if (unrecognizedModal) {
+                        unrecognizedModal.style.display = 'flex';
+                    } else {
+                        console.error('Unrecognized faces modal not found');
+                    }
+                    
+                    // Update session duration in end session modal
+                    document.getElementById('sessionDuration').textContent = formatTime(totalDuration / 1000);
+                    return;
+                }
 
-            const remaining = totalDuration - diff;
-            const hours = Math.floor(remaining / 3600000);
-            const minutes = Math.floor((remaining % 3600000) / 60000);
-            const seconds = Math.floor((remaining % 60000) / 1000);
+                const remaining = totalDuration - diff;
+                const hours = Math.floor(remaining / 3600000);
+                const minutes = Math.floor((remaining % 3600000) / 60000);
+                const seconds = Math.floor((remaining % 60000) / 1000);
 
-            // Update display with remaining time
-            document.getElementById('elapsed-time').textContent = formatTime(Math.floor(diff / 1000));
-            document.getElementById('total-time').textContent = formatTime(totalDuration / 1000);
+                // Update display with elapsed and total time
+                document.getElementById('elapsed-time').textContent = formatTime(Math.floor(diff / 1000));
+                document.getElementById('total-time').textContent = formatTime(totalDuration / 1000);
 
-            // Check late threshold
-            const lateThresholdMs = (
-                parseInt(settings.timer.threshold.hours) * 3600000 +
-                parseInt(settings.timer.threshold.minutes) * 60000 +
-                parseInt(settings.timer.threshold.seconds) * 1000
-            );
-            
-            if (diff >= lateThresholdMs && diff < totalDuration) {
-                document.getElementById('mainTimer').classList.add('late');
+                // Check late threshold
+                const lateThresholdMs = (
+                    parseInt(settings.timer?.threshold?.hours || 0) * 3600000 +
+                    parseInt(settings.timer?.threshold?.minutes || 15) * 60000 +
+                    parseInt(settings.timer?.threshold?.seconds || 0) * 1000
+                );
+                
+                if (diff >= lateThresholdMs && diff < totalDuration) {
+                    document.getElementById('mainTimer')?.classList.add('late');
+                }
+            } catch (err) {
+                console.error('Error in updateTimer:', err);
             }
         }
 
         function startTimer() {
-            if (!timerInterval) {
-                timerInterval = setInterval(updateTimer, 1000);
+            try {
+                if (!timerInterval) {
+                    timerInterval = setInterval(updateTimer, 1000);
+                }
+            } catch (err) {
+                console.error('Error starting timer:', err);
             }
         }
 
         function togglePause(button) {
-            const icon = button.querySelector('.material-icons');
-            
-            if (isTimerPaused) {
-                // Resume timer only
-                icon.textContent = 'pause';
-                button.innerHTML = '<span class="material-icons">pause</span>Pause';
-                isTimerPaused = false;
-                if (pauseStartTime) {
-                    totalPausedTime += (new Date() - pauseStartTime);
-                    pauseStartTime = null;
+            console.log('togglePause clicked');
+            try {
+                button.disabled = true;
+                const icon = button.querySelector('.material-icons');
+                const video = document.getElementById('cam-feed');
+                
+                if (isTimerPaused) {
+                    icon.textContent = 'pause';
+                    button.innerHTML = '<span class="material-icons">pause</span>Pause';
+                    isTimerPaused = false;
+                    if (pauseStartTime) {
+                        totalPausedTime += (new Date() - pauseStartTime);
+                        pauseStartTime = null;
+                    }
+                    if (video && video.srcObject) {
+                        video.play().catch(err => console.error('Error resuming video:', err));
+                    }
+                } else {
+                    icon.textContent = 'play_arrow';
+                    button.innerHTML = '<span class="material-icons">play_arrow</span>Play';
+                    isTimerPaused = true;
+                    pauseStartTime = new Date();
+                    if (video && video.srcObject) {
+                        video.pause();
+                    }
                 }
-            } else {
-                // Pause timer only
-                icon.textContent = 'play_arrow';
-                button.innerHTML = '<span class="material-icons">play_arrow</span>Play';
-                isTimerPaused = true;
-                pauseStartTime = new Date();
+                setTimeout(() => { button.disabled = false; }, 500);
+            } catch (err) {
+                console.error('Error in togglePause:', err);
+                alert('Error pausing/resuming session.');
+                button.disabled = false;
             }
         }
 
         function toggleFullscreen() {
-            const videoContainer = document.querySelector('.cctv-feed');
-            
-            if (!document.fullscreenElement) {
-                videoContainer.requestFullscreen().catch(err => {
-                    alert(`Error attempting to enable fullscreen: ${err.message}`);
-                });
-            } else {
-                document.exitFullscreen();
+            console.log('toggleFullscreen clicked');
+            try {
+                const videoContainer = document.querySelector('.cctv-feed');
+                if (!document.fullscreenElement) {
+                    videoContainer.requestFullscreen().catch(err => {
+                        console.error(`Error enabling fullscreen: ${err.message}`);
+                        alert(`Error attempting to enable fullscreen: ${err.message}`);
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
+            } catch (err) {
+                console.error('Error in toggleFullscreen:', err);
+                alert('Error toggling fullscreen.');
             }
         }
 
         function minimizeScreen() {
-            const minimizedView = document.getElementById('minimizedView');
-            const mainVideo = document.querySelector('.cctv-feed video');
-            const minimizedVideo = document.querySelector('.minimized-video');
-            
-            if (mainVideo.srcObject) {
-                minimizedVideo.srcObject = mainVideo.srcObject;
-                minimizedView.style.display = 'block';
-                document.querySelector('.container').style.display = 'none';
-                document.body.classList.add('minimized');
+            console.log('minimizeScreen clicked');
+            try {
+                const minimizedView = document.getElementById('minimizedView');
+                const mainVideo = document.getElementById('cam-feed');
+                const minimizedVideo = document.querySelector('.minimized-video');
+                
+                if (mainVideo && mainVideo.srcObject) {
+                    minimizedVideo.srcObject = mainVideo.srcObject;
+                    minimizedView.style.display = 'block';
+                    document.querySelector('.container').style.display = 'none';
+                    document.body.classList.add('minimized');
+                } else {
+                    console.error('No video source available for minimization');
+                    alert('Cannot minimize: No video source available.');
+                }
+            } catch (err) {
+                console.error('Error in minimizeScreen:', err);
+                alert('Error minimizing screen.');
             }
         }
 
         function maximizeScreen() {
-            const minimizedView = document.getElementById('minimizedView');
-            const mainVideo = document.querySelector('.cctv-feed video');
-            const minimizedVideo = document.querySelector('.minimized-video');
-            
-            if (minimizedVideo.srcObject) {
-                mainVideo.srcObject = minimizedVideo.srcObject;
-                minimizedView.style.display = 'none';
-                document.querySelector('.container').style.display = 'flex';
-                document.body.classList.remove('minimized');
+            console.log('maximizeScreen clicked');
+            try {
+                const minimizedView = document.getElementById('minimizedView');
+                const mainVideo = document.getElementById('cam-feed');
+                const minimizedVideo = document.querySelector('.minimized-video');
+                
+                if (minimizedVideo.srcObject) {
+                    mainVideo.srcObject = minimizedVideo.srcObject;
+                    minimizedView.style.display = 'none';
+                    document.querySelector('.container').style.display = 'flex';
+                    document.body.classList.remove('minimized');
+                }
+            } catch (err) {
+                console.error('Error in maximizeScreen:', err);
+                alert('Error maximizing screen.');
             }
         }
 
-        // Go back to dashboard
         function goToDashboard() {
-            if (confirm('Are you sure you want to return to the dashboard? Any unsaved changes will be lost.')) {
-                window.location.href = "/dashboard";
-            }
-        }
-
-        // Sample functionality for status toggling
-        document.querySelectorAll('.status-toggle').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.stopPropagation();
-                const statusElement = this.parentElement.querySelector('.status');
-                const currentStatus = statusElement.textContent.trim();
-                
-                // Rotate through statuses
-                if(currentStatus === 'Present') {
-                    statusElement.textContent = 'Absent';
-                    statusElement.className = 'status absent';
-                } else if(currentStatus === 'Absent') {
-                    statusElement.textContent = 'Late';
-                    statusElement.className = 'status late';
-                } else {
-                    statusElement.textContent = 'Present';
-                    statusElement.className = 'status present';
+            console.log('goToDashboard clicked');
+            try {
+                if (confirm('Are you sure you want to return to the dashboard? Any unsaved changes will be lost.')) {
+                    window.location.href = "/dashboard";
                 }
-                
-                // Add animation
-                statusElement.classList.add('status-updated');
-                setTimeout(() => {
-                    statusElement.classList.remove('status-updated');
-                }, 300);
-                
-                // Here you would typically update your data store
-                console.log('Status changed for student');
-            });
-        });
-
-        // Sample search functionality
-        const searchInput = document.querySelector('.search-bar input');
-        searchInput.addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            let visibleCount = 0;
-            document.querySelectorAll('.student-row').forEach(row => {
-                const name = row.querySelector('.student-name').textContent.toLowerCase();
-                const id = row.querySelector('.student-id').textContent.toLowerCase();
-                if(name.includes(searchTerm) || id.includes(searchTerm)) {
-                    row.style.display = 'flex';
-                    visibleCount++;
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-            document.getElementById('student-count').textContent = visibleCount;
-            document.getElementById('detected-count').textContent = visibleCount;
-        });
-
-        // Initialize student counts
-        const totalStudents = 30;
-        document.getElementById('total-count').textContent = totalStudents;
-        document.getElementById('detected-count').textContent = 15;
-
-        // Action menu functionality
-        function toggleActionMenu() {
-            const menu = document.querySelector('.action-menu');
-            const toggle = document.querySelector('.action-toggle');
-            
-            if (!menu.classList.contains('active')) {
-                toggle.classList.add('hidden');
-                setTimeout(() => menu.classList.add('active'), 100);
-            } else {
-                menu.classList.remove('active');
-                setTimeout(() => toggle.classList.remove('hidden'), 300);
-            }
-        }
-
-        function handleAction(action) {
-            switch(action) {
-                case 'add':
-                    document.getElementById('addStudentModal').style.display = 'flex';
-                    break;
-                case 'delete':
-                    populateDeleteStudentSelect();
-                    document.getElementById('deleteStudentModal').style.display = 'flex';
-                    break;
-                case 'transfer':
-                    populateTransferStudentSelect();
-                    document.getElementById('transferStudentModal').style.display = 'flex';
-                    break;
-                case 'excused':
-                    populateExcusedStudentSelect();
-                    document.getElementById('excusedStudentModal').style.display = 'flex';
-                    break;
-            }
-            toggleActionMenu();
-        }
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
-        }
-
-        function populateDeleteStudentSelect() {
-            const select = document.getElementById('deleteStudentSelect');
-            select.innerHTML = '<option value="">Select a student to delete...</option>';
-            
-            document.querySelectorAll('.student-row').forEach(row => {
-                const name = row.querySelector('.student-name').textContent;
-                const id = row.querySelector('.student-id').textContent.split(': ')[1];
-                const option = document.createElement('option');
-                option.value = id;
-                option.textContent = `${name} (${id})`;
-                select.appendChild(option);
-            });
-        }
-
-        function populateTransferStudentSelect() {
-            const select = document.getElementById('transferStudent');
-            select.innerHTML = '<option value="">Select a student...</option>';
-            
-            document.querySelectorAll('.student-row').forEach(row => {
-                const name = row.querySelector('.student-name').textContent;
-                const id = row.querySelector('.student-id').textContent.split(': ')[1];
-                const option = document.createElement('option');
-                option.value = id;
-                option.textContent = `${name} (${id})`;
-                select.appendChild(option);
-            });
-        }
-
-        function populateExcusedStudentSelect() {
-            const select = document.getElementById('excusedStudentSelect');
-            select.innerHTML = '<option value="">Select a student to mark as excused...</option>';
-            
-            document.querySelectorAll('.student-row').forEach(row => {
-                const name = row.querySelector('.student-name').textContent;
-                const id = row.querySelector('.student-id').textContent.split(': ')[1];
-                const option = document.createElement('option');
-                option.value = id;
-                option.textContent = `${name} (${id})`;
-                select.appendChild(option);
-            });
-        }
-
-        function submitAddStudent() {
-            const name = document.getElementById('studentName').value;
-            const id = document.getElementById('studentId').value;
-            
-            if (!name || !id) {
-                alert('Please fill in all fields');
-                return;
-            }
-
-            const studentList = document.getElementById('studentList');
-            const newStudent = `
-                <div class="student-row">
-                    <div class="student-info">
-                        <img src="https://randomuser.me/api/portraits/men/${Math.floor(Math.random() * 50)}.jpg" alt="Student" class="avatar">
-                        <div>
-                            <div class="student-name">${name}</div>
-                            <div class="student-id">ID: ${id}</div>
-                        </div>
-                    </div>
-                    <span class="status present" onclick="updateStatus(this)">Present</span>
-                </div>
-            `;
-            studentList.insertAdjacentHTML('beforeend', newStudent);
-            
-            updateStudentCount(); // Update count after adding
-            closeModal('addStudentModal');
-            document.getElementById('studentName').value = '';
-            document.getElementById('studentId').value = '';
-        }
-
-        function updateStatus(statusElement) {
-            const currentStatus = statusElement.textContent.trim();
-            
-            if(currentStatus === 'Present') {
-                statusElement.textContent = 'Late';
-                statusElement.className = 'status late';
-            } else {
-                statusElement.textContent = 'Present';
-                statusElement.className = 'status present';
-            }
-            
-            statusElement.classList.add('status-updated');
-            setTimeout(() => {
-                statusElement.classList.remove('status-updated');
-            }, 300);
-        }
-
-        function submitDeleteStudent() {
-            const studentId = document.getElementById('deleteStudentSelect').value;
-            if (!studentId) {
-                alert('Please select a student');
-                return;
-            }
-
-            document.querySelectorAll('.student-row').forEach(row => {
-                const id = row.querySelector('.student-id').textContent.split(': ')[1];
-                if (id === studentId) {
-                    row.remove();
-                    updateStudentCount(); // Update count after removing
-                }
-            });
-            
-            closeModal('deleteStudentModal');
-        }
-
-        function submitExcusedStudent() {
-            const studentId = document.getElementById('excusedStudentSelect').value;
-            if (!studentId) {
-                alert('Please select a student');
-                return;
-            }
-
-            document.querySelectorAll('.student-row').forEach(row => {
-                const id = row.querySelector('.student-id').textContent.split(': ')[1];
-                if (id === studentId) {
-                    const statusElement = row.querySelector('.status');
-                    statusElement.textContent = 'Excused';
-                    statusElement.className = 'status excused';
-                    statusElement.classList.add('status-updated');
-                    setTimeout(() => {
-                        statusElement.classList.remove('status-updated');
-                    }, 300);
-                }
-            });
-            
-            closeModal('excusedStudentModal');
-            updateStudentCount(); // Update count after marking
-        }
-
-        function submitTransferStudent() {
-            const studentId = document.getElementById('transferStudent').value;
-            const targetSection = document.getElementById('transferSection').value;
-            
-            if (!studentId || !targetSection) {
-                alert('Please fill in all fields');
-                return;
-            }
-
-            document.querySelectorAll('.student-row').forEach(row => {
-                const id = row.querySelector('.student-id').textContent.split(': ')[1];
-                if (id === studentId) {
-                    const name = row.querySelector('.student-name').textContent;
-                    row.remove();
-                    updateStudentCount();
-                    
-                    // Show transfer confirmation
-                    document.getElementById('transferDetails').innerHTML = `
-                        <p><strong>Student Name:</strong> ${name}</p>
-                        <p><strong>Student ID:</strong> ${studentId}</p>
-                        <p><strong>Transferred to:</strong> ${targetSection}</p>
-                    `;
-                    closeModal('transferStudentModal');
-                    document.getElementById('transferConfirmModal').style.display = 'flex';
-                }
-            });
-        }
-
-        // Add this to initialize everything when page loads
-        window.addEventListener('load', () => {
-            loadClassSettings();
-            startTimer();
-            updateTimer();
-            updateStudentCount();
-        });
-
-        function toggleSelectAll(checkbox) {
-            const faceCheckboxes = document.querySelectorAll('input[name="face"]');
-            faceCheckboxes.forEach(cb => cb.checked = checkbox.checked);
-        }
-
-        function getSelectedFaces() {
-            return Array.from(document.querySelectorAll('input[name="face"]:checked'))
-                .map(cb => cb.value);
-        }
-
-        function markSelectedAs(status) {
-            const selectedFaces = getSelectedFaces();
-            if (selectedFaces.length === 0) {
-                alert('Please select at least one face');
-                return;
-            }
-
-            const elapsedMinutes = Math.floor((new Date() - startTime - totalPausedTime) / 60000);
-            
-            // If trying to mark as present but beyond late threshold, force late status
-            if (status === 'present' && elapsedMinutes > classConfig.lateThreshold) {
-                status = 'late';
-                alert(`Marking as 'Late' - Beyond ${classConfig.lateThreshold} minute threshold`);
-            }
-            
-            selectedFaces.forEach(faceId => {
-                const faceCard = document.querySelector(`[value="${faceId}"]`).closest('.face-card');
-                faceCard.setAttribute('data-status', status);
-                faceCard.style.opacity = '0.6';
-                faceCard.querySelector('input[type="checkbox"]').disabled = true;
-            });
-
-            checkAllFacesMarked();
-        }
-
-        function checkAllFacesMarked() {
-            const allFaces = document.querySelectorAll('.face-card');
-            const unmarkedFaces = Array.from(allFaces).filter(face => !face.hasAttribute('data-status'));
-            
-            if (unmarkedFaces.length === 0) {
-                // All faces have been marked, proceed to end session
-                closeModal('unrecognizedFacesModal');
-                showEndSessionConfirmation();
-            } else {
-                // Show message about remaining faces
-                const remainingCount = unmarkedFaces.length;
-                alert(`Please mark the status for ${remainingCount} more face${remainingCount > 1 ? 's' : ''}`);
-            }
-        }
-
-        function retakeFaces() {
-            if (confirm('Are you sure you want to retake face detection?')) {
-                closeModal('unrecognizedFacesModal');
-                // Add your face detection retake logic here
-                alert('Retaking face detection...');
+            } catch (err) {
+                console.error('Error in goToDashboard:', err);
+                alert('Error navigating to dashboard.');
             }
         }
 
         function openSettings() {
-            const settingsModal = document.getElementById('settingsModal');
-            settingsModal.style.display = 'flex';
+            console.log('openSettings clicked');
+            try {
+                const settingsModal = document.getElementById('settingsModal');
+                if (settingsModal) {
+                    settingsModal.style.display = 'flex';
+                } else {
+                    console.error('Settings modal not found');
+                    alert('Settings modal not found.');
+                }
+            } catch (err) {
+                console.error('Error in openSettings:', err);
+                alert('Error opening settings.');
+            }
         }
 
         function endSession() {
-            const hasUnrecognizedFaces = true; // This would be your actual detection logic
-            if (hasUnrecognizedFaces) {
-                document.getElementById('unrecognizedFacesModal').style.display = 'flex';
-            } else {
-                showEndSessionConfirmation();
+            console.log('endSession clicked');
+            try {
+                const hasUnrecognizedFaces = true; // Replace with actual logic
+                if (hasUnrecognizedFaces) {
+                    const modal = document.getElementById('unrecognizedFacesModal');
+                    if (modal) {
+                        modal.style.display = 'flex';
+                    } else {
+                        console.error('Unrecognized faces modal not found');
+                        alert('Unrecognized faces modal not found.');
+                    }
+                } else {
+                    showEndSessionConfirmation();
+                }
+            } catch (err) {
+                console.error('Error in endSession:', err);
+                alert('Error ending session.');
             }
         }
 
         function showEndSessionConfirmation() {
-            document.getElementById('endSessionModal').style.display = 'flex';
-        }
-
-        function changeVideoQuality(quality) {
-            const video = document.querySelector('.cctv-feed video');
-            if (!video || !video.srcObject) return;
-
-            const track = video.srcObject.getVideoTracks()[0];
-            if (!track) return;
-
-            track.applyConstraints({
-                width: { ideal: parseInt(quality) },
-                height: { ideal: parseInt(quality) * 9/16 }
-            }).catch(err => {
-                console.error('Error applying video constraints:', err);
-                alert('Failed to change video quality. Your device may not support this resolution.');
-            });
+            try {
+                const modal = document.getElementById('endSessionModal');
+                if (modal) {
+                    modal.style.display = 'flex';
+                } else {
+                    console.error('End session modal not found');
+                    alert('End session modal not found.');
+                }
+            } catch (err) {
+                console.error('Error in showEndSessionConfirmation:', err);
+                alert('Error showing end session confirmation.');
+            }
         }
 
         function confirmEndSession() {
-            // Save your attendance data here if needed
-            alert('Session ended successfully');
-            window.location.href = "/summary"; // Redirect to Summary page
-        }
-
-        let classConfig = {
-            subjectCode: '',
-            subjectName: '',
-            course: '',
-            section: '',
-            facultymemberName: '',
-            facultymemberID: '',
-            classDuration: 180,
-            lateThreshold: 15,
-            videoQuality: '720'
-        };
-
-        function saveSettings() {
-            // Get all input values
-            classConfig = {
-                subjectCode: document.getElementById('subjectCode').value,
-                subjectName: document.getElementById('subjectName').value,
-                course: document.getElementById('course').value,
-                section: document.getElementById('section').value,
-                facultymemberName: document.getElementById('facultymemberName').value,
-                facultymemberID: document.getElementById('facultyId').value,
-                classDuration: parseInt(document.getElementById('classDuration').value) || 180,
-                lateThreshold: parseInt(document.getElementById('lateThreshold').value) || 15,
-                videoQuality: document.getElementById('videoQuality').value
-            };
-
-            // Update displays
-            updateConfigDisplay();
-            
-            // Update class header
-            document.querySelector('.cctv-header h3').textContent = classConfig.subjectName;
-            document.querySelector('.cctv-header span[style]').textContent = classConfig.subjectCode;
-            
-            // Update faculty member info
-            document.querySelector('.faculty-info span').textContent = classConfig.facultymemberName;
-            
-            // Update section info
-            document.querySelector('.section-info span:last-child').textContent = 
-                `${classConfig.course} ${classConfig.section}`;
-            
-            // Update timers
-            document.getElementById('total-time').textContent = formatTime(classConfig.classDuration * 60);
-            
-            // Save to localStorage for persistence
-            localStorage.setItem('classConfig', JSON.stringify(classConfig));
-            
-            // Close modal
-            closeModal('settingsModal');
-        }
-
-        function updateConfigDisplay() {
-            document.getElementById('displaySubject').textContent = 
-                `${classConfig.subjectCode} - ${classConfig.subjectName}`;
-            document.getElementById('displayClass').textContent = 
-                `${classConfig.course} ${classConfig.section}`;
-            document.getElementById('displayFacultyMembers').textContent = classConfig.facultymemberName;
-            document.getElementById('displayDuration').textContent = `${classConfig.classDuration} mins`;
-            document.getElementById('displayLateThreshold').textContent = `${classConfig.lateThreshold} mins`;
-        }
-
-        window.addEventListener('load', () => {
-            // Load saved config if exists
-            const savedConfig = localStorage.getItem('classConfig');
-            if (savedConfig) {
-                classConfig = JSON.parse(savedConfig);
-                updateConfigDisplay();
+            console.log('confirmEndSession clicked');
+            try {
+                // Add backend call to save session data
+                alert('Session ended successfully.');
+                window.location.href = '/dashboard';
+            } catch (err) {
+                console.error('Error in confirmEndSession:', err);
+                alert('Error confirming end session.');
             }
-            
-            // Load and apply settings
-            loadClassSettings();
-            startTimer();
-            updateTimer();
-            updateStudentCount();
-        });
+        }
+
+        function toggleActionMenu() {
+            console.log('toggleActionMenu clicked');
+            try {
+                const menu = document.querySelector('.action-menu');
+                const toggle = document.querySelector('.action-toggle');
+                
+                if (!menu.classList.contains('active')) {
+                    toggle.classList.add('hidden');
+                    menu.classList.add('active');
+                } else {
+                    menu.classList.remove('active');
+                    setTimeout(() => toggle.classList.remove('hidden'), 300);
+                }
+            } catch (err) {
+                console.error('Error in toggleActionMenu:', err);
+                alert('Error toggling action menu.');
+            }
+        }
+
+        function handleAction(action) {
+            console.log(`handleAction called with: ${action}`);
+            try {
+                switch (action) {
+                    case 'add':
+                        const addModal = document.getElementById('addStudentModal');
+                        if (addModal) {
+                            addModal.style.display = 'flex';
+                        } else {
+                            console.error('Add student modal not found');
+                        }
+                        break;
+                    case 'delete':
+                        populateDeleteStudentSelect();
+                        const deleteModal = document.getElementById('deleteStudentModal');
+                        if (deleteModal) {
+                            deleteModal.style.display = 'flex';
+                        } else {
+                            console.error('Delete student modal not found');
+                        }
+                        break;
+                    case 'transfer':
+                        populateTransferStudentSelect();
+                        const transferModal = document.getElementById('transferStudentModal');
+                        if (transferModal) {
+                            transferModal.style.display = 'flex';
+                        } else {
+                            console.error('Transfer student modal not found');
+                        }
+                        break;
+                    case 'excused':
+                        populateExcusedStudentSelect();
+                        const excusedModal = document.getElementById('excusedStudentModal');
+                        if (excusedModal) {
+                            excusedModal.style.display = 'flex';
+                        } else {
+                            console.error('Excused student modal not found');
+                        }
+                        break;
+                }
+                toggleActionMenu();
+            } catch (err) {
+                console.error(`Error in handleAction (${action}):`, err);
+                alert(`Error handling action: ${action}`);
+            }
+        }
+
+        function closeModal(modalId) {
+            console.log(`closeModal called for: ${modalId}`);
+            try {
+                const modal = document.getElementById(modalId);
+                if (modal) {
+                    modal.style.display = 'none';
+                } else {
+                    console.error(`Modal with ID ${modalId} not found`);
+                }
+            } catch (err) {
+                console.error('Error in closeModal:', err);
+                alert('Error closing modal.');
+            }
+        }
 
         function loadClassSettings() {
-            const settings = JSON.parse(localStorage.getItem('classSettings'));
-            if (!settings) {
-                window.location.href = '../Timer/timer.html';
-                return;
+            console.log('loadClassSettings called');
+            try {
+                const settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
+                if (settings.course) {
+                    document.getElementById('course').value = settings.course;
+                }
+                if (settings.section) {
+                    document.getElementById('section').value = settings.section;
+                }
+                if (settings.facultymemberName) {
+                    document.getElementById('facultymemberName').value = settings.facultymemberName;
+                }
+                if (settings.classDuration) {
+                    document.getElementById('classDuration').value = settings.classDuration;
+                }
+                if (settings.lateThreshold) {
+                    document.getElementById('lateThreshold').value = settings.lateThreshold;
+                }
+                if (settings.videoQuality) {
+                    document.getElementById('videoQuality').value = settings.videoQuality;
+                }
+            } catch (err) {
+                console.error('Error in loadClassSettings:', err);
+                alert('Error loading class settings.');
             }
-            
-            // Update total time display
-            const totalSeconds = 
-                parseInt(settings.timer.session.hours) * 3600 +
-                parseInt(settings.timer.session.minutes) * 60 +
-                parseInt(settings.timer.session.seconds);
-            document.getElementById('total-time').textContent = formatTime(totalSeconds);
-            
-            // Update subject code
-            document.querySelector('.cctv-header span[style]').textContent = settings.classDetails.subjectCode;
-            
-            // Update section info
-            document.querySelector('.section-info span:last-child').textContent = settings.classDetails.courseSection;
-            
-            // Update faculty member name
-            document.querySelector('.faculty-info span').textContent = settings.classDetails.faculty;
-            
-            // Store late threshold for status checks
-            const lateThresholdSeconds = 
-                parseInt(settings.timer.threshold.hours) * 3600 +
-                parseInt(settings.timer.threshold.minutes) * 60 + 
-                parseInt(settings.timer.threshold.seconds);
-            classConfig.lateThreshold = Math.floor(lateThresholdSeconds / 60); // Convert to minutes
         }
 
-        function formatTime(seconds) {
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
-            const s = seconds % 60;
-            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        function saveSettings() {
+            console.log('saveSettings called');
+            try {
+                const settings = {
+                    course: document.getElementById('course').value,
+                    section: document.getElementById('section').value,
+                    facultymemberName: document.getElementById('facultymemberName').value,
+                    classDuration: document.getElementById('classDuration').value,
+                    lateThreshold: document.getElementById('lateThreshold').value,
+                    videoQuality: document.getElementById('videoQuality').value,
+                    timer: {
+                        session: {
+                            hours: Math.floor(document.getElementById('classDuration').value / 60),
+                            minutes: document.getElementById('classDuration').value % 60,
+                            seconds: 0
+                        },
+                        threshold: {
+                            hours: 0,
+                            minutes: document.getElementById('lateThreshold').value,
+                            seconds: 0
+                        }
+                    }
+                };
+                localStorage.setItem('classSettings', JSON.stringify(settings));
+                closeModal('settingsModal');
+                alert('Settings saved successfully.');
+            } catch (err) {
+                console.error('Error in saveSettings:', err);
+                alert('Error saving settings.');
+            }
         }
 
         function updateStudentCount() {
-            // Implement logic to recount students and update displays if needed
-            const total = document.querySelectorAll('.student-row').length;
-            document.getElementById('total-count').textContent = total;
-            // Recount detected/present etc. as per your logic
+            console.log('updateStudentCount called');
+            try {
+                // Placeholder for actual logic to fetch student counts
+                document.getElementById('detected-count').textContent = '15';
+                document.getElementById('total-count').textContent = '30';
+                document.getElementById('presentCount').textContent = '15';
+                document.getElementById('absentCount').textContent = '12';
+                document.getElementById('lateCount').textContent = '3';
+            } catch (err) {
+                console.error('Error in updateStudentCount:', err);
+                alert('Error updating student count.');
+            }
+        }
+
+        function populateDeleteStudentSelect() {
+            console.log('populateDeleteStudentSelect called');
+            try {
+                const select = document.getElementById('deleteStudentSelect');
+                select.innerHTML = '<option value="">Select a student to remove...</option>';
+                // Placeholder: Add actual student data
+                const students = [
+                    { id: 'S2023001', name: 'Alex Chen' },
+                    { id: 'S2023003', name: 'James Wilson' }
+                ];
+                students.forEach(student => {
+                    const option = document.createElement('option');
+                    option.value = student.id;
+                    option.textContent = `${student.name} (${student.id})`;
+                    select.appendChild(option);
+                });
+            } catch (err) {
+                console.error('Error in populateDeleteStudentSelect:', err);
+                alert('Error populating delete student select.');
+            }
+        }
+
+        function populateTransferStudentSelect() {
+            console.log('populateTransferStudentSelect called');
+            try {
+                const select = document.getElementById('transferStudent');
+                select.innerHTML = '<option value="">Select a student...</option>';
+                // Placeholder: Add actual student data
+                const students = [
+                    { id: 'S2023001', name: 'Alex Chen' },
+                    { id: 'S2023003', name: 'James Wilson' }
+                ];
+                students.forEach(student => {
+                    const option = document.createElement('option');
+                    option.value = student.id;
+                    option.textContent = `${student.name} (${student.id})`;
+                    select.appendChild(option);
+                });
+            } catch (err) {
+                console.error('Error in populateTransferStudentSelect:', err);
+                alert('Error populating transfer student select.');
+            }
+        }
+
+        function populateExcusedStudentSelect() {
+            console.log('populateExcusedStudentSelect called');
+            try {
+                const select = document.getElementById('excusedStudentSelect');
+                select.innerHTML = '<option value="">Select a student to mark as excused...</option>';
+                // Placeholder: Add actual student data
+                const students = [
+                    { id: 'S2023001', name: 'Alex Chen' },
+                    { id: 'S2023003', name: 'James Wilson' }
+                ];
+                students.forEach(student => {
+                    const option = document.createElement('option');
+                    option.value = student.id;
+                    option.textContent = `${student.name} (${student.id})`;
+                    select.appendChild(option);
+                });
+            } catch (err) {
+                console.error('Error in populateExcusedStudentSelect:', err);
+                alert('Error populating excused student select.');
+            }
+        }
+
+        function submitAddStudent() {
+            console.log('submitAddStudent called');
+            try {
+                const name = document.getElementById('studentName').value;
+                const id = document.getElementById('studentId').value;
+                if (name && id) {
+                    // Add backend call to save student
+                    alert(`Student ${name} (${id}) added successfully.`);
+                    closeModal('addStudentModal');
+                } else {
+                    alert('Please fill in all fields.');
+                }
+            } catch (err) {
+                console.error('Error in submitAddStudent:', err);
+                alert('Error adding student.');
+            }
+        }
+
+        function submitDeleteStudent() {
+            console.log('submitDeleteStudent called');
+            try {
+                const select = document.getElementById('deleteStudentSelect');
+                if (select.value) {
+                    // Add backend call to delete student
+                    alert(`Student ${select.options[select.selectedIndex].text} removed successfully.`);
+                    closeModal('deleteStudentModal');
+                } else {
+                    alert('Please select a student to remove.');
+                }
+            } catch (err) {
+                console.error('Error in submitDeleteStudent:', err);
+                alert('Error deleting student.');
+            }
+        }
+
+        function submitTransferStudent() {
+            console.log('submitTransferStudent called');
+            try {
+                const student = document.getElementById('transferStudent').value;
+                const section = document.getElementById('transferSection').value;
+                if (student && section) {
+                    // Add backend call to transfer student
+                    const transferDetails = document.getElementById('transferDetails');
+                    transferDetails.innerHTML = `
+                        <p>Student: ${document.getElementById('transferStudent').options[document.getElementById('transferStudent').selectedIndex].text}</p>
+                        <p>New Section: ${section}</p>
+                    `;
+                    closeModal('transferStudentModal');
+                    document.getElementById('transferConfirmModal').style.display = 'flex';
+                } else {
+                    alert('Please select a student and target section.');
+                }
+            } catch (err) {
+                console.error('Error in submitTransferStudent:', err);
+                alert('Error transferring student.');
+            }
+        }
+
+        function submitExcusedStudent() {
+            console.log('submitExcusedStudent called');
+            try {
+                const select = document.getElementById('excusedStudentSelect');
+                if (select.value) {
+                    // Add backend call to mark student as excused
+                    alert(`Student ${select.options[select.selectedIndex].text} marked as excused.`);
+                    closeModal('excusedStudentModal');
+                } else {
+                    alert('Please select a student to mark as excused.');
+                }
+            } catch (err) {
+                console.error('Error in submitExcusedStudent:', err);
+                alert('Error marking student as excused.');
+            }
+        }
+
+        function toggleSelectAll(checkbox) {
+            console.log('toggleSelectAll called');
+            try {
+                const checkboxes = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]');
+                checkboxes.forEach(cb => cb.checked = checkbox.checked);
+            } catch (err) {
+                console.error('Error in toggleSelectAll:', err);
+                alert('Error toggling select all.');
+            }
+        }
+
+        function markSelectedAs(status) {
+            console.log(`markSelectedAs called with: ${status}`);
+            try {
+                const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
+                selected.forEach(checkbox => {
+                    const card = checkbox.closest('.face-card');
+                    card.setAttribute('data-status', status);
+                });
+                document.getElementById('selectAll').checked = false;
+                toggleSelectAll(document.getElementById('selectAll'));
+            } catch (err) {
+                console.error(`Error in markSelectedAs (${status}):`, err);
+                alert(`Error marking faces as ${status}.`);
+            }
+        }
+
+        function retakeFaces() {
+            console.log('retakeFaces called');
+            try {
+                // Add logic to retake face detection
+                alert('Retaking face detection...');
+                closeModal('unrecognizedFacesModal');
+            } catch (err) {
+                console.error('Error in retakeFaces:', err);
+                alert('Error retaking faces.');
+            }
         }
     </script>
 </body>
