@@ -30,8 +30,9 @@ import queue
 from scipy.optimize import linear_sum_assignment
 import bcrypt
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import hashlib
+import onnxruntime as ort
 
 
 # =========================
@@ -143,6 +144,8 @@ session_config = {
 # =========================
 # Thread-safe state manager
 # Add these utility functions before the Flask routes
+
+
 
 def create_dummy_frame():
     """Create a dummy frame when camera is not available"""
@@ -618,9 +621,13 @@ def calculate_mar(landmarks, mouth_indices):
 # Load InsightFace model
 # =========================
 try:
-    face_analysis = insightface.app.FaceAnalysis(name=INSIGHTFACE_MODEL)
-    face_analysis.prepare(ctx_id=0, det_size=(640, 640))
-    logger.info("InsightFace model loaded successfully")
+    available_providers = ort.get_available_providers()
+    logger.info(f"Available ONNX Runtime providers: {available_providers}")
+    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if 'CUDAExecutionProvider' in available_providers else ['CPUExecutionProvider']
+    face_analysis = insightface.app.FaceAnalysis(name=INSIGHTFACE_MODEL, providers=providers)
+    ctx_id = 0 if 'CUDAExecutionProvider' in available_providers and torch.cuda.is_available() else -1
+    face_analysis.prepare(ctx_id=ctx_id, det_size=(640, 640))
+    logger.info(f"InsightFace model loaded on {'GPU' if ctx_id == 0 else 'CPU'} with providers: {providers}")
 except Exception as e:
     logger.error(f"Failed to load InsightFace model: {e}")
     raise
@@ -1447,6 +1454,34 @@ CORS(app)
 
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback-secret-key-change-in-production')
 
+# Add the custom JSON encoder here
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        try:
+            if isinstance(obj, (datetime, date)):
+                return obj.isoformat()
+            elif isinstance(obj, timedelta):
+                # Convert timedelta to string in readable format
+                total_seconds = int(obj.total_seconds())
+                days, remainder = divmod(total_seconds, 86400)
+                hours, remainder = divmod(remainder, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                
+                if days > 0:
+                    return f"{days}d {hours}h {minutes}m"
+                elif hours > 0:
+                    return f"{hours}h {minutes}m"
+                elif minutes > 0:
+                    return f"{minutes}m {seconds}s"
+                else:
+                    return f"{seconds}s"
+            return super().default(obj)
+        except Exception:
+            return str(obj)  # Fallback to string representation
+
+app.json_encoder = CustomJSONEncoder
+
+
 @app.route('/api/login', methods=['POST'])
 def login():
     try:
@@ -2185,8 +2220,8 @@ def get_active_invites():
                     'token': invite['token'],
                     'type': invite_type,
                     'link': f"{request.host_url}studentreg?token={invite['token']}" if invite_type == 'student' else f"{request.host_url}facultyreg?token={invite['token']}",
-                    'created_at': invite['created_at'].isoformat(),
-                    'expires_at': invite['expires_at'].isoformat(),
+                    'created_at': invite['created_at'].isoformat() if invite['created_at'] else None,
+                    'expires_at': invite['expires_at'].isoformat() if invite['expires_at'] else None,
                     'time_remaining': time_remaining_str,
                     'uses': 0  # You may need to track this in your database
                 })
@@ -5621,6 +5656,12 @@ def get_faculty_schedules_for_timer():
         cursor.close()
         conn.close()
         
+        # Convert any potential timedelta objects to strings
+        for schedule in schedules:
+            for key, value in schedule.items():
+                if isinstance(value, timedelta):
+                    schedule[key] = str(value)
+        
         return jsonify({
             'success': True,
             'schedules': schedules,
@@ -6494,7 +6535,8 @@ def get_current_class():
         
         # Get current day and time
         current_day = datetime.now().strftime('%A')  # Monday, Tuesday, etc.
-        current_time = datetime.now().strftime('%H:%M:%S')
+        current_time = datetime.now()
+        current_time_str = current_time.strftime('%H:%M:%S')
         
         # Get logged in user's name based on user type
         logged_in_user = ""
@@ -6542,7 +6584,7 @@ def get_current_class():
                 AND cs.end_time >= %s
                 ORDER BY cs.start_time
                 LIMIT 1
-            """, (current_day, current_time, current_time))
+            """, (current_day, current_time_str, current_time_str))
         else:
             # Faculty member sees only their current classes
             cursor.execute("""
@@ -6573,7 +6615,7 @@ def get_current_class():
                 AND cs.end_time >= %s
                 ORDER BY cs.start_time
                 LIMIT 1
-            """, (user_id, current_day, current_time, current_time))
+            """, (user_id, current_day, current_time_str, current_time_str))
         
         current_class = cursor.fetchone()
         cursor.close()
@@ -6591,17 +6633,27 @@ def get_current_class():
                 current_class['class_type_display'] = current_class['class_type'].title()
                 current_class['subject_with_type'] = current_class['subject_code']
             
-            # Calculate duration from start and end times
-            start_time = datetime.strptime(str(current_class['start_time']), '%H:%M:%S')
+            # Calculate REMAINING TIME from current time to end time
             end_time = datetime.strptime(str(current_class['end_time']), '%H:%M:%S')
-            duration = end_time - start_time
-            total_seconds = int(duration.total_seconds())
+            
+            # Combine with current date for proper time comparison
+            end_time_with_date = datetime.combine(current_time.date(), end_time.time())
+            
+            # Calculate remaining time (current time to end time)
+            remaining_time = end_time_with_date - current_time
+            
+            # Ensure remaining time is not negative (in case class already ended)
+            if remaining_time.total_seconds() < 0:
+                remaining_time = timedelta(0)
+            
+            total_seconds = int(remaining_time.total_seconds())
             
             hours = total_seconds // 3600
             minutes = (total_seconds % 3600) // 60
             seconds = total_seconds % 60
             
-            return jsonify({
+            # Convert all datetime objects to strings
+            response_data = {
                 'success': True,
                 'has_class': True,
                 'class_info': current_class,
@@ -6613,22 +6665,37 @@ def get_current_class():
                     },
                     'threshold': {
                         'hours': '00',
-                        'minutes': '10',
+                        'minutes': '15',
                         'seconds': '00'
                     }
                 },
                 'logged_in_user': logged_in_user,
                 'current_day': current_day,
-                'current_time': current_time
-            })
+                'current_time': current_time_str,
+                'debug_info': {
+                    'class_start': str(current_class['start_time']),
+                    'class_end': str(current_class['end_time']),
+                    'current_time': current_time_str,
+                    'remaining_minutes': f"{hours}h {minutes}m {seconds}s"
+                }
+            }
+            
+            # Ensure all values in class_info are JSON serializable
+            for key, value in response_data['class_info'].items():
+                if isinstance(value, (datetime, date)):
+                    response_data['class_info'][key] = value.isoformat()
+                elif isinstance(value, timedelta):
+                    response_data['class_info'][key] = str(value)
+            
+            return jsonify(response_data)
         else:
             return jsonify({
                 'success': True,
                 'has_class': False,
-                'message': f'No classes scheduled for {current_day} at {current_time}',
+                'message': f'No classes scheduled for {current_day} at {current_time_str}',
                 'logged_in_user': logged_in_user,
                 'current_day': current_day,
-                'current_time': current_time
+                'current_time': current_time_str
             })
         
     except Exception as e:

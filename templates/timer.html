@@ -64,7 +64,7 @@
                         <span class="time-label">Hours</span>
                     </div>
                     <div class="time-unit">
-                        <input type="number" min="0" max="59" value="10" id="thresholdMinutes" readonly>
+                        <input type="number" min="0" max="59" value="15" id="thresholdMinutes" readonly>
                         <span class="time-label">Minutes</span>
                     </div>
                     <div class="time-unit">
@@ -127,13 +127,14 @@
         </div>
     </div>
 
-    <script>
+ <script>
 // Global variables
 let timerInterval;
 let startTime;
 let isRunning = false;
 let sessionDuration;
 let lateThreshold;
+let currentClassData = null;
 
 document.addEventListener('DOMContentLoaded', async function() {
     const timerModeRadios = document.querySelectorAll('input[name="timerMode"]');
@@ -177,6 +178,9 @@ async function loadDefaultSettings() {
             return;
         }
         
+        // Store current class data for live updates
+        currentClassData = data;
+        
         // Display logged-in user info
         if (data.logged_in_user) {
             document.getElementById('subjectInstructor').value = data.logged_in_user;
@@ -193,7 +197,6 @@ async function loadDefaultSettings() {
         }
         
         const classInfo = data.class_info;
-        const timer = data.timer;
         
         // Populate enhanced class details
         document.getElementById('subjectInstructor').value = data.logged_in_user;
@@ -213,21 +216,27 @@ async function loadDefaultSettings() {
         sectionDropdown.innerHTML = `<option value="${classInfo.section_name}" selected>Section ${classInfo.section_name}</option>`;
         sectionDropdown.disabled = true;
         
-        // Set timer values
-        document.getElementById('sessionHours').value = timer.session.hours;
-        document.getElementById('sessionMinutes').value = timer.session.minutes;
-        document.getElementById('sessionSeconds').value = timer.session.seconds;
+        // SET TIMER VALUES FROM ACTUAL CLASS DURATION (not custom defaults)
+        document.getElementById('sessionHours').value = data.timer.session.hours;
+        document.getElementById('sessionMinutes').value = data.timer.session.minutes;
+        document.getElementById('sessionSeconds').value = data.timer.session.seconds;
         document.getElementById('sessionHours').setAttribute('readonly', true);
         document.getElementById('sessionMinutes').setAttribute('readonly', true);
         document.getElementById('sessionSeconds').setAttribute('readonly', true);
         
-        // Threshold is editable
+        // Threshold is editable but set from class data
+        document.getElementById('thresholdHours').value = data.timer.threshold.hours;
+        document.getElementById('thresholdMinutes').value = data.timer.threshold.minutes;
+        document.getElementById('thresholdSeconds').value = data.timer.threshold.seconds;
         document.getElementById('thresholdHours').removeAttribute('readonly');
         document.getElementById('thresholdMinutes').removeAttribute('readonly');
         document.getElementById('thresholdSeconds').removeAttribute('readonly');
         
         // Store schedule_id for session start
         document.getElementById('startBtn').dataset.scheduleId = classInfo.schedule_id;
+        
+        // Start live countdown if we have a class
+        startLiveCountdown();
         
         // Show class details in console for debugging
         console.log('Current Class Loaded:', {
@@ -237,7 +246,8 @@ async function loadDefaultSettings() {
             year: classInfo.year_level,
             section: classInfo.section_name,
             class_type: classInfo.class_type_display,
-            time: `${classInfo.start_time} - ${classInfo.end_time}`
+            time: `${classInfo.start_time} - ${classInfo.end_time}`,
+            remaining_time: `${data.timer.session.hours}:${data.timer.session.minutes}:${data.timer.session.seconds}`
         });
         
     } catch (error) {
@@ -247,8 +257,87 @@ async function loadDefaultSettings() {
     }
 }
 
+function startLiveCountdown() {
+    // Clear any existing interval
+    if (timerInterval) {
+        clearInterval(timerInterval);
+    }
+    
+    // Start countdown timer that updates every second
+    timerInterval = setInterval(async function() {
+        try {
+            // Get current timer values
+            let hours = parseInt(document.getElementById('sessionHours').value) || 0;
+            let minutes = parseInt(document.getElementById('sessionMinutes').value) || 0;
+            let seconds = parseInt(document.getElementById('sessionSeconds').value) || 0;
+            
+            // Decrement the timer
+            if (seconds > 0) {
+                seconds--;
+            } else {
+                if (minutes > 0) {
+                    minutes--;
+                    seconds = 59;
+                } else {
+                    if (hours > 0) {
+                        hours--;
+                        minutes = 59;
+                        seconds = 59;
+                    } else {
+                        // Timer reached zero - refresh from server
+                        await refreshClassTimer();
+                        return;
+                    }
+                }
+            }
+            
+            // Update the display
+            document.getElementById('sessionHours').value = String(hours).padStart(2, '0');
+            document.getElementById('sessionMinutes').value = String(minutes).padStart(2, '0');
+            document.getElementById('sessionSeconds').value = String(seconds).padStart(2, '0');
+            
+            // Auto-refresh from server every 30 seconds to stay accurate
+            const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+            if (totalSeconds % 30 === 0) { // Every 30 seconds
+                await refreshClassTimer();
+            }
+            
+        } catch (error) {
+            console.error('Error in countdown:', error);
+        }
+    }, 1000);
+}
+
+async function refreshClassTimer() {
+    try {
+        const response = await fetch('/api/get_current_class');
+        const data = await response.json();
+        
+        if (data.success && data.has_class) {
+            // Update timer with fresh data from server
+            document.getElementById('sessionHours').value = data.timer.session.hours;
+            document.getElementById('sessionMinutes').value = data.timer.session.minutes;
+            document.getElementById('sessionSeconds').value = data.timer.session.seconds;
+            
+            console.log('Timer refreshed:', {
+                hours: data.timer.session.hours,
+                minutes: data.timer.session.minutes,
+                seconds: data.timer.session.seconds
+            });
+        }
+    } catch (error) {
+        console.error('Error refreshing timer:', error);
+    }
+}
+
 async function loadCustomSettings() {
     try {
+        // Stop live countdown when switching to custom mode
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+        
         showLoading('Loading schedules...');
         
         // Fetch faculty schedules with enhanced details
@@ -330,10 +419,22 @@ async function loadCustomSettings() {
             }
         });
         
+        // SET DEFAULT TIMER VALUES FOR CUSTOM MODE (1 hour 15 minutes)
+        document.getElementById('sessionHours').value = '01';
+        document.getElementById('sessionMinutes').value = '00';
+        document.getElementById('sessionSeconds').value = '00';
+        
+        // SET DEFAULT THRESHOLD FOR CUSTOM MODE (15 minutes)
+        document.getElementById('thresholdHours').value = '00';
+        document.getElementById('thresholdMinutes').value = '15';
+        document.getElementById('thresholdSeconds').value = '00';
+        
         // Make all timer inputs editable
         document.querySelectorAll('.time-unit input').forEach(input => {
             input.removeAttribute('readonly');
         });
+        
+        console.log('Custom mode loaded with default: 1 hour 15 minutes session, 15 minutes threshold');
         
     } catch (error) {
         hideLoading();
@@ -341,6 +442,8 @@ async function loadCustomSettings() {
         showModal('Error', 'Failed to load schedules: ' + error.message);
     }
 }
+// ... rest of your existing functions (showLoginRequired, showLoading, hideLoading, testRtspConnection, startSession, etc.)
+// KEEP ALL YOUR EXISTING FUNCTIONS BELOW THIS LINE
 
 function showLoginRequired() {
     showModal('Login Required', 
@@ -372,45 +475,6 @@ function hideLoading() {
     }
 }
 
-// Add this CSS for loading indicator
-const loadingStyles = `
-.loading-indicator {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(255, 255, 255, 0.8);
-    display: none;
-    justify-content: center;
-    align-items: center;
-    flex-direction: column;
-    z-index: 9999;
-}
-.loading-spinner {
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #007bff;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-    margin-bottom: 10px;
-}
-.loading-text {
-    color: #333;
-    font-size: 16px;
-}
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-`;
-
-// Inject loading styles
-const styleSheet = document.createElement('style');
-styleSheet.textContent = loadingStyles;
-document.head.appendChild(styleSheet);
-
 function testRtspConnection() {
     const rtspUrl = document.getElementById('rtspUrl').value.trim();
     
@@ -426,6 +490,12 @@ function testRtspConnection() {
 }
 
 async function startSession(event) {
+    // Stop the live countdown when starting session
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    
     const timerMode = document.querySelector('input[name="timerMode"]:checked').value;
     const rtspUrl = document.getElementById('rtspUrl').value.trim();
     
@@ -543,6 +613,7 @@ async function startSession(event) {
     }, 500);
 }
 
+// ... KEEP ALL YOUR EXISTING VALIDATION AND HELPER FUNCTIONS BELOW
 function validateTimeInputs() {
     const timerMode = document.querySelector('input[name="timerMode"]:checked').value;
     if (timerMode === 'default') return true;
@@ -640,6 +711,6 @@ document.querySelectorAll('.threshold-container .time-unit input').forEach(input
         }
     });
 });
-    </script>
+</script>
 </body>
 </html>
