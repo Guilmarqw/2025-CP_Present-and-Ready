@@ -16,6 +16,7 @@ import string
 import json
 import secrets
 import ssl
+import tensorrt as trt
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
@@ -618,19 +619,86 @@ def calculate_mar(landmarks, mouth_indices):
     return mar
 
 # =========================
-# Load InsightFace model
+# Load InsightFace model - TENSORRT 10.13.3 OPTIMIZED (FIXED)
 # =========================
 try:
     available_providers = ort.get_available_providers()
     logger.info(f"Available ONNX Runtime providers: {available_providers}")
-    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if 'CUDAExecutionProvider' in available_providers else ['CPUExecutionProvider']
-    face_analysis = insightface.app.FaceAnalysis(name=INSIGHTFACE_MODEL, providers=providers)
-    ctx_id = 0 if 'CUDAExecutionProvider' in available_providers and torch.cuda.is_available() else -1
-    face_analysis.prepare(ctx_id=ctx_id, det_size=(640, 640))
-    logger.info(f"InsightFace model loaded on {'GPU' if ctx_id == 0 else 'CPU'} with providers: {providers}")
+    
+    # TENSORRT 10.13.3 with latest optimizations
+    providers = []
+    provider_options = []
+    
+    if 'TensorrtExecutionProvider' in available_providers:
+        # TensorRT 10.13.3 optimized configuration - FIXED BOOLEAN VALUES
+        trt_options = {
+            'trt_engine_cache_enable': True,    # FIXED: Use True instead of '1'
+            'trt_engine_cache_path': './trt_cache',
+            'trt_fp16_enable': True,           # FIXED: Use True instead of '1'
+            'trt_int8_enable': False,          # FIXED: Use False instead of '0'
+            'trt_builder_optimization_level': 5,  # Maximum optimization
+            'trt_timing_cache_enable': True,   # FIXED: Use True instead of '1'
+            'trt_detailed_build_log': True,    # FIXED: Use True instead of '1'
+            'trt_force_sequential_engine_build': True,  # FIXED: Use True instead of '1'
+        }
+        providers.insert(0, 'TensorrtExecutionProvider')
+        provider_options.insert(0, trt_options)
+        logger.info("🚀 TensorRT 10.13.3 enabled with FP16 optimization")
+    
+    # CUDA as high-performance fallback
+    if 'CUDAExecutionProvider' in available_providers:
+        cuda_options = {
+            'device_id': 0,                    # FIXED: Use integer instead of string
+            'arena_extend_strategy': 'kNextPowerOfTwo',
+            'cudnn_conv_algo_search': 'EXHAUSTIVE',
+            'do_copy_in_default_stream': True, # FIXED: Use True instead of '1'
+            'cudnn_conv_use_max_workspace': True,  # FIXED: Use True instead of '1'
+            'enable_cuda_graph': False,        # FIXED: Use False instead of '0'
+        }
+        providers.append('CUDAExecutionProvider')
+        provider_options.append(cuda_options)
+        logger.info("✅ CUDA enabled as high-performance fallback")
+    
+    # CPU as last resort
+    providers.append('CPUExecutionProvider')
+    provider_options.append({})
+    
+    # Initialize FaceAnalysis with optimized providers
+    face_analysis = insightface.app.FaceAnalysis(
+        name=INSIGHTFACE_MODEL, 
+        providers=providers,
+        provider_options=provider_options
+    )
+    
+    # Use GPU context
+    ctx_id = 0 if ('TensorrtExecutionProvider' in providers or 'CUDAExecutionProvider' in providers) else -1
+    
+    # Prepare with optimized settings
+    face_analysis.prepare(
+        ctx_id=ctx_id, 
+        det_size=(640, 640),
+        det_thresh=0.5  # Optimized threshold
+    )
+    
+    # Log successful initialization
+    if 'TensorrtExecutionProvider' in providers:
+        logger.info("🎯 InsightFace model loaded with TENSORRT 10.13.3 (MAXIMUM PERFORMANCE)")
+    elif 'CUDAExecutionProvider' in providers:
+        logger.info("🎯 InsightFace model loaded with CUDA acceleration")
+    else:
+        logger.info("🎯 InsightFace model loaded on CPU")
+    
 except Exception as e:
-    logger.error(f"Failed to load InsightFace model: {e}")
-    raise
+    logger.error(f"❌ Failed to load InsightFace model with TensorRT: {e}")
+    # Robust fallback
+    try:
+        logger.info("🔄 Falling back to CUDA-only mode...")
+        face_analysis = insightface.app.FaceAnalysis(name=INSIGHTFACE_MODEL)
+        face_analysis.prepare(ctx_id=0 if torch.cuda.is_available() else -1, det_size=(640, 640))
+        logger.info("✅ Fallback to CUDA mode successful")
+    except Exception as fallback_error:
+        logger.error(f"❌ All initialization methods failed: {fallback_error}")
+        raise
 
 # =========================
 # Load known faces from database
@@ -1115,8 +1183,9 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_loc
         else:
             enhanced = face_image
 
-        # Extract embeddings
+        start_time = time.time()
         faces = face_analysis.get(enhanced)
+        logger.info(f"Face analysis inference time: {time.time() - start_time:.4f} seconds")
         if not faces:
             return "Unknown", None, float('inf'), distance, 0.0, None
 
