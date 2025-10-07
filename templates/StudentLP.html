@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Student Dashboard</title>
+    <title>Attendance</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
@@ -20,7 +20,6 @@
             min-height: 100vh;
         }
 
-        /* Sidebar Styles */
         .sidebar {
             width: 250px;
             background: white;
@@ -157,7 +156,6 @@
             background-color: rgba(0, 0, 0, 0.05);
         }
 
-        /* Main Content Styles */
         .main-content {
             flex: 1;
             margin-left: 250px;
@@ -202,8 +200,7 @@
             margin-right: 5px;
         }
 
-        /* Attendance Summary Styles */
-        .attendance-summary {
+        .attendance-section {
             background-color: white;
             border-radius: 8px;
             padding: 20px;
@@ -211,10 +208,37 @@
             margin-bottom: 25px;
         }
 
-        .attendance-summary h3 {
+        .attendance-section h3 {
             color: #2c3e50;
             font-size: 20px;
             margin-bottom: 20px;
+        }
+
+        .filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 5px;
+        }
+
+        .filter-group select,
+        .filter-group input[type="date"] {
+            padding: 8px;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 14px;
+            width: 200px;
         }
 
         .summary-stats {
@@ -249,7 +273,8 @@
             margin-top: 20px;
         }
 
-        .attendance-table th, .attendance-table td {
+        .attendance-table th,
+        .attendance-table td {
             padding: 12px;
             text-align: left;
             border-bottom: 1px solid #e0e0e0;
@@ -275,7 +300,11 @@
             font-weight: 500;
         }
 
-        /* Responsive Design */
+        .status-excused {
+            color: #ffc107;
+            font-weight: 500;
+        }
+
         @media (max-width: 992px) {
             .sidebar {
                 width: 80px;
@@ -297,14 +326,18 @@
             .main-content {
                 margin-left: 80px;
             }
-            .summary-stats {
+            .summary-stats,
+            .filters {
                 flex-direction: column;
+            }
+            .filter-group select,
+            .filter-group input[type="date"] {
+                width: 100%;
             }
         }
     </style>
 </head>
 <body>
-    <!-- Sidebar -->
     <aside class="sidebar">
         <div class="logo">
             <h1>Student Portal</h1>
@@ -317,21 +350,37 @@
             <div class="role">Student</div>
         </div>
         <ul class="nav-items">
-           
             <li><a href="/StudentDashboard"><i class="fas fa-chart-bar"></i> <span>Dashboard</span></a></li>
-            <li><a href="/attendance"><i class="fas fa-check-circle"></i> <span>Attendance</span></a></li>
+            <li><a href="/attendance" class="active"><i class="fas fa-check-circle"></i> <span>Attendance</span></a></li>
             <li><a href="/settings"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
             <li><a href="/logout" id="signout-btn"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
         </ul>
     </aside>
 
-    <!-- Main Content -->
     <div class="main-content">
+        <div class="header">
+            <h2>Attendance</h2>
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Search courses...">
+            </div>
+        </div>
 
+        <div class="attendance-section">
+            <h3>Attendance Records</h3>
+            <div class="filters">
+                <div class="filter-group">
+                    <label for="course-filter">Course</label>
+                    <select id="course-filter">
+                        <option value="all">All Courses</option>
+                        <option value="math101">Mathematics 101</option>
+                        <option value="phys201">Physics 201</option>
+                        <option value="cs301">Computer Science 301</option>
+                    </select>
+                </div>
+                <div class="filter-group">
 
-        <!-- Attendance Summary -->
-        <div class="attendance-summary">
-            <h3>Attendance Summary</h3>
+            </div>
             <div class="summary-stats">
                 <div class="stat-card">
                     <h4>Total Classes</h4>
@@ -353,6 +402,7 @@
                         <th>Course</th>
                         <th>Time</th>
                         <th>Status</th>
+                        <th>Notes</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -361,18 +411,28 @@
                         <td>Mathematics 101</td>
                         <td>9:00 AM - 10:30 AM</td>
                         <td class="status-present">Present</td>
+                        <td>-</td>
                     </tr>
                     <tr>
                         <td>2025-09-28</td>
                         <td>Physics 201</td>
                         <td>11:00 AM - 12:30 PM</td>
                         <td class="status-present">Present</td>
+                        <td>-</td>
                     </tr>
                     <tr>
                         <td>2025-09-27</td>
                         <td>Computer Science 301</td>
                         <td>2:00 PM - 3:30 PM</td>
                         <td class="status-absent">Absent</td>
+                        <td>No prior notice</td>
+                    </tr>
+                    <tr>
+                        <td>2025-09-26</td>
+                        <td>Mathematics 101</td>
+                        <td>9:00 AM - 10:30 AM</td>
+                        <td class="status-excused">Excused</td>
+                        <td>Medical leave</td>
                     </tr>
                 </tbody>
             </table>
