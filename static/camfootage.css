@@ -149,13 +149,14 @@
 
         header {
             padding: 0.75rem 1rem;
-            background: #685A45;
-            color: white;
+            background: white;
+            color: black;
             display: flex;
             justify-content: space-between;
             align-items: center;
             overflow: hidden;
             min-height: auto;
+            border-bottom: 1px solid var(--gray-light);
         }
 
         .time-info {
@@ -406,7 +407,7 @@
         }
 
         .action-toggle {
-            background: #685A45;
+            background: #4a6fa9;
             color: white;
             border: none;
             padding: 0.35rem 1rem;
@@ -453,6 +454,8 @@
             pointer-events: all;
         }
         .action-menu button {
+            font-size: 0.7rem !important;
+
             flex: 1;
             padding: 0.35rem 0.5rem;
             border: none;
@@ -485,8 +488,8 @@
         }
 
         .action-menu button:nth-child(4) {
-            background: var(--gray-light);
-            color: var(--dark);
+            background: #fff9c4;
+            color: brown;
         }
 
         .action-menu button:hover {
@@ -596,7 +599,7 @@
         }
 
         .btn-submit {
-            background: #685A45;
+            background: #4a6fa9;
             color: white;
         }
 
@@ -650,7 +653,7 @@
         }
 
         .student-count .material-icons {
-            color: #685A45 !important;
+            color: #4a6fa9 !important;
         }
 
         .student-ratio {
@@ -663,7 +666,7 @@
         }
 
         .student-ratio #detected-count {
-            color: #685A45;
+            color: #4a6fa9;
             font-weight: 600;
         }
 

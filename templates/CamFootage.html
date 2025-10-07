@@ -8,7 +8,6 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='camfootage.css') }}">
     <link rel="stylesheet" href="../static/camfootage.css">
-
 </head>
 <body>
     <div class="container">
@@ -23,15 +22,19 @@
                 <span id="date-time" class="time-display">07/04/25 - 1:00 PM</span>
             </div>
             <div class="cctv-feed">
-      <img id="cam-feed" src="/video_feed">
-  </div>
+                <img id="cam-feed" src="/video_feed">
+            </div>
             <div class="cctv-controls">
+                <button onclick="goToDashboard()">
+                    <span class="material-icons">arrow_back</span>
+                    Back to Dashboard
+                </button>
                 <button onclick="togglePause(this)">
                     <span class="material-icons">pause</span>
                     Pause
                 </button>
                 <button onclick="toggleFullscreen()">
-                    <span class="material-icons">Fullscreen</span>
+                    <span class="material-icons">fullscreen</span>
                     Fullscreen
                 </button>
                 <button onclick="minimizeScreen()">
@@ -98,9 +101,8 @@
                         </div>
                     </div>
                     <span class="status present">Present</span>
-                    
                 </div>
-                 <div class="student-row">
+                <div class="student-row">
                     <div class="student-info">
                         <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="Student" class="avatar">
                         <div>
@@ -110,7 +112,6 @@
                     </div>
                     <span class="status present">Present</span>
                 </div>
-             
                 <div class="student-row">
                     <div class="student-info">
                         <img src="https://randomuser.me/api/portraits/men/45.jpg" alt="Student" class="avatar">
@@ -128,6 +129,7 @@
                     <span class="material-icons">more_vert</span>
                     Actions
                 </button>
+                
                 <div class="action-menu">
                     <button onclick="handleAction('add')">
                         <span class="material-icons">add</span>
@@ -135,11 +137,15 @@
                     </button>
                     <button onclick="handleAction('delete')">
                         <span class="material-icons">delete</span>
-                        Delete
+                        Remove
                     </button>
                     <button onclick="handleAction('transfer')">
                         <span class="material-icons">swap_horiz</span>
                         Transfer
+                    </button>
+                    <button onclick="handleAction('excused')">
+                        <span class="material-icons">schedule</span>
+                        Excused
                     </button>
                     <button onclick="toggleActionMenu()">
                         <span class="material-icons">arrow_back</span>
@@ -238,7 +244,7 @@
     <div class="modal" id="deleteStudentModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">Delete Student</h3>
+                <h3 class="modal-title">Remove Student</h3>
                 <button class="close-modal" onclick="closeModal('deleteStudentModal')">
                     <span class="material-icons">close</span>
                 </button>
@@ -247,7 +253,7 @@
                 <div class="form-group">
                     <label for="deleteStudentSelect">Select Student</label>
                     <select id="deleteStudentSelect">
-                        <option value="">Select a student to delete...</option>
+                        <option value="">Select a student to remove...</option>
                     </select>
                 </div>
                 <p style="color: var(--danger); margin-top: 1rem;">
@@ -256,7 +262,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn-cancel" onclick="closeModal('deleteStudentModal')">Cancel</button>
-                <button class="btn-submit" style="background: red !important" onclick="submitDeleteStudent()">Delete</button>
+                <button class="btn-submit" style="background: red !important" onclick="submitDeleteStudent()">Remove</button>
             </div>
         </div>
     </div>
@@ -294,6 +300,33 @@
         </div>
     </div>
 
+    <!-- Excused Student Modal -->
+    <div class="modal" id="excusedStudentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Mark as Excused</h3>
+                <button class="close-modal" onclick="closeModal('excusedStudentModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="excusedStudentSelect">Select Student</label>
+                    <select id="excusedStudentSelect">
+                        <option value="">Select a student to mark as excused...</option>
+                    </select>
+                </div>
+                <p style="color: var(--warning); margin-top: 1rem;">
+                    This will mark the selected student as excused for this session.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('excusedStudentModal')">Cancel</button>
+                <button class="btn-submit" onclick="submitExcusedStudent()">Mark Excused</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div class="modal" id="settingsModal">
         <div class="modal-content">
@@ -304,7 +337,6 @@
                 </button>
             </div>
             <div class="modal-body">
-                
                 <div class="form-group">
                     <label>Course and Section</label>
                     <div style="display: flex; gap: 8px;">
@@ -312,22 +344,18 @@
                         <input type="text" id="section" placeholder="Section (e.g. 3A)" required>
                     </div>
                 </div>
-
                 <div class="form-group">
                     <label>Faculty Member Information</label>
                     <input type="text" id="facultymemberName" placeholder="Faculty Member Name" required>
                 </div>
-
                 <div class="form-group">
                     <label>Class Duration (minutes)</label>
                     <input type="number" id="classDuration" placeholder="180" min="1" required>
                 </div>
-
                 <div class="form-group">
                     <label>Late Threshold (minutes)</label>
                     <input type="number" id="lateThreshold" placeholder="15" min="1" required>
                 </div>
-
                 <div class="form-group">
                     <label>Video Quality</label>
                     <select id="videoQuality" class="quality-select">
@@ -366,7 +394,7 @@
         </div>
     </div>
 
-    <!-- Update the unrecognized faces modal content -->
+    <!-- Unrecognized Faces Modal -->
     <div class="modal" id="unrecognizedFacesModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -380,14 +408,11 @@
                     <span class="material-icons" style="vertical-align: middle;">warning</span>
                     There are faces detected but not recognized by the system.
                 </p>
-                
                 <div class="select-all">
                     <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
                     <label for="selectAll">Select All Faces</label>
                 </div>
-
                 <div class="unrecognized-faces" id="unrecognizedFacesList">
-                    <!-- Example face cards - replace with dynamic content -->
                     <div class="face-card">
                         <img src="https://randomuser.me/api/portraits/men/1.jpg" alt="Unrecognized Face">
                         <label>
@@ -403,7 +428,6 @@
                         </label>
                     </div>
                 </div>
-
                 <div class="face-actions">
                     <button class="btn-action" onclick="markSelectedAs('present')" style="background: #e3fafc; color: #1098ad; flex: 1; padding: 1rem;">
                         <span class="material-icons">how_to_reg</span>
@@ -418,7 +442,6 @@
                         Unknown Face
                     </button>
                 </div>
-
                 <button class="btn-action" onclick="retakeFaces()" style="background: #e8f5e9; color: #388e3c; width: 100%; margin-top: 1rem; padding: 1rem; text-align: left;">
                     <span class="material-icons">face_retouching_natural</span>
                     Retake Face Detection
@@ -566,6 +589,13 @@
             }
         }
 
+        // Go back to dashboard
+        function goToDashboard() {
+            if (confirm('Are you sure you want to return to the dashboard? Any unsaved changes will be lost.')) {
+                window.location.href = "/dashboard";
+            }
+        }
+
         // Sample functionality for status toggling
         document.querySelectorAll('.status-toggle').forEach(button => {
             button.addEventListener('click', function(e) {
@@ -620,7 +650,6 @@
         document.getElementById('total-count').textContent = totalStudents;
         document.getElementById('detected-count').textContent = 15;
 
-
         // Action menu functionality
         function toggleActionMenu() {
             const menu = document.querySelector('.action-menu');
@@ -648,6 +677,10 @@
                     populateTransferStudentSelect();
                     document.getElementById('transferStudentModal').style.display = 'flex';
                     break;
+                case 'excused':
+                    populateExcusedStudentSelect();
+                    document.getElementById('excusedStudentModal').style.display = 'flex';
+                    break;
             }
             toggleActionMenu();
         }
@@ -673,6 +706,20 @@
         function populateTransferStudentSelect() {
             const select = document.getElementById('transferStudent');
             select.innerHTML = '<option value="">Select a student...</option>';
+            
+            document.querySelectorAll('.student-row').forEach(row => {
+                const name = row.querySelector('.student-name').textContent;
+                const id = row.querySelector('.student-id').textContent.split(': ')[1];
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = `${name} (${id})`;
+                select.appendChild(option);
+            });
+        }
+
+        function populateExcusedStudentSelect() {
+            const select = document.getElementById('excusedStudentSelect');
+            select.innerHTML = '<option value="">Select a student to mark as excused...</option>';
             
             document.querySelectorAll('.student-row').forEach(row => {
                 const name = row.querySelector('.student-name').textContent;
@@ -747,6 +794,30 @@
             });
             
             closeModal('deleteStudentModal');
+        }
+
+        function submitExcusedStudent() {
+            const studentId = document.getElementById('excusedStudentSelect').value;
+            if (!studentId) {
+                alert('Please select a student');
+                return;
+            }
+
+            document.querySelectorAll('.student-row').forEach(row => {
+                const id = row.querySelector('.student-id').textContent.split(': ')[1];
+                if (id === studentId) {
+                    const statusElement = row.querySelector('.status');
+                    statusElement.textContent = 'Excused';
+                    statusElement.className = 'status excused';
+                    statusElement.classList.add('status-updated');
+                    setTimeout(() => {
+                        statusElement.classList.remove('status-updated');
+                    }, 300);
+                }
+            });
+            
+            closeModal('excusedStudentModal');
+            updateStudentCount(); // Update count after marking
         }
 
         function submitTransferStudent() {
@@ -835,7 +906,6 @@
             }
         }
 
-        // Update the retakeFaces function
         function retakeFaces() {
             if (confirm('Are you sure you want to retake face detection?')) {
                 closeModal('unrecognizedFacesModal');
@@ -844,165 +914,165 @@
             }
         }
 
-        // Update these functions in the script section
-function openSettings() {
-    const settingsModal = document.getElementById('settingsModal');
-    settingsModal.style.display = 'flex';
-}
+        function openSettings() {
+            const settingsModal = document.getElementById('settingsModal');
+            settingsModal.style.display = 'flex';
+        }
 
-function endSession() {
-    const hasUnrecognizedFaces = true; // This would be your actual detection logic
-    if (hasUnrecognizedFaces) {
-        document.getElementById('unrecognizedFacesModal').style.display = 'flex';
-    } else {
-        showEndSessionConfirmation();
-    }
-}
+        function endSession() {
+            const hasUnrecognizedFaces = true; // This would be your actual detection logic
+            if (hasUnrecognizedFaces) {
+                document.getElementById('unrecognizedFacesModal').style.display = 'flex';
+            } else {
+                showEndSessionConfirmation();
+            }
+        }
 
-function showEndSessionConfirmation() {
-    document.getElementById('endSessionModal').style.display = 'flex';
-}
+        function showEndSessionConfirmation() {
+            document.getElementById('endSessionModal').style.display = 'flex';
+        }
 
-// Add this function to handle video quality changes
-function changeVideoQuality(quality) {
-    const video = document.querySelector('.cctv-feed video');
-    if (!video || !video.srcObject) return;
+        function changeVideoQuality(quality) {
+            const video = document.querySelector('.cctv-feed video');
+            if (!video || !video.srcObject) return;
 
-    const track = video.srcObject.getVideoTracks()[0];
-    if (!track) return;
+            const track = video.srcObject.getVideoTracks()[0];
+            if (!track) return;
 
-    track.applyConstraints({
-        width: { ideal: parseInt(quality) },
-        height: { ideal: parseInt(quality) * 9/16 }
-    }).catch(err => {
-        console.error('Error applying video constraints:', err);
-        alert('Failed to change video quality. Your device may not support this resolution.');
-    });
-}
+            track.applyConstraints({
+                width: { ideal: parseInt(quality) },
+                height: { ideal: parseInt(quality) * 9/16 }
+            }).catch(err => {
+                console.error('Error applying video constraints:', err);
+                alert('Failed to change video quality. Your device may not support this resolution.');
+            });
+        }
 
-function confirmEndSession() {
-    // Save your attendance data here if needed
-    alert('Session ended successfully');
-    window.location.href = "/summary"; // Redirect to Summary page
-}
+        function confirmEndSession() {
+            // Save your attendance data here if needed
+            alert('Session ended successfully');
+            window.location.href = "/summary"; // Redirect to Summary page
+        }
 
-// Add this at the top of your script section
-let classConfig = {
-    subjectCode: '',
-    subjectName: '',
-    course: '',
-    section: '',
-    facultymemberName: '',
-    facultymemberID: '',
-    classDuration: 180,
-    lateThreshold: 15,
-    videoQuality: '720'
-};
+        let classConfig = {
+            subjectCode: '',
+            subjectName: '',
+            course: '',
+            section: '',
+            facultymemberName: '',
+            facultymemberID: '',
+            classDuration: 180,
+            lateThreshold: 15,
+            videoQuality: '720'
+        };
 
-// Add this function to save settings
-function saveSettings() {
-    // Get all input values
-    classConfig = {
-        subjectCode: document.getElementById('subjectCode').value,
-        subjectName: document.getElementById('subjectName').value,
-        course: document.getElementById('course').value,
-        section: document.getElementById('section').value,
-        facultymemberName: document.getElementById('facultymemberName').value,
-        facultymemberID: document.getElementById('facultyId').value,
-        classDuration: parseInt(document.getElementById('classDuration').value) || 180,
-        lateThreshold: parseInt(document.getElementById('lateThreshold').value) || 15,
-        videoQuality: document.getElementById('videoQuality').value
-    };
+        function saveSettings() {
+            // Get all input values
+            classConfig = {
+                subjectCode: document.getElementById('subjectCode').value,
+                subjectName: document.getElementById('subjectName').value,
+                course: document.getElementById('course').value,
+                section: document.getElementById('section').value,
+                facultymemberName: document.getElementById('facultymemberName').value,
+                facultymemberID: document.getElementById('facultyId').value,
+                classDuration: parseInt(document.getElementById('classDuration').value) || 180,
+                lateThreshold: parseInt(document.getElementById('lateThreshold').value) || 15,
+                videoQuality: document.getElementById('videoQuality').value
+            };
 
-    // Update displays
-    updateConfigDisplay();
-    
-    // Update class header
-    document.querySelector('.cctv-header h3').textContent = classConfig.subjectName;
-    document.querySelector('.cctv-header span[style]').textContent = classConfig.subjectCode;
-    
-    // Update faculty member info
-    document.querySelector('.faculty-info span').textContent = classConfig.facultymemberName;
-    
-    // Update section info
-    document.querySelector('.section-info span:last-child').textContent = 
-        `${classConfig.course} ${classConfig.section}`;
-    
-    // Update timers
-    document.getElementById('total-time').textContent = formatTime(classConfig.classDuration * 60);
-    
-    // Save to localStorage for persistence
-    localStorage.setItem('classConfig', JSON.stringify(classConfig));
-    
-    // Close modal
-    closeModal('settingsModal');
-}
+            // Update displays
+            updateConfigDisplay();
+            
+            // Update class header
+            document.querySelector('.cctv-header h3').textContent = classConfig.subjectName;
+            document.querySelector('.cctv-header span[style]').textContent = classConfig.subjectCode;
+            
+            // Update faculty member info
+            document.querySelector('.faculty-info span').textContent = classConfig.facultymemberName;
+            
+            // Update section info
+            document.querySelector('.section-info span:last-child').textContent = 
+                `${classConfig.course} ${classConfig.section}`;
+            
+            // Update timers
+            document.getElementById('total-time').textContent = formatTime(classConfig.classDuration * 60);
+            
+            // Save to localStorage for persistence
+            localStorage.setItem('classConfig', JSON.stringify(classConfig));
+            
+            // Close modal
+            closeModal('settingsModal');
+        }
 
-function updateConfigDisplay() {
-    document.getElementById('displaySubject').textContent = 
-        `${classConfig.subjectCode} - ${classConfig.subjectName}`;
-    document.getElementById('displayClass').textContent = 
-        `${classConfig.course} ${classConfig.section}`;
-    document.getElementById('displayFacultyMembers').textContent = classConfig.facultymemberName;
-    document.getElementById('displayDuration').textContent = `${classConfig.classDuration} mins`;
-    document.getElementById('displayLateThreshold').textContent = `${classConfig.lateThreshold} mins`;
-}
+        function updateConfigDisplay() {
+            document.getElementById('displaySubject').textContent = 
+                `${classConfig.subjectCode} - ${classConfig.subjectName}`;
+            document.getElementById('displayClass').textContent = 
+                `${classConfig.course} ${classConfig.section}`;
+            document.getElementById('displayFacultyMembers').textContent = classConfig.facultymemberName;
+            document.getElementById('displayDuration').textContent = `${classConfig.classDuration} mins`;
+            document.getElementById('displayLateThreshold').textContent = `${classConfig.lateThreshold} mins`;
+        }
 
-// Add this to your window.load event listener
-window.addEventListener('load', () => {
-    // Load saved config if exists
-    const savedConfig = localStorage.getItem('classConfig');
-    if (savedConfig) {
-        classConfig = JSON.parse(savedConfig);
-        updateConfigDisplay();
-    }
-    
-    // Load and apply settings
-    loadClassSettings();
-    startTimer();
-    updateTimer();
-    updateStudentCount();
-});
+        window.addEventListener('load', () => {
+            // Load saved config if exists
+            const savedConfig = localStorage.getItem('classConfig');
+            if (savedConfig) {
+                classConfig = JSON.parse(savedConfig);
+                updateConfigDisplay();
+            }
+            
+            // Load and apply settings
+            loadClassSettings();
+            startTimer();
+            updateTimer();
+            updateStudentCount();
+        });
 
-// Add this function after window.addEventListener('load'...)
-function loadClassSettings() {
-    const settings = JSON.parse(localStorage.getItem('classSettings'));
-    if (!settings) {
-        window.location.href = '../Timer/timer.html';
-        return;
-    }
-    
-    // Update total time display
-    const totalSeconds = 
-        parseInt(settings.timer.session.hours) * 3600 +
-        parseInt(settings.timer.session.minutes) * 60 +
-        parseInt(settings.timer.session.seconds);
-    document.getElementById('total-time').textContent = formatTime(totalSeconds);
-    
-    // Update subject code
-    document.querySelector('.cctv-header span[style]').textContent = settings.classDetails.subjectCode;
-    
-    // Update section info
-    document.querySelector('.section-info span:last-child').textContent = settings.classDetails.courseSection;
-    
-    // Update faculty member name
-    document.querySelector('.faculty-info span').textContent = settings.classDetails.faculty;
-    
-    // Store late threshold for status checks
-    const lateThresholdSeconds = 
-        parseInt(settings.timer.threshold.hours) * 3600 +
-        parseInt(settings.timer.threshold.minutes) * 60 + 
-        parseInt(settings.timer.threshold.seconds);
-    classConfig.lateThreshold = Math.floor(lateThresholdSeconds / 60); // Convert to minutes
-}
+        function loadClassSettings() {
+            const settings = JSON.parse(localStorage.getItem('classSettings'));
+            if (!settings) {
+                window.location.href = '../Timer/timer.html';
+                return;
+            }
+            
+            // Update total time display
+            const totalSeconds = 
+                parseInt(settings.timer.session.hours) * 3600 +
+                parseInt(settings.timer.session.minutes) * 60 +
+                parseInt(settings.timer.session.seconds);
+            document.getElementById('total-time').textContent = formatTime(totalSeconds);
+            
+            // Update subject code
+            document.querySelector('.cctv-header span[style]').textContent = settings.classDetails.subjectCode;
+            
+            // Update section info
+            document.querySelector('.section-info span:last-child').textContent = settings.classDetails.courseSection;
+            
+            // Update faculty member name
+            document.querySelector('.faculty-info span').textContent = settings.classDetails.faculty;
+            
+            // Store late threshold for status checks
+            const lateThresholdSeconds = 
+                parseInt(settings.timer.threshold.hours) * 3600 +
+                parseInt(settings.timer.threshold.minutes) * 60 + 
+                parseInt(settings.timer.threshold.seconds);
+            classConfig.lateThreshold = Math.floor(lateThresholdSeconds / 60); // Convert to minutes
+        }
 
-// Add this helper function if not already present
-function formatTime(seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function updateStudentCount() {
+            // Implement logic to recount students and update displays if needed
+            const total = document.querySelectorAll('.student-row').length;
+            document.getElementById('total-count').textContent = total;
+            // Recount detected/present etc. as per your logic
+        }
     </script>
 </body>
 </html>

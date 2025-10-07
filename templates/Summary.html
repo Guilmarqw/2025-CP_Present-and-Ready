@@ -6,8 +6,6 @@
     <title>Attendance Summary</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="../static/Summary.css">
-
-
 </head>
 <body class="bg-gray-100 font-sans">
     <!-- Edit Modal -->
@@ -87,6 +85,7 @@
         <div class="header flex justify-between items-center mb-6">
             <h1 class="text-3xl font-bold text-gray-800">Attendance Summary</h1>
             <div class="flex gap-2">
+                <button class="btn btn-back bg-gray-600 text-white hover:bg-gray-700" id="backBtn">Go Back to Dashboard</button>
                 <button class="btn btn-edit" id="editBtn">Edit</button>
                 <button class="btn btn-save" id="saveBtn">Save</button>
                 <button class="btn btn-cancel" id="discardBtn">Discard</button>
@@ -602,6 +601,20 @@
             printWindow.document.close();
             printWindow.print();
             document.getElementById('csvPreviewModal').style.display = 'none';
+        });
+
+        // Go Back to Dashboard functionality
+        document.getElementById('backBtn').addEventListener('click', () => {
+            if (hasChanges) {
+                showConfirmation('navigate', 'You have unsaved changes. Do you want to save before returning to the dashboard?', () => {
+                    saveChanges();
+                    window.location.href = '/dashboard';
+                }, () => {
+                    window.location.href = '/dashboard';
+                });
+            } else {
+                window.location.href = '/dashboard';
+            }
         });
 
         // Update time every second
