@@ -445,19 +445,22 @@ async function startSession(event) {
             body: JSON.stringify({ rtsp_url: rtspUrl })
         });
         
-        const rtspData = await rtspResponse.json();
-        
-        hideLoading();
-        
-        if (!rtspData.success) {
-            const useAnyway = confirm(`Failed to connect to RTSP URL: ${rtspData.message}\n\nDo you want to continue anyway? The system will use the fallback feed.`);
-            if (!useAnyway) {
-                return;
-            }
-            // Continue with fallback feed
-        } else {
-            showModal('Success', 'Camera connected successfully!', null, false, 2000);
-        }
+ const rtspData = await rtspResponse.json();
+
+hideLoading();
+
+if (!rtspData.success) {
+    showModal('Error', `Failed to connect to camera: ${rtspData.message}\n\nPlease check your RTSP URL or camera connection.`);
+    return;
+} else if (rtspData.using_fallback) {
+    const useAnyway = confirm('RTSP camera not available.\n\nFalling back to laptop camera. Continue with laptop camera?');
+    if (!useAnyway) {
+        return;
+    }
+    showModal('Info', 'Using laptop camera (fallback)', null, false, 2000);
+} else {
+    showModal('Success', 'RTSP camera connected successfully!', null, false, 2000);
+}
         
     } catch (error) {
         hideLoading();

@@ -21,9 +21,18 @@
                 </span>
                 <span id="date-time" class="time-display">07/04/25 - 1:00 PM</span>
             </div>
-            <div class="cctv-feed">
-                <video id="cam-feed" autoplay></video>
-            </div>
+<div class="cctv-feed">
+    <img id="cam-feed" 
+         src="/video_feed" 
+         alt="Camera Feed"
+         style="width: 100%; height: 100%; object-fit: contain; background: #000;"
+         onerror="handleVideoError(this)"
+         onload="handleVideoLoad(this)">
+    <div id="loading-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 18px; display: none;">
+        <span class="material-icons" style="font-size: 48px; animation: spin 1s linear infinite;">refresh</span>
+        <p>Loading camera feed...</p>
+    </div>
+</div>
             <div class="cctv-controls">
                 <button onclick="goToDashboard()">
                     <span class="material-icons">arrow_back</span>
@@ -449,655 +458,945 @@
         </div>
     </div>
 
-    <script>
-        // Global error handler
-        window.onerror = function (message, source, lineno, colno, error) {
-            console.error(`Error: ${message} at ${source}:${lineno}:${colno}`);
-            alert('An error occurred. Check the console for details.');
+<script>
+    // Global error handler
+    window.onerror = function (message, source, lineno, colno, error) {
+        console.error(`Error: ${message} at ${source}:${lineno}:${colno}`);
+        alert('An error occurred. Check the console for details.');
+    };
+
+    // State
+    let startTime = new Date();
+    let pauseStartTime = null;
+    let totalPausedTime = 0;
+    let isTimerPaused = false;
+    let timerInterval;
+    latest_frame = None
+    let isRunning = true; // used in updateTimer exit case
+    window._latestAttendance = []; // cached attendance array from server
+
+
+    
+window.addEventListener('load', () => {
+    console.log('Page loaded, initializing...');
+    
+    // Extract URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionData = {
+        schedule_id: urlParams.get('schedule_id'),
+        instructor: urlParams.get('instructor'),
+        subject: urlParams.get('subject'),
+        year_level: urlParams.get('year_level'),
+        program: urlParams.get('program'),
+        section: urlParams.get('section'),
+        duration: urlParams.get('duration'),
+        threshold: urlParams.get('threshold'),
+        rtsp_url: decodeURIComponent(urlParams.get('rtsp_url') || ''),
+        mode: urlParams.get('mode')
+    };
+    
+    // Initialize session on backend
+    fetch('/api/initialize_session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sessionData)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            console.log('Session initialized');
+            // Update UI with session data
+            updateSessionUI(sessionData);
+        }
+    })
+    .catch(err => console.error('Error initializing session:', err));
+    
+    loadClassSettings().finally(() => {
+        startTimer();
+        updateTimer();
+        updateStudentCount();
+        setInterval(updateStudentCount, 30000);
+    });
+});
+
+function updateSessionUI(data) {
+    // Update header with class info
+    const headerInfo = document.querySelector('.cctv-header div span');
+    if (headerInfo) {
+        headerInfo.textContent = `${data.program} ${data.year_level}-${data.section} | ${data.subject}`;
+    }
+    
+    // Update faculty info if present
+    const facultyInfo = document.querySelector('.faculty-info span');
+    if (facultyInfo) {
+        facultyInfo.textContent = data.instructor;
+    }
+    
+    // Update section info
+    const sectionInfo = document.querySelector('.section-info span:last-child');
+    if (sectionInfo) {
+        sectionInfo.textContent = `${data.program} ${data.year_level}${data.section}`;
+    }
+}
+
+    // Update date and time dynamically
+    function updateDateTime() {
+        const now = new Date();
+        const options = {
+            month: '2-digit',
+            day: '2-digit',
+            year: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
         };
+        const el = document.getElementById('date-time');
+        if (el) {
+            el.textContent = now.toLocaleDateString('en-US', options).replace(',', ' -');
+        }
+    }
 
-        // Initialize video stream on page load
-        window.addEventListener('load', () => {
-            console.log('Page loaded, initializing...');
-            loadClassSettings();
-            startTimer();
-            updateTimer();
-            updateStudentCount();
-            // Initialize video stream
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(stream => {
-                    const video = document.getElementById('cam-feed');
-                    const minimizedVideo = document.querySelector('.minimized-video');
-                    video.srcObject = stream;
-                    minimizedVideo.srcObject = stream;
-                })
-                .catch(err => {
-                    console.error('Error accessing video stream:', err);
-                    alert('Failed to load video feed. Check camera permissions.');
-                });
-        });
+    // Initialize and update time every minute
+    updateDateTime();
+    setInterval(updateDateTime, 60000);
 
-        // Update date and time dynamically
-        function updateDateTime() {
+    // Timer helpers
+    function formatTime(seconds) {
+        seconds = Math.max(0, Math.floor(Number(seconds) || 0));
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function updateTimer() {
+        if (isTimerPaused) return;
+
+        try {
             const now = new Date();
-            const options = { 
-                month: '2-digit', 
-                day: '2-digit', 
-                year: '2-digit',
-                hour: '2-digit', 
-                minute: '2-digit' 
-            };
-            document.getElementById('date-time').textContent = 
-                now.toLocaleDateString('en-US', options).replace(',', ' -');
-        }
-        
-        // Initialize and update time every minute
-        updateDateTime();
-        setInterval(updateDateTime, 60000);
+            const diff = now - startTime - totalPausedTime;
+            const settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
 
-        // Timer functionality
-        let startTime = new Date();
-        let pauseStartTime = null;
-        let totalPausedTime = 0;
-        let isTimerPaused = false;
-        let timerInterval;
+            // Calculate total session duration in milliseconds from settings
+            const totalDuration = (
+                (parseInt(settings.timer?.session?.hours || 3) * 3600) +
+                (parseInt(settings.timer?.session?.minutes || 0) * 60) +
+                (parseInt(settings.timer?.session?.seconds || 0))
+            ) * 1000;
 
-        function formatTime(seconds) {
-            const hrs = Math.floor(seconds / 3600);
-            const mins = Math.floor((seconds % 3600) / 60);
-            const secs = seconds % 60;
-            return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        }
+            // Guard: if totalDuration is 0 or NaN fallback to 3 hours
+            const safeTotalDuration = (isFinite(totalDuration) && totalDuration > 0) ? totalDuration : 3 * 3600 * 1000;
 
-        function updateTimer() {
-            if (isTimerPaused) return;
-            
-            try {
-                const now = new Date();
-                const diff = now - startTime - totalPausedTime;
-                const settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
-                
-                // Calculate total session duration in milliseconds from settings
-                const totalDuration = (
-                    parseInt(settings.timer?.session?.hours || 3) * 3600 +
-                    parseInt(settings.timer?.session?.minutes || 0) * 60 +
-                    parseInt(settings.timer?.session?.seconds || 0)
-                ) * 1000;
-                
-                // Check if session duration is reached
-                if (diff >= totalDuration) {
-                    clearInterval(timerInterval);
-                    isRunning = false;
-                    
-                    // Show unrecognized faces modal first
-                    const unrecognizedModal = document.getElementById('unrecognizedFacesModal');
-                    if (unrecognizedModal) {
-                        unrecognizedModal.style.display = 'flex';
-                    } else {
-                        console.error('Unrecognized faces modal not found');
-                    }
-                    
-                    // Update session duration in end session modal
-                    document.getElementById('sessionDuration').textContent = formatTime(totalDuration / 1000);
-                    return;
-                }
+            // Check if session duration is reached
+            if (diff >= safeTotalDuration) {
+                clearInterval(timerInterval);
+                isRunning = false;
 
-                const remaining = totalDuration - diff;
-                const hours = Math.floor(remaining / 3600000);
-                const minutes = Math.floor((remaining % 3600000) / 60000);
-                const seconds = Math.floor((remaining % 60000) / 1000);
-
-                // Update display with elapsed and total time
-                document.getElementById('elapsed-time').textContent = formatTime(Math.floor(diff / 1000));
-                document.getElementById('total-time').textContent = formatTime(totalDuration / 1000);
-
-                // Check late threshold
-                const lateThresholdMs = (
-                    parseInt(settings.timer?.threshold?.hours || 0) * 3600000 +
-                    parseInt(settings.timer?.threshold?.minutes || 15) * 60000 +
-                    parseInt(settings.timer?.threshold?.seconds || 0) * 1000
-                );
-                
-                if (diff >= lateThresholdMs && diff < totalDuration) {
-                    document.getElementById('mainTimer')?.classList.add('late');
-                }
-            } catch (err) {
-                console.error('Error in updateTimer:', err);
-            }
-        }
-
-        function startTimer() {
-            try {
-                if (!timerInterval) {
-                    timerInterval = setInterval(updateTimer, 1000);
-                }
-            } catch (err) {
-                console.error('Error starting timer:', err);
-            }
-        }
-
-        function togglePause(button) {
-            console.log('togglePause clicked');
-            try {
-                button.disabled = true;
-                const icon = button.querySelector('.material-icons');
-                const video = document.getElementById('cam-feed');
-                
-                if (isTimerPaused) {
-                    icon.textContent = 'pause';
-                    button.innerHTML = '<span class="material-icons">pause</span>Pause';
-                    isTimerPaused = false;
-                    if (pauseStartTime) {
-                        totalPausedTime += (new Date() - pauseStartTime);
-                        pauseStartTime = null;
-                    }
-                    if (video && video.srcObject) {
-                        video.play().catch(err => console.error('Error resuming video:', err));
-                    }
+                // Show unrecognized faces modal first
+                const unrecognizedModal = document.getElementById('unrecognizedFacesModal');
+                if (unrecognizedModal) {
+                    unrecognizedModal.style.display = 'flex';
                 } else {
-                    icon.textContent = 'play_arrow';
-                    button.innerHTML = '<span class="material-icons">play_arrow</span>Play';
-                    isTimerPaused = true;
-                    pauseStartTime = new Date();
-                    if (video && video.srcObject) {
-                        video.pause();
-                    }
+                    console.error('Unrecognized faces modal not found');
                 }
-                setTimeout(() => { button.disabled = false; }, 500);
-            } catch (err) {
-                console.error('Error in togglePause:', err);
-                alert('Error pausing/resuming session.');
-                button.disabled = false;
-            }
-        }
 
-        function toggleFullscreen() {
-            console.log('toggleFullscreen clicked');
-            try {
-                const videoContainer = document.querySelector('.cctv-feed');
-                if (!document.fullscreenElement) {
-                    videoContainer.requestFullscreen().catch(err => {
-                        console.error(`Error enabling fullscreen: ${err.message}`);
-                        alert(`Error attempting to enable fullscreen: ${err.message}`);
-                    });
-                } else {
-                    document.exitFullscreen();
+                // Update session duration in end session modal
+                const sessionDurationEl = document.getElementById('sessionDuration');
+                if (sessionDurationEl) sessionDurationEl.textContent = formatTime(safeTotalDuration / 1000);
+                return;
+            }
+
+            const remaining = safeTotalDuration - diff;
+            const elapsedSeconds = Math.floor(diff / 1000);
+
+            // Update display with elapsed and total time
+            const elapsedEl = document.getElementById('elapsed-time');
+            const totalEl = document.getElementById('total-time');
+            if (elapsedEl) elapsedEl.textContent = formatTime(elapsedSeconds);
+            if (totalEl) totalEl.textContent = formatTime(safeTotalDuration / 1000);
+
+            // Check late threshold
+            const lateThresholdMs = (
+                (parseInt(settings.timer?.threshold?.hours || 0) * 3600) +
+                (parseInt(settings.timer?.threshold?.minutes || 15) * 60) +
+                (parseInt(settings.timer?.threshold?.seconds || 0))
+            ) * 1000;
+
+            if (diff >= lateThresholdMs && diff < safeTotalDuration) {
+                document.getElementById('mainTimer')?.classList.add('late');
+            }
+        } catch (err) {
+            console.error('Error in updateTimer:', err);
+        }
+    }
+
+    function startTimer() {
+        try {
+            if (!timerInterval) {
+                timerInterval = setInterval(updateTimer, 1000);
+            }
+        } catch (err) {
+            console.error('Error starting timer:', err);
+        }
+    }
+
+    function togglePause(button) {
+        console.log('togglePause clicked');
+        try {
+            button.disabled = true;
+            const icon = button.querySelector('.material-icons');
+            const video = document.getElementById('cam-feed');
+
+            if (isTimerPaused) {
+                // resume
+                if (icon) icon.textContent = 'pause';
+                button.innerHTML = '<span class="material-icons">pause</span>Pause';
+                isTimerPaused = false;
+                if (pauseStartTime) {
+                    totalPausedTime += (new Date() - pauseStartTime);
+                    pauseStartTime = null;
                 }
-            } catch (err) {
-                console.error('Error in toggleFullscreen:', err);
-                alert('Error toggling fullscreen.');
-            }
-        }
-
-        function minimizeScreen() {
-            console.log('minimizeScreen clicked');
-            try {
-                const minimizedView = document.getElementById('minimizedView');
-                const mainVideo = document.getElementById('cam-feed');
-                const minimizedVideo = document.querySelector('.minimized-video');
-                
-                if (mainVideo && mainVideo.srcObject) {
-                    minimizedVideo.srcObject = mainVideo.srcObject;
-                    minimizedView.style.display = 'block';
-                    document.querySelector('.container').style.display = 'none';
-                    document.body.classList.add('minimized');
-                } else {
-                    console.error('No video source available for minimization');
-                    alert('Cannot minimize: No video source available.');
+                if (video && video.srcObject) {
+                    video.play().catch(err => console.error('Error resuming video:', err));
                 }
-            } catch (err) {
-                console.error('Error in minimizeScreen:', err);
-                alert('Error minimizing screen.');
-            }
-        }
-
-        function maximizeScreen() {
-            console.log('maximizeScreen clicked');
-            try {
-                const minimizedView = document.getElementById('minimizedView');
-                const mainVideo = document.getElementById('cam-feed');
-                const minimizedVideo = document.querySelector('.minimized-video');
-                
-                if (minimizedVideo.srcObject) {
-                    mainVideo.srcObject = minimizedVideo.srcObject;
-                    minimizedView.style.display = 'none';
-                    document.querySelector('.container').style.display = 'flex';
-                    document.body.classList.remove('minimized');
+            } else {
+                // pause
+                if (icon) icon.textContent = 'play_arrow';
+                button.innerHTML = '<span class="material-icons">play_arrow</span>Play';
+                isTimerPaused = true;
+                pauseStartTime = new Date();
+                if (video && video.srcObject) {
+                    // pause the video element only (camera stream may still run)
+                    try { video.pause(); } catch (e) { console.warn('video.pause failed', e); }
                 }
-            } catch (err) {
-                console.error('Error in maximizeScreen:', err);
-                alert('Error maximizing screen.');
             }
+            setTimeout(() => { button.disabled = false; }, 500);
+        } catch (err) {
+            console.error('Error in togglePause:', err);
+            alert('Error pausing/resuming session.');
+            button.disabled = false;
         }
+    }
 
-        function goToDashboard() {
-            console.log('goToDashboard clicked');
-            try {
-                if (confirm('Are you sure you want to return to the dashboard? Any unsaved changes will be lost.')) {
-                    window.location.href = "/dashboard";
-                }
-            } catch (err) {
-                console.error('Error in goToDashboard:', err);
-                alert('Error navigating to dashboard.');
+    function toggleFullscreen() {
+        console.log('toggleFullscreen clicked');
+        try {
+            const videoContainer = document.querySelector('.cctv-feed');
+            if (!videoContainer) {
+                alert('Video container not found.');
+                return;
             }
-        }
-
-        function openSettings() {
-            console.log('openSettings clicked');
-            try {
-                const settingsModal = document.getElementById('settingsModal');
-                if (settingsModal) {
-                    settingsModal.style.display = 'flex';
-                } else {
-                    console.error('Settings modal not found');
-                    alert('Settings modal not found.');
-                }
-            } catch (err) {
-                console.error('Error in openSettings:', err);
-                alert('Error opening settings.');
+            if (!document.fullscreenElement) {
+                videoContainer.requestFullscreen().catch(err => {
+                    console.error(`Error enabling fullscreen: ${err.message}`);
+                    alert(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen();
             }
+        } catch (err) {
+            console.error('Error in toggleFullscreen:', err);
+            alert('Error toggling fullscreen.');
         }
+    }
 
-        function endSession() {
-            console.log('endSession clicked');
-            try {
-                const hasUnrecognizedFaces = checkUnrecognizedFaces(); // Check if there are unresolved faces
-                if (hasUnrecognizedFaces) {
-                    const modal = document.getElementById('unrecognizedFacesModal');
-                    if (modal) {
-                        modal.style.display = 'flex';
-                    } else {
-                        console.error('Unrecognized faces modal not found');
-                        alert('Unrecognized faces modal not found.');
-                    }
-                } else {
-                    showEndSessionConfirmation();
-                }
-            } catch (err) {
-                console.error('Error in endSession:', err);
-                alert('Error ending session.');
+    function minimizeScreen() {
+        console.log('minimizeScreen clicked');
+        try {
+            const minimizedView = document.getElementById('minimizedView');
+            const mainVideo = document.getElementById('cam-feed');
+            const minimizedVideo = document.querySelector('.minimized-video');
+
+            if (mainVideo && mainVideo.srcObject) {
+                if (minimizedVideo) minimizedVideo.srcObject = mainVideo.srcObject;
+                if (minimizedView) minimizedView.style.display = 'block';
+                const container = document.querySelector('.container');
+                if (container) container.style.display = 'none';
+                document.body.classList.add('minimized');
+            } else {
+                console.error('No video source available for minimization');
+                alert('Cannot minimize: No video source available.');
             }
+        } catch (err) {
+            console.error('Error in minimizeScreen:', err);
+            alert('Error minimizing screen.');
         }
+    }
 
-        function showEndSessionConfirmation() {
-            try {
-                const modal = document.getElementById('endSessionModal');
+    function maximizeScreen() {
+        console.log('maximizeScreen clicked');
+        try {
+            const minimizedView = document.getElementById('minimizedView');
+            const mainVideo = document.getElementById('cam-feed');
+            const minimizedVideo = document.querySelector('.minimized-video');
+
+            if (minimizedVideo && minimizedVideo.srcObject) {
+                if (mainVideo) mainVideo.srcObject = minimizedVideo.srcObject;
+                if (minimizedView) minimizedView.style.display = 'none';
+                const container = document.querySelector('.container');
+                if (container) container.style.display = 'flex';
+                document.body.classList.remove('minimized');
+            }
+        } catch (err) {
+            console.error('Error in maximizeScreen:', err);
+            alert('Error maximizing screen.');
+        }
+    }
+
+    function goToDashboard() {
+        console.log('goToDashboard clicked');
+        try {
+            if (confirm('Are you sure you want to return to the dashboard? Any unsaved changes will be lost.')) {
+                window.location.href = "/dashboard";
+            }
+        } catch (err) {
+            console.error('Error in goToDashboard:', err);
+            alert('Error navigating to dashboard.');
+        }
+    }
+
+    function openSettings() {
+        console.log('openSettings clicked');
+        try {
+            const settingsModal = document.getElementById('settingsModal');
+            if (settingsModal) {
+                settingsModal.style.display = 'flex';
+            } else {
+                console.error('Settings modal not found');
+                alert('Settings modal not found.');
+            }
+        } catch (err) {
+            console.error('Error in openSettings:', err);
+            alert('Error opening settings.');
+        }
+    }
+
+    function endSession() {
+        console.log('endSession clicked');
+        try {
+            const hasUnrecognizedFaces = checkUnrecognizedFaces(); // Check if there are unresolved faces
+            if (hasUnrecognizedFaces) {
+                const modal = document.getElementById('unrecognizedFacesModal');
                 if (modal) {
                     modal.style.display = 'flex';
                 } else {
-                    console.error('End session modal not found');
-                    alert('End session modal not found.');
+                    console.error('Unrecognized faces modal not found');
+                    alert('Unrecognized faces modal not found.');
                 }
-            } catch (err) {
-                console.error('Error in showEndSessionConfirmation:', err);
-                alert('Error showing end session confirmation.');
+            } else {
+                showEndSessionConfirmation();
             }
+        } catch (err) {
+            console.error('Error in endSession:', err);
+            alert('Error ending session.');
         }
+    }
 
-        function confirmEndSession() {
-            console.log('confirmEndSession clicked');
-            try {
-                // Add backend call to save session data
+    function showEndSessionConfirmation() {
+        try {
+            const modal = document.getElementById('endSessionModal');
+            if (modal) {
+                modal.style.display = 'flex';
+            } else {
+                console.error('End session modal not found');
+                alert('End session modal not found.');
+            }
+        } catch (err) {
+            console.error('Error in showEndSessionConfirmation:', err);
+            alert('Error showing end session confirmation.');
+        }
+    }
+
+    // Sends final session record to backend and redirects on success
+    async function confirmEndSession() {
+        console.log('confirmEndSession clicked');
+        try {
+            // Build session summary data from UI/localStorage
+            const settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
+            // calculate elapsed secs:
+            const elapsedMs = new Date() - startTime - totalPausedTime;
+            const elapsedSeconds = Math.floor(elapsedMs / 1000);
+
+            // use last-known statistics if available
+            const stats = window._latestStatistics || { present: 0, late: 0, absent: 0, total: 0 };
+
+            // gather unrecognized faces from DOM (cards)
+            const faceCards = document.querySelectorAll('.unrecognized-faces .face-card');
+            const unrecognized_faces = [];
+            faceCards.forEach(card => {
+                const status = card.getAttribute('data-status') || null;
+                const img = card.getAttribute('data-image') || null; // optional attribute if you store image base64
+                const notes = card.querySelector('.notes')?.value || card.getAttribute('data-notes') || '';
+                unrecognized_faces.push({
+                    image_data: img,
+                    status: status,
+                    notes: notes
+                });
+            });
+
+            const payload = {
+                session_data: {
+                    duration: elapsedSeconds,
+                    total_students: stats.total || 0,
+                    present_count: stats.present || 0,
+                    absent_count: stats.absent || 0,
+                    late_count: stats.late || 0
+                },
+                unrecognized_faces
+            };
+
+            const res = await fetch('/api/end_session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
                 alert('Session ended successfully.');
+                // clear local temporary session data
+                window._latestAttendance = [];
+                window._latestStatistics = null;
+                // redirect
                 window.location.href = 'summary.html';
-            } catch (err) {
-                console.error('Error in confirmEndSession:', err);
-                alert('Error confirming end session.');
+            } else {
+                console.error('End session failed', data);
+                alert((data && data.message) ? data.message : 'Failed to end session on server.');
             }
+        } catch (err) {
+            console.error('Error in confirmEndSession:', err);
+            alert('Error ending session.');
         }
+    }
 
-        function toggleActionMenu() {
-            console.log('toggleActionMenu clicked');
-            try {
-                const menu = document.querySelector('.action-menu');
-                const toggle = document.querySelector('.action-toggle');
-                
-                if (!menu.classList.contains('active')) {
-                    toggle.classList.add('hidden');
-                    menu.classList.add('active');
-                } else {
-                    menu.classList.remove('active');
-                    setTimeout(() => toggle.classList.remove('hidden'), 300);
-                }
-            } catch (err) {
-                console.error('Error in toggleActionMenu:', err);
-                alert('Error toggling action menu.');
+    function toggleActionMenu() {
+        console.log('toggleActionMenu clicked');
+        try {
+            const menu = document.querySelector('.action-menu');
+            const toggle = document.querySelector('.action-toggle');
+
+            if (!menu.classList.contains('active')) {
+                toggle.classList.add('hidden');
+                menu.classList.add('active');
+            } else {
+                menu.classList.remove('active');
+                setTimeout(() => toggle.classList.remove('hidden'), 300);
             }
+        } catch (err) {
+            console.error('Error in toggleActionMenu:', err);
+            alert('Error toggling action menu.');
         }
+    }
 
-        function handleAction(action) {
-            console.log(`handleAction called with: ${action}`);
-            try {
-                switch (action) {
-                    case 'add':
-                        const addModal = document.getElementById('addStudentModal');
-                        if (addModal) {
-                            addModal.style.display = 'flex';
-                        } else {
-                            console.error('Add student modal not found');
-                        }
-                        break;
-                    case 'delete':
-                        populateDeleteStudentSelect();
-                        const deleteModal = document.getElementById('deleteStudentModal');
-                        if (deleteModal) {
-                            deleteModal.style.display = 'flex';
-                        } else {
-                            console.error('Delete student modal not found');
-                        }
-                        break;
-                    case 'transfer':
-                        populateTransferStudentSelect();
-                        const transferModal = document.getElementById('transferStudentModal');
-                        if (transferModal) {
-                            transferModal.style.display = 'flex';
-                        } else {
-                            console.error('Transfer student modal not found');
-                        }
-                        break;
-                    case 'excused':
-                        populateExcusedStudentSelect();
-                        const excusedModal = document.getElementById('excusedStudentModal');
-                        if (excusedModal) {
-                            excusedModal.style.display = 'flex';
-                        } else {
-                            console.error('Excused student modal not found');
-                        }
-                        break;
-                }
-                toggleActionMenu();
-            } catch (err) {
-                console.error(`Error in handleAction (${action}):`, err);
-                alert(`Error handling action: ${action}`);
+    function handleAction(action) {
+        console.log(`handleAction called with: ${action}`);
+        try {
+            switch (action) {
+                case 'add':
+                    const addModal = document.getElementById('addStudentModal');
+                    if (addModal) {
+                        addModal.style.display = 'flex';
+                    } else {
+                        console.error('Add student modal not found');
+                    }
+                    break;
+                case 'delete':
+                    populateDeleteStudentSelect();
+                    const deleteModal = document.getElementById('deleteStudentModal');
+                    if (deleteModal) {
+                        deleteModal.style.display = 'flex';
+                    } else {
+                        console.error('Delete student modal not found');
+                    }
+                    break;
+                case 'transfer':
+                    populateTransferStudentSelect();
+                    const transferModal = document.getElementById('transferStudentModal');
+                    if (transferModal) {
+                        transferModal.style.display = 'flex';
+                    } else {
+                        console.error('Transfer student modal not found');
+                    }
+                    break;
+                case 'excused':
+                    populateExcusedStudentSelect();
+                    const excusedModal = document.getElementById('excusedStudentModal');
+                    if (excusedModal) {
+                        excusedModal.style.display = 'flex';
+                    } else {
+                        console.error('Excused student modal not found');
+                    }
+                    break;
             }
+            toggleActionMenu();
+        } catch (err) {
+            console.error(`Error in handleAction (${action}):`, err);
+            alert(`Error handling action: ${action}`);
         }
+    }
 
-        function closeModal(modalId) {
-            console.log(`closeModal called for: ${modalId}`);
-            try {
-                const modal = document.getElementById(modalId);
-                if (modal) {
-                    modal.style.display = 'none';
-                } else {
-                    console.error(`Modal with ID ${modalId} not found`);
-                }
-            } catch (err) {
-                console.error('Error in closeModal:', err);
-                alert('Error closing modal.');
+    function closeModal(modalId) {
+        console.log(`closeModal called for: ${modalId}`);
+        try {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.style.display = 'none';
+            } else {
+                console.error(`Modal with ID ${modalId} not found`);
             }
+        } catch (err) {
+            console.error('Error in closeModal:', err);
+            alert('Error closing modal.');
         }
+    }
 
-        function loadClassSettings() {
-            console.log('loadClassSettings called');
-            try {
-                const settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
-                if (settings.course) {
-                    document.getElementById('course').value = settings.course;
-                }
-                if (settings.section) {
-                    document.getElementById('section').value = settings.section;
-                }
-                if (settings.facultymemberName) {
-                    document.getElementById('facultymemberName').value = settings.facultymemberName;
-                }
-                if (settings.classDuration) {
-                    document.getElementById('classDuration').value = settings.classDuration;
-                }
-                if (settings.lateThreshold) {
-                    document.getElementById('lateThreshold').value = settings.lateThreshold;
-                }
-                if (settings.videoQuality) {
-                    document.getElementById('videoQuality').value = settings.videoQuality;
-                }
-            } catch (err) {
-                console.error('Error in loadClassSettings:', err);
-                alert('Error loading class settings.');
+    // ----------------- Backend-linked settings -----------------
+    async function loadClassSettings() {
+        console.log('loadClassSettings called');
+        try {
+            const res = await fetch('/api/get_class_settings');
+            const data = await res.json();
+            let settings = {};
+
+            if (res.ok && data && data.success) {
+                settings = data.settings || {};
+            } else {
+                console.warn('No class settings found on server, using localStorage fallback');
+                settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
             }
-        }
 
-        function saveSettings() {
-            console.log('saveSettings called');
-            try {
-                const settings = {
-                    course: document.getElementById('course').value,
-                    section: document.getElementById('section').value,
-                    facultymemberName: document.getElementById('facultymemberName').value,
-                    classDuration: document.getElementById('classDuration').value,
-                    lateThreshold: document.getElementById('lateThreshold').value,
-                    videoQuality: document.getElementById('videoQuality').value,
-                    timer: {
-                        session: {
-                            hours: Math.floor(document.getElementById('classDuration').value / 60),
-                            minutes: document.getElementById('classDuration').value % 60,
-                            seconds: 0
-                        },
-                        threshold: {
-                            hours: 0,
-                            minutes: document.getElementById('lateThreshold').value,
-                            seconds: 0
-                        }
+            // Normalize/ensure defaults
+            settings.course = settings.course || '';
+            settings.section = settings.section || '';
+            settings.facultymemberName = settings.facultymemberName || settings.facultymemberName || '';
+            settings.classDuration = settings.classDuration || 180;
+            settings.lateThreshold = settings.lateThreshold || 15;
+            settings.videoQuality = settings.videoQuality || 'medium';
+
+            // timer structure for updateTimer
+            if (!settings.timer) {
+                settings.timer = {
+                    session: {
+                        hours: Math.floor(settings.classDuration / 60),
+                        minutes: settings.classDuration % 60,
+                        seconds: 0
+                    },
+                    threshold: {
+                        hours: 0,
+                        minutes: settings.lateThreshold,
+                        seconds: 0
                     }
                 };
+            }
+
+            // persist to localStorage for UI usage
+            localStorage.setItem('classSettings', JSON.stringify(settings));
+
+            // populate UI fields if present
+            if (document.getElementById('course')) document.getElementById('course').value = settings.course;
+            if (document.getElementById('section')) document.getElementById('section').value = settings.section;
+            if (document.getElementById('facultymemberName')) document.getElementById('facultymemberName').value = settings.facultymemberName;
+            if (document.getElementById('classDuration')) document.getElementById('classDuration').value = settings.classDuration;
+            if (document.getElementById('lateThreshold')) document.getElementById('lateThreshold').value = settings.lateThreshold;
+            if (document.getElementById('videoQuality')) document.getElementById('videoQuality').value = settings.videoQuality;
+        } catch (err) {
+            console.error('Error in loadClassSettings:', err);
+            alert('Error loading class settings.');
+        }
+    }
+
+    async function saveSettings() {
+        console.log('saveSettings called');
+        try {
+            const settings = {
+                course: document.getElementById('course')?.value || '',
+                section: document.getElementById('section')?.value || '',
+                facultymemberName: document.getElementById('facultymemberName')?.value || '',
+                classDuration: parseInt(document.getElementById('classDuration')?.value || 180),
+                lateThreshold: parseInt(document.getElementById('lateThreshold')?.value || 15),
+                videoQuality: document.getElementById('videoQuality')?.value || 'medium',
+                timer: {
+                    session: {
+                        hours: Math.floor((parseInt(document.getElementById('classDuration')?.value || 180) / 60)),
+                        minutes: (parseInt(document.getElementById('classDuration')?.value || 180) % 60),
+                        seconds: 0
+                    },
+                    threshold: {
+                        hours: 0,
+                        minutes: parseInt(document.getElementById('lateThreshold')?.value || 15),
+                        seconds: 0
+                    }
+                }
+            };
+
+            const res = await fetch('/api/save_class_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            const data = await res.json();
+
+            if (res.ok && data && data.success) {
                 localStorage.setItem('classSettings', JSON.stringify(settings));
                 closeModal('settingsModal');
                 alert('Settings saved successfully.');
-            } catch (err) {
-                console.error('Error in saveSettings:', err);
-                alert('Error saving settings.');
+            } else {
+                console.error('Failed to save settings', data);
+                alert((data && data.message) ? data.message : 'Failed to save settings on server.');
             }
+        } catch (err) {
+            console.error('Error in saveSettings:', err);
+            alert('Error saving settings.');
         }
+    }
 
-        function updateStudentCount() {
-            console.log('updateStudentCount called');
-            try {
-                // Placeholder for actual logic to fetch student counts
-                document.getElementById('detected-count').textContent = '15';
-                document.getElementById('total-count').textContent = '30';
-                document.getElementById('presentCount').textContent = '15';
-                document.getElementById('absentCount').textContent = '12';
-                document.getElementById('lateCount').textContent = '3';
-            } catch (err) {
-                console.error('Error in updateStudentCount:', err);
-                alert('Error updating student count.');
+    // ----------------- Attendance / student count -----------------
+    async function updateStudentCount() {
+        console.log('updateStudentCount called');
+        try {
+            const res = await fetch('/api/get_live_attendance');
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                console.warn('get_live_attendance failed or returned no data', data);
+                return;
             }
-        }
 
-        function populateDeleteStudentSelect() {
-            console.log('populateDeleteStudentSelect called');
-            try {
-                const select = document.getElementById('deleteStudentSelect');
-                select.innerHTML = '<option value="">Select a student to remove...</option>';
-                // Placeholder: Add actual student data
-                const students = [
-                    { id: 'S2023001', name: 'Alex Chen' },
-                    { id: 'S2023003', name: 'James Wilson' }
-                ];
-                students.forEach(student => {
+            // attendance array and statistics
+            const attendance = data.attendance || [];
+            const stats = data.statistics || {};
+            window._latestAttendance = attendance;
+            window._latestStatistics = stats;
+
+            const present = parseInt(stats.present || 0);
+            const late = parseInt(stats.late || 0);
+            const absent = parseInt(stats.absent || 0);
+            const total = parseInt(stats.total || (present + late + absent));
+
+            const detectedCountEl = document.getElementById('detected-count');
+            const totalCountEl = document.getElementById('total-count');
+            const presentEl = document.getElementById('presentCount');
+            const absentEl = document.getElementById('absentCount');
+            const lateEl = document.getElementById('lateCount');
+
+            if (detectedCountEl) detectedCountEl.textContent = String(present + late);
+            if (totalCountEl) totalCountEl.textContent = String(total);
+            if (presentEl) presentEl.textContent = String(present);
+            if (absentEl) absentEl.textContent = String(absent);
+            if (lateEl) lateEl.textContent = String(late);
+
+        } catch (err) {
+            console.error('Error updating student count:', err);
+        }
+    }
+
+    // ----------------- Populate selects from latest attendance -----------------
+    async function populateDeleteStudentSelect() {
+        console.log('populateDeleteStudentSelect called');
+        try {
+            if (!window._latestAttendance || !window._latestAttendance.length) {
+                await updateStudentCount();
+            }
+            const select = document.getElementById('deleteStudentSelect');
+            if (!select) return;
+            select.innerHTML = '<option value="">Select a student to remove...</option>';
+
+            window._latestAttendance.forEach(s => {
+                const id = s.id || s.student_id || s.studentId || '';
+                const name = s.name || `${s.first_name || ''} ${s.last_name || ''}`.trim();
+                if (id) {
                     const option = document.createElement('option');
-                    option.value = student.id;
-                    option.textContent = `${student.name} (${student.id})`;
+                    option.value = id;
+                    option.textContent = `${name} (${id})`;
                     select.appendChild(option);
-                });
-            } catch (err) {
-                console.error('Error in populateDeleteStudentSelect:', err);
-                alert('Error populating delete student select.');
-            }
-        }
-
-        function populateTransferStudentSelect() {
-            console.log('populateTransferStudentSelect called');
-            try {
-                const select = document.getElementById('transferStudent');
-                select.innerHTML = '<option value="">Select a student...</option>';
-                // Placeholder: Add actual student data
-                const students = [
-                    { id: 'S2023001', name: 'Alex Chen' },
-                    { id: 'S2023003', name: 'James Wilson' }
-                ];
-                students.forEach(student => {
-                    const option = document.createElement('option');
-                    option.value = student.id;
-                    option.textContent = `${student.name} (${student.id})`;
-                    select.appendChild(option);
-                });
-            } catch (err) {
-                console.error('Error in populateTransferStudentSelect:', err);
-                alert('Error populating transfer student select.');
-            }
-        }
-
-        function populateExcusedStudentSelect() {
-            console.log('populateExcusedStudentSelect called');
-            try {
-                const select = document.getElementById('excusedStudentSelect');
-                select.innerHTML = '<option value="">Select a student to mark as excused...</option>';
-                // Placeholder: Add actual student data
-                const students = [
-                    { id: 'S2023001', name: 'Alex Chen' },
-                    { id: 'S2023003', name: 'James Wilson' }
-                ];
-                students.forEach(student => {
-                    const option = document.createElement('option');
-                    option.value = student.id;
-                    option.textContent = `${student.name} (${student.id})`;
-                    select.appendChild(option);
-                });
-            } catch (err) {
-                console.error('Error in populateExcusedStudentSelect:', err);
-                alert('Error populating excused student select.');
-            }
-        }
-
-        function submitAddStudent() {
-            console.log('submitAddStudent called');
-            try {
-                const name = document.getElementById('studentName').value;
-                const id = document.getElementById('studentId').value;
-                if (name && id) {
-                    // Add backend call to save student
-                    alert(`Student ${name} (${id}) added successfully.`);
-                    closeModal('addStudentModal');
-                } else {
-                    alert('Please fill in all fields.');
                 }
-            } catch (err) {
-                console.error('Error in submitAddStudent:', err);
-                alert('Error adding student.');
-            }
+            });
+        } catch (err) {
+            console.error('Error in populateDeleteStudentSelect:', err);
+            alert('Error populating delete student select.');
         }
+    }
 
-        function submitDeleteStudent() {
-            console.log('submitDeleteStudent called');
-            try {
-                const select = document.getElementById('deleteStudentSelect');
-                if (select.value) {
-                    // Add backend call to delete student
-                    alert(`Student ${select.options[select.selectedIndex].text} removed successfully.`);
-                    closeModal('deleteStudentModal');
-                } else {
-                    alert('Please select a student to remove.');
+    async function populateTransferStudentSelect() {
+        console.log('populateTransferStudentSelect called');
+        try {
+            if (!window._latestAttendance || !window._latestAttendance.length) {
+                await updateStudentCount();
+            }
+            const select = document.getElementById('transferStudent');
+            if (!select) return;
+            select.innerHTML = '<option value="">Select a student...</option>';
+
+            window._latestAttendance.forEach(s => {
+                const id = s.id || s.student_id || s.studentId || '';
+                const name = s.name || `${s.first_name || ''} ${s.last_name || ''}`.trim();
+                if (id) {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = `${name} (${id})`;
+                    select.appendChild(option);
                 }
-            } catch (err) {
-                console.error('Error in submitDeleteStudent:', err);
-                alert('Error deleting student.');
-            }
+            });
+        } catch (err) {
+            console.error('Error in populateTransferStudentSelect:', err);
+            alert('Error populating transfer student select.');
         }
+    }
 
-        function submitTransferStudent() {
-            console.log('submitTransferStudent called');
-            try {
-                const student = document.getElementById('transferStudent').value;
-                const section = document.getElementById('transferSection').value;
-                if (student && section) {
-                    // Add backend call to transfer student
-                    const transferDetails = document.getElementById('transferDetails');
+    async function populateExcusedStudentSelect() {
+        console.log('populateExcusedStudentSelect called');
+        try {
+            if (!window._latestAttendance || !window._latestAttendance.length) {
+                await updateStudentCount();
+            }
+            const select = document.getElementById('excusedStudentSelect');
+            if (!select) return;
+            select.innerHTML = '<option value="">Select a student to mark as excused...</option>';
+
+            window._latestAttendance.forEach(s => {
+                const id = s.id || s.student_id || s.studentId || '';
+                const name = s.name || `${s.first_name || ''} ${s.last_name || ''}`.trim();
+                if (id) {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = `${name} (${id})`;
+                    select.appendChild(option);
+                }
+            });
+        } catch (err) {
+            console.error('Error in populateExcusedStudentSelect:', err);
+            alert('Error populating excused student select.');
+        }
+    }
+
+    // ----------------- Manage student through backend -----------------
+    async function manageStudent(action, student_data) {
+        console.log(`manageStudent called ${action}`, student_data);
+        try {
+            const payload = { action, student_data };
+            const res = await fetch('/api/manage_student', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                alert(data.message || `Student ${action} successful.`);
+                // refresh counts and selects
+                await updateStudentCount();
+            } else {
+                console.error('manage_student failed', data);
+                alert((data && data.message) || 'Manage student failed on server.');
+            }
+        } catch (err) {
+            console.error(`Error in manageStudent (${action}):`, err);
+            alert(`Error performing ${action} action.`);
+        }
+    }
+
+    function submitAddStudent() {
+        console.log('submitAddStudent called');
+        try {
+            const name = document.getElementById('studentName')?.value?.trim();
+            const id = document.getElementById('studentId')?.value?.trim();
+            const course = document.getElementById('studentCourse')?.value || '';
+            const section = document.getElementById('section')?.value || '';
+
+            if (name && id) {
+                // split first and last heuristically
+                const parts = name.split(' ').filter(Boolean);
+                const firstName = parts.shift() || '';
+                const lastName = parts.join(' ') || '';
+                const student_data = {
+                    id,
+                    firstName,
+                    lastName,
+                    course,
+                    section
+                };
+                manageStudent('add', student_data);
+                closeModal('addStudentModal');
+            } else {
+                alert('Please fill in all fields.');
+            }
+        } catch (err) {
+            console.error('Error in submitAddStudent:', err);
+            alert('Error adding student.');
+        }
+    }
+
+    function submitDeleteStudent() {
+        console.log('submitDeleteStudent called');
+        try {
+            const select = document.getElementById('deleteStudentSelect');
+            const studentId = select?.value;
+            if (studentId) {
+                manageStudent('remove', { student_id: studentId });
+                closeModal('deleteStudentModal');
+            } else {
+                alert('Please select a student to remove.');
+            }
+        } catch (err) {
+            console.error('Error in submitDeleteStudent:', err);
+            alert('Error deleting student.');
+        }
+    }
+
+    function submitTransferStudent() {
+        console.log('submitTransferStudent called');
+        try {
+            const student = document.getElementById('transferStudent')?.value;
+            const section = document.getElementById('transferSection')?.value;
+            if (student && section) {
+                manageStudent('transfer', { student_id: student, new_section: section });
+                // update UI confirmation
+                const transferDetails = document.getElementById('transferDetails');
+                if (transferDetails) {
                     transferDetails.innerHTML = `
                         <p>Student: ${document.getElementById('transferStudent').options[document.getElementById('transferStudent').selectedIndex].text}</p>
                         <p>New Section: ${section}</p>
                     `;
-                    closeModal('transferStudentModal');
-                    document.getElementById('transferConfirmModal').style.display = 'flex';
-                } else {
-                    alert('Please select a student and target section.');
                 }
-            } catch (err) {
-                console.error('Error in submitTransferStudent:', err);
-                alert('Error transferring student.');
+                closeModal('transferStudentModal');
+                const confirmModal = document.getElementById('transferConfirmModal');
+                if (confirmModal) confirmModal.style.display = 'flex';
+            } else {
+                alert('Please select a student and target section.');
+            }
+        } catch (err) {
+            console.error('Error in submitTransferStudent:', err);
+            alert('Error transferring student.');
+        }
+    }
+
+    function submitExcusedStudent() {
+        console.log('submitExcusedStudent called');
+        try {
+            const select = document.getElementById('excusedStudentSelect');
+            const studentId = select?.value;
+            const remarks = document.getElementById('excusedRemarks')?.value || 'Excused';
+            if (studentId) {
+                manageStudent('excused', { student_id: studentId, remarks });
+                closeModal('excusedStudentModal');
+            } else {
+                alert('Please select a student to mark as excused.');
+            }
+        } catch (err) {
+            console.error('Error in submitExcusedStudent:', err);
+            alert('Error marking student as excused.');
+        }
+    }
+
+    // ----------------- Unrecognized faces handling (UI-driven) -----------------
+    function toggleSelectAll(checkbox) {
+        console.log('toggleSelectAll called');
+        try {
+            const checkboxes = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = checkbox.checked);
+        } catch (err) {
+            console.error('Error in toggleSelectAll:', err);
+            alert('Error toggling select all.');
+        }
+    }
+
+    function checkUnrecognizedFaces() {
+        const faceCards = document.querySelectorAll('.unrecognized-faces .face-card');
+        for (let card of faceCards) {
+            if (!card.getAttribute('data-status')) {
+                return true; // At least one face is unresolved
             }
         }
+        return false; // All faces are resolved
+    }
 
-        function submitExcusedStudent() {
-            console.log('submitExcusedStudent called');
-            try {
-                const select = document.getElementById('excusedStudentSelect');
-                if (select.value) {
-                    // Add backend call to mark student as excused
-                    alert(`Student ${select.options[select.selectedIndex].text} marked as excused.`);
-                    closeModal('excusedStudentModal');
-                } else {
-                    alert('Please select a student to mark as excused.');
-                }
-            } catch (err) {
-                console.error('Error in submitExcusedStudent:', err);
-                alert('Error marking student as excused.');
+    function markSelectedAs(status) {
+        console.log(`markSelectedAs called with: ${status}`);
+        try {
+            const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
+            selected.forEach(checkbox => {
+                const card = checkbox.closest('.face-card');
+                if (card) card.setAttribute('data-status', status);
+            });
+            const selAll = document.getElementById('selectAll');
+            if (selAll) {
+                selAll.checked = false;
+                toggleSelectAll(selAll);
             }
-        }
 
-        function toggleSelectAll(checkbox) {
-            console.log('toggleSelectAll called');
-            try {
-                const checkboxes = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]');
-                checkboxes.forEach(cb => cb.checked = checkbox.checked);
-            } catch (err) {
-                console.error('Error in toggleSelectAll:', err);
-                alert('Error toggling select all.');
-            }
-        }
-
-        function checkUnrecognizedFaces() {
-            const faceCards = document.querySelectorAll('.unrecognized-faces .face-card');
-            for (let card of faceCards) {
-                if (!card.getAttribute('data-status')) {
-                    return true; // At least one face is unresolved
-                }
-            }
-            return false; // All faces are resolved
-        }
-
-        function markSelectedAs(status) {
-            console.log(`markSelectedAs called with: ${status}`);
-            try {
-                const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
-                selected.forEach(checkbox => {
-                    const card = checkbox.closest('.face-card');
-                    card.setAttribute('data-status', status);
-                });
-                document.getElementById('selectAll').checked = false;
-                toggleSelectAll(document.getElementById('selectAll'));
-
-                // Check if all faces are marked
-                if (!checkUnrecognizedFaces()) {
-                    // All faces are resolved, close modal and show end session confirmation
-                    closeModal('unrecognizedFacesModal');
-                    showEndSessionConfirmation();
-                }
-            } catch (err) {
-                console.error(`Error in markSelectedAs (${status}):`, err);
-                alert(`Error marking faces as ${status}.`);
-            }
-        }
-
-        function retakeFaces() {
-            console.log('retakeFaces called');
-            try {
-                // Add logic to retake face detection
-                alert('Retaking face detection...');
+            // Check if all faces are marked
+            if (!checkUnrecognizedFaces()) {
+                // All faces are resolved, close modal and show end session confirmation
                 closeModal('unrecognizedFacesModal');
-            } catch (err) {
-                console.error('Error in retakeFaces:', err);
-                alert('Error retaking faces.');
+                showEndSessionConfirmation();
             }
+        } catch (err) {
+            console.error(`Error in markSelectedAs (${status}):`, err);
+            alert(`Error marking faces as ${status}.`);
         }
-    </script>
+    }
+
+    function retakeFaces() {
+        console.log('retakeFaces called');
+        try {
+            // Add logic to retake face detection — this is UI placeholder
+            alert('Retaking face detection...');
+            closeModal('unrecognizedFacesModal');
+        } catch (err) {
+            console.error('Error in retakeFaces:', err);
+            alert('Error retaking faces.');
+        }
+    }
+
+    // Add this to your JavaScript section
+let videoRetryCount = 0;
+const MAX_VIDEO_RETRIES = 3;
+
+function handleVideoError(img) {
+    console.error('Video feed error');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    
+    if (videoRetryCount < MAX_VIDEO_RETRIES) {
+        videoRetryCount++;
+        console.log(`Retrying video feed... Attempt ${videoRetryCount}`);
+        
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'block';
+        }
+        
+        // Retry after a delay
+        setTimeout(() => {
+            img.src = '/video_feed?t=' + new Date().getTime();
+        }, 2000);
+    } else {
+        console.error('Max video retries reached');
+        if (loadingOverlay) {
+            loadingOverlay.innerHTML = '<p style="color: #ff6b6b;">Camera feed unavailable</p>';
+            loadingOverlay.style.display = 'block';
+        }
+    }
+}
+
+function handleVideoLoad(img) {
+    console.log('Video feed loaded successfully');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+    }
+    videoRetryCount = 0;
+}
+
+// Show loading on initial page load
+window.addEventListener('DOMContentLoaded', () => {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'block';
+    }
+    
+    // Hide loading after 5 seconds if not already hidden
+    setTimeout(() => {
+        if (loadingOverlay && loadingOverlay.style.display === 'block') {
+            loadingOverlay.style.display = 'none';
+        }
+    }, 5000);
+});
+</script>
+
 </body>
 </html>

@@ -1,3 +1,4 @@
+import csv
 from functools import wraps
 import os
 import sys
@@ -10,13 +11,14 @@ import datetime
 import threading
 import insightface
 import mysql.connector
+from mysql.connector import Error
 import smtplib
 import random
 import string
 import json
 import secrets
+import uuid
 import ssl
-import tensorrt as trt
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
@@ -24,27 +26,38 @@ from flask import Flask, Response, g, make_response, render_template, request, j
 from flask_cors import CORS
 import logging
 from werkzeug.utils import secure_filename
-from sklearn.preprocessing import normalize
-from sklearn.metrics.pairwise import cosine_similarity
 from collections import deque, defaultdict
-import queue
 from scipy.optimize import linear_sum_assignment
 import bcrypt
 import secrets
 from datetime import datetime, timedelta, date
-import hashlib
 import onnxruntime as ort
+from insightface.app import FaceAnalysis
+from insightface.model_zoo import get_model
+
 
 
 # =========================
 # CONFIG
 # =========================
+
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()  # Clear GPU cache after each YOLO call
+
+# Initialize FaceAnalysis with SCRFD
+face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+face_analysis.prepare(ctx_id=0, det_size=(640, 640))  # Adjust det_size for your resolution
+
 current_rtsp_url = None
 WEIGHTS_PATH = "yolov8n-face.pt"
-STREAM_WIDTH, STREAM_HEIGHT = 3840, 2160
-DETECT_EVERY = 8  # Default value, will be adjusted dynamically
-CONF_THRESH = 0.35 
+STREAM_WIDTH, STREAM_HEIGHT = 1920, 1080
+DETECT_EVERY = 3  # Default value, will be adjusted dynamically
+CONF_THRESH = 0.45
 pose_embeddings = {}
+
+# Add this near your other global variables
+ATTENDANCE_CSV_FILE = "attendance_log.csv"
+attendance_save_interval = 300  # 5 minutes
 
 # Add these global variables near the top with other globals (after line ~370 in your original code)
 camera_available = False
@@ -54,7 +67,8 @@ latest_frame = None
 stop_flag = False
 
 STABLE_TOLERANCE_FRAMES = 20  # Increased for better lock stability
-MAX_TRACKS = 128
+MAX_TRACKS = 100
+MAX_UNLOCKED_TRACKS = 30
 EXPAND_BOX_RATIO = 0.4
 
 PASSWORD_RESET_EXPIRE_HOURS = 24
@@ -62,8 +76,8 @@ OTP_RESEND_COOLDOWN = 30  # seconds
 MAX_OTP_ATTEMPTS = 3
 
 ENABLE_RECOGNITION = True
-TOLERANCE = 0.6  # InsightFace uses different distance metric
-CONFIRMATION_THRESHOLD = 0.8  # Higher threshold for locking a track
+TOLERANCE = 0.5  # InsightFace uses different distance metric
+CONFIRMATION_THRESHOLD = 0.7  # Higher threshold for locking a track
 KNOWN_DIR = "known_faces"
 
 RECONNECT_COOLDOWN = 2.0
@@ -72,17 +86,17 @@ MAX_EMPTY_GRABS = 150
 
 # Anti-spoofing configuration
 LIVENESS_THRESHOLD = 150
-MIN_FACE_SIZE = 15
-HIGH_CONFIDENCE_THRESHOLD = 0.45
+MIN_FACE_SIZE = 8
+HIGH_CONFIDENCE_THRESHOLD = 0.35
 MEDIUM_CONFIDENCE_THRESHOLD = 0.55
 
 # Performance optimization
-PROCESSING_INTERVAL = 3
-RESIZE_FACTOR = 1
+PROCESSING_INTERVAL = 5
+RESIZE_FACTOR = 0.75
 
 # Distance settings
-MAX_RECOGNITION_DISTANCE = 8
-FACE_SIZE_FOR_DISTANCE = 80
+MAX_RECOGNITION_DISTANCE = 15
+FACE_SIZE_FOR_DISTANCE = 90
 
 # Locking configuration
 LOCK_TIMEOUT_FRAMES = 60  # Frames before releasing lock if detection stops (~2s at 30 FPS)
@@ -91,13 +105,10 @@ LOCK_TIMEOUT_FRAMES = 60  # Frames before releasing lock if detection stops (~2s
 YAW_FRONTAL_THRESHOLD = 45  # Increased from 40
 PITCH_FRONTAL_THRESHOLD = 40  # Increased from 35
 ROLL_THRESHOLD = 35  # Increased from 20
-YAW_SIDE_THRESHOLD = 5  # Decreased from 8 - much more sensitive
-PITCH_UP_DOWN_THRESHOLD = 5  # Decreased from 8 - much more sensitive
+YAW_SIDE_THRESHOLD = 4  # Decreased from 8 - much more sensitive
+PITCH_UP_DOWN_THRESHOLD = 4  # Decreased from 8 - much more sensitive
 MAR_OPEN_THRESHOLD = 0.15  # Decreased from 0.20
 EAR_CLOSED_THRESHOLD = 0.4  # Increased from 0.35
-LIVENESS_THRESHOLD = 100  # Lowered to make liveness detection less strict
-
-
 
 # Database configuration
 DB_CONFIG = {
@@ -144,25 +155,49 @@ session_config = {
 # Utilities
 # =========================
 # Thread-safe state manager
-# Add these utility functions before the Flask routes
-
-
 
 def create_dummy_frame():
-    """Create a dummy frame when camera is not available"""
-    global dummy_frame
-    if dummy_frame is None:
-        # Create a black frame with text
-        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(dummy_frame, "CAMERA NOT AVAILABLE", (50, 200), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv2.putText(dummy_frame, "Face Recognition System Running", (80, 250), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        cv2.putText(dummy_frame, "Connect RTSP camera to enable detection", (30, 300), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 100, 100), 1)
-    return dummy_frame.copy()
+    """Create a dummy frame when no camera is available"""
+    try:
+        frame = np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)  # Use new dimensions
+        
+        # Add background color (dark gray)
+        frame[:] = (40, 40, 40)
 
+        # Add text
+        text = 'No Camera Connected'
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1.5
+        thickness = 3
 
+        # Get text size for centering
+        (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+
+        # Center text
+        x = (STREAM_WIDTH - text_width) // 2
+        y = (STREAM_HEIGHT + text_height) // 2
+
+        # Text outline and fill
+        cv2.putText(frame, text, (x, y), font, font_scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
+        cv2.putText(frame, text, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+        # Subtitle
+        subtitle = 'Waiting for camera connection...'
+        font_scale_small = 0.8
+        thickness_small = 2
+        (sub_width, sub_height), _ = cv2.getTextSize(subtitle, font, font_scale_small, thickness_small)
+        sub_x = (STREAM_WIDTH - sub_width) // 2
+        sub_y = y + 60
+
+        cv2.putText(frame, subtitle, (sub_x, sub_y), font, font_scale_small, (0, 0, 0), thickness_small + 1, cv2.LINE_AA)
+        cv2.putText(frame, subtitle, (sub_x, sub_y), font, font_scale_small, (180, 180, 180), thickness_small, cv2.LINE_AA)
+
+        return frame
+
+    except Exception as e:
+        logger.error(f"Error creating dummy frame: {e}")
+        # Return a basic black frame as absolute fallback
+        return np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)
 
 def hash_password(password):
     """Hash a password for storing in database"""
@@ -558,12 +593,14 @@ def enhance_lighting(bgr):
     return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 def get_db_connection():
+    """Create and return database connection"""
     try:
-        return mysql.connector.connect(**DB_CONFIG)
-    except mysql.connector.Error as e:
-        logger.error(f"Database connection failed: {e}")
-        raise
-
+        connection = mysql.connector.connect(**DB_CONFIG)
+        return connection
+    except Error as e:
+        logger.error(f"Error connecting to MySQL: {e}")
+        return None
+    
 def generate_otp(length=6):
     return ''.join(random.choices(string.digits, k=length))
 
@@ -619,86 +656,133 @@ def calculate_mar(landmarks, mouth_indices):
     return mar
 
 # =========================
-# Load InsightFace model - TENSORRT 10.13.3 OPTIMIZED (FIXED)
+# Initialize InsightFace with SCRFD-10G (FIXED)
+# =========================
+try:
+    # Method 1: Try with buffalo_l model which includes SCRFD
+    face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    face_analysis.prepare(ctx_id=0, det_size=(640, 640))
+    logger.info("InsightFace initialized successfully with buffalo_l model")
+except Exception as e:
+    logger.error(f"Failed to initialize with buffalo_l: {e}")
+    try:
+        # Method 2: Manual download and initialization
+        logger.info("Attempting manual model initialization...")
+        from insightface.model_zoo import get_model
+        
+        # Try to use pre-downloaded model or antelopev2
+        face_analysis = FaceAnalysis(name='antelopev2', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        face_analysis.prepare(ctx_id=0, det_size=(640, 640))
+        logger.info("InsightFace initialized successfully with antelopev2 model")
+    except Exception as e2:
+        logger.error(f"Failed to initialize InsightFace: {e2}")
+        logger.info("Please download models manually from: https://github.com/deepinsight/insightface/releases/")
+        raise
+
+# =========================
+# Load InsightFace model - CUDA ONLY (TensorRT Disabled)
 # =========================
 try:
     available_providers = ort.get_available_providers()
     logger.info(f"Available ONNX Runtime providers: {available_providers}")
-    
-    # TENSORRT 10.13.3 with latest optimizations
+
+    # ✅ Use CUDA + CPU only (TensorRT disabled for stability and lower memory usage)
     providers = []
-    provider_options = []
     
-    if 'TensorrtExecutionProvider' in available_providers:
-        # TensorRT 10.13.3 optimized configuration - FIXED BOOLEAN VALUES
-        trt_options = {
-            'trt_engine_cache_enable': True,    # FIXED: Use True instead of '1'
-            'trt_engine_cache_path': './trt_cache',
-            'trt_fp16_enable': True,           # FIXED: Use True instead of '1'
-            'trt_int8_enable': False,          # FIXED: Use False instead of '0'
-            'trt_builder_optimization_level': 5,  # Maximum optimization
-            'trt_timing_cache_enable': True,   # FIXED: Use True instead of '1'
-            'trt_detailed_build_log': True,    # FIXED: Use True instead of '1'
-            'trt_force_sequential_engine_build': True,  # FIXED: Use True instead of '1'
-        }
-        providers.insert(0, 'TensorrtExecutionProvider')
-        provider_options.insert(0, trt_options)
-        logger.info("🚀 TensorRT 10.13.3 enabled with FP16 optimization")
-    
-    # CUDA as high-performance fallback
+    # Check if CUDA is available and add it first
     if 'CUDAExecutionProvider' in available_providers:
-        cuda_options = {
-            'device_id': 0,                    # FIXED: Use integer instead of string
-            'arena_extend_strategy': 'kNextPowerOfTwo',
-            'cudnn_conv_algo_search': 'EXHAUSTIVE',
-            'do_copy_in_default_stream': True, # FIXED: Use True instead of '1'
-            'cudnn_conv_use_max_workspace': True,  # FIXED: Use True instead of '1'
-            'enable_cuda_graph': False,        # FIXED: Use False instead of '0'
-        }
-        providers.append('CUDAExecutionProvider')
-        provider_options.append(cuda_options)
-        logger.info("✅ CUDA enabled as high-performance fallback")
-    
-    # CPU as last resort
-    providers.append('CPUExecutionProvider')
-    provider_options.append({})
-    
-    # Initialize FaceAnalysis with optimized providers
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        provider_options = [
+            {
+                'device_id': 0,
+                'arena_extend_strategy': 'kNextPowerOfTwo',
+                'cudnn_conv_algo_search': 'HEURISTIC',
+                'do_copy_in_default_stream': True,
+                'cudnn_conv_use_max_workspace': True,
+                'enable_cuda_graph': False,
+            },
+            {}
+        ]
+        ctx_id = 0
+        logger.info("✅ Using CUDA + CPU providers")
+    else:
+        # Fallback to CPU only
+        providers = ['CPUExecutionProvider']
+        provider_options = [{}]
+        ctx_id = -1
+        logger.info("⚠️ CUDA not available, using CPU only")
+
+    # Initialize FaceAnalysis
     face_analysis = insightface.app.FaceAnalysis(
-        name=INSIGHTFACE_MODEL, 
+        name=INSIGHTFACE_MODEL,
         providers=providers,
         provider_options=provider_options
     )
-    
-    # Use GPU context
-    ctx_id = 0 if ('TensorrtExecutionProvider' in providers or 'CUDAExecutionProvider' in providers) else -1
-    
+
     # Prepare with optimized settings
     face_analysis.prepare(
-        ctx_id=ctx_id, 
-        det_size=(640, 640),
-        det_thresh=0.5  # Optimized threshold
+        ctx_id=ctx_id,
+        det_size=(320, 320),  # Lower resolution = less GPU memory usage
+        det_thresh=0.6
     )
-    
-    # Log successful initialization
-    if 'TensorrtExecutionProvider' in providers:
-        logger.info("🎯 InsightFace model loaded with TENSORRT 10.13.3 (MAXIMUM PERFORMANCE)")
-    elif 'CUDAExecutionProvider' in providers:
-        logger.info("🎯 InsightFace model loaded with CUDA acceleration")
-    else:
-        logger.info("🎯 InsightFace model loaded on CPU")
-    
-except Exception as e:
-    logger.error(f"❌ Failed to load InsightFace model with TensorRT: {e}")
-    # Robust fallback
+
+    logger.info(f"🎯 InsightFace model '{INSIGHTFACE_MODEL}' loaded successfully")
+
+    # Test the model to verify it works
     try:
-        logger.info("🔄 Falling back to CUDA-only mode...")
-        face_analysis = insightface.app.FaceAnalysis(name=INSIGHTFACE_MODEL)
-        face_analysis.prepare(ctx_id=0 if torch.cuda.is_available() else -1, det_size=(640, 640))
-        logger.info("✅ Fallback to CUDA mode successful")
-    except Exception as fallback_error:
-        logger.error(f"❌ All initialization methods failed: {fallback_error}")
-        raise
+        # Create a small test image to verify detection works
+        test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        test_faces = face_analysis.get(test_img)
+        logger.info("✅ InsightFace model test passed - detection method is available")
+    except Exception as test_error:
+        logger.error(f"❌ InsightFace model test failed: {test_error}")
+        raise ValueError("FaceAnalysis detect method not working properly")
+
+except Exception as e:
+    logger.error(f"❌ Failed to load InsightFace model: {e}")
+    
+    # More robust fallback with multiple attempts
+    fallback_success = False
+    fallback_models = ['buffalo_l', 'antelopev2', 'buffalo_s']
+    
+    for model_name in fallback_models:
+        try:
+            logger.info(f"🔄 Attempting fallback with model: {model_name}")
+            face_analysis = insightface.app.FaceAnalysis(name=model_name, providers=['CPUExecutionProvider'])
+            face_analysis.prepare(ctx_id=-1, det_size=(320, 320))
+            
+            # Test the fallback model
+            test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+            test_faces = face_analysis.get(test_img)
+            
+            logger.info(f"✅ Fallback successful with model: {model_name}")
+            fallback_success = True
+            INSIGHTFACE_MODEL = model_name  # Update the model name
+            break
+            
+        except Exception as fallback_error:
+            logger.warning(f"⚠️ Fallback with {model_name} failed: {fallback_error}")
+            continue
+    
+    if not fallback_success:
+        logger.error("❌ All initialization methods failed - InsightFace cannot be loaded")
+        face_analysis = None
+        ENABLE_RECOGNITION = False
+    else:
+        ENABLE_RECOGNITION = True
+
+# Clear leftover GPU cache
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+logger.info("Memory cache cleared after model initialization")
+
+# Final verification
+if face_analysis is not None:
+    logger.info(f"✅ InsightFace initialization completed successfully with model: {INSIGHTFACE_MODEL}")
+else:
+    logger.error("❌ InsightFace initialization failed - face recognition disabled")
+    ENABLE_RECOGNITION = False
+
 
 # =========================
 # Load known faces from database
@@ -809,73 +893,81 @@ cap = None
 def open_stream(rtsp_url=None):
     global cap, camera_available, use_dummy_feed, current_rtsp_url
     
-    # Use provided URL or fallback to a default
     if not rtsp_url:
-        # You can set a default here if needed, or use None
-        rtsp_url = "rtsp://username:password@ip:port/stream"  # Default template
+        logger.warning("No RTSP URL provided")
+        camera_available = False
+        use_dummy_feed = True
+        return False
     
     try:
         with cap_lock:
+            # Release existing capture
             if cap is not None:
                 try:
                     cap.release()
-                except Exception:
-                    pass
+                    logger.info("Released previous camera connection")
+                except Exception as e:
+                    logger.warning(f"Error releasing previous capture: {e}")
+                cap = None
+            
+            # Small delay to ensure camera is released
+            time.sleep(0.5)
                     
+            # Try to connect to RTSP with timeout
+            logger.info(f"Attempting to connect to RTSP: {rtsp_url}")
+            
+            # Use OpenCV with better RTSP settings
             cap = cv2.VideoCapture(rtsp_url)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, STREAM_WIDTH)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, STREAM_HEIGHT)
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)  # Reduced from 3840 for better performance
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080) # Reduced from 2160 for better performance
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             
-            if cap.isOpened():
-                # Test if we can actually read a frame
-                ret, test_frame = cap.read()
-                if ret and test_frame is not None:
-                    camera_available = True
-                    use_dummy_feed = False
-                    current_rtsp_url = rtsp_url  # Store the current URL
-                    logger.info(f"RTSP stream connected successfully: {rtsp_url}")
-                    return True
-                else:
-                    cap.release()
-                    cap = None
-                    raise Exception("Cannot read frames from RTSP stream")
-            else:
-                raise Exception("Cannot open RTSP stream")
+            # Set timeout for connection
+            start_time = time.time()
+            while time.time() - start_time < 5:  # 5 second timeout
+                if cap.isOpened():
+                    ret, test_frame = cap.read()
+                    if ret and test_frame is not None:
+                        camera_available = True
+                        use_dummy_feed = False
+                        current_rtsp_url = rtsp_url
+                        logger.info(f"✅ RTSP stream connected successfully: {rtsp_url}")
+                        return True
+                time.sleep(0.1)
+            
+            # If we get here, connection failed
+            cap.release()
+            cap = None
+            raise Exception("RTSP connection timeout")
                 
     except Exception as e:
-        logger.warning(f"RTSP connection failed for {rtsp_url}: {e}")
-        logger.info("Switching to dummy feed mode")
+        logger.warning(f"❌ RTSP connection failed: {e}")
+        
+        # Fallback to dummy feed
         camera_available = False
         use_dummy_feed = True
-        cap = None
-        current_rtsp_url = None
+        if cap is not None:
+            try:
+                cap.release()
+            except:
+                pass
+            cap = None
+        
         return False
 
-
-
 def grabber():
-    """Modified grabber to handle dynamic RTSP URLs"""
     global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url
     empty_count = 0
-    retry_interval = 0
+    frame_count = 0
     
     while not stop_flag:
-        if use_dummy_feed:
-            # Use dummy frame when no camera
+        if use_dummy_feed or cap is None:
             latest_frame = create_dummy_frame()
             time.sleep(0.1)
-            
-            # Periodically try to reconnect to last RTSP URL
-            retry_interval += 1
-            if retry_interval > 100 and current_rtsp_url:  # Try every ~10 seconds
-                retry_interval = 0
-                logger.info(f"Attempting to reconnect to RTSP: {current_rtsp_url}")
-                if open_stream(current_rtsp_url):
-                    continue
             continue
             
-        # Normal camera grabbing logic
         with cap_lock:
             if cap is None:
                 time.sleep(0.1)
@@ -886,16 +978,18 @@ def grabber():
         if not ok:
             empty_count += 1
             if empty_count > MAX_EMPTY_GRABS:
-                logger.warning("Camera connection lost. Attempting reconnection...")
-                time.sleep(RECONNECT_COOLDOWN)
+                logger.warning("Camera connection lost. Switching to dummy feed...")
+                camera_available = False
+                use_dummy_feed = True
                 
-                # Try to reconnect to last known URL
-                if current_rtsp_url and open_stream(current_rtsp_url):
-                    logger.info("Reconnected to RTSP stream")
-                else:
-                    logger.warning("Reconnection failed - switching to dummy feed")
-                    camera_available = False
-                    use_dummy_feed = True
+                with cap_lock:
+                    if cap is not None:
+                        try:
+                            cap.release()
+                        except:
+                            pass
+                        cap = None
+                
                 empty_count = 0
             else:
                 time.sleep(0.01)
@@ -903,6 +997,12 @@ def grabber():
             
         empty_count = 0
         latest_frame = f
+        
+        # Log every 30 frames to verify it's working
+        frame_count += 1
+        if frame_count % 30 == 0:
+            logger.info(f"✅ Capturing frames: {frame_count} frames captured")
+        
         time.sleep(GRAB_SLEEP)
 
 grab_thread = threading.Thread(target=grabber, daemon=True)
@@ -912,44 +1012,95 @@ grab_thread.start()
 # Tracking & attendance
 # =========================
 tracks = []
-locked_tracks = {}  # Dict: id -> {'track': tr, 'last_seen': frame_idx, 'lock_start': frame_idx, 'type': 'student' or 'faculty'}
+locked_tracks = {}
 attendance = {}
 tracking_history = {}
 
+def periodic_attendance_save():
+    """Periodically save attendance data to CSV"""
+    while not stop_flag:
+        try:
+            if attendance:  # Only save if there's data
+                with open(ATTENDANCE_CSV_FILE, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['ID', 'Name', 'DateTime', 'Status'])
+                    for sid, data in attendance.items():
+                        writer.writerow([sid, data['name'], data['time'], 'present'])
+                logger.info(f"Periodic backup: Saved {len(attendance)} attendance records to CSV")
+        except Exception as e:
+            logger.error(f"Periodic attendance save failed: {e}")
+        
+        time.sleep(attendance_save_interval)
+
+# Start the periodic save thread in your main function
+attendance_save_thread = threading.Thread(target=periodic_attendance_save, daemon=True)
+attendance_save_thread.start()
+
 def mark_attendance(name, id, type):
-    if type != 'student':
+    """Mark attendance for both students and faculty"""
+    if type not in ['student', 'faculty']:
         return
     
-    current_time = datetime.datetime.now()
+    current_time = datetime.now()
     time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    today = current_time.strftime("%Y-%m-%d")
     
-    # Check if already marked today within 4 hours
-    if id in attendance:
-        last_time_str = attendance[id]["time"]
-        last_time = datetime.datetime.strptime(last_time_str, "%Y-%m-%d %H:%M:%S")
-        time_diff = (current_time - last_time).total_seconds() / 3600
-        if time_diff < 4:
-            return
+    # Save to memory
+    attendance[id] = {"name": name, "time": time_str, "type": type}
     
-    # Save in-memory
-    attendance[id] = {"name": name, "time": time_str}
+    # Save to CSV immediately
+    try:
+        csv_file = "attendance_log.csv"
+        file_exists = os.path.isfile(csv_file)
+        
+        with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status'])
+            writer.writerow([id, name, time_str, type, 'present'])
+        
+        logger.info(f"📄 CSV saved: {name} ({id}) - {type}")
+    except Exception as e:
+        logger.error(f"Failed to save attendance to CSV: {e}")
     
     # Save to database
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO attendance (student_id, name, timestamp) VALUES (%s, %s, %s)",
-            (id, name, time_str)
-        )
+        
+        if type == 'student':
+            cursor.execute(
+                "INSERT INTO attendance (student_id, name, timestamp, person_type) VALUES (%s, %s, %s, %s)",
+                (id, name, time_str, 'student')
+            )
+        else:  # faculty
+            cursor.execute(
+                "INSERT INTO attendance (faculty_id, name, timestamp, person_type) VALUES (%s, %s, %s, %s)",
+                (id, name, time_str, 'faculty')
+            )
+        
         conn.commit()
         cursor.close()
         conn.close()
-        logger.info(f"Attendance recorded: {name} ({id}) at {time_str}")
+        logger.info(f"💾 Database saved: {name} ({id}) at {time_str}")
     except Exception as e:
-        logger.error(f"Failed to save attendance to database: {e}", exc_info=True)
-
+        logger.error(f"Failed to save attendance to database: {e}")
+        
+# Also update the CSV saving function
+def save_attendance_to_csv(person_id, name, timestamp, person_type):
+    """Save attendance entry to CSV in real-time"""
+    try:
+        csv_file = "attendance_log.csv"
+        file_exists = os.path.isfile(csv_file)
+        
+        with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status'])
+            writer.writerow([person_id, name, timestamp, person_type, 'present'])
+        
+        logger.info(f"Attendance saved to CSV: {name} ({person_id}) - {person_type}")
+    except Exception as e:
+        logger.error(f"Failed to save attendance to CSV: {e}")
 
 def update_trackers(rgb, frame, frame_idx):
     global tracks, locked_tracks
@@ -957,10 +1108,9 @@ def update_trackers(rgb, frame, frame_idx):
     kept = []
     to_remove_locks = []
 
-    # Remove locked tracks when person disappears
     for sid, lock_info in list(locked_tracks.items()):
         frames_since_seen = frame_idx - lock_info.get('last_seen', frame_idx)
-        if frames_since_seen > 30:  # ~1 second at 30fps
+        if frames_since_seen > 30:
             to_remove_locks.append(sid)
             logger.info(f"Person {sid} disappeared - releasing lock")
 
@@ -1023,14 +1173,12 @@ def update_trackers(rgb, frame, frame_idx):
                     tracker_ok = True
                     tr["box"] = (x1, y1, x2, y2)
 
-                    # Dynamic confidence update
                     if not is_locked:
                         prev_conf = tr.get("confidence", 0.5)
                         if tracker_quality is not None:
                             qc = max(0.0, min(1.0, tracker_quality))
                             tr["confidence"] = min(0.95, prev_conf * 0.9 + qc * 0.1)
                         else:
-                            # Decay slowly if no quality returned
                             tr["confidence"] = max(0.3, prev_conf * 0.995)
 
         except Exception as e:
@@ -1089,7 +1237,6 @@ def update_trackers(rgb, frame, frame_idx):
                     }
                     logger.info(f"Track LOCKED for {tr.get('name','Unknown')} ({tid})")
 
-        # === Status and box color tied together ===
         if is_locked:
             status_label = "[LOCKED]"
             status_color = (0, 200, 0)
@@ -1150,31 +1297,27 @@ def update_trackers(rgb, frame, frame_idx):
     tracks[:] = kept
 
 
-
-def cleanup_locked_tracks():
+def cleanup_locked_tracks(current_frame, lock_timeout_frames):
     global locked_tracks
-    current_frame = 0  # This would need to be updated with the current frame index
     
     to_remove = []
     for id, lock_info in locked_tracks.items():
-        if current_frame - lock_info['last_seen'] > LOCK_TIMEOUT_FRAMES * 2:  # Double timeout for cleanup
+        if current_frame - lock_info['last_seen'] > lock_timeout_frames * 2:
             to_remove.append(id)
             logger.info(f"Cleaning up locked track for {id}")
     
     for id in to_remove:
         del locked_tracks[id]
 
+
 def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_locked_track=False):
     try:
-        # Estimate distance based on face width in pixels
         distance = estimate_distance(face_width_pixels)
 
-        # Too far for reliable recognition
         if distance > MAX_RECOGNITION_DISTANCE:
             logger.info(f"Face too far for recognition: {distance:.1f}m")
             return "Unknown", None, float('inf'), distance, 0.0, None
 
-        # Image enhancement (better for low-light or far faces)
         if len(face_image.shape) == 3:
             gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
             gray = cv2.equalizeHist(gray)
@@ -1191,7 +1334,6 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_loc
 
         face_embedding = faces[0].embedding
 
-        # Compare against known embeddings
         similarities = []
         for known_embedding in known_face_encodings:
             dot_product = np.dot(face_embedding, known_embedding)
@@ -1204,29 +1346,25 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_loc
             best_match_index = int(np.argmax(similarities))
             best_similarity = float(similarities[best_match_index])
 
-            # Confidence: convert similarity into "closeness" score
             confidence = best_similarity
 
-            # Decide recognition
             if is_locked_track or confidence >= (1 - tolerance):
                 name = known_face_names[best_match_index]
                 id = known_face_ids[best_match_index]
                 role_type = known_face_types[best_match_index]
 
-                # Add role label (e.g., faculty)
                 if role_type == 'faculty':
                     name = f"Faculty: {name}"
 
                 return (
                     name,
                     id,
-                    1 - confidence,   # recognition distance metric
-                    distance,         # estimated distance in meters
-                    confidence,       # similarity-based confidence
+                    1 - confidence,
+                    distance,
+                    confidence,
                     role_type
                 )
 
-        # Fallback if no match
         return "Unknown", None, float('inf'), distance, 0.0, None
 
     except Exception as e:
@@ -1234,12 +1372,11 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.6, is_loc
         return "Unknown", None, float('inf'), None, 0.0, None
 
 
-def detect_liveness_cctv(face_image):
+def detect_liveness_cctv(face_image, liveness_threshold):
     try:
         gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
         fm = cv2.Laplacian(gray, cv2.CV_64F).var()
-        # Relaxed threshold for better detection in well-lit conditions
-        adjusted_threshold = LIVENESS_THRESHOLD * 0.8  # Changed from 0.6 to 0.8
+        adjusted_threshold = liveness_threshold * 0.8
         if fm < adjusted_threshold:
             logger.warning(f"Liveness detection failed: variance {fm} < threshold {adjusted_threshold}")
             return False
@@ -1247,29 +1384,65 @@ def detect_liveness_cctv(face_image):
         return True
     except Exception as e:
         logger.error(f"Liveness detection error: {e}")
-        return True  # Allow progression for CCTV scenarios
-    
+        return True
+
+
 def estimate_distance(face_width_pixels):
     if face_width_pixels < 20:
         return float('inf')
     estimated_distance = (FACE_SIZE_FOR_DISTANCE * 2) / face_width_pixels
     return estimated_distance
 
-def recognize_face_with_anti_spoofing(face_image, tolerance=0.6):
-    if not detect_liveness_cctv(face_image):
+
+def recognize_face_with_anti_spoofing(face_image, tolerance=0.6, liveness_threshold=100):
+    if not detect_liveness_cctv(face_image, liveness_threshold):
         return "Unknown", None, float('inf'), False, 0.0
-    name, student_id, distance, est_distance, confidence = enhanced_recognize_face(face_image, tolerance)
+    face_width = face_image.shape[1]
+    name, student_id, distance, est_distance, confidence, role_type = enhanced_recognize_face(face_image, face_width, tolerance)
     return name, student_id, distance, est_distance, True, confidence
+
+
+def iou(box1, box2):
+    x1_tl, y1_tl, x1_br, y1_br = box1
+    x2_tl, y2_tl, x2_br, y2_br = box2
+    
+    xi1 = max(x1_tl, x2_tl)
+    yi1 = max(y1_tl, y2_tl)
+    xi2 = min(x1_br, x2_br)
+    yi2 = min(y1_br, y2_br)
+    
+    inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+    
+    box1_area = (x1_br - x1_tl) * (y1_br - y1_tl)
+    box2_area = (x2_br - x2_tl) * (y2_br - y2_tl)
+    
+    union_area = box1_area + box2_area - inter_area
+    
+    if union_area == 0:
+        return 0.0
+    
+    return inter_area / union_area
+
+
+def expand_box(x1, y1, x2, y2, img_w, img_h, ratio):
+    width = x2 - x1
+    height = y2 - y1
+    
+    expand_w = int(width * ratio)
+    expand_h = int(height * ratio)
+    
+    new_x1 = max(0, x1 - expand_w)
+    new_y1 = max(0, y1 - expand_h)
+    new_x2 = min(img_w, x2 + expand_w)
+    new_y2 = min(img_h, y2 + expand_h)
+    
+    return new_x1, new_y1, new_x2, new_y2
+
 
 def refresh_with_detections(frame, rgb, frame_idx):
     global tracks, locked_tracks, DETECT_EVERY
 
-    # BETTER TRACK MANAGEMENT FOR 30+ ABOVE STUDENTS
-    MAX_TOTAL_TRACKS = 50
-    MAX_UNLOCKED_TRACKS = 20
-
-    # Clean up old tracks first
-    if len(tracks) > MAX_TOTAL_TRACKS:
+    if len(tracks) > MAX_TRACKS:
         locked_track_objects = [info['track'] for info in locked_tracks.values()]
         unlocked_tracks = [tr for tr in tracks if tr not in locked_track_objects]
         unlocked_tracks.sort(key=lambda x: x.get('confidence', 0), reverse=True)
@@ -1277,67 +1450,46 @@ def refresh_with_detections(frame, rgb, frame_idx):
         tracks[:] = locked_track_objects + unlocked_tracks
         logger.info(f"Track cleanup: kept {len(locked_track_objects)} locked + {len(unlocked_tracks)} unlocked = {len(tracks)} total")
 
-    # DYNAMIC DETECTION FREQUENCY
     DETECT_EVERY = 2 if len(tracks) < 3 else (3 if len(tracks) < 6 else 5)
     h, w = frame.shape[:2]
 
     if frame_idx % DETECT_EVERY != 0:
         return
 
-    small_frame = cv2.resize(frame, (0, 0), fx=RESIZE_FACTOR, fy=RESIZE_FACTOR)
-    small_rgb = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+    try:
+        faces = face_analysis.get(rgb)
+    except Exception as e:
+        logger.error(f"SCRFD-10G detection failed: {e}")
+        return
 
-    frame_eq = enhance_lighting(small_frame)
-    results = yolo.predict(source=frame_eq, verbose=False, conf=CONF_THRESH, imgsz=640, device=DEVICE)
-
-    # Raw detections
-    raw_dets = []
-    if results:
-        r = results[0]
-        if getattr(r, "boxes", None) is not None:
-            for b in r.boxes:
-                try:
-                    x1, y1, x2, y2 = b.xyxy[0].tolist()
-                    conf = float(b.conf[0].item()) if hasattr(b.conf[0], "item") else float(b.conf[0])
-                except Exception:
-                    continue
-
-                x1 = int(max(0, x1 / RESIZE_FACTOR)); y1 = int(max(0, y1 / RESIZE_FACTOR))
-                x2 = int(min(w - 1, x2 / RESIZE_FACTOR)); y2 = int(min(h - 1, y2 / RESIZE_FACTOR))
-
-                if conf >= CONF_THRESH and x2 > x1 and y2 > y1:
-                    box_width = x2 - x1
-                    box_height = y2 - y1
-                    if box_width >= 25 and box_height >= 25:
-                        raw_dets.append((x1, y1, x2, y2, conf))
-
-    # Apply Non-Maximum Suppression to remove duplicate detections
     dets = []
-    if raw_dets:
-        boxes_xywh = [[int(d[0]), int(d[1]), int(d[2] - d[0]), int(d[3] - d[1])] for d in raw_dets]
-        scores = [float(d[4]) for d in raw_dets]
-
+    for idx, face in enumerate(faces):
         try:
-            indices = cv2.dnn.NMSBoxes(boxes_xywh, scores, CONF_THRESH, 0.4)
+            x1, y1, x2, y2 = face.bbox.astype(int)
+            conf = face.det_score
+            
+            if x2 > x1 and y2 > y1:
+                box_width = x2 - x1
+                box_height = y2 - y1
+                if box_width >= 25 and box_height >= 25:
+                    dets.append((x1, y1, x2, y2, conf, idx))
+                    
         except Exception as e:
-            logger.exception(f"NMS failed: {e}")
-            indices = []
+            logger.error(f"Error processing SCRFD detection: {e}")
+            continue
 
-        if indices is not None and len(indices) > 0:
-            flat_indices = np.array(indices).flatten()
-            for i in flat_indices:
-                i = int(i)
-                if 0 <= i < len(raw_dets):
-                    dets.append(raw_dets[i])
-
-    logger.info(f"Frame {frame_idx}: {len(raw_dets)} raw detections → {len(dets)} after NMS")
+    logger.info(f"Frame {frame_idx}: {len(faces)} SCRFD detections → {len(dets)} valid detections")
+    
+    # DEBUG: Log if we have known faces to compare against
+    if len(known_face_encodings) == 0:
+        logger.warning("⚠️ No known faces loaded for recognition!")
+    else:
+        logger.info(f"🔍 Have {len(known_face_encodings)} known faces for recognition")
+    
     new_tracks = []
-
-    # Keep track of which locked tracks were matched
     matched_locked_tracks = set()
     used_detections = set()
 
-    # FIRST PASS: Match locked tracks to detections
     for sid, lock_info in list(locked_tracks.items()):
         if sid in matched_locked_tracks:
             continue
@@ -1350,23 +1502,22 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if not lock_box:
             continue
 
-        for idx, (x1, y1, x2, y2, conf) in enumerate(dets):
+        for idx, (x1, y1, x2, y2, conf, face_idx) in enumerate(dets):
             if idx in used_detections:
                 continue
             overlap_iou = iou((x1, y1, x2, y2), lock_box)
             if overlap_iou > best_iou:
                 best_iou = overlap_iou
-                best_detection = (x1, y1, x2, y2, conf)
+                best_detection = (x1, y1, x2, y2, conf, face_idx)
                 best_idx = idx
 
         if best_detection:
             used_detections.add(best_idx)
             matched_locked_tracks.add(sid)
-            x1, y1, x2, y2, conf = best_detection
+            x1, y1, x2, y2, conf, face_idx = best_detection
             tr = lock_info['track']
             tr['last_seen'] = frame_idx
             tr['box'] = (x1, y1, x2, y2)
-            # For locked tracks, don't update confidence - just maintain tracking
             locked_tracks[sid]['last_seen'] = frame_idx
             locked_tracks[sid]['missed_detections'] = 0
 
@@ -1385,17 +1536,10 @@ def refresh_with_detections(frame, rgb, frame_idx):
         else:
             lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
 
-    # SECOND PASS: Process remaining detections for new tracks
-    for idx, (x1, y1, x2, y2, conf) in enumerate(dets):
+    for idx, (x1, y1, x2, y2, conf, face_idx) in enumerate(dets):
         if idx in used_detections:
             continue
 
-        ex1, ey1, ex2, ey2 = expand_box(x1, y1, x2, y2, w, h, EXPAND_BOX_RATIO)
-        ex1, ey1, ex2, ey2 = map(int, (max(0, ex1), max(0, ey1), min(w - 1, ex2), min(h - 1, ey2)))
-        face_region = rgb[ey1:ey2, ex1:ex2]
-        face_width = x2 - x1
-
-        # Check overlap with existing new_tracks
         overlaps_existing = False
         for existing_tr in new_tracks:
             existing_box = existing_tr.get('box')
@@ -1407,35 +1551,82 @@ def refresh_with_detections(frame, rgb, frame_idx):
             logger.debug("Skipping detection that overlaps with existing track")
             continue
 
+        face_region = rgb[y1:y2, x1:x2]
+        
         if face_region.size == 0 or face_region.shape[0] < MIN_FACE_SIZE or face_region.shape[1] < MIN_FACE_SIZE:
             logger.debug(f"Face region too small or empty: {face_region.shape}")
             continue
 
-        # Dynamic confidence updates for scanning tracks
         name = "Unknown"
         person_id = None
         ptype = None
-        confidence = conf * 0.8  # Base confidence from YOLO
+        confidence = conf * 0.8
 
-        if conf >= 0.5:  # Only recognize if YOLO confidence is decent
-            tolerance = TOLERANCE * 1.1 if conf >= 0.8 else TOLERANCE
+        # FIXED RECOGNITION LOGIC - Always attempt recognition if confidence is good
+        if conf >= 0.3:  # Lowered threshold from 0.5 to 0.3
             try:
-                name, person_id, distance, estimated_distance, recog_confidence, ptype = enhanced_recognize_face(
-                    face_region, face_width, tolerance, is_locked_track=False
-                )
-                # Dynamic confidence calculation for scanning tracks
-                if name != "Unknown":
-                    confidence = min(1.0, (conf * 0.4) + (recog_confidence * 0.6))
-                    if conf >= 0.9:
-                        confidence = min(1.0, confidence * 1.1)
-                else:
-                    confidence = conf * 0.7  # Lower confidence for unknown faces
-                    
-            except Exception as e:
-                logger.exception(f"enhanced_recognize_face failed: {e}")
-                confidence = conf * 0.6
+                face_obj = faces[face_idx]
+                face_embedding = face_obj.embedding
+                
+                # DEBUG: Log recognition attempt
+                logger.info(f"🔄 Attempting recognition for detection {idx} (conf: {conf:.3f})")
+                
+                similarities = []
+                for i, known_embedding in enumerate(known_face_encodings):
+                    dot_product = np.dot(face_embedding, known_embedding)
+                    norm_a = np.linalg.norm(face_embedding)
+                    norm_b = np.linalg.norm(known_embedding)
+                    similarity = dot_product / (norm_a * norm_b)
+                    similarities.append(similarity)
 
-        # Create new track
+                if similarities:
+                    best_match_index = int(np.argmax(similarities))
+                    best_similarity = float(similarities[best_match_index])
+                    
+                    # DEBUG: Log similarity results
+                    logger.info(f"📊 Best similarity: {best_similarity:.3f} (threshold: {1-TOLERANCE:.3f})")
+
+                    if best_similarity >= (1 - TOLERANCE):
+                        name = known_face_names[best_match_index]
+                        person_id = known_face_ids[best_match_index]
+                        ptype = known_face_types[best_match_index]
+                        confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
+                        
+                        if conf >= 0.9:
+                            confidence = min(1.0, confidence * 1.1)
+                            
+                        if ptype == 'faculty':
+                            name = f"Faculty: {name}"
+                        
+                        # ✅ SUCCESSFUL RECOGNITION - Log it clearly
+                        logger.info(f"✅ RECOGNIZED: {name} ({person_id}) as {ptype} - Similarity: {best_similarity:.3f}, Confidence: {confidence:.3f}")
+                        
+                        # MARK ATTENDANCE HERE for both students and faculty
+                        if person_id and ptype in ['student', 'faculty']:
+                            # Check if we should mark attendance (not too recent)
+                            should_mark = True
+                            if person_id in attendance:
+                                last_time_str = attendance[person_id]["time"]
+                                last_time = datetime.strptime(last_time_str, "%Y-%m-%d %H:%M:%S")
+                                current_time = datetime.now()
+                                time_diff = (current_time - last_time).total_seconds() / 3600
+                                if time_diff < 4:  # 4-hour cooldown
+                                    should_mark = False
+                                    logger.info(f"⏰ Skipping attendance for {name} - marked recently")
+                            
+                            if should_mark:
+                                mark_attendance(name, person_id, ptype)
+                                logger.info(f"📝 ATTENDANCE MARKED: {name} ({person_id})")
+                    else:
+                        confidence = conf * 0.7
+                        logger.info(f"❌ No match found - Best similarity {best_similarity:.3f} below threshold")
+                        
+            except Exception as e:
+                logger.error(f"Face recognition failed: {e}")
+                confidence = conf * 0.6
+        else:
+            logger.info(f"⚠️ Detection confidence {conf:.3f} too low for recognition")
+
         dtracker = dlib.correlation_tracker()
         try:
             ex1, ey1, ex2, ey2 = expand_box(x1, y1, x2, y2, w, h, 0.2)
@@ -1453,7 +1644,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
             }
             new_tracks.append(tr)
 
-            # Lock at 0.6 confidence
             if person_id and confidence >= 0.6 and person_id not in locked_tracks:
                 locked_tracks[person_id] = {
                     'track': tr,
@@ -1462,13 +1652,12 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'type': ptype,
                     'missed_detections': 0
                 }
-                logger.info(f"LOCKED track for {ptype} {name} ({person_id}) with confidence {confidence:.4f}")
+                logger.info(f"🔒 LOCKED track for {ptype} {name} ({person_id}) with confidence {confidence:.4f}")
 
         except Exception as e:
             logger.error(f"Tracker creation error: {e}")
             continue
 
-    # Remove locked tracks that weren't matched
     tracks_to_remove = []
     for sid, lock_info in list(locked_tracks.items()):
         if lock_info.get('missed_detections', 0) > 3:
@@ -1478,7 +1667,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
     for sid in tracks_to_remove:
         locked_tracks.pop(sid, None)
 
-    # Update tracks list
     preserved_tracks = []
     for tr in tracks:
         if tr.get("id") in locked_tracks:
@@ -1495,7 +1683,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
 
     tracks[:] = preserved_tracks
 
-    # Final cleanup - ensure no duplicate boxes
     final_tracks = []
     for i, tr in enumerate(tracks):
         is_duplicate = False
@@ -1509,7 +1696,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
 
     tracks[:] = final_tracks
     logger.info(f"Final tracks: {len(tracks)} (locked: {len(locked_tracks)})")
-
 
 # =========================
 # Flask streaming & API
@@ -3633,40 +3819,70 @@ def get_current_user():
         logger.error(f"Error getting current user: {e}")
         return None
 
-
 def generate_frames():
-    """Modified to handle dummy feed scenario"""
+    """Generate frames for video feed with face detection"""
+    global latest_frame, tracks, locked_tracks
+    
     frame_idx = 0
+    processing_frame_count = 0
     
     while True:
-        with cap_lock:
-            if latest_frame is None:
-                time.sleep(0.01)
-                continue
-            frame = latest_frame.copy()
-            
-        # Only do face processing if real camera is available
-        if camera_available and not use_dummy_feed:
-            try:
+        try:
+            if latest_frame is not None and camera_available:
+                frame = latest_frame.copy()
+                
+                # Convert to RGB for processing
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                # Update trackers and refresh detections
-                update_trackers(rgb, frame, frame_idx)
-                refresh_with_detections(frame, rgb, frame_idx)
-                frame_idx += 1
-            except Exception as e:
-                logger.error(f"Frame processing error: {e}")
-        else:
-            # Just display the dummy frame
-            pass
+                
+                # Process every frame for better detection
+                if processing_frame_count % 2 == 0:  # Process every 2nd frame
+                    # Update existing trackers
+                    update_trackers(rgb, frame, frame_idx)
+                    
+                    # Refresh with new detections periodically
+                    if frame_idx % DETECT_EVERY == 0:
+                        refresh_with_detections(frame, rgb, frame_idx)
+                    
+                    frame_idx += 1
+                
+                processing_frame_count += 1
+                
+                # Encode frame as JPEG
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                
+            else:
+                # Use dummy frame if no camera available
+                frame = create_dummy_frame()
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             
-        ret, buffer = cv2.imencode('.jpg', frame)
-        if not ret:
-            continue
+            if ret:
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            else:
+                # Fallback to dummy frame
+                dummy = create_dummy_frame()
+                ret, buffer = cv2.imencode('.jpg', dummy, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                if ret:
+                    frame_bytes = buffer.tobytes()
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                
+        except Exception as e:
+            logger.error(f"Error in generate_frames: {e}")
+            # Fallback to dummy frame on error
+            try:
+                dummy = create_dummy_frame()
+                ret, buffer = cv2.imencode('.jpg', dummy, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                if ret:
+                    frame_bytes = buffer.tobytes()
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            except:
+                pass
+            
+        time.sleep(0.033)  # ~30 FPS
 
-        frame_bytes = buffer.tobytes()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        
 # Add an API endpoint to check camera status
 @app.route('/api/camera_status', methods=['GET'])
 def camera_status():
@@ -4002,7 +4218,18 @@ def login_page():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    """Video streaming route with proper headers"""
+    return Response(
+        generate_frames(),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Connection': 'keep-alive',  # Changed from 'close' to 'keep-alive'
+            'X-Accel-Buffering': 'no'  # Important for streaming
+        }
+    )
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
@@ -7271,7 +7498,7 @@ def get_sections_with_semester():
 @app.route('/api/set_rtsp_url', methods=['POST'])
 @login_required
 def set_rtsp_url():
-    """Set the RTSP URL dynamically"""
+    """Set RTSP URL dynamically"""
     try:
         data = request.json
         rtsp_url = data.get('rtsp_url')
@@ -7279,39 +7506,66 @@ def set_rtsp_url():
         if not rtsp_url:
             return jsonify({'success': False, 'message': 'RTSP URL is required'})
         
-        # Try to connect to the new RTSP URL
-        if open_stream(rtsp_url):
+        # Decode URL if it's encoded
+        import urllib.parse
+        rtsp_url = urllib.parse.unquote(rtsp_url)
+        
+        logger.info(f"Setting RTSP URL: {rtsp_url}")
+        
+        # Try to connect to the RTSP stream
+        success = open_stream(rtsp_url)
+        
+        if success:
             return jsonify({
                 'success': True, 
-                'message': 'RTSP URL updated successfully',
+                'message': 'RTSP URL set successfully',
                 'camera_available': camera_available
             })
         else:
             return jsonify({
-                'success': False, 
-                'message': 'Failed to connect to RTSP URL',
-                'camera_available': camera_available
+                'success': False,
+                'message': 'Failed to connect to RTSP stream',
+                'camera_available': camera_available,
+                'using_fallback': use_dummy_feed
             })
             
     except Exception as e:
         logger.error(f"Error setting RTSP URL: {e}")
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({
+            'success': False, 
+            'message': f'Error: {str(e)}',
+            'camera_available': False
+        })
 
 if __name__ == "__main__":
-    # Initialize global variables (no need for global keyword here)
+    # Initialize global variables
     latest_frame = None
     stop_flag = False
     camera_available = False
     use_dummy_feed = False
     dummy_frame = None
     
-    # Try to connect to camera, but don't exit if it fails
+    # Initialize CSV file
+    try:
+        if not os.path.exists("attendance_log.csv"):
+            with open("attendance_log.csv", 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['ID', 'Name', 'DateTime', 'Status'])
+            logger.info("Initialized attendance_log.csv")
+    except Exception as e:
+        logger.error(f"Failed to initialize CSV file: {e}")
+    
+    # Try to connect to camera
     if not open_stream():
         logger.warning("Initial camera connection failed, but continuing with dummy feed")
     
     # Start the grabber thread
     grab_thread = threading.Thread(target=grabber, daemon=True)
     grab_thread.start()
+    
+    # Start periodic attendance save thread
+    attendance_save_thread = threading.Thread(target=periodic_attendance_save, daemon=True)
+    attendance_save_thread.start()
     
     try:
         ssl_context = None
@@ -7331,24 +7585,30 @@ if __name__ == "__main__":
         # Start Flask app
         app.run(host="0.0.0.0", port=5000, debug=False, threaded=True, ssl_context=ssl_context)
     
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    
     finally:
-        # Signal video capture loop to stop
+        # Signal all threads to stop
         stop_flag = True
-        time.sleep(0.05)
+        time.sleep(1)  # Give threads time to clean up
         
         # Release camera resource safely
         with cap_lock:
             if cap is not None:
                 cap.release()
         
-        # Save attendance to CSV if recognition is enabled
-        if ENABLE_RECOGNITION:
-            try:
-                with open("attendance_log.csv", "w") as f:
-                    f.write("ID,Name,DateTime\n")
+        # Final attendance save
+        try:
+            if attendance and ENABLE_RECOGNITION:
+                with open("attendance_log.csv", 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['ID', 'Name', 'DateTime', 'Status'])
                     for sid, data in attendance.items():
-                        f.write(f"{sid},{data['name']},{data['time']}\n")
-                logger.info("Attendance saved to attendance_log.csv")
-            except Exception as e:
-                logger.error(f"Failed to save attendance CSV: {e}", exc_info=True)
+                        writer.writerow([sid, data['name'], data['time'], 'present'])
+                logger.info(f"Final save: {len(attendance)} records saved to attendance_log.csv")
+        except Exception as e:
+            logger.error(f"Final attendance save failed: {e}")
+        
+        logger.info("Application shutdown complete")
 
