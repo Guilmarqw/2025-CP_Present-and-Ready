@@ -1036,16 +1036,27 @@ def periodic_attendance_save():
 attendance_save_thread = threading.Thread(target=periodic_attendance_save, daemon=True)
 attendance_save_thread.start()
 
-def mark_attendance(name, id, type):
-    """Mark attendance for both students and faculty"""
+# Modify mark_attendance function to include late status
+def mark_attendance(name, id, type, session_id=None, threshold_minutes=15):
+    """Mark attendance for both students and faculty with late status"""
     if type not in ['student', 'faculty']:
         return
     
     current_time = datetime.now()
     time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
     
+    # Determine status (present or late)
+    status = 'present'
+    if session_id and 'session_start_time' in globals():
+        status = calculate_late_status(time_str, session_start_time, threshold_minutes)
+    
     # Save to memory
-    attendance[id] = {"name": name, "time": time_str, "type": type}
+    attendance[id] = {
+        "name": name, 
+        "time": time_str, 
+        "type": type,
+        "status": status
+    }
     
     # Save to CSV immediately
     try:
@@ -1055,10 +1066,10 @@ def mark_attendance(name, id, type):
         with open(csv_file, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status'])
-            writer.writerow([id, name, time_str, type, 'present'])
+                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID'])
+            writer.writerow([id, name, time_str, type, status, session_id or 'N/A'])
         
-        logger.info(f"📄 CSV saved: {name} ({id}) - {type}")
+        logger.info(f"📄 CSV saved: {name} ({id}) - {type} - {status}")
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
     
@@ -1068,20 +1079,26 @@ def mark_attendance(name, id, type):
         cursor = conn.cursor()
         
         if type == 'student':
-            cursor.execute(
-                "INSERT INTO attendance (student_id, name, timestamp, person_type) VALUES (%s, %s, %s, %s)",
-                (id, name, time_str, 'student')
-            )
+            cursor.execute("""
+                INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    timestamp = VALUES(timestamp),
+                    status = VALUES(status)
+            """, (id, name, time_str, 'student', status, session_id))
         else:  # faculty
-            cursor.execute(
-                "INSERT INTO attendance (faculty_id, name, timestamp, person_type) VALUES (%s, %s, %s, %s)",
-                (id, name, time_str, 'faculty')
-            )
+            cursor.execute("""
+                INSERT INTO attendance (faculty_id, name, timestamp, person_type, status, session_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    timestamp = VALUES(timestamp),
+                    status = VALUES(status)
+            """, (id, name, time_str, 'faculty', status, session_id))
         
         conn.commit()
         cursor.close()
         conn.close()
-        logger.info(f"💾 Database saved: {name} ({id}) at {time_str}")
+        logger.info(f"💾 Database saved: {name} ({id}) - {status}")
     except Exception as e:
         logger.error(f"Failed to save attendance to database: {e}")
         
@@ -1437,6 +1454,21 @@ def expand_box(x1, y1, x2, y2, img_w, img_h, ratio):
     new_y2 = min(img_h, y2 + expand_h)
     
     return new_x1, new_y1, new_x2, new_y2
+
+# Add this helper function at the top of detect.py
+def calculate_late_status(attendance_time, session_start, threshold_minutes):
+    """Calculate if student is late based on threshold"""
+    try:
+        att_time = datetime.strptime(attendance_time, "%Y-%m-%d %H:%M:%S")
+        time_diff = (att_time - session_start).total_seconds() / 60
+        
+        if time_diff <= threshold_minutes:
+            return 'present'
+        else:
+            return 'late'
+    except:
+        return 'present'
+
 
 
 def refresh_with_detections(frame, rgb, frame_idx):
@@ -2017,7 +2049,7 @@ def get_students_enhanced():
                 'course': s['course'],
                 'yearSection': s['year_section'],
                 'email': s['email'],
-                'photo': f"/student_photos/{s['student_id']}.jpg" if s['photo_path'] else f"https://ui-avatars.com/api/?name={s['first_name']}+{s['last_name']}&background=random",
+                'photo': s['photo_path'] if s['photo_path'] else f"https://ui-avatars.com/api/?name={s['first_name']}+{s['last_name']}&background=random",
                 'status': s['status'],
                 'createdAt': s['created_at'].isoformat() if s['created_at'] else None,
                 'updatedAt': s['updated_at'].isoformat() if s['updated_at'] else None
@@ -2105,7 +2137,7 @@ def get_faculty_enhanced():
                 'department': f['department'],
                 'designation': f['designation'],
                 'email': f['email'],
-                'photo': f"/faculty_photos/{f['faculty_id']}.jpg" if f['photo_path'] else f"https://ui-avatars.com/api/?name={f['first_name']}+{f['last_name']}&background=random",
+                'photo': f['photo_path'] if f['photo_path'] else f"https://ui-avatars.com/api/?name={f['first_name']}+{f['last_name']}&background=random",
                 'status': f['status'],
                 'role': f['role'],
                 'createdAt': f['created_at'].isoformat() if f['created_at'] else None,
@@ -2812,17 +2844,6 @@ def get_faculty_distribution():
         return jsonify({'success': False, 'message': str(e)})
 
 # Add this decorator function before the routes
-# Login required decorator
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        user = get_current_user()
-        if not user:
-            return redirect(url_for('login_page'))
-        g.user = user
-        return f(*args, **kwargs)
-    return decorated_function
-
 def logout_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -2836,17 +2857,9 @@ def logout_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Serve student photos
-@app.route('/student_photos/<filename>')
-def serve_photo(filename):
-    return send_from_directory('student_photos', filename)
-
 # Serve faculty photos
-os.makedirs('faculty_photos', exist_ok=True)
-
-@app.route('/faculty_photos/<filename>')
-def serve_faculty_photo(filename):
-    return send_from_directory('faculty_photos', filename)
+os.makedirs('static/images/faculty', exist_ok=True)
+os.makedirs('static/images/admins', exist_ok=True)
 
 @app.route('/api/get_other_students', methods=['GET'])  # Different route path
 def get_other_students():
@@ -3510,8 +3523,8 @@ def register_student():
             photo = request.files['photo']
             filename = secure_filename(photo.filename)
             if filename and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                os.makedirs('student_photos', exist_ok=True)
-                photo_path = f"student_photos/{student_id}.jpg"
+                os.makedirs('static/images/student_photos', exist_ok=True)
+                photo_path = f"static/images/student_photos/{student_id}.jpg"
                 photo.save(photo_path)
                 logger.info(f"Saved photo for {student_id} at {photo_path}")
                 
@@ -3661,8 +3674,8 @@ def register_faculty():
             photo = request.files['photo']
             filename = secure_filename(photo.filename)
             if filename and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                os.makedirs('faculty_photos', exist_ok=True)
-                photo_path = f"faculty_photos/{faculty_id}.jpg"
+                os.makedirs('static/images/faculty', exist_ok=True)
+                photo_path = f"static/images/faculty/{faculty_id}.jpg"
                 photo.save(photo_path)
                 logger.info(f"Saved photo for faculty {faculty_id} at {photo_path}")
                 
@@ -3778,8 +3791,20 @@ def health_check():
             'error': str(e)
         })
 
+# Keep only ONE version - use this consolidated one:
 def get_current_user():
-    """Get current user from session token"""
+    """Get current user from session token - handles both Flask session and cookie"""
+    # First check Flask session
+    if 'user_id' in session and 'user_type' in session:
+        return {
+            'user_id': session['user_id'],
+            'user_type': session['user_type'],
+            'first_name': session.get('first_name', ''),
+            'last_name': session.get('last_name', ''),
+            'role': session.get('role', '')
+        }
+    
+    # Fallback to cookie-based session token
     session_token = request.cookies.get('session_token')
     if not session_token:
         return None
@@ -3814,9 +3839,23 @@ def get_current_user():
         user = cursor.fetchone()
         cursor.close()
         conn.close()
+        
+        if not user:
+            session.clear()
+            return None
+        
+        # Store in Flask session for future requests
+        session['user_id'] = user['user_id']
+        session['user_type'] = user['user_type']
+        session['first_name'] = user['first_name']
+        session['last_name'] = user['last_name']
+        session['role'] = user['role']
+        
         return user
+        
     except Exception as e:
         logger.error(f"Error getting current user: {e}")
+        session.clear()
         return None
 
 def generate_frames():
@@ -3914,6 +3953,193 @@ def reconnect_camera():
             'message': f'Connection error: {str(e)}'
         })
 
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user_id = request.args.get('user_id') or session.get('user_id')
+        if not user_id:
+            logger.error("User ID not provided")
+            return jsonify({"success": False, "error": "User ID not provided"}), 401
+        
+        try:
+            db = get_db_connection()
+            if not db:
+                logger.error("Database connection failed")
+                return jsonify({"success": False, "error": "Database connection failed"}), 500
+            
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT admin_id AS user_id, CONCAT(first_name, ' ', last_name) AS name, 'admin' AS user_type,
+                       COALESCE(photo_path, '/static/images/placeholder.jpg') AS photo_path
+                FROM admins
+                WHERE admin_id = %s AND status = 'active'
+                UNION
+                SELECT faculty_id AS user_id, CONCAT(first_name, ' ', last_name) AS name, 'faculty' AS user_type,
+                       COALESCE(photo_path, '/static/images/placeholder.jpg') AS photo_path
+                FROM faculty
+                WHERE faculty_id = %s AND status = 'active'
+            """, (user_id, user_id))
+            user = cursor.fetchone()
+            cursor.close()
+            db.close()
+            
+            if not user:
+                logger.error(f"User not found or inactive: {user_id}")
+                return jsonify({"success": False, "error": "User not found or inactive"}), 401
+            
+            if user['user_type'] == 'student':
+                logger.error(f"Student access denied: {user_id}")
+                return jsonify({"success": False, "error": "Students not allowed"}), 403
+            
+            request.user = user
+            return f(*args, **kwargs)
+        
+        except mysql.connector.Error as db_err:
+            logger.error(f"Database error: {db_err}")
+            return jsonify({"success": False, "error": f"Database error: {str(db_err)}"}), 500
+        except Exception as e:
+            logger.error(f"Unexpected error in login_required: {e}")
+            return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500
+    
+    return decorated_function
+
+@app.route('/api/get_section_filters', methods=['GET'])
+@login_required
+def get_section_filters():
+    """Get unique course and year_section combinations for filtering"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT DISTINCT 
+                ys.section_id,
+                ys.year_level,
+                ys.section_name as year_section,
+                p.program_name as course,
+                p.program_id
+            FROM year_sections ys
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE ys.status = 'active'
+            ORDER BY p.program_name, ys.year_level, ys.section_name
+        """)
+        
+        sections = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'sections': sections})
+        
+    except Exception as e:
+        logger.error(f"Error getting section filters: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_section_info', methods=['GET'])
+@login_required
+def get_section_info():
+    """Get section information by section_id"""
+    try:
+        section_id = request.args.get('section_id')
+        
+        if not section_id:
+            return jsonify({'success': False, 'message': 'Section ID required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT 
+                ys.section_id,
+                ys.year_level,
+                ys.section_name,
+                p.program_name,
+                p.program_id,
+                p.program_code
+            FROM year_sections ys
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE ys.section_id = %s AND ys.status = 'active'
+        """, (section_id,))
+        
+        section = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if section:
+            return jsonify({'success': True, 'section': section})
+        else:
+            return jsonify({'success': False, 'message': 'Section not found'})
+        
+    except Exception as e:
+        logger.error(f"Error getting section info: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_students_for_attendance', methods=['GET'])
+@login_required
+def get_students_for_attendance():
+    """Get students with optional section filter and attendance status"""
+    try:
+        section_id = request.args.get('section_id')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        if section_id:
+            # Get students from specific section
+            query = """
+                SELECT 
+                    s.student_id,
+                    CONCAT(s.first_name, ' ', s.last_name) as name,
+                    s.photo_path as photo,
+                    s.course,
+                    s.year_section,
+                    COALESCE(a.status, 'absent') as status,
+                    a.timestamp as attendance_time
+                FROM students s
+                JOIN student_sections ss ON s.student_id = ss.student_id
+                LEFT JOIN attendance a ON s.student_id = a.student_id 
+                    AND DATE(a.timestamp) = CURDATE()
+                WHERE ss.section_id = %s 
+                    AND ss.status = 'active'
+                    AND s.status = 'active'
+                ORDER BY s.last_name, s.first_name
+            """
+            cursor.execute(query, (section_id,))
+        else:
+            # Get all students
+            query = """
+                SELECT 
+                    s.student_id,
+                    CONCAT(s.first_name, ' ', s.last_name) as name,
+                    s.photo_path as photo,
+                    s.course,
+                    s.year_section,
+                    COALESCE(a.status, 'absent') as status,
+                    a.timestamp as attendance_time
+                FROM students s
+                LEFT JOIN attendance a ON s.student_id = a.student_id 
+                    AND DATE(a.timestamp) = CURDATE()
+                WHERE s.status = 'active'
+                ORDER BY s.course, s.year_section, s.last_name, s.first_name
+            """
+            cursor.execute(query)
+        
+        students = cursor.fetchall()
+        
+        # Format photo paths
+        for student in students:
+            if student['photo']:
+                student['photo'] = student.get('photo_path') or f"/static/images/student_photos/{student['student_id']}.jpg"
+            else:
+                student['photo'] = None
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'students': students})
+        
+    except Exception as e:
+        logger.error(f"Error getting students for attendance: {e}")
+        return jsonify({'success': False, 'message': str(e)})
 
 # Routes
 @app.route('/timer')
@@ -4277,11 +4503,6 @@ def logout():
             'redirect_url': '/login'
         })
 
-@app.route('/login')
-@logout_required
-def login_page_alt():
-    return render_template('login.html')
-
 @app.route('/logout')
 def logout_page():
     """Direct logout route that redirects to login"""
@@ -4408,84 +4629,6 @@ def update_academic_year():
         return jsonify({'success': False, 'message': str(e)})
 
 # Add these authentication functions after the imports and before the Flask routes
-
-def get_current_user():
-    """Get current user from session token - FIXED VERSION with logout handling"""
-    # First check Flask session
-    if 'user_id' in session and 'user_type' in session:
-        return {
-            'user_id': session['user_id'],
-            'user_type': session['user_type'],
-            'first_name': session.get('first_name', ''),
-            'last_name': session.get('last_name', ''),
-            'role': session.get('role', '')
-        }
-    
-    # Fallback to cookie-based session token
-    session_token = request.cookies.get('session_token')
-    if not session_token:
-        return None
-    
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """SELECT us.user_id, us.user_type, us.expires_at,
-                      CASE 
-                          WHEN us.user_type = 'admin' THEN a.first_name
-                          WHEN us.user_type = 'faculty' THEN f.first_name
-                          WHEN us.user_type = 'student' THEN s.first_name
-                      END as first_name,
-                      CASE 
-                          WHEN us.user_type = 'admin' THEN a.last_name
-                          WHEN us.user_type = 'faculty' THEN f.last_name
-                          WHEN us.user_type = 'student' THEN s.last_name
-                      END as last_name,
-                      CASE 
-                          WHEN us.user_type = 'admin' THEN a.role
-                          WHEN us.user_type = 'faculty' THEN f.role
-                          ELSE 'student'
-                      END as role
-               FROM user_sessions us
-               LEFT JOIN admins a ON us.user_id = a.admin_id AND us.user_type = 'admin'
-               LEFT JOIN faculty f ON us.user_id = f.faculty_id AND us.user_type = 'faculty'
-               LEFT JOIN students s ON us.user_id = s.student_id AND us.user_type = 'student'
-               WHERE us.session_token = %s AND us.expires_at > NOW()""",
-            (session_token,)
-        )
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        # If no user found, clear any existing session data
-        if not user:
-            session.clear()
-            return None
-        
-        # Store in Flask session for future requests
-        session['user_id'] = user['user_id']
-        session['user_type'] = user['user_type']
-        session['first_name'] = user['first_name']
-        session['last_name'] = user['last_name']
-        session['role'] = user['role']
-        
-        return user
-        
-    except Exception as e:
-        logger.error(f"Error getting current user: {e}")
-        # Clear session on error
-        session.clear()
-        return None
-
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        user = get_current_user()
-        if not user:
-            return redirect(url_for('login_page'))
-        g.user = user
-        return f(*args, **kwargs)
-    return decorated_function
 
 def logout_required(f):
     @wraps(f)
@@ -6814,7 +6957,7 @@ def delete_program():
     except Exception as e:
         logger.error(f"Error deleting program: {e}")
         return jsonify({'success': False, 'message': str(e)})        
-
+    
 @app.route('/api/get_current_class', methods=['GET'])
 @login_required
 def get_current_class():
@@ -7536,6 +7679,514 @@ def set_rtsp_url():
             'message': f'Error: {str(e)}',
             'camera_available': False
         })
+
+@app.route('/api/get_session_info', methods=['GET'])
+@login_required
+def get_session_info():
+    try:
+        schedule_id = request.args.get('schedule_id')
+        if not schedule_id:
+            return jsonify({'success': False, 'message': 'Schedule ID required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+            SELECT 
+                cs.schedule_id,
+                cs.start_time,
+                cs.end_time,
+                cs.room,
+                cs.class_type,
+                s.subject_code,
+                s.subject_name,
+                ys.year_level,
+                ys.section_name,
+                ys.section_id,
+                p.program_id,
+                p.program_name,
+                f.faculty_id,
+                f.first_name,
+                f.last_name,
+                f.photo_path
+            FROM class_schedules cs
+            JOIN subjects s ON cs.subject_id = s.subject_id
+            JOIN year_sections ys ON cs.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            LEFT JOIN faculty_schedules fs ON cs.schedule_id = fs.schedule_id AND fs.status = 'active'
+            LEFT JOIN faculty f ON fs.faculty_id = f.faculty_id
+            WHERE cs.schedule_id = %s AND cs.status = 'active'
+        """
+        
+        cursor.execute(query, (schedule_id,))
+        schedule = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not schedule:
+            return jsonify({'success': False, 'message': 'Schedule not found'}), 404
+        
+        # Build faculty name
+        faculty_name = 'No Faculty Assigned'
+        if schedule['first_name'] and schedule['last_name']:
+            faculty_name = f"{schedule['first_name']} {schedule['last_name']}"
+        
+        # Fix photo path
+        faculty_photo = '/static/images/placeholder.jpg'
+        if schedule['photo_path']:
+            faculty_photo = schedule['photo_path']
+        elif schedule['faculty_id']:
+            faculty_photo = f"/static/images/faculty_photos/{schedule['faculty_id']}.jpg"
+        
+        response = {
+            'success': True,
+            'schedule': {
+                'schedule_id': schedule['schedule_id'],
+                'subject_code': schedule['subject_code'],
+                'subject_name': schedule['subject_name'],
+                'class_type': schedule['class_type'],
+                'year_level': schedule['year_level'],
+                'section_name': schedule['section_name'],
+                'section_id': schedule['section_id'],
+                'program_id': schedule['program_id'],
+                'program_name': schedule['program_name'],
+                'room': schedule['room'],
+                'start_time': str(schedule['start_time']),
+                'end_time': str(schedule['end_time']),
+                'faculty_id': schedule['faculty_id'],
+                'faculty_name': faculty_name,
+                'faculty_photo': faculty_photo,
+                'duration': 180,
+                'threshold': 15
+            }
+        }
+        
+        logger.info(f"✅ Session info loaded: {schedule['program_id']} {schedule['year_level']}{schedule['section_name']}, Faculty photo: {faculty_photo}")
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Error in get_session_info: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    
+@app.route('/api/get_section_students', methods=['GET'])
+def get_section_students():
+    """Get all students in a specific section with their attendance status"""
+    try:
+        section_id = request.args.get('section_id')
+        session_id = request.args.get('session_id')
+        
+        if not section_id:
+            return jsonify({'success': False, 'message': 'Section ID required'})
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'success': False, 'message': 'Database connection failed'})
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get all students in the section
+        query = """
+            SELECT 
+                s.student_id,
+                s.first_name,
+                s.last_name,
+                s.middle_name,
+                s.photo_path,
+                s.email,
+                ss.section_id,
+                COALESCE(a.status, 'absent') as status,
+                a.timestamp as attendance_time
+            FROM students s
+            JOIN student_sections ss ON s.student_id = ss.student_id
+            LEFT JOIN attendance a ON s.student_id = a.student_id 
+                AND a.session_id = %s
+                AND DATE(a.timestamp) = CURDATE()
+            WHERE ss.section_id = %s 
+                AND ss.status = 'active'
+                AND s.status = 'active'
+            ORDER BY s.last_name, s.first_name
+        """
+        
+        cursor.execute(query, (session_id, section_id))
+        students = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        # Format student data
+        student_list = []
+        for student in students:
+            full_name = f"{student['first_name']} {student['last_name']}"
+            if student['middle_name']:
+                full_name = f"{student['first_name']} {student['middle_name'][0]}. {student['last_name']}"
+            
+            student_list.append({
+                'student_id': student['student_id'],
+                'name': full_name,
+                'photo': student['photo_path'] or 'https://via.placeholder.com/150',
+                'status': student['status'],
+                'attendance_time': str(student['attendance_time']) if student['attendance_time'] else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'students': student_list,
+            'total': len(student_list)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting section students: {e}")
+        return jsonify({'success': False, 'message': str(e)})    
+    
+@app.route('/api/search_students', methods=['GET'])
+def search_students():
+    """Search students by name or ID"""
+    try:
+        section_id = request.args.get('section_id')
+        search_term = request.args.get('query', '').strip()
+        
+        if not section_id:
+            return jsonify({'success': False, 'message': 'Section ID required'})
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'success': False, 'message': 'Database connection failed'})
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+            SELECT 
+                s.student_id,
+                s.first_name,
+                s.last_name,
+                s.middle_name,
+                s.photo_path
+            FROM students s
+            JOIN student_sections ss ON s.student_id = ss.student_id
+            WHERE ss.section_id = %s 
+                AND ss.status = 'active'
+                AND s.status = 'active'
+                AND (
+                    s.student_id LIKE %s OR
+                    s.first_name LIKE %s OR
+                    s.last_name LIKE %s OR
+                    CONCAT(s.first_name, ' ', s.last_name) LIKE %s
+                )
+            ORDER BY s.last_name, s.first_name
+            LIMIT 20
+        """
+        
+        search_pattern = f'%{search_term}%'
+        cursor.execute(query, (section_id, search_pattern, search_pattern, search_pattern, search_pattern))
+        students = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        student_list = []
+        for student in students:
+            full_name = f"{student['first_name']} {student['last_name']}"
+            student_list.append({
+                'student_id': student['student_id'],
+                'name': full_name,
+                'photo': student['photo_path'] or 'https://via.placeholder.com/150'
+            })
+        
+        return jsonify({
+            'success': True,
+            'students': student_list
+        })
+        
+    except Exception as e:
+        logger.error(f"Error searching students: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    
+@app.route('/api/add_temporary_student', methods=['POST'])
+def add_temporary_student():
+    """Add a temporary student to attendance"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        student_id = data.get('student_id')
+        student_name = data.get('student_name')
+        
+        if not all([session_id, student_id, student_name]):
+            return jsonify({'success': False, 'message': 'Missing required fields'})
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'success': False, 'message': 'Database connection failed'})
+        
+        cursor = conn.cursor()
+        
+        # Add attendance record
+        query = """
+            INSERT INTO attendance (student_id, name, timestamp, status, session_id, person_type)
+            VALUES (%s, %s, NOW(), 'present', %s, 'student')
+            ON DUPLICATE KEY UPDATE timestamp = NOW(), status = 'present'
+        """
+        
+        cursor.execute(query, (student_id, student_name, session_id))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Student added successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error adding temporary student: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/remove_student_attendance', methods=['POST'])
+def remove_student_attendance():
+    """Remove student from current session attendance"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        student_id = data.get('student_id')
+        
+        if not all([session_id, student_id]):
+            return jsonify({'success': False, 'message': 'Missing required fields'})
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'success': False, 'message': 'Database connection failed'})
+        
+        cursor = conn.cursor()
+        
+        query = """
+            DELETE FROM attendance 
+            WHERE student_id = %s AND session_id = %s AND DATE(timestamp) = CURDATE()
+        """
+        
+        cursor.execute(query, (student_id, session_id))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Student removed from attendance'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error removing student: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/transfer_student', methods=['POST'])
+def transfer_student():
+    """Transfer student to another section"""
+    try:
+        data = request.json
+        student_id = data.get('student_id')
+        from_section_id = data.get('from_section_id')
+        to_section_id = data.get('to_section_id')
+        
+        if not all([student_id, from_section_id, to_section_id]):
+            return jsonify({'success': False, 'message': 'Missing required fields'})
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'success': False, 'message': 'Database connection failed'})
+        
+        cursor = conn.cursor()
+        
+        # Update old section status
+        cursor.execute("""
+            UPDATE student_sections 
+            SET status = 'transferred' 
+            WHERE student_id = %s AND section_id = %s
+        """, (student_id, from_section_id))
+        
+        # Add new section enrollment
+        cursor.execute("""
+            INSERT INTO student_sections (student_id, section_id, status)
+            VALUES (%s, %s, 'active')
+        """, (student_id, to_section_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Student transferred successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error transferring student: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/mark_student_excused', methods=['POST'])
+def mark_student_excused():
+    """Mark student as excused"""
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        student_id = data.get('student_id')
+        student_name = data.get('student_name')
+        remarks = data.get('remarks', '')
+        
+        if not all([session_id, student_id, student_name]):
+            return jsonify({'success': False, 'message': 'Missing required fields'})
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'success': False, 'message': 'Database connection failed'})
+        
+        cursor = conn.cursor()
+        
+        query = """
+            INSERT INTO attendance (student_id, name, timestamp, status, session_id, person_type, remarks)
+            VALUES (%s, %s, NOW(), 'excused', %s, 'student', %s)
+            ON DUPLICATE KEY UPDATE status = 'excused', remarks = %s
+        """
+        
+        cursor.execute(query, (student_id, student_name, session_id, remarks, remarks))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Student marked as excused'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error marking student excused: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/get_available_sections', methods=['GET'])
+def get_available_sections():
+    """Get all available sections for transfer"""
+    try:
+        program_id = request.args.get('program_id')
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'success': False, 'message': 'Database connection failed'})
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        query = """
+            SELECT 
+                ys.section_id,
+                ys.year_level,
+                ys.section_name,
+                p.program_name,
+                p.program_id
+            FROM year_sections ys
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE ys.status = 'active'
+            ORDER BY p.program_name, ys.year_level, ys.section_name
+        """
+        
+        cursor.execute(query)
+        sections = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'sections': sections
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting sections: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    
+@app.route('/api/get_live_attendance_updates', methods=['GET'])
+def get_live_attendance_updates():
+    """Get real-time attendance from database"""
+    try:
+        session_id = request.args.get('session_id')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get today's attendance for this session
+        cursor.execute("""
+            SELECT 
+                student_id,
+                name,
+                timestamp as time,
+                status
+            FROM attendance
+            WHERE session_id = %s 
+            AND DATE(timestamp) = CURDATE()
+            AND person_type = 'student'
+        """, (session_id,))
+        
+        attendance_records = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'attendance': attendance_records
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting live attendance: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    
+# Add session start time tracking
+@app.route('/api/start_session', methods=['POST'])
+def start_session():
+    """Initialize session with start time"""
+    global session_start_time
+    try:
+        data = request.json
+        session_id = data.get('session_id')
+        
+        session_start_time = datetime.now()
+        
+        return jsonify({
+            'success': True,
+            'session_start': session_start_time.strftime("%Y-%m-%d %H:%M:%S")
+        })
+    except Exception as e:
+        logger.error(f"Error starting session: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/initialize_session', methods=['POST'])
+def initialize_session():
+    """Initialize session with parameters from URL"""
+    try:
+        data = request.json
+        schedule_id = data.get('schedule_id')
+        
+        # Store session data
+        session_data = {
+            'schedule_id': schedule_id,
+            'instructor': data.get('instructor'),
+            'subject': data.get('subject'),
+            'year_level': data.get('year_level'),
+            'program': data.get('program'),
+            'section': data.get('section'),
+            'duration': data.get('duration'),
+            'threshold': data.get('threshold'),
+            'start_time': datetime.now()
+        }
+        
+        # Store in session or database
+        # session['current_session'] = session_data
+        
+        return jsonify({'success': True, 'data': session_data})
+    except Exception as e:
+        logger.error(f"Error initializing session: {e}")
+        return jsonify({'success': False, 'message': str(e)})
 
 if __name__ == "__main__":
     # Initialize global variables
