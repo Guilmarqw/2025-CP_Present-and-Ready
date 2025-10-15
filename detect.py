@@ -34,6 +34,8 @@ from datetime import datetime, timedelta, date
 import onnxruntime as ort
 from insightface.app import FaceAnalysis
 from insightface.model_zoo import get_model
+from supervision import ByteTrack
+from supervision.tracker.byte_tracker.core import ByteTrack
 
 
 
@@ -47,6 +49,14 @@ if torch.cuda.is_available():
 # Initialize FaceAnalysis with SCRFD
 face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 face_analysis.prepare(ctx_id=0, det_size=(640, 640))  # Adjust det_size for your resolution
+
+
+pending_confirmations = {}  # {person_id: {'frames': [], 'body_boxes': [], 'name': str, 'type': str}}
+# Optimization parameters
+CONFIRMATION_FRAMES_REQUIRED = 2  # Reduced from 3 to 2 for faster confirmation
+CONFIRMATION_SIMILARITY_THRESHOLD = 0.60  # Slightly lower for faster detection (was 0.65)
+BODY_MATCH_IOU_THRESHOLD = 0.05  # Lower threshold for better body matching (was 0.1)
+FACE_TO_BODY_VERTICAL_RATIO = 0.4  # Face should be in upper 40% of body (was 0.5)
 
 current_rtsp_url = None
 WEIGHTS_PATH = "yolov8n-face.pt"
@@ -876,6 +886,38 @@ load_known_faculties_from_db()
 # =========================
 # Load YOLOv8-Face
 # =========================
+# Initialize body detector for person tracking
+if not os.path.exists(WEIGHTS_PATH):
+    raise FileNotFoundError(f"'{WEIGHTS_PATH}' not found. Download yolov8n-face.pt and place it next to this script.")
+
+yolo = YOLO(WEIGHTS_PATH)
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # <-- DEVICE is defined here
+yolo.to(DEVICE)
+logger.info(f"Using device: {DEVICE}  |  Model: {WEIGHTS_PATH}")
+
+try:
+    body_detector = YOLO('yolov8n.pt')  # Standard YOLO for person detection
+    body_detector.to(DEVICE)
+    logger.info(f"✅ Body detector (YOLOv8n) loaded successfully on {DEVICE}")
+except Exception as e:
+    logger.error(f"❌ Failed to load body detector: {e}")
+    logger.info("Downloading yolov8n.pt model...")
+    body_detector = YOLO('yolov8n.pt')
+    body_detector.to(DEVICE)
+
+# Initialize ByteTrack
+byte_tracker = ByteTrack(
+    track_activation_threshold=0.25,
+    lost_track_buffer=30,
+    minimum_matching_threshold=0.8,
+    frame_rate=30
+)
+logger.info("✅ ByteTrack initialized for body tracking")
+
+
+body_detector = YOLO('yolov8n.pt') 
+
+
 if not os.path.exists(WEIGHTS_PATH):
     raise FileNotFoundError(f"'{WEIGHTS_PATH}' not found. Download yolov8n-face.pt and place it next to this script.")
 
@@ -1012,7 +1054,7 @@ grab_thread.start()
 # Tracking & attendance
 # =========================
 tracks = []
-locked_tracks = {}
+locked_tracks = {}  # {person_id: {'track': track_obj, 'body_tracker': bytetrack_id, ...}}
 attendance = {}
 tracking_history = {}
 
@@ -1119,200 +1161,338 @@ def save_attendance_to_csv(person_id, name, timestamp, person_type):
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
 
-def update_trackers(rgb, frame, frame_idx):
-    global tracks, locked_tracks
-    h, w = frame.shape[:2]
-    kept = []
-    to_remove_locks = []
+# =========================
+# Key Functions
+# =========================
 
-    for sid, lock_info in list(locked_tracks.items()):
-        frames_since_seen = frame_idx - lock_info.get('last_seen', frame_idx)
-        if frames_since_seen > 30:
-            to_remove_locks.append(sid)
-            logger.info(f"Person {sid} disappeared - releasing lock")
+def detect_bodies(frame):
+    """Detect people bodies using YOLOv8"""
+    if body_detector is None:
+        logger.warning("Body detector not initialized")
+        return []
+    
+    try:
+        # Run YOLO detection for person class only
+        results = body_detector(frame, classes=[0], verbose=False, conf=0.3)
+        
+        detections = []
+        if len(results) > 0 and results[0].boxes is not None:
+            boxes = results[0].boxes
+            for box in boxes:
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                conf = float(box.conf[0])
+                detections.append({
+                    'box': [int(x1), int(y1), int(x2), int(y2)],
+                    'confidence': conf
+                })
+        
+        logger.debug(f"Body detector found {len(detections)} people")
+        return detections
+    except Exception as e:
+        logger.error(f"Body detection error: {e}")
+        return []
 
-    for sid in to_remove_locks:
-        locked_tracks.pop(sid, None)
+def convert_to_supervision_format(detections):
+    """Convert detections to supervision Detections format"""
+    from supervision import Detections
+    
+    if not detections:
+        return Detections.empty()
+    
+    xyxy = np.array([d['box'] for d in detections])
+    confidence = np.array([d['confidence'] for d in detections])
+    class_id = np.zeros(len(detections), dtype=int)
+    
+    return Detections(
+        xyxy=xyxy,
+        confidence=confidence,
+        class_id=class_id
+    )
 
-    for tr in list(tracks):
-        tracker_ok = False
-        tid = tr.get("id")
-        is_locked = tid in locked_tracks
 
-        try:
-            tracker = tr.get("tracker")
-            if tracker is None:
-                continue
-
-            pos = tracker.get_position()
-            old_x1, old_y1 = int(pos.left()), int(pos.top())
-            old_x2, old_y2 = int(pos.right()), int(pos.bottom())
-            old_width = max(old_x2 - old_x1, 1)
-            old_height = max(old_y2 - old_y1, 1)
-
-            update_success = tracker.update(rgb)
-
-            if update_success is not False and update_success is not None:
-                tracker_quality = None
-                try:
-                    tracker_quality = float(update_success)
-                except Exception:
-                    tracker_quality = None
-
-                pos = tracker.get_position()
-                x1, y1 = int(pos.left()), int(pos.top())
-                x2, y2 = int(pos.right()), int(pos.bottom())
-                new_width = max(x2 - x1, 1)
-                new_height = max(y2 - y1, 1)
-
-                valid_position = (
-                    x2 > x1 and y2 > y1 and
-                    0 <= x1 < w and 0 <= y1 < h and
-                    x2 <= w and y2 <= h
-                )
-
-                size_growth = max(new_width / old_width, new_height / old_height)
-                size_reasonable = (
-                    size_growth < 1.6 and
-                    new_width < w * 0.9 and
-                    new_height < h * 0.9
-                )
-
-                old_cx, old_cy = (old_x1 + old_x2) / 2.0, (old_y1 + old_y2) / 2.0
-                new_cx, new_cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-                center_movement_sq = (new_cx - old_cx) ** 2 + (new_cy - old_cy) ** 2
-                diag = (w ** 2 + h ** 2) ** 0.5
-                movement_reasonable = center_movement_sq < (0.03 * (diag ** 2))
-
-                min_size_ok = max(new_width, new_height) >= 20
-
-                if valid_position and size_reasonable and movement_reasonable and min_size_ok:
-                    tracker_ok = True
-                    tr["box"] = (x1, y1, x2, y2)
-
-                    if not is_locked:
-                        prev_conf = tr.get("confidence", 0.5)
-                        if tracker_quality is not None:
-                            qc = max(0.0, min(1.0, tracker_quality))
-                            tr["confidence"] = min(0.95, prev_conf * 0.9 + qc * 0.1)
-                        else:
-                            tr["confidence"] = max(0.3, prev_conf * 0.995)
-
-        except Exception as e:
-            logger.debug(f"Tracker update failed for {tr.get('name','Unknown')}: {e}")
-            tracker_ok = False
-
-        if not tracker_ok:
-            tr["consecutive_failures"] = tr.get("consecutive_failures", 0) + 1
-            if tr.get("consecutive_failures", 0) >= 3:
-                logger.info(f"Removing track {tr.get('name', 'Unknown')} - too many failures")
-                if tid is not None and tid in locked_tracks:
-                    locked_tracks.pop(tid, None)
-                    logger.info(f"Removed lock for {tid}")
-                continue
-
-            if "box" in tr:
-                try:
-                    bx1, by1, bx2, by2 = tr["box"]
-                    padding = min(12, max(4, (bx2 - bx1) // 6, (by2 - by1) // 6))
-                    ex1 = max(0, bx1 - padding)
-                    ey1 = max(0, by1 - padding)
-                    ex2 = min(w - 1, bx2 + padding)
-                    ey2 = min(h - 1, by2 + padding)
-
-                    new_tracker = dlib.correlation_tracker()
-                    new_tracker.start_track(rgb, dlib.rectangle(int(ex1), int(ey1), int(ex2), int(ey2)))
-                    tr["tracker"] = new_tracker
-                    tracker_ok = True
-                except Exception as e:
-                    logger.debug(f"Tracker reinit failed for {tr.get('name','Unknown')}: {e}")
-        else:
-            tr["consecutive_failures"] = 0
-
-        if not tracker_ok:
+def match_face_to_body(face_box, body_detections, iou_threshold=0.05):
+    """
+    Match a face detection to a body detection with improved accuracy.
+    Face should be in the upper portion of the body bounding box.
+    """
+    best_match_idx = None
+    best_score = 0
+    
+    fx1, fy1, fx2, fy2 = face_box
+    face_center_x = (fx1 + fx2) / 2
+    face_center_y = (fy1 + fy2) / 2
+    face_width = fx2 - fx1
+    face_height = fy2 - fy1
+    
+    for idx, body_det in enumerate(body_detections):
+        bx1, by1, bx2, by2 = body_det['box']
+        
+        # Check if face center is inside body box (with some tolerance)
+        tolerance_x = (bx2 - bx1) * 0.1  # 10% horizontal tolerance
+        tolerance_y = (by2 - by1) * 0.1  # 10% vertical tolerance
+        
+        if not ((bx1 - tolerance_x) <= face_center_x <= (bx2 + tolerance_x) and 
+                (by1 - tolerance_y) <= face_center_y <= (by2 + tolerance_y)):
             continue
+        
+        body_width = bx2 - bx1
+        body_height = by2 - by1
+        
+        # Face should be in upper portion of body
+        face_relative_y = face_center_y - by1
+        
+        if face_relative_y > body_height * FACE_TO_BODY_VERTICAL_RATIO:
+            continue  # Face too low in body
+        
+        # Check if face size is proportional to body size
+        expected_face_width = body_width * 0.3  # Face should be ~30% of body width
+        width_ratio = min(face_width, expected_face_width) / max(face_width, expected_face_width)
+        
+        if width_ratio < 0.3:  # Face size too different from expected
+            continue
+        
+        # Calculate position score (higher = better)
+        position_score = 1.0 - (face_relative_y / (body_height * FACE_TO_BODY_VERTICAL_RATIO))
+        
+        # Calculate IoU
+        overlap_iou = iou((fx1, fy1, fx2, fy2), (bx1, by1, bx2, by2))
+        
+        # Size matching score
+        size_score = width_ratio
+        
+        # Combined score (weighted average)
+        total_score = (position_score * 0.5) + (overlap_iou * 0.3) + (size_score * 0.2)
+        
+        if total_score > best_score and overlap_iou > iou_threshold:
+            best_score = total_score
+            best_match_idx = idx
+    
+    return best_match_idx, best_score
 
-        tr["last_seen"] = frame_idx
-        if "start_frame" not in tr:
-            tr["start_frame"] = frame_idx
-
-        duration_frames = frame_idx - tr["start_frame"]
-        duration_seconds = duration_frames / 30.0
-
-        if is_locked:
-            locked_tracks[tid]['last_seen'] = frame_idx
-            locked_tracks[tid]['track'] = tr
-            tr["confidence"] = max(tr.get("confidence", 0.6), 0.6)
+def update_trackers_with_body(rgb, frame, frame_idx):
+    """
+    Update trackers with body-only tracking for LOCKED tracks.
+    Unlocked tracks still use face tracking for recognition.
+    """
+    global tracks, locked_tracks, pending_confirmations
+    h, w = frame.shape[:2]
+    
+    # Step 1: Detect bodies for locked track matching
+    body_detections = detect_bodies(frame)
+    logger.debug(f"Detected {len(body_detections)} bodies in frame {frame_idx}")
+    
+    kept_unlocked = []
+    to_remove_locks = []
+    
+    # Step 2: Update LOCKED tracks with body detections ONLY
+    matched_body_indices = set()
+    
+    for person_id, lock_info in list(locked_tracks.items()):
+        frames_since_seen = frame_idx - lock_info.get('last_seen', frame_idx)
+        
+        # Remove lock if person disappeared for too long
+        if frames_since_seen > 90:  # 3 seconds at 30fps
+            to_remove_locks.append(person_id)
+            logger.info(f"❌ Person {lock_info.get('name', person_id)} disappeared - releasing lock")
+            continue
+        
+        # Try to match with body detection
+        last_body_box = lock_info.get('body_box')
+        matched = False
+        
+        if last_body_box and body_detections:
+            best_match_idx = None
+            best_iou = 0.3  # IoU threshold
+            
+            for idx, body_det in enumerate(body_detections):
+                if idx in matched_body_indices:
+                    continue
+                
+                body_box = body_det['box']
+                overlap_iou = iou(tuple(body_box), last_body_box)
+                
+                if overlap_iou > best_iou:
+                    best_iou = overlap_iou
+                    best_match_idx = idx
+            
+            if best_match_idx is not None:
+                # Matched! Update with new body position
+                matched_body_indices.add(best_match_idx)
+                new_body_box = tuple(body_detections[best_match_idx]['box'])
+                
+                lock_info['body_box'] = new_body_box
+                lock_info['last_seen'] = frame_idx
+                lock_info['missed_detections'] = 0
+                matched = True
+                
+                logger.debug(f"✅ Matched locked track {lock_info.get('name', person_id)} to body (IoU: {best_iou:.2f})")
+        
+        if not matched:
+            # Increment missed detections counter
+            lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
+            
+            # Allow up to 3 frames of missed detection (0.1 sec at 30fps)
+            if lock_info['missed_detections'] > 3:
+                to_remove_locks.append(person_id)
+                logger.info(f"⚠️ Lost body tracking for {lock_info.get('name', person_id)}")
+    
+    # Remove expired locks
+    for person_id in to_remove_locks:
+        locked_tracks.pop(person_id, None)
+        logger.info(f"🔓 Unlocked track for {person_id}")
+    
+    # Step 3: Update UNLOCKED tracks (face tracking for recognition)
+    for tr in list(tracks):
+        if tr.get('id') in locked_tracks:
+            continue  # Skip locked tracks - they're handled separately
+        
+        tracker_ok = False
+        try:
+            tracker = tr.get('tracker')
+            if tracker:
+                update_success = tracker.update(rgb)
+                
+                if update_success:
+                    pos = tracker.get_position()
+                    x1, y1 = int(pos.left()), int(pos.top())
+                    x2, y2 = int(pos.right()), int(pos.bottom())
+                    
+                    # Validate position
+                    if (x2 > x1 and y2 > y1 and 
+                        0 <= x1 < w and 0 <= y1 < h and 
+                        x2 <= w and y2 <= h):
+                        tr['box'] = (x1, y1, x2, y2)
+                        tr['last_seen'] = frame_idx
+                        tracker_ok = True
+                        
+                        # Decay confidence for unlocked tracks
+                        tr['confidence'] = max(0.3, tr.get('confidence', 0.5) * 0.99)
+        except Exception as e:
+            logger.debug(f"Unlocked tracker update failed: {e}")
+        
+        if tracker_ok:
+            tr['consecutive_failures'] = 0
+            kept_unlocked.append(tr)
         else:
-            if tr.get("confidence", 0.0) >= 0.55 and tid:
-                if tid not in locked_tracks:
-                    locked_tracks[tid] = {
-                        'track': tr,
-                        'last_seen': frame_idx,
-                        'lock_start': frame_idx,
-                        'missed_detections': 0
-                    }
-                    logger.info(f"Track LOCKED for {tr.get('name','Unknown')} ({tid})")
-
-        if is_locked:
-            status_label = "[LOCKED]"
-            status_color = (0, 200, 0)
-            box_color = (0, 255, 0)
-        elif tr.get("confidence", 0.0) >= 0.4:
-            status_label = "[SCANNING]"
-            status_color = (0, 180, 180)
-            box_color = (0, 255, 255)
-        else:
-            status_label = "[DETECTING]"
-            status_color = (0, 0, 180)
-            box_color = (0, 0, 255)
-
-        bx1, by1, bx2, by2 = tr.get("box", (0, 0, 0, 0))
+            tr['consecutive_failures'] = tr.get('consecutive_failures', 0) + 1
+            if tr['consecutive_failures'] < 3:
+                kept_unlocked.append(tr)
+    
+    tracks[:] = kept_unlocked
+    
+    # Step 4: Draw PENDING CONFIRMATIONS (Orange boxes)
+    for person_id, conf_data in pending_confirmations.items():
+        if conf_data.get('body_boxes'):
+            body_box = conf_data['body_boxes'][-1]
+            bx1, by1, bx2, by2 = body_box
+            
+            # Orange box for confirmation phase
+            box_color = (0, 165, 255)  # Orange (BGR)
+            progress = len(conf_data['frames'])
+            status_label = f"[CONFIRMING {progress}/{CONFIRMATION_FRAMES_REQUIRED}]"
+            status_color = (0, 140, 255)
+            
+            # Draw body bounding box
+            cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, 3)
+            
+            # Draw name
+            display_name = conf_data.get('name', f'Person {person_id}')
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.7
+            thickness = 2
+            
+            (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale, thickness)
+            name_y = max(15, by1 - 10)
+            cv2.rectangle(frame, (bx1, name_y - name_h - 6), (bx1 + name_w + 12, name_y + 6), (0, 0, 0), -1)
+            cv2.putText(frame, display_name, (bx1 + 6, name_y), font, font_scale, (255, 255, 255), thickness)
+            
+            # Draw confirmation progress
+            (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale - 0.1, thickness - 1)
+            status_y = by2 + status_h + 15
+            cv2.rectangle(frame, (bx1, status_y - status_h - 4), (bx1 + status_w + 8, status_y + 4), status_color, -1)
+            cv2.putText(frame, status_label, (bx1 + 4, status_y), font, font_scale - 0.1, (255, 255, 255), thickness - 1)
+            
+            # Draw average similarity
+            if conf_data.get('similarities'):
+                avg_sim = sum(conf_data['similarities']) / len(conf_data['similarities'])
+                sim_label = f"Sim: {avg_sim:.2f}"
+                (sim_w, sim_h), _ = cv2.getTextSize(sim_label, font, font_scale - 0.2, thickness - 1)
+                sim_y = status_y + sim_h + 10
+                cv2.rectangle(frame, (bx1, sim_y - sim_h - 4), (bx1 + sim_w + 8, sim_y + 4), (0, 0, 0), -1)
+                cv2.putText(frame, sim_label, (bx1 + 4, sim_y), font, font_scale - 0.2, (255, 255, 255), thickness - 1)
+    
+    # Step 5: Draw LOCKED tracks (Green body boxes)
+    for person_id, lock_info in locked_tracks.items():
+        body_box = lock_info.get('body_box')
+        if not body_box:
+            continue
+        
+        bx1, by1, bx2, by2 = body_box
+        
+        # Green box for locked body tracking
+        box_color = (0, 255, 0)  # Green
+        status_label = "[LOCKED-BODY]"
+        status_color = (0, 200, 0)
+        
+        # Draw body bounding box
+        cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, 3)
+        
+        # Draw name
+        display_name = lock_info.get('name', f'Person {person_id}')
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.7
+        thickness = 2
+        
+        (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale, thickness)
+        name_y = max(15, by1 - 10)
+        cv2.rectangle(frame, (bx1, name_y - name_h - 6), (bx1 + name_w + 12, name_y + 6), (0, 0, 0), -1)
+        cv2.putText(frame, display_name, (bx1 + 6, name_y), font, font_scale, (255, 255, 255), thickness)
+        
+        # Draw status at bottom
+        (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale - 0.1, thickness - 1)
+        status_y = by2 + status_h + 15
+        cv2.rectangle(frame, (bx1, status_y - status_h - 4), (bx1 + status_w + 8, status_y + 4), status_color, -1)
+        cv2.putText(frame, status_label, (bx1 + 4, status_y), font, font_scale - 0.1, (255, 255, 255), thickness - 1)
+    
+    # Step 6: Draw UNLOCKED tracks (Yellow face boxes for scanning)
+    for tr in tracks:
+        if tr.get('id') in locked_tracks:
+            continue  # Already drawn as body box above
+        
+        bx1, by1, bx2, by2 = tr.get('box', (0, 0, 0, 0))
+        
+        # Yellow box for face scanning
+        box_color = (0, 255, 255)  # Yellow
+        status_label = "[SCANNING]"
+        status_color = (0, 180, 180)
+        
+        # Draw face box
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, 2)
-
+        
+        # Draw name
+        display_name = tr.get('name', 'Unknown')
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 0.6
         thickness = 2
-        text_color = (255, 255, 255)
-        bg_color = (0, 0, 0)
-        padding = 6
-
-        display_name = tr.get("name") if tr.get("name") and tr.get("name") != "Unknown" else "Unknown"
+        
         (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale, thickness)
         name_y = max(10, by1 - 10)
-        name_x2 = min(w - 1, bx1 + name_w + padding)
-        cv2.rectangle(frame, (bx1, name_y - name_h - 4), (name_x2, name_y + 4), bg_color, -1)
-        cv2.putText(frame, display_name, (bx1 + 4, name_y), font, font_scale, text_color, thickness)
-
-        mins = int(duration_seconds // 60)
-        secs = int(duration_seconds % 60)
-        track_time_label = f"Time: {mins:02d}:{secs:02d}"
-        (time_w, time_h), _ = cv2.getTextSize(track_time_label, font, font_scale - 0.1, thickness - 1)
-        time_y = by2 + time_h + 10
-        time_x2 = min(w - 1, bx1 + time_w + padding)
-        cv2.rectangle(frame, (bx1, time_y - time_h - 4), (time_x2, time_y + 4), bg_color, -1)
-        cv2.putText(frame, track_time_label, (bx1 + 4, time_y), font, font_scale - 0.1, text_color, thickness - 1)
-
+        cv2.rectangle(frame, (bx1, name_y - name_h - 4), (bx1 + name_w + 8, name_y + 4), (0, 0, 0), -1)
+        cv2.putText(frame, display_name, (bx1 + 4, name_y), font, font_scale, (255, 255, 255), thickness)
+        
+        # Draw status
         (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale - 0.1, thickness - 1)
-        status_y = time_y + status_h + 10
-        status_x2 = min(w - 1, bx1 + status_w + padding)
-        cv2.rectangle(frame, (bx1, status_y - status_h - 4), (status_x2, status_y + 4), status_color, -1)
-        cv2.putText(frame, status_label, (bx1 + 4, status_y), font, font_scale - 0.1, text_color, thickness - 1)
-
-        if not is_locked:
-            conf_val = tr.get("confidence", 0.0)
-            conf_label = f"Conf: {conf_val:.2f}"
-            (conf_w, conf_h), _ = cv2.getTextSize(conf_label, font, font_scale - 0.1, thickness - 1)
-            conf_y = status_y + conf_h + 10
-            conf_x2 = min(w - 1, bx1 + conf_w + padding)
-            cv2.rectangle(frame, (bx1, conf_y - conf_h - 4), (conf_x2, conf_y + 4), bg_color, -1)
-            cv2.putText(frame, conf_label, (bx1 + 4, conf_y), font, font_scale - 0.1, text_color, thickness - 1)
-
-        if tr.get("consecutive_failures", 0) < 3:
-            kept.append(tr)
-
-    tracks[:] = kept
-
+        status_y = by2 + status_h + 10
+        cv2.rectangle(frame, (bx1, status_y - status_h - 4), (bx1 + status_w + 8, status_y + 4), status_color, -1)
+        cv2.putText(frame, status_label, (bx1 + 4, status_y), font, font_scale - 0.1, (255, 255, 255), thickness - 1)
+        
+        # Draw confidence
+        conf_val = tr.get('confidence', 0.0)
+        conf_label = f"Conf: {conf_val:.2f}"
+        (conf_w, conf_h), _ = cv2.getTextSize(conf_label, font, font_scale - 0.1, thickness - 1)
+        conf_y = status_y + conf_h + 10
+        cv2.rectangle(frame, (bx1, conf_y - conf_h - 4), (bx1 + conf_w + 8, conf_y + 4), (0, 0, 0), -1)
+        cv2.putText(frame, conf_label, (bx1 + 4, conf_y), font, font_scale - 0.1, (255, 255, 255), thickness - 1)
 
 def cleanup_locked_tracks(current_frame, lock_timeout_frames):
     global locked_tracks
@@ -1469,18 +1649,21 @@ def calculate_late_status(attendance_time, session_start, threshold_minutes):
     except:
         return 'present'
 
-
-
 def refresh_with_detections(frame, rgb, frame_idx):
-    global tracks, locked_tracks, DETECT_EVERY
+    """
+    Face detection → Recognition → Confirmation → Lock → Body tracking
+    OPTIMIZED: Skip re-detecting locked faces, faster confirmation
+    """
+    global tracks, locked_tracks, pending_confirmations, DETECT_EVERY
 
+    # Dynamic detection frequency
     if len(tracks) > MAX_TRACKS:
-        locked_track_objects = [info['track'] for info in locked_tracks.values()]
-        unlocked_tracks = [tr for tr in tracks if tr not in locked_track_objects]
+        locked_track_count = len(locked_tracks)
+        unlocked_tracks = [tr for tr in tracks if tr.get('id') not in locked_tracks]
         unlocked_tracks.sort(key=lambda x: x.get('confidence', 0), reverse=True)
         unlocked_tracks = unlocked_tracks[:MAX_UNLOCKED_TRACKS]
-        tracks[:] = locked_track_objects + unlocked_tracks
-        logger.info(f"Track cleanup: kept {len(locked_track_objects)} locked + {len(unlocked_tracks)} unlocked = {len(tracks)} total")
+        tracks[:] = unlocked_tracks
+        logger.info(f"Track cleanup: {locked_track_count} locked + {len(unlocked_tracks)} unlocked")
 
     DETECT_EVERY = 2 if len(tracks) < 3 else (3 if len(tracks) < 6 else 5)
     h, w = frame.shape[:2]
@@ -1488,11 +1671,20 @@ def refresh_with_detections(frame, rgb, frame_idx):
     if frame_idx % DETECT_EVERY != 0:
         return
 
+    # Step 1: Face detection (for recognition purposes)
     try:
         faces = face_analysis.get(rgb)
     except Exception as e:
-        logger.error(f"SCRFD-10G detection failed: {e}")
+        logger.error(f"Face detection failed: {e}")
         return
+
+    # Step 1.5: FILTER OUT LOCKED FACES (IMPROVED - Check entire body box)
+    locked_body_boxes = []
+    for person_id, lock_info in locked_tracks.items():
+        body_box = lock_info.get('body_box')
+        if body_box:
+            # Store the entire body box - any face inside this body should be ignored
+            locked_body_boxes.append((person_id, body_box, lock_info.get('name', person_id)))
 
     dets = []
     for idx, face in enumerate(faces):
@@ -1504,107 +1696,103 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 box_width = x2 - x1
                 box_height = y2 - y1
                 if box_width >= 25 and box_height >= 25:
-                    dets.append((x1, y1, x2, y2, conf, idx))
                     
+                    # CHECK: Skip if this face is inside ANY locked person's body box
+                    is_locked_face = False
+                    for locked_person_id, locked_body_box, locked_name in locked_body_boxes:
+                        # Check if face center is inside the locked body box
+                        face_center_x = (x1 + x2) // 2
+                        face_center_y = (y1 + y2) // 2
+                        
+                        bx1, by1, bx2, by2 = locked_body_box
+                        
+                        # Check if face center is within body box (with small margin)
+                        margin = 20  # 20 pixel margin for tolerance
+                        if (bx1 - margin <= face_center_x <= bx2 + margin and 
+                            by1 - margin <= face_center_y <= by2 + margin):
+                            is_locked_face = True
+                            logger.debug(f"✓ Skipping face inside locked body of {locked_name} at ({x1},{y1},{x2},{y2})")
+                            break
+                        
+                        # Also check IoU overlap as backup
+                        overlap = iou((x1, y1, x2, y2), locked_body_box)
+                        if overlap > 0.15:  # Even 15% overlap with body = skip
+                            is_locked_face = True
+                            logger.debug(f"✓ Skipping face overlapping locked body of {locked_name} - overlap: {overlap:.2f}")
+                            break
+                    
+                    if not is_locked_face:
+                        dets.append((x1, y1, x2, y2, conf, idx, face))
+                        
         except Exception as e:
-            logger.error(f"Error processing SCRFD detection: {e}")
+            logger.error(f"Error processing face detection: {e}")
             continue
 
-    logger.info(f"Frame {frame_idx}: {len(faces)} SCRFD detections → {len(dets)} valid detections")
+    logger.info(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces (skipped {len(faces) - len(dets)} locked)")
+
+    # Step 2: Get body detections for matching
+    body_detections = detect_bodies(frame)
+    logger.debug(f"Detected {len(body_detections)} bodies for matching")
     
-    # DEBUG: Log if we have known faces to compare against
-    if len(known_face_encodings) == 0:
-        logger.warning("⚠️ No known faces loaded for recognition!")
-    else:
-        logger.info(f"🔍 Have {len(known_face_encodings)} known faces for recognition")
-    
+    # Step 3: Match and update existing unlocked tracks
     new_tracks = []
-    matched_locked_tracks = set()
     used_detections = set()
+    used_body_indices = set()
 
-    for sid, lock_info in list(locked_tracks.items()):
-        if sid in matched_locked_tracks:
-            continue
-
+    # Update existing unlocked tracks
+    for tr in tracks:
+        if tr.get('id') in locked_tracks:
+            continue  # Skip locked tracks - they're managed separately
+        
         best_detection = None
         best_iou = 0.3
         best_idx = -1
 
-        lock_box = lock_info.get('track', {}).get('box')
-        if not lock_box:
-            continue
+        tr_box = tr.get('box')
+        if tr_box:
+            for idx, (x1, y1, x2, y2, conf, face_idx, face_obj) in enumerate(dets):
+                if idx in used_detections:
+                    continue
+                overlap_iou = iou((x1, y1, x2, y2), tr_box)
+                if overlap_iou > best_iou:
+                    best_iou = overlap_iou
+                    best_detection = (x1, y1, x2, y2, conf, face_idx, face_obj)
+                    best_idx = idx
 
-        for idx, (x1, y1, x2, y2, conf, face_idx) in enumerate(dets):
-            if idx in used_detections:
-                continue
-            overlap_iou = iou((x1, y1, x2, y2), lock_box)
-            if overlap_iou > best_iou:
-                best_iou = overlap_iou
-                best_detection = (x1, y1, x2, y2, conf, face_idx)
-                best_idx = idx
+            if best_detection:
+                used_detections.add(best_idx)
+                x1, y1, x2, y2, conf, face_idx, face_obj = best_detection
+                tr['box'] = (x1, y1, x2, y2)
+                tr['last_seen'] = frame_idx
+                new_tracks.append(tr)
 
-        if best_detection:
-            used_detections.add(best_idx)
-            matched_locked_tracks.add(sid)
-            x1, y1, x2, y2, conf, face_idx = best_detection
-            tr = lock_info['track']
-            tr['last_seen'] = frame_idx
-            tr['box'] = (x1, y1, x2, y2)
-            locked_tracks[sid]['last_seen'] = frame_idx
-            locked_tracks[sid]['missed_detections'] = 0
-
-            try:
-                ex1, ey1, ex2, ey2 = expand_box(x1, y1, x2, y2, w, h, 0.2)
-                tr["tracker"].start_track(rgb, dlib.rectangle(int(ex1), int(ey1), int(ex2), int(ey2)))
-            except Exception as e:
-                logger.error(f"Tracker update error for locked track {tr.get('name','Unknown')}: {e}")
-                dtracker = dlib.correlation_tracker()
-                ex1, ey1, ex2, ey2 = expand_box(x1, y1, x2, y2, w, h, 0.2)
-                dtracker.start_track(rgb, dlib.rectangle(int(ex1), int(ey1), int(ex2), int(ey2)))
-                tr["tracker"] = dtracker
-
-            new_tracks.append(tr)
-            logger.debug(f"Matched locked track {tr.get('name','Unknown')} with IoU {best_iou:.2f}")
-        else:
-            lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
-
-    for idx, (x1, y1, x2, y2, conf, face_idx) in enumerate(dets):
+    # Step 4: Process NEW face detections
+    for idx, (x1, y1, x2, y2, conf, face_idx, face_obj) in enumerate(dets):
         if idx in used_detections:
             continue
 
+        # Check overlap with existing tracks
         overlaps_existing = False
         for existing_tr in new_tracks:
-            existing_box = existing_tr.get('box')
-            if existing_box and iou((x1, y1, x2, y2), existing_box) > 0.3:
+            if iou((x1, y1, x2, y2), existing_tr.get('box', (0, 0, 0, 0))) > 0.3:
                 overlaps_existing = True
                 break
 
         if overlaps_existing:
-            logger.debug("Skipping detection that overlaps with existing track")
             continue
 
-        face_region = rgb[y1:y2, x1:x2]
-        
-        if face_region.size == 0 or face_region.shape[0] < MIN_FACE_SIZE or face_region.shape[1] < MIN_FACE_SIZE:
-            logger.debug(f"Face region too small or empty: {face_region.shape}")
-            continue
-
+        # Step 5: Face Recognition with FAST Confirmation Phase
         name = "Unknown"
         person_id = None
         ptype = None
         confidence = conf * 0.8
 
-        # FIXED RECOGNITION LOGIC - Always attempt recognition if confidence is good
-        if conf >= 0.3:  # Lowered threshold from 0.5 to 0.3
+        if conf >= 0.3:
             try:
-                face_obj = faces[face_idx]
                 face_embedding = face_obj.embedding
                 
-                # DEBUG: Log recognition attempt
-                logger.info(f"🔄 Attempting recognition for detection {idx} (conf: {conf:.3f})")
-                
                 similarities = []
-                for i, known_embedding in enumerate(known_face_encodings):
+                for known_embedding in known_face_encodings:
                     dot_product = np.dot(face_embedding, known_embedding)
                     norm_a = np.linalg.norm(face_embedding)
                     norm_b = np.linalg.norm(known_embedding)
@@ -1614,120 +1802,163 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 if similarities:
                     best_match_index = int(np.argmax(similarities))
                     best_similarity = float(similarities[best_match_index])
-                    
-                    # DEBUG: Log similarity results
-                    logger.info(f"📊 Best similarity: {best_similarity:.3f} (threshold: {1-TOLERANCE:.3f})")
 
-                    if best_similarity >= (1 - TOLERANCE):
+                    # Step 6: FAST CONFIRMATION PHASE
+                    if best_similarity >= CONFIRMATION_SIMILARITY_THRESHOLD:
                         name = known_face_names[best_match_index]
                         person_id = known_face_ids[best_match_index]
                         ptype = known_face_types[best_match_index]
                         confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
                         
-                        if conf >= 0.9:
-                            confidence = min(1.0, confidence * 1.1)
-                            
                         if ptype == 'faculty':
                             name = f"Faculty: {name}"
                         
-                        # ✅ SUCCESSFUL RECOGNITION - Log it clearly
-                        logger.info(f"✅ RECOGNIZED: {name} ({person_id}) as {ptype} - Similarity: {best_similarity:.3f}, Confidence: {confidence:.3f}")
+                        logger.info(f"🔍 RECOGNITION MATCH: {name} ({person_id}) - Similarity: {best_similarity:.3f}")
                         
-                        # MARK ATTENDANCE HERE for both students and faculty
-                        if person_id and ptype in ['student', 'faculty']:
-                            # Check if we should mark attendance (not too recent)
-                            should_mark = True
-                            if person_id in attendance:
-                                last_time_str = attendance[person_id]["time"]
-                                last_time = datetime.strptime(last_time_str, "%Y-%m-%d %H:%M:%S")
-                                current_time = datetime.now()
-                                time_diff = (current_time - last_time).total_seconds() / 3600
-                                if time_diff < 4:  # 4-hour cooldown
-                                    should_mark = False
-                                    logger.info(f"⏰ Skipping attendance for {name} - marked recently")
+                        # Step 7: Match face to body with IMPROVED matching
+                        matched_body_idx, match_score = match_face_to_body(
+                            (x1, y1, x2, y2), 
+                            body_detections, 
+                            iou_threshold=BODY_MATCH_IOU_THRESHOLD
+                        )
+                        
+                        if matched_body_idx is not None and matched_body_idx not in used_body_indices:
+                            body_box = tuple(body_detections[matched_body_idx]['box'])
+                            used_body_indices.add(matched_body_idx)
                             
-                            if should_mark:
-                                mark_attendance(name, person_id, ptype)
-                                logger.info(f"📝 ATTENDANCE MARKED: {name} ({person_id})")
-                    else:
-                        confidence = conf * 0.7
-                        logger.info(f"❌ No match found - Best similarity {best_similarity:.3f} below threshold")
-                        
+                            logger.debug(f"✅ Matched face to body (score: {match_score:.2f})")
+                            
+                            # Step 8: Add to FAST CONFIRMATION QUEUE
+                            if person_id not in locked_tracks:
+                                if person_id not in pending_confirmations:
+                                    pending_confirmations[person_id] = {
+                                        'frames': [],
+                                        'body_boxes': [],
+                                        'name': name,
+                                        'type': ptype,
+                                        'similarities': [],
+                                        'first_seen': frame_idx
+                                    }
+                                
+                                # Add this frame's data
+                                pending_confirmations[person_id]['frames'].append(frame_idx)
+                                pending_confirmations[person_id]['body_boxes'].append(body_box)
+                                pending_confirmations[person_id]['similarities'].append(best_similarity)
+                                
+                                # Keep only recent frames (last 5 frames)
+                                if len(pending_confirmations[person_id]['frames']) > 5:
+                                    pending_confirmations[person_id]['frames'].pop(0)
+                                    pending_confirmations[person_id]['body_boxes'].pop(0)
+                                    pending_confirmations[person_id]['similarities'].pop(0)
+                                
+                                # Check if FAST confirmation requirements met
+                                confirmation_data = pending_confirmations[person_id]
+                                consecutive_frames = len(confirmation_data['frames'])
+                                avg_similarity = sum(confirmation_data['similarities']) / len(confirmation_data['similarities'])
+                                
+                                # Check frame continuity (frames should be close together)
+                                frames_list = confirmation_data['frames']
+                                is_continuous = all(frames_list[i+1] - frames_list[i] <= 5 for i in range(len(frames_list)-1))
+                                
+                                logger.info(f"⏳ CONFIRMING {name}: {consecutive_frames}/{CONFIRMATION_FRAMES_REQUIRED} frames, avg sim: {avg_similarity:.3f}, continuous: {is_continuous}")
+                                
+                                # Step 9: LOCK after FAST confirmation (only 2 frames needed!)
+                                if consecutive_frames >= CONFIRMATION_FRAMES_REQUIRED and avg_similarity >= CONFIRMATION_SIMILARITY_THRESHOLD and is_continuous:
+                                    # Use the most recent body box
+                                    final_body_box = confirmation_data['body_boxes'][-1]
+                                    
+                                    # Create LOCK with body tracking
+                                    locked_tracks[person_id] = {
+                                        'name': name,
+                                        'type': ptype,
+                                        'body_box': final_body_box,
+                                        'last_seen': frame_idx,
+                                        'lock_start': frame_idx,
+                                        'missed_detections': 0,
+                                        'bytetrack_id': None  # Will be assigned on first ByteTrack match
+                                    }
+                                    
+                                    # Mark attendance ONLY after lock
+                                    if ptype in ['student', 'faculty']:
+                                        should_mark = True
+                                        if person_id in attendance:
+                                            last_time_str = attendance[person_id]["time"]
+                                            last_time = datetime.strptime(last_time_str, "%Y-%m-%d %H:%M:%S")
+                                            current_time = datetime.now()
+                                            time_diff = (current_time - last_time).total_seconds() / 3600
+                                            if time_diff < 4:
+                                                should_mark = False
+                                        
+                                        if should_mark:
+                                            mark_attendance(name, person_id, ptype)
+                                            logger.info(f"✅ ATTENDANCE MARKED: {name}")
+                                    
+                                    # Remove from pending
+                                    del pending_confirmations[person_id]
+                                    
+                                    logger.info(f"🔒 CONFIRMED & LOCKED {name} ({person_id}) with BODY BOX (avg similarity: {avg_similarity:.3f}) in {consecutive_frames} frames")
+                                    
+                                    # Skip creating unlocked track
+                                    continue
+                                else:
+                                    # Still in confirmation phase
+                                    logger.debug(f"⏳ {name} confirming: {consecutive_frames}/{CONFIRMATION_FRAMES_REQUIRED} frames")
+                                    continue
+                            else:
+                                # Already locked, skip
+                                logger.debug(f"Person {person_id} already locked - skipping")
+                                continue
+                        else:
+                            logger.warning(f"⚠️ Could not match face to body for {name} (score: {match_score if matched_body_idx is None else 'no match'})")
+                            # Clean up pending confirmation if no body match
+                            if person_id in pending_confirmations:
+                                del pending_confirmations[person_id]
+                            
             except Exception as e:
                 logger.error(f"Face recognition failed: {e}")
-                confidence = conf * 0.6
-        else:
-            logger.info(f"⚠️ Detection confidence {conf:.3f} too low for recognition")
+                import traceback
+                logger.error(traceback.format_exc())
 
-        dtracker = dlib.correlation_tracker()
-        try:
-            ex1, ey1, ex2, ey2 = expand_box(x1, y1, x2, y2, w, h, 0.2)
-            dtracker.start_track(rgb, dlib.rectangle(int(ex1), int(ey1), int(ex2), int(ey2)))
-            tr = {
-                "tracker": dtracker,
-                "name": name,
-                "id": person_id,
-                "type": ptype,
-                "confidence": confidence,
-                "last_seen": frame_idx,
-                "box": (x1, y1, x2, y2),
-                "start_frame": frame_idx,
-                "recognition_count": 1 if person_id else 0
-            }
-            new_tracks.append(tr)
+        # Step 10: Create unlocked track only for unrecognized faces
+        if person_id is None or person_id not in locked_tracks:
+            if person_id not in pending_confirmations:  # Don't track if confirming
+                dtracker = dlib.correlation_tracker()
+                try:
+                    ex1, ey1, ex2, ey2 = expand_box(x1, y1, x2, y2, w, h, 0.2)
+                    dtracker.start_track(rgb, dlib.rectangle(int(ex1), int(ey1), int(ex2), int(ey2)))
+                    
+                    tr = {
+                        'tracker': dtracker,
+                        'name': name,
+                        'id': person_id,
+                        'type': ptype,
+                        'confidence': confidence,
+                        'last_seen': frame_idx,
+                        'box': (x1, y1, x2, y2),
+                        'start_frame': frame_idx,
+                        'consecutive_failures': 0
+                    }
+                    new_tracks.append(tr)
+                except Exception as e:
+                    logger.error(f"Tracker creation error: {e}")
 
-            if person_id and confidence >= 0.6 and person_id not in locked_tracks:
-                locked_tracks[person_id] = {
-                    'track': tr,
-                    'last_seen': frame_idx,
-                    'lock_start': frame_idx,
-                    'type': ptype,
-                    'missed_detections': 0
-                }
-                logger.info(f"🔒 LOCKED track for {ptype} {name} ({person_id}) with confidence {confidence:.4f}")
+    tracks[:] = new_tracks
+    logger.info(f"📊 Total: {len(tracks)} unlocked + {len(pending_confirmations)} confirming + {len(locked_tracks)} locked")
 
-        except Exception as e:
-            logger.error(f"Tracker creation error: {e}")
-            continue
-
-    tracks_to_remove = []
-    for sid, lock_info in list(locked_tracks.items()):
-        if lock_info.get('missed_detections', 0) > 3:
-            tracks_to_remove.append(sid)
-            logger.info(f"Removing locked track for {sid} - missed detections: {lock_info['missed_detections']}")
-
-    for sid in tracks_to_remove:
-        locked_tracks.pop(sid, None)
-
-    preserved_tracks = []
-    for tr in tracks:
-        if tr.get("id") in locked_tracks:
-            preserved_tracks.append(tr)
-
-    for tr in new_tracks:
-        already_exists = False
-        for existing_tr in preserved_tracks:
-            if existing_tr.get('id') is not None and existing_tr.get('id') == tr.get('id'):
-                already_exists = True
-                break
-        if not already_exists:
-            preserved_tracks.append(tr)
-
-    tracks[:] = preserved_tracks
-
-    final_tracks = []
-    for i, tr in enumerate(tracks):
-        is_duplicate = False
-        for j, other_tr in enumerate(tracks):
-            if i != j and iou(tr.get('box', (0, 0, 0, 0)), other_tr.get('box', (0, 0, 0, 0))) > 0.5:
-                if (other_tr.get('id') in locked_tracks) or (other_tr.get('confidence', 0) > tr.get('confidence', 0)):
-                    is_duplicate = True
-                    break
-        if not is_duplicate:
-            final_tracks.append(tr)
-
-    tracks[:] = final_tracks
-    logger.info(f"Final tracks: {len(tracks)} (locked: {len(locked_tracks)})")
+def cleanup_pending_confirmations(current_frame, timeout_frames=15):
+    """Remove stale pending confirmations (0.5 seconds at 30fps)"""
+    global pending_confirmations
+    
+    to_remove = []
+    for person_id, data in pending_confirmations.items():
+        if data.get('frames'):
+            last_frame = data['frames'][-1]
+            if current_frame - last_frame > timeout_frames:
+                to_remove.append(person_id)
+                logger.info(f"🗑️ Cleaning up stale confirmation for {data.get('name', person_id)}")
+    
+    for person_id in to_remove:
+        del pending_confirmations[person_id]
 
 # =========================
 # Flask streaming & API
@@ -2124,7 +2355,7 @@ def get_faculty_enhanced():
         cursor.close()
         conn.close()
         
-        # Format faculty data for frontend
+        # Format faculty data for frontend (SAME AS STUDENTS!)
         formatted_faculty = []
         for f in faculty:
             formatted_faculty.append({
@@ -2132,12 +2363,12 @@ def get_faculty_enhanced():
                 'idNumber': f['faculty_id'],
                 'firstName': f['first_name'],
                 'lastName': f['last_name'],
-                'middleName': f['middle_name'],
+                'middleName': f['middle_name'] or '',
                 'name': f"{f['first_name']} {f['middle_name'] + ' ' if f['middle_name'] else ''}{f['last_name']}",
                 'department': f['department'],
                 'designation': f['designation'],
                 'email': f['email'],
-                'photo': f['photo_path'] if f['photo_path'] else f"https://ui-avatars.com/api/?name={f['first_name']}+{f['last_name']}&background=random",
+                'photo': f['photo_path'] if f['photo_path'] else f"https://ui-avatars.com/api/?name={f['first_name']}+{f['last_name']}&background=random",  # FIXED: Same as students!
                 'status': f['status'],
                 'role': f['role'],
                 'createdAt': f['created_at'].isoformat() if f['created_at'] else None,
@@ -2158,7 +2389,7 @@ def get_faculty_enhanced():
     except Exception as e:
         logger.error(f"Error fetching faculty: {e}")
         return jsonify({'success': False, 'message': str(e)})
-
+    
 @app.route('/api/get_dashboard_stats', methods=['GET'])
 def get_dashboard_stats():
     """Get dashboard statistics for admin overview"""
@@ -2415,16 +2646,6 @@ def export_data():
         logger.error(f"Error exporting data: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-# Update existing routes to use the enhanced functionality
-@app.route('/api/get_students', methods=['GET'])
-def get_students():
-    """Legacy route - redirects to enhanced version"""
-    return get_students_enhanced()
-
-@app.route('/api/get_faculty', methods=['GET'])
-def get_faculty():
-    """Legacy route - redirects to enhanced version"""
-    return get_faculty_enhanced()    
 
 @app.route('/api/update_attendance_status', methods=['POST'])
 def update_attendance_status():
@@ -3876,7 +4097,7 @@ def generate_frames():
                 # Process every frame for better detection
                 if processing_frame_count % 2 == 0:  # Process every 2nd frame
                     # Update existing trackers
-                    update_trackers(rgb, frame, frame_idx)
+                    update_trackers_with_body(rgb, frame, frame_idx)
                     
                     # Refresh with new detections periodically
                     if frame_idx % DETECT_EVERY == 0:
@@ -3959,23 +4180,43 @@ def login_required(f):
         user_id = request.args.get('user_id') or session.get('user_id')
         if not user_id:
             logger.error("User ID not provided")
-            return jsonify({"success": False, "error": "User ID not provided"}), 401
+            # Check if this is an API request or page request
+            if request.path.startswith('/api/'):
+                return jsonify({"success": False, "error": "User ID not provided"}), 401
+            return redirect(url_for('login_page'))
         
         try:
             db = get_db_connection()
             if not db:
                 logger.error("Database connection failed")
-                return jsonify({"success": False, "error": "Database connection failed"}), 500
+                if request.path.startswith('/api/'):
+                    return jsonify({"success": False, "error": "Database connection failed"}), 500
+                return redirect(url_for('login_page'))
             
             cursor = db.cursor(dictionary=True)
+            # FIXED: Added role, first_name, last_name to the query
             cursor.execute("""
-                SELECT admin_id AS user_id, CONCAT(first_name, ' ', last_name) AS name, 'admin' AS user_type,
-                       COALESCE(photo_path, '/static/images/placeholder.jpg') AS photo_path
+                SELECT 
+                    admin_id AS user_id, 
+                    first_name,
+                    last_name,
+                    middle_name,
+                    CONCAT(first_name, ' ', last_name) AS name, 
+                    role,
+                    'admin' AS user_type,
+                    COALESCE(photo_path, '/static/images/placeholder.jpg') AS photo_path
                 FROM admins
                 WHERE admin_id = %s AND status = 'active'
                 UNION
-                SELECT faculty_id AS user_id, CONCAT(first_name, ' ', last_name) AS name, 'faculty' AS user_type,
-                       COALESCE(photo_path, '/static/images/placeholder.jpg') AS photo_path
+                SELECT 
+                    faculty_id AS user_id, 
+                    first_name,
+                    last_name,
+                    middle_name,
+                    CONCAT(first_name, ' ', last_name) AS name,
+                    role,
+                    'faculty' AS user_type,
+                    COALESCE(photo_path, '/static/images/placeholder.jpg') AS photo_path
                 FROM faculty
                 WHERE faculty_id = %s AND status = 'active'
             """, (user_id, user_id))
@@ -3985,21 +4226,41 @@ def login_required(f):
             
             if not user:
                 logger.error(f"User not found or inactive: {user_id}")
-                return jsonify({"success": False, "error": "User not found or inactive"}), 401
+                if request.path.startswith('/api/'):
+                    return jsonify({"success": False, "error": "User not found or inactive"}), 401
+                return redirect(url_for('login_page'))
             
             if user['user_type'] == 'student':
                 logger.error(f"Student access denied: {user_id}")
-                return jsonify({"success": False, "error": "Students not allowed"}), 403
+                if request.path.startswith('/api/'):
+                    return jsonify({"success": False, "error": "Students not allowed"}), 403
+                return redirect(url_for('login_page'))
             
+            # Set user in both request and g for access in routes and templates
             request.user = user
+            g.user = user
+            
+            # Also update session to keep it in sync
+            session['user_id'] = user['user_id']
+            session['user_type'] = user['user_type']
+            session['first_name'] = user['first_name']
+            session['last_name'] = user['last_name']
+            session['role'] = user['role']
+            
+            logger.info(f"User authenticated: {user['name']} - Role: {user['role']} - Type: {user['user_type']}")
+            
             return f(*args, **kwargs)
         
         except mysql.connector.Error as db_err:
             logger.error(f"Database error: {db_err}")
-            return jsonify({"success": False, "error": f"Database error: {str(db_err)}"}), 500
+            if request.path.startswith('/api/'):
+                return jsonify({"success": False, "error": f"Database error: {str(db_err)}"}), 500
+            return redirect(url_for('login_page'))
         except Exception as e:
             logger.error(f"Unexpected error in login_required: {e}")
-            return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500
+            if request.path.startswith('/api/'):
+                return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500
+            return redirect(url_for('login_page'))
     
     return decorated_function
 
@@ -4164,15 +4425,33 @@ def camfootage_page():
 @app.route('/sidebar')
 @login_required
 def sidebar_page():
+    # User is already set by login_required decorator
     user = g.get('user', {})
-    user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or "Unknown User"
-    user_role = user.get('role', '')
-    user_type = user.get('user_type', '')
     
-    return render_template('sidebar.html', 
-                         user_name=user_name, 
-                         user_role=user_role, 
-                         user_type=user_type)
+    if not user:
+        logger.error("No user in g context")
+        return redirect(url_for('login_page'))
+
+    user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or "Unknown User"
+    user_role = (user.get('role') or '').strip().lower()
+    user_type = (user.get('user_type') or '').strip().lower()
+    
+    logger.info("=== SIDEBAR DEBUG ===")
+    logger.info(f"User ID: {user.get('user_id')}")
+    logger.info(f"Name: {user_name}")
+    logger.info(f"Role: {user_role}")
+    logger.info(f"Type: {user_type}")
+
+    return render_template(
+        'sidebar.html',
+        first_name=user.get('first_name', ''),
+        last_name=user.get('last_name', ''),
+        middle_name=user.get('middle_name', ''),
+        user_name=user_name,
+        user_role=user_role,
+        user_type=user_type
+    )
+
 
 @app.route('/api/get_user_info', methods=['GET'])
 @login_required
@@ -4246,7 +4525,7 @@ def programs_page():
         'user_id': user.get('user_id', ''),
         'first_name': user.get('first_name', ''),
         'last_name': user.get('last_name', ''),
-        'middle_name': '',
+        'middle_name': user.get('middle_name', ''),
         'user_role': user.get('role', ''),
         'user_type': user.get('user_type', '')
     }
@@ -4395,7 +4674,7 @@ def admin_db_page():
         'user_id': user.get('user_id', ''),
         'first_name': user.get('first_name', ''),
         'last_name': user.get('last_name', ''),
-        'middle_name': '',  # Add if you have this field
+        'middle_name': user.get('middle_name', ''),
         'user_role': user.get('role', ''),
         'user_type': user.get('user_type', '')
     }
@@ -7770,377 +8049,8 @@ def get_session_info():
     except Exception as e:
         logger.error(f"Error in get_session_info: {e}", exc_info=True)
         return jsonify({'success': False, 'message': str(e)}), 500
-    
-@app.route('/api/get_section_students', methods=['GET'])
-def get_section_students():
-    """Get all students in a specific section with their attendance status"""
-    try:
-        section_id = request.args.get('section_id')
-        session_id = request.args.get('session_id')
-        
-        if not section_id:
-            return jsonify({'success': False, 'message': 'Section ID required'})
-        
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'message': 'Database connection failed'})
-        
-        cursor = conn.cursor(dictionary=True)
-        
-        # Get all students in the section
-        query = """
-            SELECT 
-                s.student_id,
-                s.first_name,
-                s.last_name,
-                s.middle_name,
-                s.photo_path,
-                s.email,
-                ss.section_id,
-                COALESCE(a.status, 'absent') as status,
-                a.timestamp as attendance_time
-            FROM students s
-            JOIN student_sections ss ON s.student_id = ss.student_id
-            LEFT JOIN attendance a ON s.student_id = a.student_id 
-                AND a.session_id = %s
-                AND DATE(a.timestamp) = CURDATE()
-            WHERE ss.section_id = %s 
-                AND ss.status = 'active'
-                AND s.status = 'active'
-            ORDER BY s.last_name, s.first_name
-        """
-        
-        cursor.execute(query, (session_id, section_id))
-        students = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
-        
-        # Format student data
-        student_list = []
-        for student in students:
-            full_name = f"{student['first_name']} {student['last_name']}"
-            if student['middle_name']:
-                full_name = f"{student['first_name']} {student['middle_name'][0]}. {student['last_name']}"
-            
-            student_list.append({
-                'student_id': student['student_id'],
-                'name': full_name,
-                'photo': student['photo_path'] or 'https://via.placeholder.com/150',
-                'status': student['status'],
-                'attendance_time': str(student['attendance_time']) if student['attendance_time'] else None
-            })
-        
-        return jsonify({
-            'success': True,
-            'students': student_list,
-            'total': len(student_list)
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting section students: {e}")
-        return jsonify({'success': False, 'message': str(e)})    
-    
-@app.route('/api/search_students', methods=['GET'])
-def search_students():
-    """Search students by name or ID"""
-    try:
-        section_id = request.args.get('section_id')
-        search_term = request.args.get('query', '').strip()
-        
-        if not section_id:
-            return jsonify({'success': False, 'message': 'Section ID required'})
-        
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'message': 'Database connection failed'})
-        
-        cursor = conn.cursor(dictionary=True)
-        
-        query = """
-            SELECT 
-                s.student_id,
-                s.first_name,
-                s.last_name,
-                s.middle_name,
-                s.photo_path
-            FROM students s
-            JOIN student_sections ss ON s.student_id = ss.student_id
-            WHERE ss.section_id = %s 
-                AND ss.status = 'active'
-                AND s.status = 'active'
-                AND (
-                    s.student_id LIKE %s OR
-                    s.first_name LIKE %s OR
-                    s.last_name LIKE %s OR
-                    CONCAT(s.first_name, ' ', s.last_name) LIKE %s
-                )
-            ORDER BY s.last_name, s.first_name
-            LIMIT 20
-        """
-        
-        search_pattern = f'%{search_term}%'
-        cursor.execute(query, (section_id, search_pattern, search_pattern, search_pattern, search_pattern))
-        students = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
-        
-        student_list = []
-        for student in students:
-            full_name = f"{student['first_name']} {student['last_name']}"
-            student_list.append({
-                'student_id': student['student_id'],
-                'name': full_name,
-                'photo': student['photo_path'] or 'https://via.placeholder.com/150'
-            })
-        
-        return jsonify({
-            'success': True,
-            'students': student_list
-        })
-        
-    except Exception as e:
-        logger.error(f"Error searching students: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-    
-@app.route('/api/add_temporary_student', methods=['POST'])
-def add_temporary_student():
-    """Add a temporary student to attendance"""
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        student_id = data.get('student_id')
-        student_name = data.get('student_name')
-        
-        if not all([session_id, student_id, student_name]):
-            return jsonify({'success': False, 'message': 'Missing required fields'})
-        
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'message': 'Database connection failed'})
-        
-        cursor = conn.cursor()
-        
-        # Add attendance record
-        query = """
-            INSERT INTO attendance (student_id, name, timestamp, status, session_id, person_type)
-            VALUES (%s, %s, NOW(), 'present', %s, 'student')
-            ON DUPLICATE KEY UPDATE timestamp = NOW(), status = 'present'
-        """
-        
-        cursor.execute(query, (student_id, student_name, session_id))
-        conn.commit()
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Student added successfully'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error adding temporary student: {e}")
-        return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/remove_student_attendance', methods=['POST'])
-def remove_student_attendance():
-    """Remove student from current session attendance"""
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        student_id = data.get('student_id')
-        
-        if not all([session_id, student_id]):
-            return jsonify({'success': False, 'message': 'Missing required fields'})
-        
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'message': 'Database connection failed'})
-        
-        cursor = conn.cursor()
-        
-        query = """
-            DELETE FROM attendance 
-            WHERE student_id = %s AND session_id = %s AND DATE(timestamp) = CURDATE()
-        """
-        
-        cursor.execute(query, (student_id, session_id))
-        conn.commit()
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Student removed from attendance'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error removing student: {e}")
-        return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/transfer_student', methods=['POST'])
-def transfer_student():
-    """Transfer student to another section"""
-    try:
-        data = request.json
-        student_id = data.get('student_id')
-        from_section_id = data.get('from_section_id')
-        to_section_id = data.get('to_section_id')
-        
-        if not all([student_id, from_section_id, to_section_id]):
-            return jsonify({'success': False, 'message': 'Missing required fields'})
-        
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'message': 'Database connection failed'})
-        
-        cursor = conn.cursor()
-        
-        # Update old section status
-        cursor.execute("""
-            UPDATE student_sections 
-            SET status = 'transferred' 
-            WHERE student_id = %s AND section_id = %s
-        """, (student_id, from_section_id))
-        
-        # Add new section enrollment
-        cursor.execute("""
-            INSERT INTO student_sections (student_id, section_id, status)
-            VALUES (%s, %s, 'active')
-        """, (student_id, to_section_id))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Student transferred successfully'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error transferring student: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/mark_student_excused', methods=['POST'])
-def mark_student_excused():
-    """Mark student as excused"""
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        student_id = data.get('student_id')
-        student_name = data.get('student_name')
-        remarks = data.get('remarks', '')
-        
-        if not all([session_id, student_id, student_name]):
-            return jsonify({'success': False, 'message': 'Missing required fields'})
-        
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'message': 'Database connection failed'})
-        
-        cursor = conn.cursor()
-        
-        query = """
-            INSERT INTO attendance (student_id, name, timestamp, status, session_id, person_type, remarks)
-            VALUES (%s, %s, NOW(), 'excused', %s, 'student', %s)
-            ON DUPLICATE KEY UPDATE status = 'excused', remarks = %s
-        """
-        
-        cursor.execute(query, (student_id, student_name, session_id, remarks, remarks))
-        conn.commit()
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Student marked as excused'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error marking student excused: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/get_available_sections', methods=['GET'])
-def get_available_sections():
-    """Get all available sections for transfer"""
-    try:
-        program_id = request.args.get('program_id')
-        
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({'success': False, 'message': 'Database connection failed'})
-        
-        cursor = conn.cursor(dictionary=True)
-        
-        query = """
-            SELECT 
-                ys.section_id,
-                ys.year_level,
-                ys.section_name,
-                p.program_name,
-                p.program_id
-            FROM year_sections ys
-            JOIN programs p ON ys.program_id = p.program_id
-            WHERE ys.status = 'active'
-            ORDER BY p.program_name, ys.year_level, ys.section_name
-        """
-        
-        cursor.execute(query)
-        sections = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'sections': sections
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting sections: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-    
-@app.route('/api/get_live_attendance_updates', methods=['GET'])
-def get_live_attendance_updates():
-    """Get real-time attendance from database"""
-    try:
-        session_id = request.args.get('session_id')
-        
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
-        # Get today's attendance for this session
-        cursor.execute("""
-            SELECT 
-                student_id,
-                name,
-                timestamp as time,
-                status
-            FROM attendance
-            WHERE session_id = %s 
-            AND DATE(timestamp) = CURDATE()
-            AND person_type = 'student'
-        """, (session_id,))
-        
-        attendance_records = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'attendance': attendance_records
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting live attendance: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-    
 # Add session start time tracking
 @app.route('/api/start_session', methods=['POST'])
 def start_session():
@@ -8180,7 +8090,7 @@ def initialize_session():
             'start_time': datetime.now()
         }
         
-        # Store in session or database
+        # Store in session or database (uncomment if using Flask session)
         # session['current_session'] = session_data
         
         return jsonify({'success': True, 'data': session_data})

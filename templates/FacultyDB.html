@@ -6,6 +6,7 @@
     <title>Admin Dashboard - Faculty Members</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='FacultyDB.css') }}">
+    <link rel="stylesheet" href="../static/FacultyDB.css">
 </head>
 <body>
     <!-- Sidebar -->
@@ -355,51 +356,60 @@
             }
         }
 
-        function displayFaculty(faculty) {
-            const tbody = document.getElementById('facultyTableBody');
-            if (!tbody) return;
-            
-            tbody.innerHTML = '';
-            
-            if (faculty.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="6" style="text-align: center; padding: 20px;">
-                            <i class="fas fa-users"></i><br>
-                            No faculty members found
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-            
-            faculty.forEach(facultyMember => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>
-                        <img src="${facultyMember.photo}" class="faculty-photo" alt="Faculty Photo" 
-                             onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random'">
-                    </td>
-                    <td>${facultyMember.name}</td>
-                    <td>${facultyMember.idNumber}</td>
-                    <td>${facultyMember.department}</td>
-                    <td>${facultyMember.designation}</td>
-                    <td class="action-buttons">
-                        <button class="action-btn edit-btn" data-id="${facultyMember.id}" title="Edit">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="action-btn view-btn" data-id="${facultyMember.id}" title="View">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button class="action-btn delete-btn" data-id="${facultyMember.id}" title="Delete">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(row);
-                addEventListenersToRow(row);
-            });
-        }
+ function displayFaculty(faculty) {
+    const tbody = document.getElementById('facultyTableBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    if (faculty.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align: center; padding: 20px;">
+                    <i class="fas fa-users"></i><br>
+                    No faculty members found
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    faculty.forEach(facultyMember => {
+        const row = document.createElement('tr');
+        
+        // UPDATED: Better photo URL handling with multiple fallbacks
+        const photoUrl = facultyMember.photo || 
+                        facultyMember.photoPath || 
+                        `/static/images/faculty/${facultyMember.idNumber}.jpg` ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random`;
+        
+        row.innerHTML = `
+            <td>
+                <img src="${photoUrl}" 
+                     class="faculty-photo" 
+                     alt="${facultyMember.name}" 
+                     onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random';">
+            </td>
+            <td>${facultyMember.name}</td>
+            <td>${facultyMember.idNumber}</td>
+            <td>${facultyMember.department}</td>
+            <td>${facultyMember.designation}</td>
+            <td class="action-buttons">
+                <button class="action-btn edit-btn" data-id="${facultyMember.id}" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="action-btn view-btn" data-id="${facultyMember.id}" title="View">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button class="action-btn delete-btn" data-id="${facultyMember.id}" title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+        addEventListenersToRow(row);
+    });
+}
 
         function updatePagination(pagination) {
             const paginationContainer = document.getElementById('facultyPagination') || createPaginationContainer();
