@@ -317,41 +317,49 @@ def authenticate_user(email, password):
         cursor = conn.cursor(dictionary=True)
         print("✅ Step 2 SUCCESS: Cursor created")
         
-        # Check all user tables
+        # Check all user tables with DIFFERENT queries for each table
         print("🔄 Step 3: Searching for user in database...")
-        queries = [
-            ("admins", "admin_id", "admin"),
-            ("faculty", "faculty_id", "faculty"), 
-            ("students", "student_id", "student")
-        ]
         
         user = None
-        user_found_in = None
         
-        for table_name, id_field, user_type in queries:
-            print(f"   🔍 Checking {table_name} table...")
-            query = f"""
-                SELECT {id_field} as user_id, first_name, last_name, password_hash, 
-                       '{user_type}' as user_type
-                FROM {table_name} 
+        # Check admins table (has role column)
+        print("   🔍 Checking admins table...")
+        cursor.execute("""
+            SELECT admin_id as user_id, first_name, last_name, password_hash, 
+                   'admin' as user_type, role
+            FROM admins 
+            WHERE email = %s AND status = 'active'
+        """, (email,))
+        user = cursor.fetchone()
+        
+        if not user:
+            # Check faculty table (has role column)
+            print("   🔍 Checking faculty table...")
+            cursor.execute("""
+                SELECT faculty_id as user_id, first_name, last_name, password_hash, 
+                       'faculty' as user_type, role
+                FROM faculty 
                 WHERE email = %s AND status = 'active'
-            """
-            
-            cursor.execute(query, (email,))
+            """, (email,))
             user = cursor.fetchone()
-            
-            if user:
-                user_found_in = table_name
-                print(f"✅ User found in {table_name}: {user['user_id']}")
-                break
-            else:
-                print(f"   ❌ User not found in {table_name}")
+        
+        if not user:
+            # Check students table (NO role column - use default 'student')
+            print("   🔍 Checking students table...")
+            cursor.execute("""
+                SELECT student_id as user_id, first_name, last_name, password_hash, 
+                       'student' as user_type, 'student' as role
+                FROM students 
+                WHERE email = %s AND status = 'active'
+            """, (email,))
+            user = cursor.fetchone()
         
         if not user:
             print("❌ Step 3 FAILED: User not found in any table")
             return None
         
-        print("✅ Step 3 SUCCESS: User found in database")
+        print(f"✅ Step 3 SUCCESS: User found: {user['user_id']}")
+        print(f"✅ User role: {user.get('role', 'NO ROLE!')}")
         
         # Verify password
         print("🔄 Step 4: Verifying password...")
@@ -360,6 +368,7 @@ def authenticate_user(email, password):
         if verify_password(password, user['password_hash']):
             print("✅ Step 4 SUCCESS: Password verified")
             print(f"🎉 AUTHENTICATION SUCCESSFUL for {user['user_id']}")
+            print(f"🎉 FINAL USER OBJECT: {user}")
             return user
         else:
             print("❌ Step 4 FAILED: Password verification failed")
@@ -2434,25 +2443,28 @@ def login():
         logger.info(f"Login attempt for email: {email}")
         
         if not email or not password:
-            logger.warning("Missing email or password")
             return jsonify({'success': False, 'message': 'Email and password are required'})
         
         if not email.endswith("@wmsu.edu.ph"):
-            logger.warning(f"Invalid email format: {email}")
             return jsonify({'success': False, 'message': 'Invalid WMSU email address'})
         
         # Authenticate user
         user = authenticate_user(email, password)
-        logger.info(f"Authentication result: {user is not None}")
         
         if not user:
-            logger.warning(f"Authentication failed for: {email}")
             return jsonify({'success': False, 'message': 'Invalid email or password'})
+        
+        # DEBUG: Check what user data is returned
+        print(f"DEBUG Login - User object from authenticate_user: {user}")
+        print(f"DEBUG Login - User role: {user.get('role')}")
+        print(f"DEBUG Login - User type: {user.get('user_type')}")
+        
+        # Clear any existing session to prevent conflicts
+        session.clear()
         
         # Create session
         session_token = create_user_session(user['user_id'], user['user_type'])
         if not session_token:
-            logger.error("Failed to create session token")
             return jsonify({'success': False, 'message': 'Failed to create session'})
         
         # Set Flask session
@@ -2460,23 +2472,20 @@ def login():
         session['user_type'] = user['user_type']
         session['first_name'] = user['first_name']
         session['last_name'] = user['last_name']
-        session['role'] = user.get('role', '')
+        session['role'] = user.get('role', '')  # Make sure role exists
         session.permanent = True
+        
+        # DEBUG: Check what's stored in session
+        print(f"DEBUG Login - Stored in session: role={session.get('role')}")
         
         # Determine redirect URL
         redirect_url = '/AdminDB' if user['user_type'] in ['admin', 'faculty'] else '/StudentLP'
         
-        logger.info(f"Login successful for {email}, redirecting to {redirect_url}")
+        logger.info(f"Login successful for {email}, role: {user.get('role')}, redirecting to {redirect_url}")
         
         resp = jsonify({
             'success': True,
             'message': 'Login successful',
-            'user': {
-                'id': user['user_id'],
-                'name': f"{user['first_name']} {user['last_name']}",
-                'type': user['user_type'],
-                'role': user.get('role', 'student')
-            },
             'redirect_url': redirect_url
         })
         
@@ -4530,56 +4539,69 @@ def health_check():
             'error': str(e)
         })
 
-# Keep only ONE version - use this consolidated one:
 def get_current_user():
     """Get current user from session token - handles both Flask session and cookie"""
     # First check Flask session
     if 'user_id' in session and 'user_type' in session:
-        return {
+        user_data = {
             'user_id': session['user_id'],
             'user_type': session['user_type'],
             'first_name': session.get('first_name', ''),
             'last_name': session.get('last_name', ''),
             'role': session.get('role', '')
         }
+        print(f"DEBUG - From session: {user_data}")
+        return user_data
     
     # Fallback to cookie-based session token
     session_token = request.cookies.get('session_token')
     if not session_token:
+        print("DEBUG - No session token")
         return None
     
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """SELECT us.user_id, us.user_type, us.expires_at,
-                      CASE 
-                          WHEN us.user_type = 'admin' THEN a.first_name
-                          WHEN us.user_type = 'faculty' THEN f.first_name
-                          WHEN us.user_type = 'student' THEN s.first_name
-                      END as first_name,
-                      CASE 
-                          WHEN us.user_type = 'admin' THEN a.last_name
-                          WHEN us.user_type = 'faculty' THEN f.last_name
-                          WHEN us.user_type = 'student' THEN s.last_name
-                      END as last_name,
-                      CASE 
-                          WHEN us.user_type = 'admin' THEN a.role
-                          WHEN us.user_type = 'faculty' THEN f.role
-                          ELSE 'student'
-                      END as role
-               FROM user_sessions us
-               LEFT JOIN admins a ON us.user_id = a.admin_id AND us.user_type = 'admin'
-               LEFT JOIN faculty f ON us.user_id = f.faculty_id AND us.user_type = 'faculty'
-               LEFT JOIN students s ON us.user_id = s.student_id AND us.user_type = 'student'
-               WHERE us.session_token = %s AND us.expires_at > NOW()""",
-            (session_token,)
-        )
+        
+        print(f"DEBUG - Session token: {session_token}")
+        
+        # FIXED QUERY: Better debugging and case handling
+        query = """
+            SELECT 
+                us.user_id, 
+                us.user_type, 
+                us.expires_at,
+                CASE 
+                    WHEN us.user_type = 'admin' THEN a.first_name
+                    WHEN us.user_type = 'faculty' THEN f.first_name
+                    WHEN us.user_type = 'student' THEN s.first_name
+                END as first_name,
+                CASE 
+                    WHEN us.user_type = 'admin' THEN a.last_name
+                    WHEN us.user_type = 'faculty' THEN f.last_name
+                    WHEN us.user_type = 'student' THEN s.last_name
+                END as last_name,
+                CASE 
+                    WHEN us.user_type = 'admin' THEN a.role
+                    WHEN us.user_type = 'faculty' THEN f.role
+                    ELSE 'student'
+                END as role
+            FROM user_sessions us
+            LEFT JOIN admins a ON us.user_id = a.admin_id AND us.user_type = 'admin'
+            LEFT JOIN faculty f ON us.user_id = f.faculty_id AND us.user_type = 'faculty' 
+            LEFT JOIN students s ON us.user_id = s.student_id AND us.user_type = 'student'
+            WHERE us.session_token = %s AND us.expires_at > NOW()
+        """
+        
+        cursor.execute(query, (session_token,))
         user = cursor.fetchone()
         cursor.close()
         conn.close()
         
+        print(f"DEBUG - Database query result: {user}")
+        
         if not user:
+            print("DEBUG - No user found in database")
             session.clear()
             return None
         
@@ -4590,9 +4612,11 @@ def get_current_user():
         session['last_name'] = user['last_name']
         session['role'] = user['role']
         
+        print(f"DEBUG - Final user data: {user}")
         return user
         
     except Exception as e:
+        print(f"DEBUG - Error in get_current_user: {e}")
         logger.error(f"Error getting current user: {e}")
         session.clear()
         return None
@@ -4629,93 +4653,33 @@ def reconnect_camera():
         })
 
 def login_required(f):
+    """Decorator for all routes - checks if user is logged in"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        user_id = request.args.get('user_id') or session.get('user_id')
-        if not user_id:
-            logger.error("User ID not provided")
-            # Check if this is an API request or page request
-            if request.path.startswith('/api/'):
-                return jsonify({"success": False, "error": "User ID not provided"}), 401
-            return redirect(url_for('login_page'))
+        user = get_current_user()
+        if not user:
+            # Clear any invalid session
+            session.clear()
+            return redirect('/login')
         
-        try:
-            db = get_db_connection()
-            if not db:
-                logger.error("Database connection failed")
-                if request.path.startswith('/api/'):
-                    return jsonify({"success": False, "error": "Database connection failed"}), 500
-                return redirect(url_for('login_page'))
-            
-            cursor = db.cursor(dictionary=True)
-            # FIXED: Added role, first_name, last_name to the query
-            cursor.execute("""
-                SELECT 
-                    admin_id AS user_id, 
-                    first_name,
-                    last_name,
-                    middle_name,
-                    CONCAT(first_name, ' ', last_name) AS name, 
-                    role,
-                    'admin' AS user_type,
-                    COALESCE(photo_path, '/static/images/placeholder.jpg') AS photo_path
-                FROM admins
-                WHERE admin_id = %s AND status = 'active'
-                UNION
-                SELECT 
-                    faculty_id AS user_id, 
-                    first_name,
-                    last_name,
-                    middle_name,
-                    CONCAT(first_name, ' ', last_name) AS name,
-                    role,
-                    'faculty' AS user_type,
-                    COALESCE(photo_path, '/static/images/placeholder.jpg') AS photo_path
-                FROM faculty
-                WHERE faculty_id = %s AND status = 'active'
-            """, (user_id, user_id))
-            user = cursor.fetchone()
-            cursor.close()
-            db.close()
-            
-            if not user:
-                logger.error(f"User not found or inactive: {user_id}")
-                if request.path.startswith('/api/'):
-                    return jsonify({"success": False, "error": "User not found or inactive"}), 401
-                return redirect(url_for('login_page'))
-            
-            if user['user_type'] == 'student':
-                logger.error(f"Student access denied: {user_id}")
-                if request.path.startswith('/api/'):
-                    return jsonify({"success": False, "error": "Students not allowed"}), 403
-                return redirect(url_for('login_page'))
-            
-            # Set user in both request and g for access in routes and templates
-            request.user = user
-            g.user = user
-            
-            # Also update session to keep it in sync
-            session['user_id'] = user['user_id']
-            session['user_type'] = user['user_type']
-            session['first_name'] = user['first_name']
-            session['last_name'] = user['last_name']
-            session['role'] = user['role']
-            
-            logger.info(f"User authenticated: {user['name']} - Role: {user['role']} - Type: {user['user_type']}")
-            
-            return f(*args, **kwargs)
+        # Set user in g context for access in routes and templates
+        g.user = user
+        return f(*args, **kwargs)
+    return decorated_function
+
+def student_login_required(f):
+    """Decorator for student routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return redirect('/login')
         
-        except mysql.connector.Error as db_err:
-            logger.error(f"Database error: {db_err}")
-            if request.path.startswith('/api/'):
-                return jsonify({"success": False, "error": f"Database error: {str(db_err)}"}), 500
-            return redirect(url_for('login_page'))
-        except Exception as e:
-            logger.error(f"Unexpected error in login_required: {e}")
-            if request.path.startswith('/api/'):
-                return jsonify({"success": False, "error": f"Unexpected error: {str(e)}"}), 500
-            return redirect(url_for('login_page'))
-    
+        # If admin/faculty tries to access student route, redirect to admin page
+        if user['user_type'] != 'student':
+            return redirect('/AdminDB')
+            
+        return f(*args, **kwargs)
     return decorated_function
 
 @app.route('/api/get_section_filters', methods=['GET'])
@@ -4812,16 +4776,22 @@ def camfootage_page():
 @app.route('/sidebar')
 @login_required
 def sidebar_page():
-    # User is already set by login_required decorator
-    user = g.get('user', {})
+    user = get_current_user()
     
     if not user:
-        logger.error("No user in g context")
-        return redirect(url_for('login_page'))
+        logger.error("No user found in sidebar")
+        return "Error: User not found", 401
 
     user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or "Unknown User"
-    user_role = (user.get('role') or '').strip().lower()
-    user_type = (user.get('user_type') or '').strip().lower()
+    
+    # DEBUG: Check what role is actually in the user object
+    print(f"DEBUG - User object: {user}")
+    print(f"DEBUG - User role: {user.get('role')}")
+    print(f"DEBUG - User type: {user.get('user_type')}")
+    
+    # FIX: Pass the role exactly as it comes from the database
+    user_role = user.get('role', '')
+    user_type = user.get('user_type', '')
     
     logger.info("=== SIDEBAR DEBUG ===")
     logger.info(f"User ID: {user.get('user_id')}")
@@ -4835,10 +4805,9 @@ def sidebar_page():
         last_name=user.get('last_name', ''),
         middle_name=user.get('middle_name', ''),
         user_name=user_name,
-        user_role=user_role,
-        user_type=user_type
+        user_role=user_role,  # This should be 'super_admin'
+        user_type=user_type   # This should be 'admin'
     )
-
 
 @app.route('/api/get_user_info', methods=['GET'])
 @login_required
@@ -5435,7 +5404,18 @@ def subject_page():
 @app.route('/AdminDB')
 @login_required
 def admin_db_page():
-    user = g.get('user', {})
+    user = get_current_user()
+    print(f"DEBUG AdminDB - User: {user}")
+    
+    if not user:
+        print("DEBUG AdminDB - No user, redirecting to login")
+        return redirect('/login')
+    
+    if user['user_type'] == 'student':
+        print(f"DEBUG AdminDB - Student user, redirecting to StudentLP")
+        return redirect('/StudentLP')
+    
+    print("DEBUG AdminDB - Rendering AdminDB")
     user_data = {
         'user_id': user.get('user_id', ''),
         'first_name': user.get('first_name', ''),
@@ -5465,9 +5445,9 @@ def settings_page():
     return render_template('settings.html', **user_data)
 
 @app.route('/StudentLP')
-@login_required
+@student_login_required  # ADDED: Use the decorator
 def student_lp_page():
-    user_data = get_template_user_data()
+    user_data = get_template_user_data()  # Use your existing function
     return render_template('StudentLP.html', **user_data)
 
 @app.route('/StudSettings')
@@ -5482,10 +5462,28 @@ def student_attendance_page():
     user_data = get_template_user_data()
     return render_template('StudAttendance.html', **user_data)
 
-@app.route('/')
-@logout_required
+@app.route('/login')
 def login_page():
+    """Login page - if already logged in, redirect to appropriate page"""
+    user = get_current_user()
+    if user:
+        if user['user_type'] == 'student':
+            return redirect('/StudentLP')
+        else:
+            return redirect('/AdminDB')
     return render_template('login.html')
+
+@app.route('/')
+def index():
+    """Root route - redirect based on user type"""
+    user = get_current_user()
+    if not user:
+        return redirect('/login')
+    
+    if user['user_type'] == 'student':
+        return redirect('/StudentLP')
+    else:
+        return redirect('/AdminDB')
 
 @app.route('/video_feed')
 def video_feed():
@@ -5530,7 +5528,7 @@ def logout():
         # Get session token from cookie
         session_token = request.cookies.get('session_token')
         
-        # Clear Flask session
+        # Clear Flask session FIRST
         session.clear()
         
         # Delete session from database if token exists
@@ -5557,7 +5555,7 @@ def logout():
         })
         
         # Clear the session cookie
-        resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
+        resp.set_cookie('session_token', '', expires=0, max_age=0, httponly=True, secure=False, samesite='Strict')
         
         logger.info("User logged out successfully")
         return resp
@@ -5577,7 +5575,7 @@ def logout_page():
         # Get session token from cookie
         session_token = request.cookies.get('session_token')
         
-        # Clear Flask session
+        # Clear Flask session FIRST
         session.clear()
         
         # Delete session from database if token exists
@@ -5597,8 +5595,8 @@ def logout_page():
                 logger.error(f"Error deleting session in direct logout: {db_error}")
         
         # Create redirect response that clears the cookie
-        resp = make_response(redirect(url_for('login_page')))
-        resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
+        resp = make_response(redirect('/login'))  # Use direct path instead of url_for
+        resp.set_cookie('session_token', '', expires=0, max_age=0, httponly=True, secure=False, samesite='Strict')
         
         logger.info("User logged out via direct logout route")
         return resp
@@ -5606,10 +5604,10 @@ def logout_page():
     except Exception as e:
         logger.error(f"Direct logout error: {e}")
         # Still redirect to login even if there's an error
-        resp = make_response(redirect(url_for('login_page')))
-        resp.set_cookie('session_token', '', expires=0, httponly=True, secure=False, samesite='Strict')
+        resp = make_response(redirect('/login'))
+        resp.set_cookie('session_token', '', expires=0, max_age=0, httponly=True, secure=False, samesite='Strict')
         return resp
-
+    
 # ==========================================
 # PROGRAMS MANAGEMENT API ROUTES
 # ==========================================
@@ -5694,21 +5692,6 @@ def update_academic_year():
     except Exception as e:
         logger.error(f"Error updating academic year: {e}")
         return jsonify({'success': False, 'message': str(e)})
-
-# Add these authentication functions after the imports and before the Flask routes
-
-def logout_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        user = get_current_user()
-        if user:
-            # User is already logged in, redirect based on user type
-            if user['user_type'] == 'student':
-                return redirect(url_for('student_lp_page'))
-            else:  # admin or faculty
-                return redirect(url_for('admin_db_page'))
-        return f(*args, **kwargs)
-    return decorated_function
 
 def role_required(allowed_roles):
     def decorator(f):
