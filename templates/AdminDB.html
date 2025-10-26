@@ -1,448 +1,199 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../static/AdminDB.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
+  <link rel="stylesheet" href="../static/settings.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
 </head>
 <body>
-    <!-- Sidebar -->
-    <div id="sidebar-container"></div>
+  <div class="header">
+    <div class="header-left">
+      <img src="../static/images/logo.png" alt="University Logo" class="logo">
+      <div class="title">Admin Side</div>
+    </div>
+    <div class="header-right">
+      <div class="user-info">
+        <div class="name">Guilmar Acabo Quimba</div>
+        <div class="role">Admin</div>
+      </div>
+      <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="User" class="profile-pic" onclick="toggleDropdown()">
+      <div class="dropdown" id="dropdown">
+        <a href="#" onclick="showAccountSettings()">Account Settings</a>
+        <a href="#">Go back to Session</a>
+        <a href="#">Logout</a>
+      </div>
+    </div>
+  </div>
 
-    <!-- Main Content -->
-    <main class="main-content">
-        <div class="header">
-            <h2>Dashboard</h2>
+  <div class="main-content" id="account-settings">
+    <div class="card">
+      <div class="card-header">
+        <h2>Personal Information</h2>
+        <div class="buttons">
+          <button class="edit-btn">Edit</button>
+          <button class="logout-btn">Logout</button>
         </div>
-        
-        <div class="dashboard-content">
-            <h3>Overview</h3>
-            
-            <div class="stats-container">
-                <a href="/StudentDB" class="stat-card students">
-                    <h4>Total Students</h4>
-                    <div class="number">356</div>
-                </a>
-                <a href="/FacultyDB" class="stat-card faculty">
-                    <h4>Faculty Members</h4>
-                    <div class="number">18</div>
-                </a>
+      </div>
 
-                <a href="/StudentDB" class="stat-card cs-students">
-                    <h4>CS Students</h4>
-                    <div class="number">124</div>
-                </a>
+      <div class="profile-section">
+        <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="Profile">
+        <div class="fullname">Guilmar Acabo Quimba</div>
+      </div>
 
-                <a href="/StudentDB" class="stat-card it-students">
-                    <h4>IT Students</h4>
-                    <div class="number">156</div>
-                </a>
-
-                <a href="/StudentDB" class="stat-card act-students">
-                    <h4>ACT Students</h4>
-                    <div class="number">76</div>
-                </a>
-
-            </div>
-            
-            <h3>Recent Activity</h3>
-            <p>System is running smoothly. No issues reported.</p>
+      <div class="info-grid">
+        <div class="info-item">
+          <label>FIRST NAME</label>
+          <div>Guilmar</div>
         </div>
-    </main>
+        <div class="info-item">
+          <label>MIDDLE NAME</label>
+          <div>Acabo</div>
+        </div>
+        <div class="info-item">
+          <label>LAST NAME</label>
+          <div>Quimba</div>
+        </div>
+        <div class="info-item">
+          <label>COURSE</label>
+          <div>BS Computer Science</div>
+        </div>
+        <div class="info-item">
+          <label>YEAR AND SECTION</label>
+          <div>BSCS 1A</div>
+        </div>
+        <div class="info-item">
+          <label>STUDENT ID</label>
+          <div>2022-00954</div>
+        </div>
+        <div class="info-item">
+          <label>EMAIL</label>
+          <div><a href="mailto:guilmar12@example.com">guilmar12@example.com</a></div>
+        </div>
+      </div>
+    </div>
 
- <script>
-    console.log('Starting sidebar fetch...');
-    
-    // Load sidebar with error handling
-    fetch('/sidebar')
-        .then(response => {
-            console.log('Fetch response status:', response.status);
-            console.log('Fetch response URL:', response.url);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.text();
-        })
-        .then(html => {
-            console.log('Sidebar HTML received, length:', html.length);
-            console.log('First 100 chars:', html.substring(0, 100));
-            
-            document.getElementById('sidebar-container').innerHTML = html;
-            
-            // Initialize dropdown functionality
-            document.querySelectorAll(".dropdown-btn").forEach(btn => {
-                btn.addEventListener("click", function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    // Close all other dropdowns first
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        if (content !== this.nextElementSibling) {
-                            content.style.display = 'none';
-                        }
-                    });
+    <div class="security-card">
+      <h3>Account Security</h3>
+      <div class="security-item">
+        <div>
+          <label>Password</label>
+          <div>*******</div>
+        </div>
+        <button class="change-btn">Change Password</button>
+      </div>
+    </div>
+  </div>
 
-                    // Toggle current dropdown
-                    const content = this.nextElementSibling;
-                    if (content) {
-                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
-                    }
-                });
-            });
+  <!-- Edit Modal -->
+  <div id="editModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Edit Personal Information</h3>
+        <span class="close" onclick="closeModal()">&times;</span>
+      </div>
+      <form id="editForm">
+        <div class="modal-grid">
+          <div class="modal-item">
+            <label>First Name</label>
+            <input type="text" id="editFirstName" value="Guilmar" required />
+          </div>
+          <div class="modal-item">
+            <label>Middle Name</label>
+            <input type="text" id="editMiddleName" value="Acabo" />
+          </div>
+          <div class="modal-item">
+            <label>Last Name</label>
+            <input type="text" id="editLastName" value="Quimba" required />
+          </div>
+          <div class="modal-item">
+            <label>Course</label>
+            <input type="text" id="editCourse" value="BS Computer Science" required />
+          </div>
+          <div class="modal-item">
+            <label>Year & Section</label>
+            <input type="text" id="editYearSection" value="BSCS 1A" required />
+          </div>
+          <div class="modal-item">
+            <label>Student ID</label>
+            <input type="text" id="editStudentId" value="2022-00954" readonly />
+          </div>
+          <div class="modal-item">
+            <label>Email</label>
+            <input type="email" id="editEmail" value="guilmar12@example.com" required />
+          </div>
+        </div>
+        <div class="modal-buttons">
+          <button type="button" class="cancel-btn" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="save-btn">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-            // Close dropdowns when clicking outside
-            document.addEventListener('click', function(e) {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        content.style.display = 'none';
-                    });
-                }
-            });
+  <script>
+    const dropdown = document.getElementById("dropdown");
+    const profilePic = document.querySelector(".profile-pic");
+    const modal = document.getElementById("editModal");
+    const editBtn = document.querySelector(".edit-btn");
 
-            // Handle active state
-            const currentPath = window.location.pathname;
-            document.querySelectorAll('.nav-items a').forEach(link => {
-                const linkPath = link.getAttribute('href');
-                if (currentPath.includes(linkPath) && linkPath !== '#') {
-                    link.classList.add('active');
-                    // If link is in dropdown, show parent dropdown
-                    const dropdown = link.closest('.dropdown-content');
-                    if (dropdown) {
-                        dropdown.style.display = 'block';
-                    }
-                }
-            });
-        })
-        .catch(error => {
-            console.error('Sidebar fetch failed:', error);
-            console.error('Error details:', error.message);
-            // Show error in sidebar container for debugging
-            document.getElementById('sidebar-container').innerHTML = `
-                <div style="color: red; padding: 20px;">
-                    <h3>Sidebar Error</h3>
-                    <p>Failed to load sidebar: ${error.message}</p>
-                    <p>Check console for details</p>
-                </div>
-            `;
-        });
- // Add this JavaScript to your AdminDB.html file or create a separate dashboard.js file
-
-class DashboardManager {
-    constructor() {
-        this.statsCache = null;
-        this.lastUpdate = null;
-        this.refreshInterval = 30000; // 30 seconds
-        this.init();
+    // Toggle dropdown
+    function toggleDropdown() {
+      dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
     }
 
-    init() {
-        this.loadDashboardStats();
-        this.setupAutoRefresh();
-        this.setupEventListeners();
+    // Close dropdown/modal when clicking outside
+    window.addEventListener("click", function(e) {
+      if (!profilePic.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = "none";
+      }
+      if (modal.style.display === "block" && !document.querySelector('.modal-content').contains(e.target)) {
+        closeModal();
+      }
+    });
+
+    // Scroll to account settings
+    function showAccountSettings() {
+      dropdown.style.display = "none";
+      document.getElementById("account-settings").scrollIntoView({ behavior: "smooth" });
     }
 
-    async loadDashboardStats() {
-        try {
-            const response = await fetch('/api/get_enhanced_dashboard_stats');
-            const data = await response.json();
+    // Open modal
+    editBtn.addEventListener("click", function() {
+      modal.style.display = "block";
+    });
 
-            if (data.success) {
-                this.statsCache = data.stats;
-                this.lastUpdate = new Date();
-                this.updateDashboardUI(data.stats);
-                console.log('Dashboard stats loaded successfully');
-            } else {
-                console.error('Failed to load dashboard stats:', data.message);
-                this.showError('Failed to load dashboard statistics');
-            }
-        } catch (error) {
-            console.error('Error loading dashboard stats:', error);
-            this.showError('Network error loading dashboard');
-        }
+    // Close modal
+    function closeModal() {
+      modal.style.display = "none";
     }
 
-    updateDashboardUI(stats) {
-        // Update the main stat cards (matching your HTML structure)
-        this.updateStatCard('.stat-card.students .number', stats.total_students);
-        this.updateStatCard('.stat-card.faculty .number', stats.total_faculty);
-        this.updateStatCard('.stat-card.cs-students .number', stats.cs_students);
-        this.updateStatCard('.stat-card.it-students .number', stats.it_students);
-        this.updateStatCard('.stat-card.act-students .number', stats.act_students);
+    // Handle form submit
+    document.getElementById("editForm").addEventListener("submit", function(e) {
+      e.preventDefault();
 
-        // Update course breakdown if container exists
-        if (document.getElementById('course-breakdown')) {
-            this.updateCourseBreakdown(stats.course_breakdown);
-        }
+      const firstName = document.getElementById("editFirstName").value.trim();
+      const middleName = document.getElementById("editMiddleName").value.trim();
+      const lastName = document.getElementById("editLastName").value.trim();
+      const course = document.getElementById("editCourse").value.trim();
+      const yearSection = document.getElementById("editYearSection").value.trim();
+      const email = document.getElementById("editEmail").value.trim();
 
-        // Update faculty distribution if container exists
-        if (document.getElementById('faculty-distribution')) {
-            this.updateFacultyDistribution(stats.department_breakdown);
-        }
+      // Update displayed info
+      const infoItems = document.querySelectorAll(".info-item");
+      infoItems[0].children[1].textContent = firstName;
+      infoItems[1].children[1].textContent = middleName || "-";
+      infoItems[2].children[1].textContent = lastName;
+      infoItems[3].children[1].textContent = course;
+      infoItems[4].children[1].textContent = yearSection;
+      infoItems[6].children[1].innerHTML = `<a href="mailto:${email}">${email}</a>`;
+      document.querySelector(".fullname").textContent = [firstName, middleName, lastName].filter(Boolean).join(" ");
 
-        // Update attendance summary if container exists
-        if (document.getElementById('attendance-summary')) {
-            this.updateAttendanceSummary(stats.attendance);
-        }
-
-        // Update recent activity if container exists
-        if (document.getElementById('recent-activity')) {
-            this.updateRecentActivity(stats.recent_activity);
-        }
-
-        // Update last refresh time
-        this.updateLastRefreshTime();
-    }
-
-    updateStatCard(selector, value) {
-        const element = document.querySelector(selector);
-        if (element) {
-            // Animate number change
-            this.animateNumber(element, parseInt(element.textContent) || 0, value);
-        }
-    }
-
-    animateNumber(element, start, end) {
-        const duration = 1000;
-        const increment = (end - start) / (duration / 16);
-        let current = start;
-
-        const timer = setInterval(() => {
-            current += increment;
-            if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
-                current = end;
-                clearInterval(timer);
-            }
-            element.textContent = Math.round(current);
-        }, 16);
-    }
-
-    updateCourseBreakdown(courseData) {
-        const container = document.getElementById('course-breakdown');
-        if (!container || !courseData) return;
-
-        const html = `
-            <div class="breakdown-header">
-                <h4>Course Distribution</h4>
-            </div>
-            <div class="breakdown-list">
-                ${courseData.map(course => `
-                    <div class="breakdown-item">
-                        <div class="breakdown-info">
-                            <span class="breakdown-label">${course.course}</span>
-                            <span class="breakdown-count">${course.count} students</span>
-                        </div>
-                        <div class="breakdown-bar">
-                            <div class="breakdown-fill" style="width: ${course.percentage}%"></div>
-                        </div>
-                        <span class="breakdown-percentage">${course.percentage}%</span>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-        container.innerHTML = html;
-    }
-
-    updateFacultyDistribution(departmentData) {
-        const container = document.getElementById('faculty-distribution');
-        if (!container || !departmentData) return;
-
-        const html = `
-            <div class="breakdown-header">
-                <h4>Faculty by Department</h4>
-            </div>
-            <div class="breakdown-list">
-                ${departmentData.map(dept => `
-                    <div class="breakdown-item">
-                        <div class="breakdown-info">
-                            <span class="breakdown-label">${dept.department}</span>
-                            <span class="breakdown-count">${dept.count} faculty</span>
-                        </div>
-                        <div class="breakdown-bar">
-                            <div class="breakdown-fill" style="width: ${dept.percentage}%"></div>
-                        </div>
-                        <span class="breakdown-percentage">${dept.percentage}%</span>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-        container.innerHTML = html;
-    }
-
-    updateAttendanceSummary(attendanceData) {
-        const container = document.getElementById('attendance-summary');
-        if (!container || !attendanceData) return;
-
-        const html = `
-            <div class="summary-header">
-                <h4>Attendance Summary</h4>
-            </div>
-            <div class="summary-stats">
-                <div class="summary-item">
-                    <span class="summary-label">Present Today</span>
-                    <span class="summary-value">${attendanceData.present_today}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Attendance Rate</span>
-                    <span class="summary-value">${this.statsCache?.summary?.attendance_rate_today || 0}%</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">This Week</span>
-                    <span class="summary-value">${attendanceData.unique_students_week} unique</span>
-                </div>
-            </div>
-        `;
-        container.innerHTML = html;
-    }
-
-    updateRecentActivity(activityData) {
-        const container = document.getElementById('recent-activity');
-        if (!container || !activityData) return;
-
-        const html = `
-            <div class="activity-header">
-                <h4>Recent Activity (30 days)</h4>
-            </div>
-            <div class="activity-list">
-                <div class="activity-item">
-                    <i class="fas fa-user-graduate"></i>
-                    <span>${activityData.students_registered_30days} new students registered</span>
-                </div>
-                <div class="activity-item">
-                    <i class="fas fa-chalkboard-teacher"></i>
-                    <span>${activityData.faculty_registered_30days} new faculty registered</span>
-                </div>
-                <div class="activity-item">
-                    <i class="fas fa-envelope"></i>
-                    <span>${activityData.active_invites} active invitations</span>
-                </div>
-            </div>
-        `;
-        container.innerHTML = html;
-    }
-
-    updateLastRefreshTime() {
-        const element = document.getElementById('last-refresh');
-        if (element && this.lastUpdate) {
-            element.textContent = `Last updated: ${this.lastUpdate.toLocaleTimeString()}`;
-        }
-    }
-
-    setupAutoRefresh() {
-        setInterval(() => {
-            this.loadDashboardStats();
-        }, this.refreshInterval);
-    }
-
-    setupEventListeners() {
-        // Refresh button
-        const refreshBtn = document.getElementById('refresh-stats');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => {
-                this.loadDashboardStats();
-                this.showSuccess('Dashboard refreshed');
-            });
-        }
-
-        // Export buttons
-        const exportStudentsBtn = document.getElementById('export-students');
-        if (exportStudentsBtn) {
-            exportStudentsBtn.addEventListener('click', () => this.exportData('students'));
-        }
-
-        const exportFacultyBtn = document.getElementById('export-faculty');
-        if (exportFacultyBtn) {
-            exportFacultyBtn.addEventListener('click', () => this.exportData('faculty'));
-        }
-    }
-
-    async exportData(type) {
-        try {
-            const response = await fetch('/api/export_data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    type: type,
-                    filters: { status: 'active' }
-                })
-            });
-
-            const data = await response.json();
-            if (data.success) {
-                // Create and download CSV file
-                const blob = new Blob([data.csv_data], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = data.filename;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                
-                this.showSuccess(`${type} data exported successfully`);
-            } else {
-                this.showError(`Failed to export ${type} data`);
-            }
-        } catch (error) {
-            console.error('Export error:', error);
-            this.showError('Export failed');
-        }
-    }
-
-    showSuccess(message) {
-        this.showNotification(message, 'success');
-    }
-
-    showError(message) {
-        this.showNotification(message, 'error');
-    }
-
-    showNotification(message, type) {
-        // Create notification element
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.textContent = message;
-
-        // Add to page
-        document.body.appendChild(notification);
-
-        // Auto remove after 3 seconds
-        setTimeout(() => {
-            notification.remove();
-        }, 3000);
-    }
-
-    // Public method to get cached stats
-    getStats() {
-        return this.statsCache;
-    }
-
-    // Public method to force refresh
-    refresh() {
-        return this.loadDashboardStats();
-    }
-}
-
-// Initialize dashboard manager when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    window.dashboardManager = new DashboardManager();
-});
-
-// Optional: Add keyboard shortcut for refresh (Ctrl+R or F5)
-document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey && e.key === 'r') || e.key === 'F5') {
-        e.preventDefault();
-        if (window.dashboardManager) {
-            window.dashboardManager.refresh();
-        }
-    }
-});       
-</script>
+      closeModal();
+      alert("Changes saved successfully!");
+    });
+  </script>
 </body>
 </html>
