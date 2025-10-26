@@ -121,18 +121,16 @@
       color: white;
     }
     .action-buttons .btn {
-      padding: 5px;
-      margin: 0 2px;
-      font-size: 16px;
-      width: 30px;
-      height: 30px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .action-buttons .btn-view { background-color: #007bff; color: white; }
-    .action-buttons .btn-edit { background-color: #ffc107; color: white; }
-    .action-buttons .btn-danger { background-color: #dc3545; color: white; }
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #5c6bc0;
+            transition: color 0.3s; 
+            margin-left: 0.9rem;
+          }
+
+
     /* Dropdown Styles */
     .dropdown .dropdown-btn {
       display: flex;
@@ -393,18 +391,7 @@
       color: #212529;
     }
 
-    .btn-warning:hover {
-      background: #e0a800;
-    }
 
-    .btn-danger {
-      background: #dc3545;
-      color: white;
-    }
-
-    .btn-danger:hover {
-      background: #c82333;
-    }
 
     .error-modal .modal-header h3 {
       color: #dc3545;
