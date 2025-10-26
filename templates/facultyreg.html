@@ -95,9 +95,8 @@
         <h2>Facial Biometrics Detection</h2>
         <div class="scan-instruction" id="scanInstruction">Please look straight at the camera</div>
         <div class="face-scan">
-            <!-- Added mirror effect with transform: scaleX(-1) -->
-            <video id="video" autoplay playsinline style="transform: scaleX(-1);"></video>
-            <canvas id="canvas" style="display: none; transform: scaleX(-1);"></canvas>
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
         </div>
         <div class="scan-progress">
             <div class="progress-step" id="step-frontal"></div>
@@ -183,65 +182,64 @@ const MAX_SCAN_ATTEMPTS = 10;
 function checkPose(result, poseId) {
     if (!result) return false;
 
-    // Adjusted thresholds for better pose detection, aligned with backend
+    // Rely primarily on backend's success flag
+    if (result.success) return true;
+
+    // Fallback to local checks with backend-aligned thresholds
     switch (poseId) {
         case 'frontal':
             return result.is_frontal || 
-                   (Math.abs(result.yaw || 0) <= 35 && 
-                    Math.abs(result.pitch || 0) <= 30 && 
-                    Math.abs(result.roll || 0) <= 30);
+                   (Math.abs(result.yaw || 0) <= 60 && 
+                    Math.abs(result.pitch || 0) <= 50 && 
+                    Math.abs(result.roll || 0) <= 45);
         case 'left':
-            return result.is_left || (result.yaw >= 5); // Relaxed from 15 to 10
+            return result.is_left || (result.yaw >= 0); // Match backend
         case 'right':
-            return result.is_right || (result.yaw <= -5); // Relaxed from -15 to -10
+            return result.is_right || (result.yaw <= 0); // Match backend
         case 'up':
-            return result.is_up || (result.pitch <= -5); // Relaxed from -12 to -8
+            return result.is_up || (result.pitch <= 0); // Match backend
         case 'down':
-            return result.is_down || (result.pitch >= 5); // Relaxed from 12 to 8
+            return result.is_down || (result.pitch >= 0); // Match backend
         case 'mouth_open':
-            return result.is_mouth_open || (result.mar >= 0.18);
+            return result.is_mouth_open || (result.mar >= 0.10); // Match backend
         case 'eyes_closed':
             return result.is_eyes_closed || 
-                   (((result.left_ear || 0.3) + (result.right_ear || 0.3)) / 2 <= 0.32);
+                   (((result.left_ear || 0.3) + (result.right_ear || 0.3)) / 2 <= 0.5);
         default:
             return false;
     }
 }
 
-function getUpPoseFeedback(result) {
+function getLeftPoseFeedback(result) {
     if (!result) return "No face detected";
-    
-    const pitch = result.pitch || 0;
-    
-    if (pitch > 0) {
-        return "Your head is tilted down. Please tilt UP";
-    } else if (pitch > -5) {
-        return "Tilt your head up more";
-    } else if (pitch > -5) {
-        return "Good! Tilt a bit more upward";
-    } else if (pitch > -5) {
-        return "Perfect up position! Hold still";
-    } else {
-        return "Too far up. Relax a little";
-    }
+    const yaw = result.yaw || 0;
+    if (yaw < 0) return "Your head is turned right. Please turn LEFT.";
+    if (yaw < 2) return "Turn your head left more.";
+    if (yaw < 10) return "Good! Turn a bit more to the left.";
+    return "Perfect left position! Hold still.";
 }
 
-function getDownPoseFeedback(result) {
+function getRightPoseFeedback(result) {
     if (!result) return "No face detected";
-    
-    const pitch = result.pitch || 0;
-    
-    if (pitch < 0) {
-        return "Your head is tilted up. Please tilt DOWN";
-    } else if (pitch < 5) {
-        return "Tilt your head down more";
-    } else if (pitch < 5) {
-        return "Good! Tilt a bit more downward";
-    } else if (pitch < 5) {
-        return "Perfect down position! Hold still";
-    } else {
-        return "Too far down. Relax a little";
-    }
+    const yaw = result.yaw || 0;
+    if (yaw > 0) return "Your head is turned left. Please turn RIGHT.";
+    if (yaw > -2) return "Turn your head right more.";
+    if (yaw > -10) return "Good! Turn a bit more to the right.";
+    return "Perfect right position! Hold still.";
+}
+
+function getMouthOpenFeedback(result) {
+    if (!result) return "No face detected";
+    const mar = result.mar || 0;
+    if (mar < 0.10) return `Open your mouth wider (current: ${mar.toFixed(2)})`;
+    return "Perfect mouth open position! Hold still.";
+}
+
+function getEyesClosedFeedback(result) {
+    if (!result) return "No face detected";
+    const avgEAR = ((result.left_ear || 0) + (result.right_ear || 0)) / 2;
+    if (avgEAR > 0.45) return `Close your eyes more (current: ${avgEAR.toFixed(2)})`;
+    return "Perfect eyes closed position! Hold still.";
 }
 
     function captureAndSendImage() {
@@ -698,7 +696,7 @@ function resendOTP() {
         instructionEl.textContent = POSE_STATES[scanState].instruction;
     }
     
-    scanInterval = setInterval(automatedFaceScan, 2000);
+    scanInterval = setInterval(automatedFaceScan, 3000); // Changed from 2000ms to 3000ms
 }
 
     function automatedFaceScan() {
@@ -768,41 +766,46 @@ function resendOTP() {
                 }
             }, 1000);
         } else {
-            console.log(`No valid pose for ${currentPose.id}, retrying...`);
-            if (instructionEl && result) {
-                let feedback = '';
-                if (result) {
-                    switch(currentPose.id) {
-                        case 'up':
-                            feedback = getUpPoseFeedback(result);
-                            break;
-                        case 'down':
-                            feedback = getDownPoseFeedback(result);
-                            break;
-                        case 'mouth_open':
-                            feedback = `Open your mouth wider (current: ${result.mar?.toFixed(2) || 'N/A'})`;
-                            break;
-                        case 'eyes_closed':
-                            const avgEAR = ((result.left_ear || 0) + (result.right_ear || 0)) / 2;
-                            feedback = `Close your eyes more completely (current: ${avgEAR.toFixed(2)})`;
-                            break;
-                        default:
-                            feedback = result.message || 'Adjust position';
-                    }
-                } else {
-                    feedback = 'No face detected. Ensure good lighting and center your face.';
-                }
-                
-                instructionEl.textContent = `${currentPose.instruction} (${feedback} - Attempt ${scanAttempts}/${MAX_SCAN_ATTEMPTS})`;
-            }
+             console.log(`No valid pose for ${currentPose.id}, retrying...`);
+        
+        // Provide specific feedback based on the current pose
+        // In the else block where you provide feedback:
+let feedback = '';
+    if (result) {
+        switch (currentPose.id) {
+            case 'frontal':
+                feedback = result.message || 'Face the camera directly.';
+                break;
+            case 'left':
+                feedback = getLeftPoseFeedback(result);
+                break;
+            case 'right':
+                feedback = getRightPoseFeedback(result);
+                break;
+            case 'up':
+                feedback = getUpPoseFeedback(result);
+                break;
+            case 'down':
+                feedback = getDownPoseFeedback(result);
+                break;
+            case 'mouth_open':
+                feedback = getMouthOpenFeedback(result);
+                break;
+            case 'eyes_closed':
+                feedback = getEyesClosedFeedback(result);
+                break;
+            default:
+                feedback = result.message || 'Adjust position';
         }
-    }).catch(error => {
-        console.error("Face scan error:", error);
-        if (instructionEl) {
-            instructionEl.textContent = `${currentPose.instruction} (Error - Attempt ${scanAttempts}/${MAX_SCAN_ATTEMPTS})`;
-        }
-    });
-}
+    } else {
+        feedback = 'No face detected. Ensure good lighting and center your face.';
+    }
+    if (instructionEl) {
+        instructionEl.textContent = `${currentPose.instruction} (${feedback} - Attempt ${scanAttempts}/${MAX_SCAN_ATTEMPTS})`;
+    }
+
+    }
+}) }
 
     function assessImageQuality(imageData) {
     const data = imageData.data;
@@ -885,11 +888,11 @@ function resendOTP() {
         
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const quality = assessImageQuality(imageData);
-        
-        if (quality < 0.3) {
-            console.log(`Image quality too low: ${quality}`);
-            return null;
-        }
+    console.log(`Image quality: ${quality.toFixed(3)}`); // Debug log
+    if (quality < 0.2) { // Lowered from 0.3
+        console.log(`Image quality too low: ${quality}`);
+        return { message: "Image quality too low. Improve lighting." };
+    }
         
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
         
@@ -898,13 +901,14 @@ function resendOTP() {
         formData.append('current_pose', POSE_STATES[scanState].id);
         
         const response = await fetch('/api/encode_face', {
-            method: 'POST',
-            body: formData
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            console.log(`Received for ${POSE_STATES[scanState].id}:`, data);
+        method: 'POST',
+        body: formData
+    });
+    const data = await response.json();
+    console.log(`Backend response:`, data); // Debug log
+    if (!data.success) {
+        console.log(`Backend error: ${data.message}, Pose: ${data.current_pose}`);
+    
             return { 
                 encoding: data.encoding ? new Float32Array(data.encoding) : [],
                 quality: quality,

@@ -14,25 +14,27 @@
         <div class="cctv-section">
             <div class="cctv-header">
                 <div>
-                    <span style="color: #fff; opacity: 0.8; font-size: 0.9rem;">COMP 20233</span>
+                    <span style="color: #fff; opacity: 0.8; font-size: 0.9rem;">IT 150 - LR4</span>
                 </div>
                 <span class="timer-display">
-                    <span id="elapsed-time">00:00:00</span> / <span id="total-time">03:00:00</span>
+                    <span id="elapsed-time">00:01:54</span> / <span id="total-time">01:00:00</span>
                 </span>
-                <span id="date-time" class="time-display">07/04/25 - 1:00 PM</span>
+                <span id="date-time" class="time-display">10/17/25 - 11:13 AM</span>
             </div>
-<div class="cctv-feed">
-    <img id="cam-feed" 
-         src="/video_feed" 
-         alt="Camera Feed"
-         style="width: 100%; height: 100%; object-fit: contain; background: #000;"
-         onerror="handleVideoError(this)"
-         onload="handleVideoLoad(this)">
-    <div id="loading-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 18px; display: none;">
-        <span class="material-icons" style="font-size: 48px; animation: spin 1s linear infinite;">refresh</span>
-        <p>Loading camera feed...</p>
-    </div>
-</div>
+            
+            <div class="cctv-feed" id="main-video-container">
+                <img id="cam-feed" 
+                     src="/video_feed" 
+                     alt="Camera Feed"
+                     style="width: 100%; height: 100%; object-fit: contain; background: #000;"
+                     onerror="handleVideoError(this)"
+                     onload="handleVideoLoad(this)">
+                <div id="loading-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 18px; display: none;">
+                    <span class="material-icons" style="font-size: 48px; animation: spin 1s linear infinite;">refresh</span>
+                    <p>Loading camera feed...</p>
+                </div>
+            </div>
+    
             <div class="cctv-controls">
                 <button onclick="goToDashboard()">
                     <span class="material-icons">arrow_back</span>
@@ -64,27 +66,26 @@
         <div class="attendance-section">
             <header>
                 <div class="faculty-info">
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <img src="https://randomuser.me/api/portraits/women/45.jpg" alt="Faculty Member" class="faculty-avatar">
-                        <div>
-                            <span>Dr. Sarah Johnson</span>
-                            <div class="faculty-role">Faculty Member</div>
-                        </div>
-                    </div>
-                </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <img src="../static/images/default-avatar.jpg" alt="Faculty Member" class="faculty-avatar">
+            <div>
+                <span>Loading...</span>
+                <div class="faculty-role">Loading...</div>
+            </div>
+        </div>
+    </div>
             </header>
             
-            <div class="search-bar">
-                <div class="section-info">
-                    <span class="material-icons">class</span>
-                    <span>BSCS 3A</span>
-                </div>
-                <div style="position: relative; flex: 1;">
-                    <span class="material-icons search-icon">search</span>
-                    <input type="text" placeholder="Search students by name or ID...">
-                </div>
-            </div>
-            
+<div class="search-bar">
+    <div class="section-info">
+        <span class="material-icons">class</span>
+        <span>Loading...</span>
+    </div>
+    <div style="position: relative; flex: 1;">
+        <span class="material-icons search-icon">search</span>
+        <input type="text" placeholder="Search students by name or ID...">
+    </div>
+</div>
             <div class="student-count">
                 <span class="material-icons" style="color: var(--primary)">group</span>
                 <span>Students detected</span>
@@ -165,51 +166,53 @@
         </div>
     </div>
 
-    <div class="minimized-container" id="minimizedView">
-        <div class="minimized-header">
-            <span>Database Management System</span>
-            <button onclick="maximizeScreen()" style="background: none; border: none; color: white; cursor: pointer;">
-                <span class="material-icons">open_in_full</span>
-            </button>
-        </div>
-        <video class="minimized-video" autoplay></video>
-    </div>
 
-    <!-- End Session Modal -->
-    <div class="modal" id="endSessionModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">End Session</h3>
-                <button class="close-modal" onclick="closeModal('endSessionModal')">
-                    <span class="material-icons">close</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p><strong>Are you sure you want to end this session?</strong></p>
-                <div style="margin-top: 1rem;">
-                    <p>Session Summary:</p>
-                    <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
-                        <li>Duration: <span id="sessionDuration">00:00:00</span></li>
-                        <li>Total Students: <span id="totalStudentCount">30</span></li>
-                        <li>Present: <span id="presentCount">15</span></li>
-                        <li>Absent: <span id="absentCount">12</span></li>
-                        <li>Late: <span id="lateCount">3</span></li>
-                    </ul>
-                </div>
-                <p style="margin-top: 1rem; color: var(--warning);">
-                    <span class="material-icons" style="font-size: 1.2em; vertical-align: middle;">warning</span>
-                    This action will save all attendance records and end the current session.
-                </p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-cancel" onclick="closeModal('endSessionModal')">Cancel</button>
-                <button class="btn-submit" style="background: var(--danger)" onclick="confirmEndSession()">
-                    <span class="material-icons">power_settings_new</span>
-                    End Session
-                </button>
-            </div>
-        </div>
+    <!-- 3. End Session Confirmation Modal -->
+<div class="modal" id="endSessionModal">
+ <div class="modal-content">
+    <div class="modal-header">
+        <h3 class="modal-title">End Session</h3>
+        <button class="close-modal" onclick="closeModal('endSessionModal')">
+            <span class="material-icons">close</span>
+        </button>
     </div>
+    <div class="modal-body">
+        <p><strong>Are you sure you want to end this session?</strong></p>
+        <div style="margin-top: 1rem;">
+            <p class="font-semibold text-gray-700">Session Summary:</p>
+            <ul style="margin-top: 0.5rem; margin-left: 1.5rem; list-style: disc;" class="text-gray-600">
+                <li>Duration: <span id="sessionDuration" class="font-bold text-gray-800">00:00:25</span></li>
+                <li>Total Students: <span id="totalStudentCount" class="font-bold text-gray-800">2</span></li>
+                <li>Present: <span id="presentCount" class="font-bold text-gray-800">1</span></li>
+                <li>Absent: <span id="absentCount" class="font-bold text-gray-800">0</span></li>
+                <li>Late: <span id="lateCount" class="font-bold text-gray-800">0</span></li>
+                <li>Excused: <span id="excusedCount" class="font-bold text-gray-800">0</span></li>
+            </ul>
+        </div>
+        <p style="margin-top: 1rem; color: var(--danger);" class="flex items-center gap-1">
+            <span class="material-icons" style="font-size: 1.2em;">warning</span>
+            This action will save all attendance records and end the current session.
+        </p>
+    </div>
+    <div class="modal-footer">
+        <button class="btn-cancel" onclick="closeModal('endSessionModal')">Cancel</button>
+        <button class="btn-submit" style="background: var(--danger)" onclick="confirmEndSession()">
+            <span class="material-icons">power_settings_new</span>
+            End Session
+        </button>
+    </div>
+ </div>
+</div>
+
+<!-- 4. Universal Notification Modal (Replaces all alerts) -->
+<div class="modal" id="notificationModal" style="z-index: 9999;">
+    <div class="notification-content" id="notificationContent">
+        <span class="material-icons notification-icon" id="notificationIcon"></span>
+        <h4 class="notification-title" id="notificationTitle"></h4>
+        <p class="notification-message" id="notificationMessage"></p>
+        <button class="btn-submit w-full" onclick="closeModal('notificationModal')">OK</button>
+    </div>
+</div>
 
     <!-- Add Student Modal -->
     <div class="modal" id="addStudentModal">
@@ -334,50 +337,65 @@
         </div>
     </div>
 
-    <!-- Settings Modal -->
-    <div class="modal" id="settingsModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Class Settings</h3>
-                <button class="close-modal" onclick="closeModal('settingsModal')">
-                    <span class="material-icons">close</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Course and Section</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="text" id="course" placeholder="Course (e.g. BSCS)" required>
-                        <input type="text" id="section" placeholder="Section (e.g. 3A)" required>
-                    </div>
+   <div class="modal" id="settingsModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Live Class Settings</h3>
+            <button class="close-modal" onclick="closeModal('settingsModal')">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            
+            <div id="modalNotificationContainer" style="z-index: 10000;" role="alert">
                 </div>
-                <div class="form-group">
-                    <label>Faculty Member Information</label>
-                    <input type="text" id="facultymemberName" placeholder="Faculty Member Name" required>
+
+            <div class="form-group">
+                <label>Current Duration (Live)</label>
+                <div class="live-setting-display">
+                    <span id="currentClassDurationDisplay" class="current-value">180 minutes</span>
                 </div>
-                <div class="form-group">
-                    <label>Class Duration (minutes)</label>
-                    <input type="number" id="classDuration" placeholder="180" min="1" required>
-                </div>
-                <div class="form-group">
-                    <label>Late Threshold (minutes)</label>
-                    <input type="number" id="lateThreshold" placeholder="15" min="1" required>
-                </div>
-                <div class="form-group">
-                    <label>Video Quality</label>
-                    <select id="videoQuality" class="quality-select">
-                        <option value="144">144p</option>
-                        <option value="360">360p</option>
-                        <option value="720" selected>720p</option>
-                    </select>
+                <div class="adjustment-buttons">
+                    <button class="btn btn-sm btn-minus" onclick="adjustSessionTime('duration', -10)">-10 min</button>
+                    <button class="btn btn-sm btn-minus" onclick="adjustSessionTime('duration', -5)">-5 min</button>
+                    <button class="btn btn-sm btn-plus" onclick="adjustSessionTime('duration', 5)">+5 min</button>
+                    <button class="btn btn-sm btn-plus" onclick="adjustSessionTime('duration', 10)">+10 min</button>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn-cancel" onclick="closeModal('settingsModal')">Cancel</button>
-                <button class="btn-submit" onclick="saveSettings()">Save Settings</button>
+
+            <div class="form-group">
+                <label>Late Threshold (Live)</label>
+                <div class="live-setting-display">
+                    <span id="currentLateThresholdDisplay" class="current-value">15 minutes</span>
+                </div>
+                <div class="adjustment-buttons">
+                    <button class="btn btn-sm btn-minus" onclick="adjustSessionTime('threshold', -5)">-5 min</button>
+                    <button class="btn btn-sm btn-minus" onclick="adjustSessionTime('threshold', -1)">-1 min</button>
+                    <button class="btn btn-sm btn-plus" onclick="adjustSessionTime('threshold', 1)">+1 min</button>
+                    <button class="btn btn-sm btn-plus" onclick="adjustSessionTime('threshold', 5)">+5 min</button>
+                </div>
             </div>
+
+            <hr>
+
+            <div class="form-group">
+                <label>Video Quality (Default)</label>
+                <select id="videoQuality" class="quality-select">
+                    <option value="144">144p</option>
+                    <option value="360">360p</option>
+                    <option value="720" selected>720p</option>
+                    <option value="1080">1080p (1K)</option>
+                    <option value="1440">1440p (2K)</option>
+                </select>
+            </div>
+            
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeModal('settingsModal')">Cancel</button>
+            <button class="btn-submit" onclick="saveStaticSettings()">Save Quality</button>
         </div>
     </div>
+</div>
 
     <!-- Transfer Confirmation Modal -->
     <div class="modal" id="transferConfirmModal">
@@ -401,62 +419,108 @@
         </div>
     </div>
 
-    <div class="modal" id="unrecognizedFacesModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">
-                    <span class="material-icons" style="vertical-align: middle; color: var(--warning);">warning</span>
-                    Unrecognized Faces Detected
-                </h3>
-                <button class="close-modal" onclick="closeModal('unrecognizedFacesModal')">
-                    <span class="material-icons">close</span>
-                </button>
+<!-- 1. Unrecognized Faces Modal -->
+<div class="modal" id="unrecognizedFacesModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">
+                <span class="material-icons" style="vertical-align: middle; color: var(--warning);">warning</span>
+                Unrecognized Faces Detected
+            </h3>
+            <button class="close-modal" onclick="closeUnrecognizedModal()">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="modal-description">
+                The system has detected faces that are not recognized. Please review and assign a status to each face.
+            </p>
+            <div class="select-all">
+                <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
+                <label for="selectAll">Select All Faces</label>
             </div>
-            <div class="modal-body">
-                <p class="modal-description">
-                    The system has detected faces that are not recognized. Please review and assign a status to each face or retake the detection.
-                </p>
-                <div class="select-all">
-                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
-                    <label for="selectAll">Select All Faces</label>
+            <div class="unrecognized-faces" id="unrecognizedFacesList">
+                <!-- Placeholder Face Cards (These would be dynamically generated in a real app) -->
+                <div class="face-card" data-face-id="face1" data-temp-encoding="[...face1_encoding_fragment...]" data-image="https://randomuser.me/api/portraits/men/1.jpg">
+                    <img src="https://randomuser.me/api/portraits/men/1.jpg" onerror="this.src='https://placehold.co/80x80/6b7280/ffffff?text=Face%201'" alt="Unrecognized Face">
+                    <label class="face-label">
+                        <input type="checkbox" name="face" value="face1">
+                        Face #1
+                    </label>
                 </div>
-                <div class="unrecognized-faces" id="unrecognizedFacesList">
-                    <div class="face-card">
-                        <img src="https://randomuser.me/api/portraits/men/1.jpg" alt="Unrecognized Face">
-                        <label class="face-label">
-                            <input type="checkbox" name="face" value="face1">
-                            Face #1
-                        </label>
-                    </div>
-                    <div class="face-card">
-                        <img src="https://randomuser.me/api/portraits/women/1.jpg" alt="Unrecognized Face">
-                        <label class="face-label">
-                            <input type="checkbox" name="face" value="face2">
-                            Face #2
-                        </label>
-                    </div>
+                <div class="face-card" data-face-id="face2" data-temp-encoding="[...face2_encoding_fragment...]" data-image="https://randomuser.me/api/portraits/women/1.jpg">
+                    <img src="https://randomuser.me/api/portraits/women/1.jpg" onerror="this.src='https://placehold.co/80x80/6b7280/ffffff?text=Face%202'" alt="Unrecognized Face">
+                    <label class="face-label">
+                        <input type="checkbox" name="face" value="face2">
+                        Face #2
+                    </label>
                 </div>
-                <div class="face-actions">
-                    <button class="btn-action present" onclick="markSelectedAs('present')">
-                        <span class="material-icons">how_to_reg</span>
-                        Mark as Present
-                    </button>
-                    <button class="btn-action late" onclick="markSelectedAs('late')">
-                        <span class="material-icons">schedule</span>
-                        Mark as Late
-                    </button>
-                    <button class="btn-action unknown" onclick="markSelectedAs('unknown')">
-                        <span class="material-icons">person_off</span>
-                        Mark as Absent
-                    </button>
-                </div>
-                <button class="btn-action retake" onclick="retakeFaces()">
-                    <span class="material-icons">face_retouching_natural</span>
-                    Retake Face Detection
+                <!-- End Placeholder Face Cards -->
+            </div>
+            <div class="face-actions">
+                <button class="btn-action present" onclick="markSelectedAs('present')">
+                    <span class="material-icons">how_to_reg</span>
+                    Mark/Enroll as Present
+                </button>
+                <button class="btn-action skip" onclick="skipSelected()">
+                    <span class="material-icons">directions_walk</span>
+                    Skip & Proceed
+                </button>
+                <button class="btn-action cancel" onclick="cancelUnrecognizedModal()">
+                    <span class="material-icons">cancel</span>
+                    Cancel
                 </button>
             </div>
         </div>
     </div>
+</div>
+
+    <!-- 2. Enroll Student Modal -->
+    <div class="modal" id="enrollStudentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Enroll Unrecognized Face</h3>
+                <button class="close-modal" onclick="closeModal('enrollStudentModal')">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Select the student corresponding to the face image for enrollment:</p>
+                <img id="faceToEnrollImage" src="" alt="Face to Enroll" style="width: 100px; height: 100px; object-fit: cover; margin-bottom: 1rem; border-radius: 8px;">
+                <input type="hidden" id="faceToEnrollID" value="">
+                <input type="hidden" id="faceToEnrollEncoding" value="">
+
+                <label for="studentSelect" class="block font-semibold mb-2 mt-4">Student (BSIT4C Absent List):</label>
+                <select id="studentSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="" disabled selected>Select a student</option>
+                </select>
+
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" onclick="closeModal('enrollStudentModal')">Cancel</button>
+                <button class="btn-submit" onclick="confirmEnrollment()">
+                    <span class="material-icons">save</span>
+                    Confirm Enrollment & Mark Present
+                </button>
+            </div>
+        </div>
+    </div>
+
+<div id="minimizedView" class="minimized-view" style="display: none;">
+    <div class="minimized-header">
+        <span>Face Recognition Active</span>
+        <button onclick="maximizeScreen()" class="maximize-btn">
+            <span class="material-icons">open_in_full</span>
+            Maximize
+        </button>
+    </div>
+    <div id="minimized-video-container" style="width: 100%; height: calc(100% - 40px); background: #000;">
+        <img id="minimized-cam-feed" 
+             src="/video_feed" 
+             alt="Camera Feed" 
+             style="width: 100%; height: 100%; object-fit: cover;">
+    </div>
+</div>
 
 <script>
 // Global error handler
@@ -466,8 +530,15 @@ window.onerror = function (message, source, lineno, colno, error) {
 };
 
 // State
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
 let startTime = new Date();
 let pauseStartTime = null;
+let currentSessionId = null; 
+let currentSectionId = null;
+let detectionStopped = false;
+let current_fps = 30.0;
+let frame_timestamps = [];
 let totalPausedTime = 0;
 let isTimerPaused = false;
 let timerInterval;
@@ -475,10 +546,16 @@ let latest_frame = null; // FIXED: Changed 'None' to 'null'
 let isRunning = true; // used in updateTimer exit case
 window._latestAttendance = []; // cached attendance array from server
 let videoRetryCount = 0; // FIXED: Moved before handleVideoError/handleVideoLoad
+let UNRECOGNIZED_FACES_DATA = []; // Stores the full list of faces fetched from the API
+window._sessionData = {};
 const MAX_VIDEO_RETRIES = 3;
 
 window.addEventListener('load', () => {
     console.log('Page loaded, initializing...');
+    
+    initializeMinimizedView();
+    initializeSearch();
+    setupStudentContextMenu();
     
     // Extract URL parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -489,88 +566,357 @@ window.addEventListener('load', () => {
         year_level: urlParams.get('year_level'),
         program: urlParams.get('program'),
         section: urlParams.get('section'),
-        duration: urlParams.get('duration'),
-        threshold: urlParams.get('threshold'),
+        duration: urlParams.get('duration') || 3600, // Default 1 hour
+        threshold: urlParams.get('threshold') || 900, // Default 15 minutes
         rtsp_url: decodeURIComponent(urlParams.get('rtsp_url') || ''),
         mode: urlParams.get('mode')
     };
     
-    // Initialize session on backend
+    console.log('📋 Session data:', sessionData);
+    
+    // Initialize session on backend with error handling
     fetch('/api/initialize_session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sessionData)
     })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            console.log('Session initialized');
-            // Update UI with session data
-            updateSessionUI(sessionData);
+    .then(res => {
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+        return res.json();
+    })
+.then(data => {
+    if (data.success) {
+        console.log('✅ Session initialized:', data.data);
+        
+        // 🎯 CRITICAL FIX: Store the dynamic IDs globally WITH VALIDATION
+        currentSessionId = data.data.session_id || data.data.id; // Try different possible keys
+        currentSectionId = data.data.section_id || data.data.section_id; 
+        
+        // Validate that we actually got the IDs
+        if (!currentSessionId || !currentSectionId) {
+            console.error('❌ CRITICAL: Session ID or Section ID is missing from backend response:', data.data);
+            // Try to extract from URL as fallback
+            currentSessionId = urlParams.get('schedule_id'); // Use schedule_id as fallback
+            currentSectionId = data.data.section || urlParams.get('section'); // Use section as fallback
+        }
+        
+        console.log(`🎯 Global Session ID set to: ${currentSessionId}`);
+        console.log(`🎯 Global Section ID set to: ${currentSectionId}`);
+        
+        updateSessionUI(data.data);
+        loadClassStudents(data.data.program, data.data.year_level, data.data.section);
+            
+            // Start auto-refresh
+            updateStudentCount(); // Initial update
+            setInterval(updateStudentCount, 2000); // Update every 2 seconds
+            
+            // ✅ LOG SESSION STATUS
+            if (data.existing_session) {
+                console.log('🔄 Continuing existing session');
+            } else {
+                console.log('🚀 Starting new session');
+            }
+        } else {
+            console.error('❌ Session initialization failed:', data.message);
+            // Continue anyway with default values
+            loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
         }
     })
-    .catch(err => console.error('Error initializing session:', err));
+    .catch(err => {
+        console.error('❌ Error initializing session:', err);
+        // Continue anyway with URL parameters
+        loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
+    });
     
+    // Load settings (will use defaults if fails)
     loadClassSettings().finally(() => {
         startTimer();
         updateTimer();
-        updateStudentCount();
-        setInterval(updateStudentCount, 30000);
     });
 });
 
-function updateDateTime() {
-    console.log('updateDateTime running at', new Date().toISOString()); // Debug
-    const now = new Date();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const year = String(now.getFullYear()).slice(-2);
-    let hours = now.getHours();
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-    const formatted = `${month}/${day}/${year} - ${hours}:${minutes} ${ampm}`;
-    const el = document.getElementById('date-time');
-    if (el) {
-        el.textContent = formatted;
-        console.log('Updated date-time to:', formatted); // Debug
-    } else {
-        console.error('Element with id "date-time" not found');
+// Add this to your initialization code
+document.addEventListener('DOMContentLoaded', function() {
+    const unrecognizedModal = document.getElementById('unrecognizedFacesModal');
+    if (unrecognizedModal) {
+        unrecognizedModal.addEventListener('modalClosed', function(event) {
+            const modalId = event.detail.modalId;
+            console.log(`Modal ${modalId} was closed`);
+            
+            // Check if we're not proceeding to confirmation
+            const endSessionModal = document.getElementById('endSessionModal');
+            if (!endSessionModal || endSessionModal.style.display !== 'block') {
+                // User closed the unrecognized modal without proceeding - resume detection
+                console.log('Resuming detection because modal was closed without proceeding');
+                resumePythonDetection();
+            }
+        });
     }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    updateDateTime();
-    setInterval(updateDateTime, 1000);
+    
+    const endSessionModal = document.getElementById('endSessionModal');
+    if (endSessionModal) {
+        endSessionModal.addEventListener('modalClosed', function(event) {
+            const modalId = event.detail.modalId;
+            console.log(`Modal ${modalId} was closed`);
+            
+            // If end session modal is closed without confirming, resume detection
+            resumePythonDetection();
+        });
+    }
 });
 
-function updateSessionUI(data) {
-    // Update header with class info
-    const headerInfo = document.querySelector('.cctv-header div span');
-    if (headerInfo) {
-        headerInfo.textContent = `${data.program} ${data.year_level}-${data.section} | ${data.subject}`;
+// --- MODAL UTILITY FUNCTIONS ---
+function openModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'flex';
+        }
+    }
+
+    function showAlertModal(type, message, title) {
+    const modal = document.getElementById('notificationModal');
+    const content = document.getElementById('notificationContent');
+    const icon = document.getElementById('notificationIcon');
+    const msgElement = document.getElementById('notificationMessage');
+    const titleElement = document.getElementById('notificationTitle');
+
+    // Ensure modal is on top
+    modal.style.zIndex = '9999';
+    
+    content.className = 'notification-content ' + type;
+    msgElement.textContent = message;
+
+    switch (type) {
+        case 'success':
+            icon.textContent = 'check_circle';
+            titleElement.textContent = title || 'Success!';
+            break;
+        case 'error':
+            icon.textContent = 'error';
+            titleElement.textContent = title || 'Error!';
+            break;
+        case 'warning':
+            icon.textContent = 'warning';
+            titleElement.textContent = title || 'Attention!';
+            break;
+        case 'info':
+        default:
+            icon.textContent = 'info';
+            titleElement.textContent = title || 'Information';
+            break;
     }
     
-    // Update faculty info if present
-    const facultyInfo = document.querySelector('.faculty-info span');
-    if (facultyInfo) {
-        facultyInfo.textContent = data.instructor;
+    // Use your existing openModal function
+    openModal('notificationModal');
+}
+
+    
+
+function showModalNotification(message, type, duration = 3000) {
+    const container = document.getElementById('modalNotificationContainer');
+    if (!container) return;
+
+    // Ensure container is on top of everything
+    container.style.zIndex = '10000';
+    
+    // Clear previous timeouts
+    if (container._timer) {
+        clearTimeout(container._timer);
     }
     
-    // Update section info
-    const sectionInfo = document.querySelector('.section-info span:last-child');
-    if (sectionInfo) {
-        sectionInfo.textContent = `${data.program} ${data.year_level}${data.section}`;
+    // Set content and styling
+    container.textContent = message;
+    container.className = ''; // Clear previous classes
+    container.classList.add('notification-' + type);
+    
+    // Show the container
+    container.style.opacity = '1';
+    container.style.visibility = 'visible';
+
+    // Set a new timeout to hide the container
+    container._timer = setTimeout(() => {
+        container.style.opacity = '0';
+        container.style.visibility = 'hidden';
+    }, duration);
+}
+
+function makeMinimizedViewDraggable() {
+    const minimizedView = document.getElementById('minimizedView');
+    const header = minimizedView.querySelector('.minimized-header');
+    
+    header.addEventListener('mousedown', startDrag);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', stopDrag);
+    
+    function startDrag(e) {
+        if (e.target.closest('button')) return; // Don't drag if clicking button
+        
+        isDragging = true;
+        const rect = minimizedView.getBoundingClientRect();
+        dragOffset.x = e.clientX - rect.left;
+        dragOffset.y = e.clientY - rect.top;
+        
+        minimizedView.style.cursor = 'grabbing';
+        e.preventDefault();
+    }
+    
+    function drag(e) {
+        if (!isDragging) return;
+        
+        minimizedView.style.left = (e.clientX - dragOffset.x) + 'px';
+        minimizedView.style.top = (e.clientY - dragOffset.y) + 'px';
+        minimizedView.style.right = 'auto'; // Clear right positioning
+    }
+    
+    function stopDrag() {
+        isDragging = false;
+        minimizedView.style.cursor = 'move';
     }
 }
 
-function formatTime(seconds) {
-    seconds = Math.max(0, Math.floor(Number(seconds) || 0));
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+function initializeMinimizedView() {
+    const minimizedView = document.getElementById('minimizedView');
+    const minimizedHeader = minimizedView.querySelector('.minimized-header');
+
+    if (minimizedView && minimizedHeader) {
+        // Check if minimized state is stored
+        if (sessionStorage.getItem('isMinimized') === 'true') {
+            minimizedView.style.display = 'block';
+            document.body.classList.add('minimized');
+        }
+
+        // Dragging logic
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+
+        minimizedHeader.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            dragOffset.x = e.clientX - minimizedView.offsetLeft;
+            dragOffset.y = e.clientY - minimizedView.offsetTop;
+            console.log('Dragging started');
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                minimizedView.style.left = `${e.clientX - dragOffset.x}px`;
+                minimizedView.style.top = `${e.clientY - dragOffset.y}px`;
+                minimizedView.style.right = 'auto';
+                minimizedView.style.bottom = 'auto';
+                // Store position in sessionStorage
+                sessionStorage.setItem('minimizedViewPos', JSON.stringify({
+                    left: minimizedView.style.left,
+                    top: minimizedView.style.top
+                }));
+                console.log('Dragging to:', e.clientX - dragOffset.x, e.clientY - dragOffset.y);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                console.log('Dragging stopped');
+            }
+        });
+
+        // Restore position if available
+        const savedPos = sessionStorage.getItem('minimizedViewPos');
+        if (savedPos) {
+            const { left, top } = JSON.parse(savedPos);
+            minimizedView.style.left = left;
+            minimizedView.style.top = top;
+            minimizedView.style.right = 'auto';
+            minimizedView.style.bottom = 'auto';
+        } else {
+            // Default position
+            minimizedView.style.left = '';
+            minimizedView.style.top = '';
+            minimizedView.style.right = '20px';
+            minimizedView.style.bottom = '20px';
+        }
+    } else {
+        console.error('Minimized view or header not found');
+    }
 }
+
+function updateSessionUI(data) {
+    console.log('🔄 Updating session UI with:', data);
+    
+    // Update faculty info in header
+    const facultyNameElement = document.querySelector('.faculty-info div div span');
+    if (facultyNameElement) {
+        facultyNameElement.textContent = data.instructor || 'Unknown Instructor';
+    }
+    
+    // Update faculty role
+    const facultyRoleElement = document.querySelector('.faculty-role');
+    if (facultyRoleElement) {
+        let roleDisplay;
+        switch (data.role) {
+            case 'super_admin':
+                roleDisplay = 'Super Admin';
+                break;
+            case 'admin':
+                roleDisplay = 'Sub Admin';
+                break;
+            case 'moderator':
+                roleDisplay = 'Faculty';
+                break;
+            default:
+                roleDisplay = data.role || 'Faculty Member';
+        }
+        facultyRoleElement.textContent = roleDisplay;
+    }
+    
+    // Update faculty photo
+    const facultyAvatar = document.querySelector('.faculty-avatar');
+    if (facultyAvatar && data.faculty_photo) {
+        facultyAvatar.src = data.faculty_photo;
+        facultyAvatar.alt = data.instructor || 'Faculty Member';
+    }
+    
+    // Update section info in search bar
+    const sectionInfoElement = document.querySelector('.section-info span:last-child');
+    if (sectionInfoElement) {
+        // FIXED: Map program names properly
+        let programDisplay;
+        switch (data.program) {
+            case 'Information Technology':
+            case 'IT':
+                programDisplay = 'BSIT';
+                break;
+            case 'Computer Science': 
+            case 'CS':
+                programDisplay = 'BSCS';
+                break;
+            case 'Associate in Computer Technology':
+            case 'ACT':
+                programDisplay = 'ACT';
+                break;
+            default:
+                programDisplay = data.program || 'Unknown';
+        }
+        
+        // Extract numeric year level and format properly
+        const yearLevel = data.year_level ? data.year_level.replace(/[^0-9]/g, '') : '';
+        const section = data.section || '';
+        
+        sectionInfoElement.textContent = `${programDisplay} ${yearLevel}${section}`;
+        console.log('✅ Updated section info:', sectionInfoElement.textContent);
+    }
+    
+    // Update header with subject and room
+    const headerInfo = document.querySelector('.cctv-header div span');
+    if (headerInfo) {
+        headerInfo.textContent = data.subject_code && data.room 
+            ? `${data.subject_code} - ${data.room}` 
+            : 'Unknown Subject - Unknown Room';
+    }
+    
+    console.log('✅ Session UI updated successfully');
+}
+
 
 function updateTimer() {
     if (isTimerPaused) return;
@@ -578,48 +924,36 @@ function updateTimer() {
     try {
         const now = new Date();
         const diff = now - startTime - totalPausedTime;
-        const settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
-
-        const totalDuration = (
-            (parseInt(settings.timer?.session?.hours || 3) * 3600) +
-            (parseInt(settings.timer?.session?.minutes || 0) * 60) +
-            (parseInt(settings.timer?.session?.seconds || 0))
-        ) * 1000;
-
-        const safeTotalDuration = (isFinite(totalDuration) && totalDuration > 0) ? totalDuration : 3 * 3600 * 1000;
-
-        if (diff >= safeTotalDuration) {
-            clearInterval(timerInterval);
-            isRunning = false;
-
-            const unrecognizedModal = document.getElementById('unrecognizedFacesModal');
-            if (unrecognizedModal) {
-                unrecognizedModal.style.display = 'flex';
-            } else {
-                console.error('Unrecognized faces modal not found');
-            }
-
-            const sessionDurationEl = document.getElementById('sessionDuration');
-            if (sessionDurationEl) sessionDurationEl.textContent = formatTime(safeTotalDuration / 1000);
-            return;
-        }
-
-        const remaining = safeTotalDuration - diff;
         const elapsedSeconds = Math.floor(diff / 1000);
 
+        // Update elapsed time display
         const elapsedEl = document.getElementById('elapsed-time');
-        const totalEl = document.getElementById('total-time');
         if (elapsedEl) elapsedEl.textContent = formatTime(elapsedSeconds);
-        if (totalEl) totalEl.textContent = formatTime(safeTotalDuration / 1000);
 
-        const lateThresholdMs = (
-            (parseInt(settings.timer?.threshold?.hours || 0) * 3600) +
-            (parseInt(settings.timer?.threshold?.minutes || 15) * 60) +
-            (parseInt(settings.timer?.threshold?.seconds || 0))
-        ) * 1000;
+        // Get session duration from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionDurationSeconds = window._sessionData.duration || parseInt(urlParams.get('duration')) || 3600;
+        const thresholdSeconds = window._sessionData.threshold || parseInt(urlParams.get('threshold')) || 900; 
+    
+        const totalEl = document.getElementById('total-time');
+        if (totalEl) totalEl.textContent = formatTime(sessionDurationSeconds);
 
-        if (diff >= lateThresholdMs && diff < safeTotalDuration) {
+        // Check if elapsed time exceeds threshold
+        if (elapsedSeconds > thresholdSeconds) {
             document.getElementById('mainTimer')?.classList.add('late');
+        }
+
+        // FIXED: Check if session ended automatically
+        if (elapsedSeconds >= sessionDurationSeconds) {
+            clearInterval(timerInterval);
+            isRunning = false;
+            
+            // Stop detection when session ends automatically
+            stopPythonDetection();
+            
+            // Show notification and end session
+            showAlertModal('info', 'Session has ended automatically based on the scheduled duration.', 'Session Completed');
+            endSession();
         }
     } catch (err) {
         console.error('Error in updateTimer:', err);
@@ -671,6 +1005,43 @@ function togglePause(button) {
     }
 }
 
+function initializeSearch() {
+    const searchInput = document.querySelector('.search-bar input');
+    if (searchInput) {
+        let searchTimeout;
+        
+        searchInput.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            
+            // Clear previous timeout
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+            }
+            
+            // Add slight delay to prevent excessive filtering
+            searchTimeout = setTimeout(() => {
+                filterStudents(searchTerm);
+            }, 300);
+        });
+    }
+}
+
+function changeStudentStatus(studentId, newStatus, remarks = '') {
+    const actions = {
+        'present': { action: 'add_temporary', data: { id: studentId, name: 'Unknown' } },
+        'excused': { action: 'excused', data: { student_id: studentId, remarks: remarks } },
+        'absent': { action: 'remove', data: { student_id: studentId } }
+    };
+    
+    const actionConfig = actions[newStatus];
+    if (!actionConfig) {
+        showModal('Error', 'Invalid status change', 'error');
+        return;
+    }
+    
+    manageStudent(actionConfig.action, actionConfig.data);
+}
+
 function toggleFullscreen() {
     console.log('toggleFullscreen clicked');
     try {
@@ -697,18 +1068,17 @@ function minimizeScreen() {
     console.log('minimizeScreen clicked');
     try {
         const minimizedView = document.getElementById('minimizedView');
-        const mainVideo = document.getElementById('cam-feed');
-        const minimizedVideo = document.querySelector('.minimized-video');
-
-        if (mainVideo && mainVideo.srcObject) {
-            if (minimizedVideo) minimizedVideo.srcObject = mainVideo.srcObject;
-            if (minimizedView) minimizedView.style.display = 'block';
-            const container = document.querySelector('.container');
-            if (container) container.style.display = 'none';
+        const mainContainer = document.querySelector('.container');
+        
+        if (minimizedView && mainContainer) {
+            // Show minimized view without hiding main content
+            minimizedView.style.display = 'block';
             document.body.classList.add('minimized');
+            // Store minimized state in sessionStorage
+            sessionStorage.setItem('isMinimized', 'true');
+            console.log('Screen minimized successfully');
         } else {
-            console.error('No video source available for minimization');
-            alert('Cannot minimize: No video source available.');
+            console.error('Required elements not found for minimization');
         }
     } catch (err) {
         console.error('Error in minimizeScreen:', err);
@@ -720,15 +1090,17 @@ function maximizeScreen() {
     console.log('maximizeScreen clicked');
     try {
         const minimizedView = document.getElementById('minimizedView');
-        const mainVideo = document.getElementById('cam-feed');
-        const minimizedVideo = document.querySelector('.minimized-video');
-
-        if (minimizedVideo && minimizedVideo.srcObject) {
-            if (mainVideo) mainVideo.srcObject = minimizedVideo.srcObject;
-            if (minimizedView) minimizedView.style.display = 'none';
-            const container = document.querySelector('.container');
-            if (container) container.style.display = 'flex';
+        const mainContainer = document.querySelector('.container');
+        
+        if (minimizedView && mainContainer) {
+            // Hide minimized view
+            minimizedView.style.display = 'none';
             document.body.classList.remove('minimized');
+            // Clear minimized state
+            sessionStorage.setItem('isMinimized', 'false');
+            console.log('Screen maximized successfully');
+        } else {
+            console.error('Required elements not found for maximization');
         }
     } catch (err) {
         console.error('Error in maximizeScreen:', err);
@@ -736,11 +1108,19 @@ function maximizeScreen() {
     }
 }
 
+function formatTime(seconds) {
+    seconds = Math.max(0, Math.floor(Number(seconds) || 0));
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
 function goToDashboard() {
     console.log('goToDashboard clicked');
     try {
         if (confirm('Are you sure you want to return to the dashboard? Any unsaved changes will be lost.')) {
-            window.location.href = "/dashboard";
+            window.location.href = "/AdminDB";
         }
     } catch (err) {
         console.error('Error in goToDashboard:', err);
@@ -748,69 +1128,331 @@ function goToDashboard() {
     }
 }
 
-function openSettings() {
-    console.log('openSettings clicked');
+async function openSettings() {
+    console.log('openSettings clicked and fetching data');
+    const settingsModal = document.getElementById('settingsModal');
+    if (settingsModal) settingsModal.style.display = 'flex'; // Use your style method to show modal
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const schedule_id = urlParams.get('schedule_id');
+
+    if (!schedule_id) return;
+
     try {
-        const settingsModal = document.getElementById('settingsModal');
-        if (settingsModal) {
-            settingsModal.style.display = 'flex';
-        } else {
-            console.error('Settings modal not found');
-            alert('Settings modal not found.');
+        // Fetch LIVE session settings and current config
+        const response = await fetch(`/api/get_session_settings?schedule_id=${schedule_id}`);
+        const data = await response.json();
+
+        if (data && data.success) {
+            const settings = data.settings;
+            // Update the display for the current, live settings from attendance_sessions
+            document.getElementById('currentClassDurationDisplay').innerText = settings.live_duration_minutes + ' minutes';
+            document.getElementById('currentLateThresholdDisplay').innerText = settings.live_threshold_minutes + ' minutes';
+            
+            // Update the video quality dropdown from session_settings
+            const videoQualitySelect = document.getElementById('videoQuality');
+            if (videoQualitySelect) {
+                videoQualitySelect.value = settings.video_quality || '720';
+            }
         }
-    } catch (err) {
-        console.error('Error in openSettings:', err);
-        alert('Error opening settings.');
+    } catch (error) {
+        console.error('Error fetching settings:', error);
+        showModalNotification('Error loading current settings.', 'error', 5000); // REPLACEMENT
     }
 }
 
-function endSession() {
+
+// Function to handle adding or subtracting time from the live session (Replaces timer-related saving)
+async function adjustSessionTime(type, minutes) {
+    console.log(`Adjusting ${type} by ${minutes} minutes...`);
+    const urlParams = new URLSearchParams(window.location.search);
+    const schedule_id = urlParams.get('schedule_id'); 
+
+    if (!schedule_id) {
+        showModalNotification('Session ID is missing. Cannot adjust time.', 'error', 5000); // REPLACEMENT
+        return;
+    }
+
+    // Read current displayed values (which were loaded by openSettings)
+    const currentDurationText = document.getElementById('currentClassDurationDisplay').innerText;
+    const currentThresholdText = document.getElementById('currentLateThresholdDisplay').innerText;
+
+    const currentDuration = parseInt(currentDurationText.split(' ')[0]) || 180;
+    const currentThreshold = parseInt(currentThresholdText.split(' ')[0]) || 15;
+    
+    let newDuration = currentDuration;
+    let newThreshold = currentThreshold;
+
+    if (type === 'duration') {
+        newDuration = currentDuration + minutes;
+    } else if (type === 'threshold') {
+        newThreshold = currentThreshold + minutes;
+    }
+    
+    // --- Frontend Constraints (Replacement of alerts) ---
+    if (newDuration <= 0) {
+        showModalNotification('Class Duration must be greater than 0.', 'error'); // REPLACEMENT
+        return;
+    }
+    
+    // Calculate elapsed time in minutes
+    const elapsedMilliseconds = new Date() - startTime - totalPausedTime;
+    const elapsedMinutes = Math.floor(elapsedMilliseconds / 60000); 
+
+    if (type === 'duration' && newDuration < elapsedMinutes) {
+        showModalNotification(`New Duration (${newDuration} min) cannot be less than the elapsed time (${elapsedMinutes} min).`, 'error', 5000); // REPLACEMENT
+        return;
+    }
+    
+    if (newThreshold >= newDuration) {
+        showModalNotification('Late Threshold must be strictly less than the Class Duration.', 'error', 5000); // REPLACEMENT
+        return;
+    }
+    // --- End Constraints ---
+
+    try {
+        const response = await fetch('/api/adjust_session_time', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                schedule_id: schedule_id,
+                adjustment_type: type, // 'duration' or 'threshold'
+                adjustment_minutes: minutes,
+                elapsed_minutes: elapsedMinutes
+            })
+        });
+
+        const data = await response.json();
+
+        if (data && data.success) {
+            console.log('Adjustment successful:', data);
+            
+            // Update the displayed values instantly
+            document.getElementById('currentClassDurationDisplay').innerText = data.new_duration + ' minutes';
+            document.getElementById('currentLateThresholdDisplay').innerText = data.new_threshold + ' minutes';
+
+            // **CRITICAL:** Update global session data (in seconds) to affect the live timer
+            window._sessionData.duration = data.new_duration * 60; 
+            window._sessionData.threshold = data.new_threshold * 60; 
+            
+            showModalNotification(`Successfully adjusted ${type} to ${type === 'duration' ? data.new_duration : data.new_threshold} minutes.`, 'success'); // REPLACEMENT
+            
+        } else {
+            showModalNotification((data && data.message) ? data.message : 'Failed to adjust time. Check console.', 'error', 5000); // REPLACEMENT
+        }
+    } catch (err) {
+        console.error('Error adjusting session time:', err);
+        showModalNotification('Network error while adjusting session time.', 'error', 5000); // REPLACEMENT
+    }
+}
+
+
+// Function to save ONLY the static settings (video quality)
+async function saveStaticSettings() {
+    console.log('saveStaticSettings called for Video Quality');
+    const urlParams = new URLSearchParams(window.location.search);
+    const schedule_id = urlParams.get('schedule_id');
+    const videoQuality = document.getElementById('videoQuality')?.value || '720'; 
+
+    if (!schedule_id) {
+        showModalNotification('Session ID is missing. Cannot save quality.', 'error', 5000); // REPLACEMENT
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/update_video_quality', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                schedule_id: schedule_id,
+                video_quality: videoQuality
+            })
+        });
+        const data = await res.json();
+
+        if (res.ok && data && data.success) {
+            showModalNotification('Video Quality saved successfully.', 'success'); // REPLACEMENT
+        } else {
+            showModalNotification((data && data.message) ? data.message : 'Failed to save quality.', 'error', 5000); // REPLACEMENT
+        }
+    } catch (err) {
+        console.error('Error in saveStaticSettings:', err);
+        showModalNotification('Error saving video quality.', 'error', 5000); // REPLACEMENT
+    }
+}
+
+ function endSession() {
     console.log('endSession clicked');
+    
     try {
         const hasUnrecognizedFaces = checkUnrecognizedFaces();
         if (hasUnrecognizedFaces) {
+            // Stop detection when showing unrecognized faces modal
+            stopPythonDetection();
+            
             const modal = document.getElementById('unrecognizedFacesModal');
             if (modal) {
-                modal.style.display = 'flex';
+                openModal('unrecognizedFacesModal');
             } else {
                 console.error('Unrecognized faces modal not found');
-                alert('Unrecognized faces modal not found.');
+                showAlertModal('error', 'Unrecognized faces modal not found.');
             }
         } else {
+            // No unrecognized faces - stop detection permanently
+            stopPythonDetection();
             showEndSessionConfirmation();
         }
     } catch (err) {
         console.error('Error in endSession:', err);
-        alert('Error ending session.');
+        showAlertModal('error', 'Error ending session.');
     }
+}
+
+async function resumePythonDetection() {
+    try {
+        await fetch('/api/resume_detection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+    } catch (err) {
+        console.error('Error resuming Python detection:', err);
+    }
+}
+
+async function stopPythonDetection() {
+    try {
+        await fetch('/api/stop_detection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+    } catch (err) {
+        console.error('Error stopping Python detection:', err);
+    }
+}
+
+// Modal close functions
+function closeUnrecognizedModal() {
+    console.log('Closing unrecognized faces modal and resuming detection');
+    closeModal('unrecognizedFacesModal');
+    resumePythonDetection();
+}
+
+function cancelUnrecognizedModal() {
+    console.log('Cancelling unrecognized faces modal and resuming detection');
+    closeModal('unrecognizedFacesModal');
+    resumePythonDetection();
 }
 
 function showEndSessionConfirmation() {
     try {
+        // Update summary details before showing the modal
+        const elapsedMs = new Date() - startTime - totalPausedTime;
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        
+        // Calculate statistics from student list
+        const stats = calculateStatisticsFromStudentList();
+        
+        const hours = Math.floor(elapsedSeconds / 3600);
+        const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+        const seconds = elapsedSeconds % 60;
+
+        document.getElementById('sessionDuration').textContent = 
+            `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        document.getElementById('totalStudentCount').textContent = stats.total;
+        document.getElementById('presentCount').textContent = stats.present;
+        document.getElementById('absentCount').textContent = stats.absent;
+        document.getElementById('lateCount').textContent = stats.late;
+        document.getElementById('excusedCount').textContent = stats.excused;
+
         const modal = document.getElementById('endSessionModal');
         if (modal) {
-            modal.style.display = 'flex';
+            openModal('endSessionModal');
         } else {
             console.error('End session modal not found');
-            alert('End session modal not found.');
+            showAlertModal('error', 'End session modal not found.');
         }
     } catch (err) {
         console.error('Error in showEndSessionConfirmation:', err);
-        alert('Error showing end session confirmation.');
+        showAlertModal('error', 'Error showing end session confirmation.');
     }
 }
 
+// Update the calculation function to include excused
+function calculateStatisticsFromStudentList() {
+    try {
+        const studentRows = document.querySelectorAll('.student-row');
+        let present = 0;
+        let absent = 0;
+        let late = 0;
+        let excused = 0;
+        
+        studentRows.forEach(row => {
+            const statusElement = row.querySelector('.status');
+            if (statusElement) {
+                const status = statusElement.textContent.toLowerCase();
+                switch (status) {
+                    case 'present':
+                        present++;
+                        break;
+                    case 'absent':
+                        absent++;
+                        break;
+                    case 'late':
+                        late++;
+                        break;
+                    case 'excused':
+                        excused++;
+                        break;
+                }
+            }
+        });
+        
+        return {
+            total: studentRows.length,
+            present: present,
+            absent: absent,
+            late: late,
+            excused: excused
+        };
+        
+    } catch (err) {
+        console.error('Error calculating from student list:', err);
+        return { total: 0, present: 0, absent: 0, late: 0, excused: 0 };
+    }
+}
+
+    // Update confirmEndSession to ensure detection stays stopped
 async function confirmEndSession() {
     console.log('confirmEndSession clicked');
+    
+    // Double ensure everything is stopped
+    await stopPythonDetection();
+    clearInterval(timerInterval);
+    isRunning = false;
+    
+    // Stop camera stream
+    if (window.cameraStream) {
+        window.cameraStream.getTracks().forEach(track => {
+            track.stop();
+            console.log('Stopped camera track:', track.kind);
+        });
+        window.cameraStream = null;
+    }
+    
+    closeModal('endSessionModal');
+
     try {
-        const settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
         const elapsedMs = new Date() - startTime - totalPausedTime;
         const elapsedSeconds = Math.floor(elapsedMs / 1000);
-        const stats = window._latestStatistics || { present: 0, late: 0, absent: 0, total: 0 };
+        
+        // Use the same calculation for consistency
+        const stats = calculateStatisticsFromStudentList();
+        
+        // Collect any unresolved faces
         const faceCards = document.querySelectorAll('.unrecognized-faces .face-card');
         const unrecognized_faces = [];
         faceCards.forEach(card => {
-            const status = card.getAttribute('data-status') || null;
+            const status = card.getAttribute('data-status') || 'unresolved';
             const img = card.getAttribute('data-image') || null;
             const notes = card.querySelector('.notes')?.value || card.getAttribute('data-notes') || '';
             unrecognized_faces.push({
@@ -821,15 +1463,19 @@ async function confirmEndSession() {
         });
 
         const payload = {
+            session_id: currentSessionId,
             session_data: {
                 duration: elapsedSeconds,
-                total_students: stats.total || 0,
-                present_count: stats.present || 0,
-                absent_count: stats.absent || 0,
-                late_count: stats.late || 0
+                total_students: stats.total,
+                present_count: stats.present,
+                absent_count: stats.absent,
+                late_count: stats.late,
+                excused_count: stats.excused
             },
             unrecognized_faces
         };
+
+        console.log('Sending end session payload:', payload);
 
         const res = await fetch('/api/end_session', {
             method: 'POST',
@@ -837,20 +1483,43 @@ async function confirmEndSession() {
             body: JSON.stringify(payload)
         });
         const data = await res.json();
+
         if (res.ok && data.success) {
-            alert('Session ended successfully.');
+            showAlertModal('success', 'Session ended successfully. Redirecting to summary...', 'Success');
+            
+            // Clear session data
             window._latestAttendance = [];
             window._latestStatistics = null;
-            window.location.href = 'summary.html';
+            
+            // Redirect to summary page after a short delay
+            setTimeout(() => {
+                window.location.href = '/summary';
+            }, 2000); // 2 second delay to show success message
+            
         } else {
             console.error('End session failed', data);
-            alert((data && data.message) ? data.message : 'Failed to end session on server.');
+            showAlertModal('error', (data && data.message) ? data.message : 'Failed to end session on server.', 'Error');
         }
     } catch (err) {
         console.error('Error in confirmEndSession:', err);
-        alert('Error ending session.');
+        showAlertModal('error', 'Error ending session.', 'Fatal Error');
     }
 }
+
+// Add this to your browser console
+async function debugSession() {
+    try {
+        const response = await fetch(`/api/debug_session?session_id=${currentSessionId}`);
+        const data = await response.json();
+        console.log('Session debug:', data);
+        return data;
+    } catch (err) {
+        console.error('Debug error:', err);
+    }
+}
+
+// Run this before ending session
+debugSession();
 
 function toggleActionMenu() {
     console.log('toggleActionMenu clicked');
@@ -924,6 +1593,13 @@ function closeModal(modalId) {
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.style.display = 'none';
+            
+            // Trigger custom event when modal closes
+            const event = new CustomEvent('modalClosed', { 
+                detail: { modalId: modalId } 
+            });
+            modal.dispatchEvent(event);
+            
         } else {
             console.error(`Modal with ID ${modalId} not found`);
         }
@@ -933,157 +1609,231 @@ function closeModal(modalId) {
     }
 }
 
+function loadClassStudents(program, yearLevel, section) {
+    if (!program || !yearLevel || !section) {
+        console.warn('Missing parameters for loading students');
+        return;
+    }
+    
+    fetch(`/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`)
+        .then(res => {
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            return res.json();
+        })
+        .then(data => {
+            if (data.success) {
+                updateStudentList(data.students || []);
+                updateStudentCount();
+            } else {
+                console.error('Error loading students:', data.message);
+                updateStudentList([]);
+            }
+        })
+        .catch(err => {
+            console.error('Error fetching students:', err);
+            updateStudentList([]);
+        });
+}
+
 async function loadClassSettings() {
     console.log('loadClassSettings called');
     try {
-        const res = await fetch('/api/get_class_settings');
-        const data = await res.json();
-        let settings = {};
-
-        if (res.ok && data && data.success) {
-            settings = data.settings || {};
-        } else {
-            console.warn('No class settings found on server, using localStorage fallback');
-            settings = JSON.parse(localStorage.getItem('classSettings') || '{}');
-        }
-
-        settings.course = settings.course || '';
-        settings.section = settings.section || '';
-        settings.facultymemberName = settings.facultymemberName || '';
-        settings.classDuration = settings.classDuration || 180;
-        settings.lateThreshold = settings.lateThreshold || 15;
-        settings.videoQuality = settings.videoQuality || 'medium';
-
-        if (!settings.timer) {
-            settings.timer = {
-                session: {
-                    hours: Math.floor(settings.classDuration / 60),
-                    minutes: settings.classDuration % 60,
-                    seconds: 0
-                },
-                threshold: {
-                    hours: 0,
-                    minutes: settings.lateThreshold,
-                    seconds: 0
-                }
-            };
-        }
-
-        localStorage.setItem('classSettings', JSON.stringify(settings));
-
-        if (document.getElementById('course')) document.getElementById('course').value = settings.course;
-        if (document.getElementById('section')) document.getElementById('section').value = settings.section;
-        if (document.getElementById('facultymemberName')) document.getElementById('facultymemberName').value = settings.facultymemberName;
-        if (document.getElementById('classDuration')) document.getElementById('classDuration').value = settings.classDuration;
-        if (document.getElementById('lateThreshold')) document.getElementById('lateThreshold').value = settings.lateThreshold;
-        if (document.getElementById('videoQuality')) document.getElementById('videoQuality').value = settings.videoQuality;
-    } catch (err) {
-        console.error('Error in loadClassSettings:', err);
-        alert('Error loading class settings.');
-    }
-}
-
-async function saveSettings() {
-    console.log('saveSettings called');
-    try {
+        // Use default settings to avoid 404 errors
         const settings = {
-            course: document.getElementById('course')?.value || '',
-            section: document.getElementById('section')?.value || '',
-            facultymemberName: document.getElementById('facultymemberName')?.value || '',
-            classDuration: parseInt(document.getElementById('classDuration')?.value || 180),
-            lateThreshold: parseInt(document.getElementById('lateThreshold')?.value || 15),
-            videoQuality: document.getElementById('videoQuality')?.value || 'medium',
-            timer: {
-                session: {
-                    hours: Math.floor((parseInt(document.getElementById('classDuration')?.value || 180) / 60)),
-                    minutes: (parseInt(document.getElementById('classDuration')?.value || 180) % 60),
-                    seconds: 0
-                },
-                threshold: {
-                    hours: 0,
-                    minutes: parseInt(document.getElementById('lateThreshold')?.value || 15),
-                    seconds: 0
-                }
-            }
+            course: '',
+            section: '', 
+            facultymemberName: '',
+            classDuration: 3600, // 1 hour default
+            lateThreshold: 900,  // 15 minutes default
+            videoQuality: 'medium'
         };
 
-        const res = await fetch('/api/save_class_settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(settings)
-        });
-        const data = await res.json();
-
-        if (res.ok && data && data.success) {
-            localStorage.setItem('classSettings', JSON.stringify(settings));
-            closeModal('settingsModal');
-            alert('Settings saved successfully.');
-        } else {
-            console.error('Failed to save settings', data);
-            alert((data && data.message) ? data.message : 'Failed to save settings on server.');
-        }
+        localStorage.setItem('classSettings', JSON.stringify(settings));
+        console.log('✅ Using default class settings');
+        
     } catch (err) {
-        console.error('Error in saveSettings:', err);
-        alert('Error saving settings.');
+        console.error('Error in loadClassSettings:', err);
+        // Use defaults even if error occurs
+        const settings = {
+            course: '',
+            section: '',
+            facultymemberName: '',
+            classDuration: 3600,
+            lateThreshold: 900,
+            videoQuality: 'medium'
+        };
+        localStorage.setItem('classSettings', JSON.stringify(settings));
     }
 }
 
-async function updateStudentCount() {
-    console.log('updateStudentCount called');
-    try {
-        const res = await fetch('/api/get_live_attendance');
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-            console.warn('get_live_attendance failed or returned no data', data);
-            return;
-        }
+function updateStudentList(students) {
+    const studentList = document.getElementById('studentList');
+    const searchInput = document.querySelector('.search-bar input');
+    const currentSearch = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    
+    if (!studentList) return;
 
-        const attendance = data.attendance || [];
-        const stats = data.statistics || {};
-        window._latestAttendance = attendance;
-        window._latestStatistics = stats;
-
-        const present = parseInt(stats.present || 0);
-        const late = parseInt(stats.late || 0);
-        const absent = parseInt(stats.absent || 0);
-        const total = parseInt(stats.total || (present + late + absent));
-
-        const detectedCountEl = document.getElementById('detected-count');
-        const totalCountEl = document.getElementById('total-count');
-        const presentEl = document.getElementById('presentCount');
-        const absentEl = document.getElementById('absentCount');
-        const lateEl = document.getElementById('lateCount');
-
-        if (detectedCountEl) detectedCountEl.textContent = String(present + late);
-        if (totalCountEl) totalCountEl.textContent = String(total);
-        if (presentEl) presentEl.textContent = String(present);
-        if (absentEl) absentEl.textContent = String(absent);
-        if (lateEl) lateEl.textContent = String(late);
-    } catch (err) {
-        console.error('Error updating student count:', err);
+    if (students.length === 0) {
+        studentList.innerHTML = '<div class="no-students">No students found for this class</div>';
+        return;
     }
+
+    studentList.innerHTML = students.map(student => {
+        // Determine status class and text
+        let statusClass, statusText;
+        switch(student.status) {
+            case 'present':
+                statusClass = 'present';
+                statusText = 'Present';
+                break;
+            case 'late':
+                statusClass = 'late';
+                statusText = 'Late';
+                break;
+            case 'excused':
+                statusClass = 'excused';
+                statusText = 'Excused';
+                break;
+            default:
+                statusClass = 'absent';
+                statusText = 'Absent';
+        }
+        
+        // Handle avatar source
+        let avatarSrc = '/static/images/default-avatar.jpg';
+        if (student.type === 'regular') {
+            avatarSrc = `/static/images/student_photos/${student.id}.jpg`;
+        }
+        
+        return `
+            <div class="student-row" data-student-id="${student.id}">
+                <div class="student-info">
+                    <img src="${avatarSrc}" alt="${student.name}" 
+                         class="avatar" onerror="this.src='/static/images/default-avatar.jpg'">
+                    <div>
+                        <div class="student-name">${student.name}</div>
+                        <div class="student-id">ID: ${student.id}</div>
+                    </div>
+                </div>
+                <span class="status ${statusClass}">${statusText}</span>
+            </div>
+        `;
+    }).join('');
+
+    // Re-apply search filter after updating the list
+    if (currentSearch) {
+        filterStudents(currentSearch);
+    }
+}
+
+function filterStudents(searchTerm) {
+    const studentRows = document.querySelectorAll('.student-row');
+    let hasMatches = false;
+    
+    studentRows.forEach(row => {
+        const studentName = row.querySelector('.student-name').textContent.toLowerCase();
+        const studentId = row.querySelector('.student-id').textContent.toLowerCase();
+        
+        if (studentName.includes(searchTerm) || studentId.includes(searchTerm)) {
+            row.style.display = 'flex';
+            hasMatches = true;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    
+    // Show "no results" message if needed
+    const studentList = document.getElementById('studentList');
+    const noResults = studentList.querySelector('.no-search-results');
+    
+    if (!hasMatches && searchTerm) {
+        if (!noResults) {
+            const noResultsDiv = document.createElement('div');
+            noResultsDiv.className = 'no-search-results';
+            noResultsDiv.textContent = 'No students found matching your search';
+            noResultsDiv.style.textAlign = 'center';
+            noResultsDiv.style.padding = '20px';
+            noResultsDiv.style.color = '#666';
+            studentList.appendChild(noResultsDiv);
+        }
+    } else if (noResults) {
+        noResults.remove();
+    }
+}
+
+function updateStudentCount() {
+    // Get current class parameters from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const program = urlParams.get('program');
+    const yearLevel = urlParams.get('year_level');
+    const section = urlParams.get('section');
+    const threshold = urlParams.get('threshold'); // ✅ ADD THIS
+    
+    if (!program || !yearLevel || !section) {
+        console.warn('Missing class parameters for status update');
+        return;
+    }
+    
+    // ✅ ADD THRESHOLD PARAMETER TO THE URL
+    fetch(`/api/get_student_status?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&threshold=${threshold}`)
+        .then(res => {
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            return res.json();
+        })
+        .then(data => {
+            if (data.success) {
+                const detectedElement = document.getElementById('detected-count');
+                const totalElement = document.getElementById('total-count');
+                
+                if (detectedElement) detectedElement.textContent = data.detected_count || 0;
+                if (totalElement) totalElement.textContent = data.total_count || 0;
+                
+                // Update student list
+                updateStudentList(data.students || []);
+                
+                console.log('🔄 Student status updated:', data.students);
+            }
+        })
+        .catch(err => {
+            console.error('Error updating student status:', err);
+            // Set default values on error
+            const detectedElement = document.getElementById('detected-count');
+            const totalElement = document.getElementById('total-count');
+            if (detectedElement) detectedElement.textContent = '0';
+            if (totalElement) totalElement.textContent = '0';
+        });
 }
 
 async function populateDeleteStudentSelect() {
     console.log('populateDeleteStudentSelect called');
     try {
-        if (!window._latestAttendance || !window._latestAttendance.length) {
-            await updateStudentCount();
-        }
+        // Get current class students including temporary ones
+        const urlParams = new URLSearchParams(window.location.search);
+        const program = urlParams.get('program');
+        const yearLevel = urlParams.get('year_level');
+        const section = urlParams.get('section');
+        
+        const response = await fetch(`/api/get_student_status?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`);
+        const data = await response.json();
+        
         const select = document.getElementById('deleteStudentSelect');
         if (!select) return;
         select.innerHTML = '<option value="">Select a student to remove...</option>';
 
-        window._latestAttendance.forEach(s => {
-            const id = s.id || s.student_id || s.studentId || '';
-            const name = s.name || `${s.first_name || ''} ${s.last_name || ''}`.trim();
-            if (id) {
+        if (data.success && data.students) {
+            data.students.forEach(student => {
                 const option = document.createElement('option');
-                option.value = id;
-                option.textContent = `${name} (${id})`;
+                option.value = student.id;
+                // Show type in the dropdown to distinguish temporary students
+                const typeLabel = student.type === 'temporary' ? ' (Temporary)' : '';
+                option.textContent = `${student.name}${typeLabel} (${student.id})`;
                 select.appendChild(option);
-            }
-        });
+            });
+        }
     } catch (err) {
         console.error('Error in populateDeleteStudentSelect:', err);
         alert('Error populating delete student select.');
@@ -1093,23 +1843,22 @@ async function populateDeleteStudentSelect() {
 async function populateTransferStudentSelect() {
     console.log('populateTransferStudentSelect called');
     try {
-        if (!window._latestAttendance || !window._latestAttendance.length) {
-            await updateStudentCount();
-        }
+        // Get ALL students
+        const response = await fetch('/api/get_all_students');
+        const data = await response.json();
+        
         const select = document.getElementById('transferStudent');
         if (!select) return;
         select.innerHTML = '<option value="">Select a student...</option>';
 
-        window._latestAttendance.forEach(s => {
-            const id = s.id || s.student_id || s.studentId || '';
-            const name = s.name || `${s.first_name || ''} ${s.last_name || ''}`.trim();
-            if (id) {
+        if (data.success && data.students) {
+            data.students.forEach(student => {
                 const option = document.createElement('option');
-                option.value = id;
-                option.textContent = `${name} (${id})`;
+                option.value = student.id;
+                option.textContent = `${student.name} (${student.id}) - ${student.course} ${student.year_section}`;
                 select.appendChild(option);
-            }
-        });
+            });
+        }
     } catch (err) {
         console.error('Error in populateTransferStudentSelect:', err);
         alert('Error populating transfer student select.');
@@ -1119,26 +1868,68 @@ async function populateTransferStudentSelect() {
 async function populateExcusedStudentSelect() {
     console.log('populateExcusedStudentSelect called');
     try {
-        if (!window._latestAttendance || !window._latestAttendance.length) {
-            await updateStudentCount();
-        }
+        // Get current class students including temporary ones
+        const urlParams = new URLSearchParams(window.location.search);
+        const program = urlParams.get('program');
+        const yearLevel = urlParams.get('year_level');
+        const section = urlParams.get('section');
+        
+        const response = await fetch(`/api/get_student_status?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`);
+        const data = await response.json();
+        
         const select = document.getElementById('excusedStudentSelect');
         if (!select) return;
         select.innerHTML = '<option value="">Select a student to mark as excused...</option>';
 
-        window._latestAttendance.forEach(s => {
-            const id = s.id || s.student_id || s.studentId || '';
-            const name = s.name || `${s.first_name || ''} ${s.last_name || ''}`.trim();
-            if (id) {
+        if (data.success && data.students) {
+            data.students.forEach(student => {
                 const option = document.createElement('option');
-                option.value = id;
-                option.textContent = `${name} (${id})`;
+                option.value = student.id;
+                // Show type in the dropdown to distinguish temporary students
+                const typeLabel = student.type === 'temporary' ? ' (Temporary)' : '';
+                option.textContent = `${student.name}${typeLabel} (${student.id})`;
                 select.appendChild(option);
-            }
-        });
+            });
+        }
     } catch (err) {
         console.error('Error in populateExcusedStudentSelect:', err);
         alert('Error populating excused student select.');
+    }
+}
+
+// Add this function to show modals
+function showModal(title, message, type = 'info') {
+    // Create modal if it doesn't exist
+    if (!document.getElementById('responseModal')) {
+        const modalHTML = `
+            <div id="responseModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modalTitle">${title}</h3>
+                        <span class="close" onclick="closeResponseModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <p id="modalMessage">${message}</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button onclick="closeResponseModal()" class="btn btn-primary">OK</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    // Set content and show
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalMessage').textContent = message;
+    document.getElementById('responseModal').style.display = 'flex';
+}
+
+function closeResponseModal() {
+    const modal = document.getElementById('responseModal');
+    if (modal) {
+        modal.style.display = 'none';
     }
 }
 
@@ -1152,17 +1943,136 @@ async function manageStudent(action, student_data) {
             body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (res.ok && data.success) {
-            alert(data.message || `Student ${action} successful.`);
-            await updateStudentCount();
+        
+        console.log('API Response:', data);
+        
+        if (data.success) {
+            showModal(data.title || 'Success', data.message, 'success');
+            await updateStudentCount(); // Refresh the student list
+            
+            // Safely close modals and clear fields
+            if (action === 'add_temporary') {
+                closeModal('addStudentModal');
+                const nameField = document.getElementById('studentName');
+                const idField = document.getElementById('studentId');
+                if (nameField) nameField.value = '';
+                if (idField) idField.value = '';
+            } else if (action === 'remove') {
+                closeModal('deleteStudentModal');
+            } else if (action === 'transfer') {
+                closeModal('transferStudentModal');
+                const studentField = document.getElementById('transferStudent');
+                const sectionField = document.getElementById('transferSection');
+                if (studentField) studentField.value = '';
+                if (sectionField) sectionField.value = '';
+            } else if (action === 'excused') {
+                closeModal('excusedStudentModal');
+                const studentSelect = document.getElementById('excusedStudentSelect');
+                const remarksField = document.getElementById('excusedRemarks');
+                if (studentSelect) studentSelect.value = '';
+                if (remarksField) remarksField.value = 'Excused';
+            }
         } else {
-            console.error('manage_student failed', data);
-            alert((data && data.message) || 'Manage student failed on server.');
+            showModal(data.title || 'Error', data.message || 'Action failed', 'error');
         }
     } catch (err) {
         console.error(`Error in manageStudent (${action}):`, err);
-        alert(`Error performing ${action} action.`);
+        showModal('Error', `Network error: ${err.message}`, 'error');
     }
+}
+
+// Add right-click context menu for status changes
+function setupStudentContextMenu() {
+    const studentList = document.getElementById('studentList');
+    if (studentList) {
+        studentList.addEventListener('contextmenu', function(e) {
+            const studentRow = e.target.closest('.student-row');
+            if (studentRow) {
+                e.preventDefault();
+                showStatusContextMenu(e.clientX, e.clientY, studentRow);
+            }
+        });
+    }
+}
+
+function showStatusContextMenu(x, y, studentRow) {
+    // Remove existing context menu
+    const existingMenu = document.getElementById('statusContextMenu');
+    if (existingMenu) {
+        existingMenu.remove();
+    }
+    
+    const studentId = studentRow.getAttribute('data-student-id');
+    const studentName = studentRow.querySelector('.student-name').textContent;
+    const currentStatus = studentRow.querySelector('.status').textContent.toLowerCase();
+    
+    const menuHTML = `
+        <div id="statusContextMenu" class="context-menu" style="position: fixed; top: ${y}px; left: ${x}px; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; min-width: 200px;">
+            <div class="menu-header" style="padding: 8px 12px; background: #f5f5f5; border-bottom: 1px solid #eee; font-weight: bold; font-size: 14px;">
+                ${studentName}
+                <div style="font-size: 12px; color: #666; font-weight: normal;">Current: ${currentStatus}</div>
+            </div>
+            <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'present')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
+                ✅ Mark as Present
+            </div>
+            <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'late')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
+                ⏰ Mark as Late
+            </div>
+            <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'excused')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
+                📝 Mark as Excused
+            </div>
+            <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'absent')" style="padding: 8px 12px; cursor: pointer; color: #dc3545; font-size: 14px;">
+                ❌ Mark as Absent
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', menuHTML);
+    
+    // Close menu when clicking elsewhere
+    setTimeout(() => {
+        document.addEventListener('click', closeContextMenu);
+    }, 100);
+}
+
+function closeContextMenu() {
+    const menu = document.getElementById('statusContextMenu');
+    if (menu) {
+        menu.remove();
+    }
+    document.removeEventListener('click', closeContextMenu);
+}
+
+// Function to change student status
+function changeStudentStatus(studentId, newStatus) {
+    closeContextMenu();
+    
+    let action, student_data;
+    
+    switch(newStatus) {
+        case 'present':
+        case 'late':
+        case 'absent':  // CHANGED: Use mark_present for absent too
+            action = 'mark_present';
+            student_data = { 
+                student_id: studentId, 
+                status: newStatus,
+                remarks: `Manually marked as ${newStatus}`
+            };
+            break;
+        case 'excused':
+            action = 'excused';
+            student_data = { 
+                student_id: studentId, 
+                remarks: 'Manually marked as excused' 
+            };
+            break;
+        default:
+            showModal('Error', 'Invalid status', 'error');
+            return;
+    }
+    
+    manageStudent(action, student_data); // REMOVED: await
 }
 
 function submitAddStudent() {
@@ -1170,30 +2080,23 @@ function submitAddStudent() {
     try {
         const name = document.getElementById('studentName')?.value?.trim();
         const id = document.getElementById('studentId')?.value?.trim();
-        const course = document.getElementById('studentCourse')?.value || '';
-        const section = document.getElementById('section')?.value || '';
 
         if (name && id) {
-            const parts = name.split(' ').filter(Boolean);
-            const firstName = parts.shift() || '';
-            const lastName = parts.join(' ') || '';
             const student_data = {
-                id,
-                firstName,
-                lastName,
-                course,
-                section
+                id: id,
+                name: name,
+                temporary: true
             };
-            manageStudent('add', student_data);
-            closeModal('addStudentModal');
+            manageStudent('add_temporary', student_data);
         } else {
-            alert('Please fill in all fields.');
+            showModal('Missing Information', 'Please fill in all fields.', 'error');
         }
     } catch (err) {
         console.error('Error in submitAddStudent:', err);
-        alert('Error adding student.');
+        showModal('Error', 'Error adding student.', 'error');
     }
 }
+
 
 function submitDeleteStudent() {
     console.log('submitDeleteStudent called');
@@ -1202,13 +2105,12 @@ function submitDeleteStudent() {
         const studentId = select?.value;
         if (studentId) {
             manageStudent('remove', { student_id: studentId });
-            closeModal('deleteStudentModal');
         } else {
-            alert('Please select a student to remove.');
+            showModal('Missing Information', 'Please select a student to remove.', 'error');
         }
     } catch (err) {
         console.error('Error in submitDeleteStudent:', err);
-        alert('Error deleting student.');
+        showModal('Error', 'Error removing student.', 'error');
     }
 }
 
@@ -1219,24 +2121,15 @@ function submitTransferStudent() {
         const section = document.getElementById('transferSection')?.value;
         if (student && section) {
             manageStudent('transfer', { student_id: student, new_section: section });
-            const transferDetails = document.getElementById('transferDetails');
-            if (transferDetails) {
-                transferDetails.innerHTML = `
-                    <p>Student: ${document.getElementById('transferStudent').options[document.getElementById('transferStudent').selectedIndex].text}</p>
-                    <p>New Section: ${section}</p>
-                `;
-            }
-            closeModal('transferStudentModal');
-            const confirmModal = document.getElementById('transferConfirmModal');
-            if (confirmModal) confirmModal.style.display = 'flex';
         } else {
-            alert('Please select a student and target section.');
+            showModal('Missing Information', 'Please select a student and target section.', 'error');
         }
     } catch (err) {
         console.error('Error in submitTransferStudent:', err);
-        alert('Error transferring student.');
+        showModal('Error', 'Error transferring student.', 'error');
     }
 }
+
 
 function submitExcusedStudent() {
     console.log('submitExcusedStudent called');
@@ -1246,71 +2139,310 @@ function submitExcusedStudent() {
         const remarks = document.getElementById('excusedRemarks')?.value || 'Excused';
         if (studentId) {
             manageStudent('excused', { student_id: studentId, remarks });
-            closeModal('excusedStudentModal');
         } else {
-            alert('Please select a student to mark as excused.');
+            showModal('Missing Information', 'Please select a student to mark as excused.', 'error');
         }
     } catch (err) {
         console.error('Error in submitExcusedStudent:', err);
-        alert('Error marking student as excused.');
+        showModal('Error', 'Error marking student as excused.', 'error');
     }
 }
 
-function toggleSelectAll(checkbox) {
-    console.log('toggleSelectAll called');
-    try {
-        const checkboxes = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]');
-        checkboxes.forEach(cb => cb.checked = checkbox.checked);
-    } catch (err) {
-        console.error('Error in toggleSelectAll:', err);
-        alert('Error toggling select all.');
-    }
-}
-
-function checkUnrecognizedFaces() {
-    const faceCards = document.querySelectorAll('.unrecognized-faces .face-card');
-    for (let card of faceCards) {
-        if (!card.getAttribute('data-status')) {
-            return true;
+   function toggleSelectAll(checkbox) {
+        console.log('toggleSelectAll called');
+        try {
+            const checkboxes = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = checkbox.checked);
+        } catch (err) {
+            console.error('Error in toggleSelectAll:', err);
+            showAlertModal('error', 'Error toggling select all.');
         }
     }
-    return false;
-}
 
-function markSelectedAs(status) {
-    console.log(`markSelectedAs called with: ${status}`);
+async function checkUnrecognizedFaces() {
+    console.log('Fetching unrecognized faces from API...');
     try {
-        const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
-        selected.forEach(checkbox => {
-            const card = checkbox.closest('.face-card');
-            if (card) card.setAttribute('data-status', status);
+        const res = await fetch('/api/unrecognized_faces');
+        console.log(`🔍 DEBUG: Unrecognized faces API status: ${res.status}`);
+        
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error(`❌ API Error ${res.status}:`, errorText);
+            throw new Error(`Server returned ${res.status}: ${errorText}`);
+        }
+        
+        const faces = await res.json();
+        console.log(`🔍 DEBUG: Received ${faces.length} unrecognized faces`);
+        
+        // Handle case where API returns error object instead of array
+        if (faces && faces.error) {
+            console.error('❌ API returned error:', faces);
+            showAlertModal('error', `Server error: ${faces.message || 'Unknown error'}`, 'API Error');
+            return false;
+        }
+        
+        if (!Array.isArray(faces)) {
+            console.error('❌ API did not return array:', faces);
+            return false;
+        }
+        
+        // 1. Store the full API data globally
+        UNRECOGNIZED_FACES_DATA = faces.map(face => ({
+            ...face,
+            status: 'unresolved' 
+        }));
+
+        // 2. Dynamically render the cards
+        const listContainer = document.getElementById('unrecognizedFacesList');
+        listContainer.innerHTML = '';
+
+        UNRECOGNIZED_FACES_DATA.forEach((face, index) => {
+            const card = document.createElement('div');
+            card.className = 'face-card';
+            card.setAttribute('data-index', index); 
+            card.setAttribute('data-face-id', face.unrecognized_face_id);
+            card.setAttribute('data-temp-encoding', JSON.stringify(face.face_encoding));
+
+            card.innerHTML = `
+                <img src="${face.base64_image}" onerror="this.src='https://placehold.co/80x80/6b7280/ffffff?text=Face'" alt="Unrecognized Face">
+                <label class="face-label">
+                    <input type="checkbox" name="face" value="${face.unrecognized_face_id}">
+                    Face #${index + 1} (${face.timestamp})
+                </label>`;
+            
+            listContainer.appendChild(card);
         });
-        const selAll = document.getElementById('selectAll');
-        if (selAll) {
-            selAll.checked = false;
-            toggleSelectAll(selAll);
-        }
 
-        if (!checkUnrecognizedFaces()) {
-            closeModal('unrecognizedFacesModal');
-            showEndSessionConfirmation();
-        }
+        console.log(`✅ Rendered ${UNRECOGNIZED_FACES_DATA.length} face cards`);
+        return UNRECOGNIZED_FACES_DATA.length > 0;
+        
     } catch (err) {
-        console.error(`Error in markSelectedAs (${status}):`, err);
-        alert(`Error marking faces as ${status}.`);
+        console.error('API Error checking unrecognized faces:', err);
+        showAlertModal('error', `Could not check for unrecognized faces: ${err.message}`, 'Connection Error');
+        return false;
     }
 }
 
-function retakeFaces() {
-    console.log('retakeFaces called');
+// Add this function to extract IDs from URL as fallback
+function getFallbackSessionData() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return {
+        session_id: urlParams.get('schedule_id'), // Use schedule_id as session_id fallback
+        section_id: urlParams.get('section')      // Use section as section_id fallback
+    };
+}
+
+// Call this if backend doesn't provide IDs
+if (!currentSessionId || !currentSectionId) {
+    const fallback = getFallbackSessionData();
+    currentSessionId = fallback.session_id;
+    currentSectionId = fallback.section_id;
+    console.warn('⚠️ Using fallback IDs:', fallback);
+}
+
+// Function to update the status of selected faces (Mark as Present)
+    function markSelectedAs(status) {
+        console.log(`markSelectedAs called with: ${status}`);
+        try {
+            const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
+            
+            if (selected.length === 0) {
+                showAlertModal('warning', 'Please select at least one face.', 'Selection Required');
+                return;
+            }
+
+            // We only process the FIRST selected face for manual enrollment 
+            const firstSelectedCheckbox = selected[0];
+            const card = firstSelectedCheckbox.closest('.face-card');
+            
+            if (card && status === 'present') {
+                const faceId = card.getAttribute('data-face-id');
+                // NOTE: Encoding fragments are mocked here, in a real app this would be the full data
+                const tempEncoding = card.getAttribute('data-temp-encoding'); 
+                const faceImgSrc = card.querySelector('img').src;
+
+                // Open the enrollment modal for this face
+                openEnrollmentModal(faceId, tempEncoding, faceImgSrc);
+            } else {
+                // If the flow changes to support 'late' or 'absent' marks later
+                selected.forEach(checkbox => {
+                    const card = checkbox.closest('.face-card');
+                    if (card) {
+                        card.setAttribute('data-status', status);
+                        // For a simple demo, we remove the card if processed, 
+                        // as 'present' goes through enrollment modal instead
+                        card.remove(); 
+                    }
+                });
+                
+                // Uncheck all after action
+                const selAll = document.getElementById('selectAll');
+                if (selAll) {
+                    selAll.checked = false;
+                    toggleSelectAll(selAll);
+                }
+
+                // Check if all faces are handled
+                if (!checkUnrecognizedFaces()) {
+                    closeModal('unrecognizedFacesModal');
+                    showEndSessionConfirmation();
+                } else {
+                    showAlertModal('info', `Selected faces marked as ${status}. Please handle the remaining ${document.querySelectorAll('.unrecognized-faces .face-card').length} faces.`, 'Next Step');
+                }
+            }
+        } catch (err) {
+            console.error(`Error in markSelectedAs (${status}):`, err);
+            showAlertModal('error', `Error processing selected faces.`, 'Processing Error');
+        }
+    }
+
+function skipSelected() {
+    console.log('skipSelected called - stopping detection and timer');
+    
+    // Stop detection immediately
+    stopPythonDetection();
+    
+    // Stop the timer
+    clearInterval(timerInterval);
+    isRunning = false;
+    
+    const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
+    
+    // Process selected faces if any
+    selected.forEach(checkbox => {
+        const card = checkbox.closest('.face-card');
+        const faceId = card.getAttribute('data-face-id');
+
+        // Call backend to remove face from system
+        fetch('/api/remove_unknown_face', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ face_id: faceId })
+        }).catch(err => {
+            console.error('Error removing face from backend:', err);
+        });
+
+        // Update global data array
+        const faceData = UNRECOGNIZED_FACES_DATA.find(f => f.unrecognized_face_id == faceId);
+        if (faceData) {
+            faceData.status = 'skipped';
+        }
+
+        // Remove card from DOM
+        if (card) {
+            card.remove();
+        }
+    });
+
+    // Proceed to confirmation
+    closeModal('unrecognizedFacesModal');
+    showEndSessionConfirmation();
+}
+
+async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
+    const studentSelect = document.getElementById('studentSelect');
+    studentSelect.innerHTML = '<option value="">Loading students...</option>';
+    
+    // 🎯 DEBUG: Log what we're sending
+    console.log(`🔍 DEBUG: Fetching absent students with session_id=${currentSessionId}, section_id=${currentSectionId}`);
+    
+    if (!currentSessionId || !currentSectionId) {
+        console.error('❌ CRITICAL: Missing session_id or section_id');
+        showAlertModal('error', 'Session not properly initialized. Please refresh the page.', 'Session Error');
+        return;
+    }
+    
     try {
-        alert('Retaking face detection...');
+        const res = await fetch(`/api/absent_students_for_enrollment?session_id=${currentSessionId}&section_id=${currentSectionId}`);
+        console.log(`🔍 DEBUG: API Response status: ${res.status}`);
+        
+        if (!res.ok) throw new Error('API failed to return absent students.');
+        
+        const students = await res.json();
+        console.log(`🔍 DEBUG: Received ${students.length} students`);
+
+        studentSelect.innerHTML = '<option value="" disabled selected>Select a student</option>';
+        students.forEach(student => {
+            const option = document.createElement('option');
+            option.value = student.student_id;
+            option.textContent = `${student.last_name}, ${student.first_name} (${student.student_id})`;
+            studentSelect.appendChild(option);
+        });
+        
+        // 2. Set face data (Encoding is now a stringified JSON array)
+        document.getElementById('faceToEnrollImage').src = faceImgSrc;
+        document.getElementById('faceToEnrollID').value = faceId;
+        document.getElementById('faceToEnrollEncoding').value = tempEncoding; 
+        
         closeModal('unrecognizedFacesModal');
-    } catch (err) {
-        console.error('Error in retakeFaces:', err);
-        alert('Error retaking faces.');
+        openModal('enrollStudentModal');
+        
+    } catch (error) {
+        console.error('Error fetching students for enrollment:', error);
+        showAlertModal('error', 'Could not load student list. Please check session/section IDs.', 'Load Error');
+        studentSelect.innerHTML = '<option value="">Error loading students</option>';
     }
 }
+
+async function confirmEnrollment() {
+    const studentId = document.getElementById('studentSelect').value;
+    const faceId = document.getElementById('faceToEnrollID').value;
+    const faceEncoding = document.getElementById('faceToEnrollEncoding').value;
+    
+    if (!studentId) {
+        showAlertModal('warning', 'Please select a student to enroll.', 'Missing Selection');
+        return;
+    }
+    
+    closeModal('enrollStudentModal'); 
+
+    // 1. Prepare and Send data to the backend
+    try {
+        const response = await fetch('/api/enroll_unknown_face', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                student_id: studentId,
+                // The backend expects a JSON array, so parse the stringified encoding
+                face_encoding: JSON.parse(faceEncoding), 
+                unrecognized_face_id: faceId, // CRITICAL: The ID to resolve the face record
+                session_id: currentSessionId // CRITICAL: The ID to update attendance
+            }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showAlertModal('success', 'Enrollment successful! Student marked as Present.', 'Confirmed');
+            
+            // 2. Remove the processed face card
+            const faceCardToRemove = document.querySelector(`.unrecognized-faces .face-card[data-face-id="${faceId}"]`);
+            if (faceCardToRemove) {
+                faceCardToRemove.remove();
+            }
+            
+            // 3. Check for remaining faces and transition
+            if (!checkUnrecognizedFaces()) { 
+                showEndSessionConfirmation();
+            } else {
+                openModal('unrecognizedFacesModal');
+            }
+        } else {
+            console.error('Enrollment failed:', data);
+            showAlertModal('error', `Enrollment failed: ${data.message || 'An unknown error occurred.'}`, 'Enrollment Failed');
+            openModal('enrollStudentModal');
+        }
+    } catch (error) {
+        console.error('Error confirming enrollment:', error);
+        showAlertModal('error', 'A network error occurred during enrollment.', 'Network Error');
+        openModal('enrollStudentModal');
+    }
+}
+
+    // Initialize the face count on load for the demo
+    window.onload = function() {
+        console.log("App ready. Two placeholder unrecognized faces exist.");
+    };
 
 function handleVideoError(img) {
     console.error('Video feed error');

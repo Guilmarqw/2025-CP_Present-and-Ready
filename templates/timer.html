@@ -64,7 +64,7 @@
                         <span class="time-label">Hours</span>
                     </div>
                     <div class="time-unit">
-                        <input type="number" min="0" max="59" value="10" id="thresholdMinutes" readonly>
+                        <input type="number" min="0" max="59" value="15" id="thresholdMinutes" readonly>
                         <span class="time-label">Minutes</span>
                     </div>
                     <div class="time-unit">
@@ -445,22 +445,22 @@ async function startSession(event) {
             body: JSON.stringify({ rtsp_url: rtspUrl })
         });
         
- const rtspData = await rtspResponse.json();
+        const rtspData = await rtspResponse.json();
 
-hideLoading();
+        hideLoading();
 
-if (!rtspData.success) {
-    showModal('Error', `Failed to connect to camera: ${rtspData.message}\n\nPlease check your RTSP URL or camera connection.`);
-    return;
-} else if (rtspData.using_fallback) {
-    const useAnyway = confirm('RTSP camera not available.\n\nFalling back to laptop camera. Continue with laptop camera?');
-    if (!useAnyway) {
-        return;
-    }
-    showModal('Info', 'Using laptop camera (fallback)', null, false, 2000);
-} else {
-    showModal('Success', 'RTSP camera connected successfully!', null, false, 2000);
-}
+        if (!rtspData.success) {
+            showModal('Error', `Failed to connect to camera: ${rtspData.message}\n\nPlease check your RTSP URL or camera connection.`);
+            return;
+        } else if (rtspData.using_fallback) {
+            const useAnyway = confirm('RTSP camera not available.\n\nFalling back to laptop camera. Continue with laptop camera?');
+            if (!useAnyway) {
+                return;
+            }
+            showModal('Info', 'Using laptop camera (fallback)', null, false, 2000);
+        } else {
+            showModal('Success', 'RTSP camera connected successfully!', null, false, 2000);
+        }
         
     } catch (error) {
         hideLoading();
@@ -509,17 +509,25 @@ if (!rtspData.success) {
         return;
     }
     
+    // Calculate session duration and threshold
     const totalSeconds = 
         parseInt(settings.timer.session.hours) * 3600 + 
         parseInt(settings.timer.session.minutes) * 60 + 
         parseInt(settings.timer.session.seconds);
+    
+    const thresholdSeconds = 
+        parseInt(settings.timer.threshold.hours) * 3600 + 
+        parseInt(settings.timer.threshold.minutes) * 60 + 
+        parseInt(settings.timer.threshold.seconds);
         
     if (totalSeconds === 0) {
         showModal('Validation Error', 'Please set a class duration');
         return;
     }
 
-    if (!validateTimeInputs()) {
+    // Validate threshold (must be less than session duration)
+    if (thresholdSeconds >= totalSeconds) {
+        document.getElementById('thresholdWarningModal').style.display = 'flex';
         return;
     }
 
@@ -533,8 +541,8 @@ if (!rtspData.success) {
         section: settings.classDetails.section,
         duration: totalSeconds,
         threshold: (parseInt(settings.timer.threshold.hours) * 3600 + 
-                   parseInt(settings.timer.threshold.minutes) * 60 + 
-                   parseInt(settings.timer.threshold.seconds)),
+           parseInt(settings.timer.threshold.minutes) * 60 + 
+           parseInt(settings.timer.threshold.seconds)),
         rtsp_url: encodeURIComponent(rtspUrl),
         mode: timerMode
     });
@@ -543,27 +551,6 @@ if (!rtspData.success) {
     setTimeout(() => {
         window.location.href = `/camfootage?${params.toString()}`;
     }, 500);
-}
-
-function validateTimeInputs() {
-    const timerMode = document.querySelector('input[name="timerMode"]:checked').value;
-    if (timerMode === 'default') return true;
-
-    const mainSeconds = 
-        parseInt(document.getElementById('sessionHours').value) * 3600 +
-        parseInt(document.getElementById('sessionMinutes').value) * 60 +
-        parseInt(document.getElementById('sessionSeconds').value);
-
-    const thresholdSeconds = 
-        parseInt(document.getElementById('thresholdHours').value) * 3600 +
-        parseInt(document.getElementById('thresholdMinutes').value) * 60 +
-        parseInt(document.getElementById('thresholdSeconds').value);
-
-    if (thresholdSeconds >= mainSeconds) {
-        document.getElementById('thresholdWarningModal').style.display = 'flex';
-        return false;
-    }
-    return true;
 }
 
 function adjustThreshold() {
@@ -632,14 +619,6 @@ document.querySelectorAll('.time-unit input').forEach(input => {
             value = Math.min(59, Math.max(0, value));
         }
         this.value = String(value).padStart(2, '0');
-    });
-});
-
-document.querySelectorAll('.threshold-container .time-unit input').forEach(input => {
-    input.addEventListener('change', function() {
-        if (document.querySelector('input[name="timerMode"]:checked').value === 'custom') {
-            validateTimeInputs();
-        }
     });
 });
     </script>

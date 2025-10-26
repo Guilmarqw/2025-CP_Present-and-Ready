@@ -116,25 +116,25 @@
         </div>
 
         <div class="time-section bg-white rounded-lg shadow-sm p-6 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-            <div class="time-item text-center">
-                <div class="time-value text-lg font-semibold text-gray-800">1:03pm</div>
-                <div class="time-label text-sm text-gray-600">Time Started</div>
-            </div>
-            <div class="duration-container text-center">
-                <div class="duration-main">
-                    <div class="duration-value text-lg font-semibold text-gray-800">3h:00m:00s</div>
-                    <div class="duration-label text-sm text-gray-600">Class Duration</div>
-                </div>
-                <div class="threshold-container mt-2">
-                    <div class="threshold-value text-sm font-medium text-gray-700">00h:15m:00s</div>
-                    <div class="threshold-label text-xs text-gray-500">Late Threshold</div>
-                </div>
-            </div>
-            <div class="time-item text-center">
-                <div class="time-value text-lg font-semibold text-gray-800">4:03pm</div>
-                <div class="time-label text-sm text-gray-600">Time Ended</div>
-            </div>
+    <div class="time-item text-center">
+        <div class="time-value text-lg font-semibold text-gray-800 time-started">02:55pm</div>
+        <div class="time-label text-sm text-gray-600">Time Started</div>
+    </div>
+    <div class="duration-container text-center">
+        <div class="duration-main">
+            <div class="duration-value text-lg font-semibold text-gray-800">00h:00m:00s</div>
+            <div class="duration-label text-sm text-gray-600">Class Duration</div>
         </div>
+        <div class="threshold-container mt-2">
+            <div class="threshold-value text-sm font-medium text-gray-700">00h:20m:00s</div>
+            <div class="threshold-label text-xs text-gray-500">Late Threshold</div>
+        </div>
+    </div>
+    <div class="time-item text-center">
+        <div class="time-value text-lg font-semibold text-gray-800 time-ended">4:03pm</div>
+        <div class="time-label text-sm text-gray-600">Time Ended</div>
+    </div>
+</div>
 
         <div class="attendance-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div class="attendance-column column-present p-6">
@@ -168,147 +168,538 @@
         </div>
     </div>
 
-    <script>
-        // Sample student data with attendance status
-        const allStudents = [
-            { name: 'Student Name 1', status: 'present' },
-            { name: 'Student Name 2', status: 'present' },
-            { name: 'Student Name 3', status: 'late' },
-            { name: 'Student Name 4', status: 'absent' },
-            { name: 'Student Name 5', status: 'present' },
-            { name: 'Student Name 6', status: 'late' },
-            { name: 'Student Name 7', status: 'present' },
-            { name: 'Student Name 8', status: 'absent' },
-            { name: 'Student Name 9', status: 'present' },
-            { name: 'Student Name 10', status: 'late' },
-            { name: 'Student Name 11', status: 'present' },
-            { name: 'Student Name 12', status: 'absent' },
-            { name: 'Student Name 13', status: 'present' },
-            { name: 'Student Name 14', status: 'late' },
-            { name: 'Student Name 15', status: 'present' },
-            { name: 'Student Name 16', status: 'present' },
-            { name: 'Student Name 17', status: 'absent' },
-            { name: 'Student Name 18', status: 'present' },
-            { name: 'Student Name 19', status: 'late' },
-            { name: 'Student Name 20', status: 'present' },
-            { name: 'Student Name 21', status: 'present' },
-            { name: 'Student Name 22', status: 'absent' },
-            { name: 'Student Name 23', status: 'present' },
-            { name: 'Student Name 24', status: 'late' },
-            { name: 'Student Name 25', status: 'present' },
-            { name: 'Student Name 26', status: 'present' },
-            { name: 'Student Name 27', status: 'absent' },
-            { name: 'Student Name 28', status: 'present' },
-            { name: 'Student Name 29', status: 'late' },
-            { name: 'Student Name 30', status: 'present' },
-            { name: 'Student Name 31', status: 'present' },
-            { name: 'Student Name 32', status: 'absent' },
-            { name: 'Student Name 33', status: 'present' },
-            { name: 'Student Name 34', status: 'late' },
-            { name: 'Student Name 35', status: 'present' },
-            { name: 'Student Name 36', status: 'present' }
-        ];
+<script>
+    // Global variables
+    let allStudents = [];
+    let originalStudents = [];
+    let hasChanges = false;
+    let currentSessionId = null;
 
-        // Store original student data for discard functionality
-        let originalStudents = JSON.parse(JSON.stringify(allStudents));
+    // Check if elements exist
+    console.log('Faculty Name:', document.querySelector('.faculty-name'));
+    console.log('Subject Code:', document.querySelector('.subject-code'));
+    console.log('Course Code:', document.querySelector('.course-code'));
+    console.log('Count Present:', document.querySelector('.count-present'));
 
-        // Track if changes have been made
-        let hasChanges = false;
+/// Format duration function - ENHANCED
+function formatDuration(seconds) {
+    console.log('🔧 formatDuration called with:', seconds);
+    
+    if (seconds === undefined || seconds === null) {
+        console.log('🔧 formatDuration: No seconds provided, returning default');
+        return '00h:00m:00s';
+    }
+    
+    if (isNaN(seconds)) {
+        console.log('🔧 formatDuration: Invalid seconds (NaN), returning default');
+        return '00h:00m:00s';
+    }
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    const formatted = `${hours.toString().padStart(2, '0')}h:${minutes.toString().padStart(2, '0')}m:${secs.toString().padStart(2, '0')}s`;
+    
+    console.log('🔧 formatDuration result:', {
+        input_seconds: seconds,
+        hours: hours,
+        minutes: minutes,
+        seconds: secs,
+        formatted: formatted
+    });
+    
+    return formatted;
+}
 
-        // Populate initial lists
-        const students = {
-            present: allStudents.filter(s => s.status === 'present').map(s => s.name),
-            late: allStudents.filter(s => s.status === 'late').map(s => s.name),
-            absent: allStudents.filter(s => s.status === 'absent').map(s => s.name),
-            excused: allStudents.filter(s => s.status === 'excused').map(s => s.name)
+// Format threshold function
+function formatTimeThreshold(minutes) {
+    console.log('🔧 formatTimeThreshold called with:', minutes);
+    
+    if (!minutes) {
+        console.log('🔧 formatTimeThreshold: No minutes provided');
+        return '00h:10m:00s';
+    }
+    
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    const formatted = `${hours.toString().padStart(2, '0')}h:${mins.toString().padStart(2, '0')}m:00s`;
+    
+    console.log('🔧 formatTimeThreshold result:', formatted);
+    return formatted;
+}
+
+// Enhanced formatTimeFromDateTime function
+function formatTimeFromDateTime(datetimeString) {
+    console.log('🔧 formatTimeFromDateTime called with:', datetimeString);
+    
+    if (!datetimeString) {
+        console.log('🔧 formatTimeFromDateTime: No datetime provided');
+        return 'N/A';
+    }
+    
+    try {
+        // Handle different datetime formats
+        if (typeof datetimeString === 'string') {
+            // Try to parse the string
+            if (datetimeString.includes('-') && datetimeString.includes(' ')) {
+                // Format: "2024-01-15 04:22PM"
+                const [datePart, timePart] = datetimeString.split(' ');
+                if (datePart && timePart) {
+                    // Convert to proper time format (lowercase)
+                    const time = timePart.toLowerCase();
+                    console.log('🔧 formatTimeFromDateTime result:', time);
+                    return time;
+                }
+            } else if (datetimeString.includes(':')) {
+                // Already a time string? Return as is
+                console.log('🔧 formatTimeFromDateTime: Already time format');
+                return datetimeString;
+            }
+        }
+        
+        console.log('🔧 formatTimeFromDateTime: Could not parse format');
+        return 'N/A';
+    } catch (e) {
+        console.error('❌ Error formatting time:', e, datetimeString);
+        return 'N/A';
+    }
+}
+
+// Format course name - UPDATED WITH ACT
+function formatCourseName(courseName) {
+    console.log('🔧 formatCourseName called with:', courseName);
+    
+    if (!courseName) {
+        console.log('🔧 formatCourseName: No course name provided');
+        return 'BSIT 4C'; // Default for Associate courses
+    }
+    
+    let formatted = courseName
+        .replace(/Associate\s+in\s+Computer\s+Technology/gi, 'ACT')
+        .replace(/Information\s*Technology/gi, 'BSIT')
+        .replace(/Computer\s*Science/gi, 'BSCS')
+        .replace(/Accountancy/gi, 'BSA')
+        .replace(/Accounting/gi, 'BSA')
+        .replace(/Education/gi, 'BSE')
+        .replace(/Engineering/gi, 'BSE')
+        .replace(/Architecture/gi, 'BSARCH')
+        .replace(/-/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    
+    console.log('🔧 formatCourseName result:', formatted);
+    return formatted;
+}
+
+    // Load summary data
+    async function loadSummaryData() {
+        try {
+            console.log('🔄 Loading summary data...');
+            const response = await fetch('/api/summary_data');
+            const data = await response.json();
+
+            console.log('📦 API Response:', data);
+
+            if (data.success) {
+                displaySummaryData(data);
+            } else {
+                console.error('❌ API Error:', data.message);
+                alert('Error loading summary data: ' + data.message);
+            }
+        } catch (error) {
+            console.error('❌ Error loading summary:', error);
+            alert('Error loading summary data');
+        }
+    }
+
+// Display summary data
+function displaySummaryData(data) {
+    console.log('📊 Full API Response:', data);
+    console.log('🕒 Session Data:', data.session);
+
+    const session = data.session;
+    const user = data.user;
+    
+    currentSessionId = session.session_id;
+
+    // Update user info
+    const facultyName = document.querySelector('.faculty-name');
+    const facultyTitle = document.querySelector('.faculty-title');
+    if (facultyName) {
+        facultyName.textContent = user.name || 'Faculty Member';
+        console.log('👤 Faculty Name:', facultyName.textContent);
+    }
+    if (facultyTitle) {
+        facultyTitle.textContent = user.role ? `${user.role.replace('_', ' ').toUpperCase()}` : 'Faculty Member';
+        console.log('👤 Faculty Title:', facultyTitle.textContent);
+    }
+    
+    // Update faculty avatar
+    const facultyAvatar = document.querySelector('.faculty-avatar img');
+    if (facultyAvatar) {
+        if (user.photo_path && user.photo_path !== 'NULL') {
+            facultyAvatar.src = user.photo_path;
+            console.log('👤 Faculty Avatar:', user.photo_path);
+        }
+        facultyAvatar.onerror = function() {
+            this.src = '/static/images/default-avatar.jpg';
+            console.log('👤 Using default avatar');
+        };
+    }
+    
+    // Update subject and course info
+    const subjectCode = document.querySelector('.subject-code');
+    const subjectLabel = document.querySelector('.subject-label');
+    const courseCode = document.querySelector('.course-code');
+    
+    if (subjectCode) {
+        subjectCode.textContent = data.subject?.code || 'IT99';
+        console.log('📚 Subject Code:', subjectCode.textContent);
+    }
+    if (subjectLabel) {
+        subjectLabel.textContent = data.subject?.name || 'AMBUTT UY';
+        console.log('📚 Subject Name:', subjectLabel.textContent);
+    }
+    if (courseCode) {
+        courseCode.textContent = formatCourseName(data.course_section || session.class_name || 'Information Technology-4C');
+        console.log('📚 Course:', courseCode.textContent);
+    }
+
+    // ✅ FIXED: CORRECT ELEMENT TARGETING FOR YOUR HTML STRUCTURE
+    const timeStarted = document.querySelector('.time-started'); // This should target the element with class "time-started"
+    const timeEnded = document.querySelector('.time-ended'); // This should target the element with class "time-ended"
+    const durationValue = document.querySelector('.duration-value');
+    const thresholdValue = document.querySelector('.threshold-value');
+    
+    console.log('⏰ Element Search Results:', {
+        timeStarted: timeStarted ? 'Found' : 'NOT FOUND',
+        timeEnded: timeEnded ? 'Found' : 'NOT FOUND',
+        durationValue: durationValue ? 'Found' : 'NOT FOUND',
+        thresholdValue: thresholdValue ? 'Found' : 'NOT FOUND'
+    });
+    
+    console.log('⏰ Raw Time Data:', {
+        started_at: session.started_at,
+        ended_at: session.ended_at,
+        duration_seconds: session.duration_seconds
+    });
+    
+    // Update Time Started - FIXED TARGETING
+    if (timeStarted && session.started_at) {
+        const formattedStart = formatTimeFromDateTime(session.started_at);
+        timeStarted.textContent = formattedStart;
+        console.log('⏰ Time Started Updated:', formattedStart);
+    } else {
+        console.log('⏰ Time Started NOT updated - element or data missing');
+    }
+    
+    // Update Time Ended - FIXED TARGETING
+    if (timeEnded && session.ended_at) {
+        const formattedEnd = formatTimeFromDateTime(session.ended_at);
+        timeEnded.textContent = formattedEnd;
+        console.log('⏰ Time Ended Updated:', formattedEnd);
+    } else {
+        console.log('⏰ Time Ended NOT updated - element or data missing');
+    }
+
+    // Update Duration - FIXED
+    if (durationValue) {
+        if (session.duration_seconds !== undefined && session.duration_seconds !== null) {
+            const formattedDuration = formatDuration(session.duration_seconds);
+            durationValue.textContent = formattedDuration;
+            console.log('⏰ Duration Updated:', {
+                raw_seconds: session.duration_seconds,
+                formatted: formattedDuration
+            });
+        } else {
+            durationValue.textContent = '00h:00m:00s';
+            console.log('⏰ Duration: Using default - no duration data');
+        }
+    }
+    
+    // Update Threshold
+    if (thresholdValue && session.late_threshold_minutes) {
+        thresholdValue.textContent = formatTimeThreshold(session.late_threshold_minutes);
+        console.log('⏰ Threshold Updated:', thresholdValue.textContent);
+    }
+
+    // Update attendance counts
+    const countPresent = document.querySelector('.count-present');
+    const countLate = document.querySelector('.count-late');
+    const countAbsent = document.querySelector('.count-absent');
+    const countExcused = document.querySelector('.count-excused');
+    
+    if (session.total_students !== undefined) {
+        if (countPresent) {
+            countPresent.textContent = `${session.present_count || 0}/${session.total_students}`;
+            console.log('👥 Present:', countPresent.textContent);
+        }
+        if (countLate) {
+            countLate.textContent = `${session.late_count || 0}/${session.total_students}`;
+            console.log('👥 Late:', countLate.textContent);
+        }
+        if (countAbsent) {
+            countAbsent.textContent = `${session.absent_count || 0}/${session.total_students}`;
+            console.log('👥 Absent:', countAbsent.textContent);
+        }
+        if (countExcused) {
+            countExcused.textContent = `${session.excused_count || 0}/${session.total_students}`;
+            console.log('👥 Excused:', countExcused.textContent);
+        }
+    }
+
+    // Process attendance data
+    if (data.attendance && Array.isArray(data.attendance)) {
+        allStudents = data.attendance.map(record => ({
+            student_id: record.student_id,
+            name: record.name || record.student_name,
+            status: record.status,
+            timestamp: record.timestamp,
+            photo: record.photo || `/static/images/student_photos/${record.student_id}.jpg`
+        }));
+
+        originalStudents = JSON.parse(JSON.stringify(allStudents));
+        populateStudentLists();
+        populateModalStudentsList();
+        console.log('👥 Attendance Data Loaded:', allStudents.length, 'students');
+    } else {
+        console.warn('❌ No attendance data found');
+        allStudents = [];
+        originalStudents = [];
+        populateStudentLists();
+        populateModalStudentsList();
+    }
+    
+    console.log('✅ Summary data loaded successfully');
+}
+
+    // Populate student lists in the main attendance columns
+    function populateStudentLists() {
+        const lists = {
+            'presentList': 'present',
+            'lateList': 'late', 
+            'absentList': 'absent',
+            'excusedList': 'excused'
         };
 
-        function createStudentItem(name, index) {
-            const studentItem = document.createElement('div');
-            studentItem.className = 'student-item flex items-center gap-3 p-2 hover:bg-gray-50 rounded-md';
-            
-            const avatar = document.createElement('div');
-            avatar.className = 'student-avatar';
-            avatar.textContent = name.charAt(0).toUpperCase();
-            
-            const nameDiv = document.createElement('div');
-            nameDiv.className = 'student-name text-gray-800';
-            nameDiv.textContent = name;
-            
-            studentItem.appendChild(avatar);
-            studentItem.appendChild(nameDiv);
-            
-            return studentItem;
-        }
+        // Clear all lists first
+        Object.keys(lists).forEach(listId => {
+            const container = document.getElementById(listId);
+            if (container) {
+                container.innerHTML = '';
+            }
+        });
 
-        function populateStudentList(containerId, studentList) {
-            const container = document.getElementById(containerId);
-            container.innerHTML = '';
+        // Populate each list with students
+        allStudents.forEach(student => {
+            const listId = `${student.status}List`;
+            const container = document.getElementById(listId);
             
-            studentList.forEach((name, index) => {
-                const studentItem = createStudentItem(name, index);
-                container.appendChild(studentItem);
+            if (container) {
+                const studentElement = createStudentElement(student);
+                container.appendChild(studentElement);
+            }
+        });
+    }
+
+ // In your frontend JavaScript, update the photo path handling:
+function createStudentElement(student) {
+    const div = document.createElement('div');
+    div.className = 'student-item flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200 mb-2';
+    
+    // Use the correct photo path from backend or default
+    const photoPath = student.photo || `/static/images/student_photos/${student.student_id}.jpg`;
+    
+    div.innerHTML = `
+        <div class="student-avatar w-10 h-10 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
+            <img src="${photoPath}" 
+                 alt="${student.name}" 
+                 class="w-full h-full object-cover"
+                 onerror="this.src='/static/images/default-avatar.jpg'">
+        </div>
+        <div class="student-info flex-1 min-w-0">
+            <div class="student-name font-medium text-gray-800 truncate">${student.name}</div>
+            <div class="student-id text-sm text-gray-500">${student.student_id}</div>
+        </div>
+    `;
+    
+    return div;
+}
+
+    // Modal functionality
+    function createModalStudentItem(student) {
+        const studentItem = document.createElement('div');
+        studentItem.className = 'modal-student-item flex items-center justify-between p-3 border-b border-gray-200';
+        
+        const studentInfo = document.createElement('div');
+        studentInfo.className = 'flex items-center gap-3';
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'w-10 h-10 rounded-full overflow-hidden bg-gray-200 flex-shrink-0';
+        avatar.innerHTML = `
+            <img src="${student.photo}" 
+                 alt="${student.name}" 
+                 class="w-full h-full object-cover"
+                 onerror="this.src='/static/images/default-avatar.jpg'">
+        `;
+        
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'modal-student-name text-gray-800';
+        nameDiv.textContent = student.name;
+        
+        studentInfo.appendChild(avatar);
+        studentInfo.appendChild(nameDiv);
+        
+        const checkboxes = document.createElement('div');
+        checkboxes.className = 'attendance-checkboxes flex gap-2';
+        
+        ['present', 'late', 'absent', 'excused'].forEach(status => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'checkbox-wrapper';
+            const checkbox = document.createElement('div');
+            checkbox.className = `attendance-checkbox checkbox-${status} ${student.status === status ? 'checked' : ''}`;
+            checkbox.dataset.status = status;
+            checkbox.dataset.studentId = student.student_id;
+            checkbox.dataset.studentName = student.name;
+            wrapper.appendChild(checkbox);
+            checkboxes.appendChild(wrapper);
+        });
+        
+        studentItem.appendChild(studentInfo);
+        studentItem.appendChild(checkboxes);
+        
+        return studentItem;
+    }
+
+    function populateModalStudentsList(searchTerm = '') {
+        const container = document.getElementById('modalStudentsList');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        const filteredStudents = searchTerm 
+            ? allStudents.filter(student => 
+                student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                student.student_id.toLowerCase().includes(searchTerm.toLowerCase()))
+            : allStudents;
+            
+        filteredStudents.forEach(student => {
+            const studentItem = createModalStudentItem(student);
+            container.appendChild(studentItem);
+        });
+    }
+
+    // Save changes to backend
+    async function saveChangesToBackend() {
+        const attendanceUpdates = allStudents.map(student => ({
+            student_id: student.student_id,
+            status: student.status
+        }));
+
+        try {
+            const response = await fetch('/api/update_attendance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_id: currentSessionId,
+                    attendance_updates: attendanceUpdates
+                })
             });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Reload data to get updated counts
+                await loadSummaryData();
+                hasChanges = false;
+                return true;
+            } else {
+                alert('Error saving changes: ' + data.message);
+                return false;
+            }
+        } catch (error) {
+            console.error('Error saving changes:', error);
+            alert('Error saving changes');
+            return false;
+        }
+    }
+
+    // Export CSV
+    async function exportToCSV() {
+        if (!currentSessionId) {
+            alert('No session data available');
+            return;
         }
 
-        function createModalStudentItem(student) {
-            const studentItem = document.createElement('div');
-            studentItem.className = 'modal-student-item flex items-center justify-between p-3 border-b border-gray-200';
+        try {
+            const response = await fetch(`/api/export_csv?session_id=${currentSessionId}`);
             
-            const studentInfo = document.createElement('div');
-            studentInfo.className = 'flex items-center gap-3';
-            
-            const avatar = document.createElement('div');
-            avatar.className = 'modal-student-avatar';
-            avatar.textContent = student.name.charAt(0).toUpperCase();
-            
-            const nameDiv = document.createElement('div');
-            nameDiv.className = 'modal-student-name text-gray-800';
-            nameDiv.textContent = student.name;
-            
-            studentInfo.appendChild(avatar);
-            studentInfo.appendChild(nameDiv);
-            
-            const checkboxes = document.createElement('div');
-            checkboxes.className = 'attendance-checkboxes flex gap-2';
-            
-            ['present', 'late', 'absent', 'excused'].forEach(status => {
-                const wrapper = document.createElement('div');
-                wrapper.className = 'checkbox-wrapper';
-                const checkbox = document.createElement('div');
-                checkbox.className = `attendance-checkbox checkbox-${status} ${student.status === status ? 'checked' : ''}`;
-                checkbox.dataset.status = status;
-                checkbox.dataset.student = student.name;
-                wrapper.appendChild(checkbox);
-                checkboxes.appendChild(wrapper);
-            });
-            
-            studentItem.appendChild(studentInfo);
-            studentItem.appendChild(checkboxes);
-            
-            return studentItem;
-        }
-
-        function populateModalStudentsList(searchTerm = '') {
-            const container = document.getElementById('modalStudentsList');
-            container.innerHTML = '';
-            
-            const filteredStudents = searchTerm 
-                ? allStudents.filter(student => student.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                : allStudents;
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
                 
-            filteredStudents.forEach(student => {
-                const studentItem = createModalStudentItem(student);
-                container.appendChild(studentItem);
-            });
+                // Get filename from Content-Disposition header or use default
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = `attendance_${currentSessionId}.csv`;
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                    if (filenameMatch) {
+                        filename = filenameMatch[1];
+                    }
+                }
+                
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } else {
+                const error = await response.json();
+                alert('Error exporting CSV: ' + (error.message || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Error exporting CSV:', error);
+            alert('Error exporting CSV');
         }
+    }
 
-        // Initialize student lists
-        populateStudentList('presentList', students.present);
-        populateStudentList('lateList', students.late);
-        populateStudentList('absentList', students.absent);
-        populateStudentList('excusedList', students.excused);
-        populateModalStudentsList();
+    // Confirmation modal functionality
+    function showConfirmation(action, message, callback) {
+        const confirmationModal = document.getElementById('confirmationModal');
+        const confirmationTitle = document.getElementById('confirmationTitle');
+        const confirmationMessage = document.getElementById('confirmationMessage');
+        const confirmationYes = document.getElementById('confirmationYes');
+        
+        if (!confirmationModal || !confirmationTitle || !confirmationMessage || !confirmationYes) {
+            console.error('Confirmation modal elements not found');
+            return;
+        }
+        
+        confirmationTitle.textContent = `Confirm ${action.charAt(0).toUpperCase() + action.slice(1)}`;
+        confirmationMessage.textContent = message;
+        confirmationModal.style.display = 'flex';
+        
+        // Remove previous event listeners
+        const newYesBtn = confirmationYes.cloneNode(true);
+        confirmationYes.parentNode.replaceChild(newYesBtn, confirmationYes);
+        
+        newYesBtn.onclick = () => {
+            if (callback) {
+                callback();
+            }
+            confirmationModal.style.display = 'none';
+        };
+    }
+
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSummaryData();
 
         // Modal functionality
         const editModal = document.getElementById('editModal');
@@ -318,54 +709,86 @@
         const modalSave = document.getElementById('modalSave');
         const studentSearch = document.getElementById('studentSearch');
 
-        editBtn.addEventListener('click', () => {
-            populateModalStudentsList();
-            editModal.style.display = 'flex';
-        });
-
-        closeModal.addEventListener('click', () => {
-            editModal.style.display = 'none';
-        });
-
-        modalCancel.addEventListener('click', () => {
-            showConfirmation('cancel', 'Do you want to discard unsaved changes?', () => {
-                editModal.style.display = 'none';
-                confirmationModal.style.display = 'none';
+        if (editBtn) {
+            editBtn.addEventListener('click', () => {
+                populateModalStudentsList();
+                if (editModal) {
+                    editModal.style.display = 'flex';
+                }
             });
-        });
+        }
 
-        editModal.addEventListener('click', (e) => {
-            if (e.target === editModal) {
-                modalCancel.click();
-            }
-        });
+        if (closeModal) {
+            closeModal.addEventListener('click', () => {
+                if (editModal) {
+                    editModal.style.display = 'none';
+                }
+            });
+        }
+
+        if (modalCancel) {
+            modalCancel.addEventListener('click', () => {
+                if (hasChanges) {
+                    showConfirmation('cancel', 'Do you want to discard unsaved changes?', () => {
+                        // Revert changes
+                        allStudents = JSON.parse(JSON.stringify(originalStudents));
+                        hasChanges = false;
+                        if (editModal) {
+                            editModal.style.display = 'none';
+                        }
+                        populateModalStudentsList();
+                        populateStudentLists();
+                    });
+                } else {
+                    if (editModal) {
+                        editModal.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        if (editModal) {
+            editModal.addEventListener('click', (e) => {
+                if (e.target === editModal) {
+                    if (modalCancel) {
+                        modalCancel.click();
+                    }
+                }
+            });
+        }
 
         // Checkbox functionality
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('attendance-checkbox')) {
                 hasChanges = true;
-                const studentName = e.target.dataset.student;
+                const studentId = e.target.dataset.studentId;
                 const newStatus = e.target.dataset.status;
                 
-                const student = allStudents.find(s => s.name === studentName);
+                const student = allStudents.find(s => s.student_id === studentId);
                 if (student) {
                     student.status = newStatus;
                 }
                 
-                const studentCheckboxes = document.querySelectorAll(`[data-student="${studentName}"]`);
+                // Update all checkboxes for this student
+                const studentCheckboxes = document.querySelectorAll(`[data-student-id="${studentId}"]`);
                 studentCheckboxes.forEach(cb => {
                     cb.classList.remove('checked');
                     if (cb.dataset.status === newStatus) {
                         cb.classList.add('checked');
                     }
                 });
+
+                // Update the main student lists
+                populateStudentLists();
             }
         });
 
         // Search functionality
-        studentSearch.addEventListener('input', (e) => {
-            populateModalStudentsList(e.target.value);
-        });
+        if (studentSearch) {
+            studentSearch.addEventListener('input', (e) => {
+                populateModalStudentsList(e.target.value);
+            });
+        }
 
         // Bulk actions
         document.querySelectorAll('.attendance-option').forEach(btn => {
@@ -378,256 +801,139 @@
                 const visibleStudents = document.querySelectorAll('.modal-student-item:not([style*="display: none"])');
                 
                 visibleStudents.forEach(studentItem => {
-                    const studentName = studentItem.querySelector('.modal-student-name').textContent;
-                    const student = allStudents.find(s => s.name === studentName);
-                    if (student) {
-                        student.status = status;
-                    }
-                    
-                    const checkboxes = studentItem.querySelectorAll('.attendance-checkbox');
-                    checkboxes.forEach(cb => {
-                        cb.classList.remove('checked');
-                        if (cb.dataset.status === status) {
-                            cb.classList.add('checked');
+                    const firstCheckbox = studentItem.querySelector('.attendance-checkbox');
+                    if (firstCheckbox) {
+                        const studentId = firstCheckbox.dataset.studentId;
+                        const student = allStudents.find(s => s.student_id === studentId);
+                        if (student) {
+                            student.status = status;
                         }
-                    });
+                        
+                        const checkboxes = studentItem.querySelectorAll('.attendance-checkbox');
+                        checkboxes.forEach(cb => {
+                            cb.classList.remove('checked');
+                            if (cb.dataset.status === status) {
+                                cb.classList.add('checked');
+                            }
+                        });
+                    }
                 });
+
+                // Update the main student lists
+                populateStudentLists();
             });
         });
 
-        // Confirmation modal functionality
+        // Confirmation modal close handlers
         const confirmationModal = document.getElementById('confirmationModal');
         const closeConfirmationModal = document.getElementById('closeConfirmationModal');
         const confirmationNo = document.getElementById('confirmationNo');
-        const confirmationYes = document.getElementById('confirmationYes');
-        const confirmationTitle = document.getElementById('confirmationTitle');
-        const confirmationMessage = document.getElementById('confirmationMessage');
 
-        function showConfirmation(action, message, callback) {
-            confirmationTitle.textContent = `Confirm ${action.charAt(0).toUpperCase() + action.slice(1)}`;
-            confirmationMessage.textContent = message;
-            confirmationModal.style.display = 'flex';
-            confirmationYes.onclick = () => {
-                callback();
-                confirmationModal.style.display = 'none';
-            };
+        if (closeConfirmationModal) {
+            closeConfirmationModal.addEventListener('click', () => {
+                if (confirmationModal) {
+                    confirmationModal.style.display = 'none';
+                }
+            });
         }
 
-        closeConfirmationModal.addEventListener('click', () => {
-            confirmationModal.style.display = 'none';
-        });
+        if (confirmationNo) {
+            confirmationNo.addEventListener('click', () => {
+                if (confirmationModal) {
+                    confirmationModal.style.display = 'none';
+                }
+            });
+        }
 
-        confirmationNo.addEventListener('click', () => {
-            confirmationModal.style.display = 'none';
-        });
-
-        confirmationModal.addEventListener('click', (e) => {
-            if (e.target === confirmationModal) {
-                confirmationNo.click();
-            }
-        });
+        if (confirmationModal) {
+            confirmationModal.addEventListener('click', (e) => {
+                if (e.target === confirmationModal) {
+                    if (confirmationNo) {
+                        confirmationNo.click();
+                    }
+                }
+            });
+        }
 
         // Save functionality
-        function saveChanges() {
-            const updatedStudents = {
-                present: allStudents.filter(s => s.status === 'present').map(s => s.name),
-                late: allStudents.filter(s => s.status === 'late').map(s => s.name),
-                absent: allStudents.filter(s => s.status === 'absent').map(s => s.name),
-                excused: allStudents.filter(s => s.status === 'excused').map(s => s.name)
-            };
-            
-            document.querySelector('.count-present').textContent = `${updatedStudents.present.length}/36`;
-            document.querySelector('.count-late').textContent = `${updatedStudents.late.length}/36`;
-            document.querySelector('.count-absent').textContent = `${updatedStudents.absent.length}/36`;
-            document.querySelector('.count-excused').textContent = `${updatedStudents.excused.length}/36`;
-            
-            populateStudentList('presentList', updatedStudents.present);
-            populateStudentList('lateList', updatedStudents.late);
-            populateStudentList('absentList', updatedStudents.absent);
-            populateStudentList('excusedList', updatedStudents.excused);
-            
-            originalStudents = JSON.parse(JSON.stringify(allStudents));
-            hasChanges = false;
-        }
-
-        modalSave.addEventListener('click', () => {
-            if (hasChanges) {
-                showConfirmation('save', 'Do you want to save the attendance changes?', () => {
-                    saveChanges();
-                    editModal.style.display = 'none';
-                    alert('Attendance updated successfully!');
-                });
-            } else {
-                editModal.style.display = 'none';
-            }
-        });
-
-        document.getElementById('saveBtn').addEventListener('click', () => {
-            if (hasChanges) {
-                showConfirmation('save', 'Do you want to save the attendance summary?', () => {
-                    saveChanges();
-                    alert('Attendance summary saved successfully!');
-                });
-            } else {
-                alert('No changes to save.');
-            }
-        });
-
-        document.getElementById('discardBtn').addEventListener('click', () => {
-            if (hasChanges) {
-                showConfirmation('discard', 'Do you really want to discard changes? Unsaved changes will be lost.', () => {
-                    allStudents.forEach((student, index) => {
-                        student.status = originalStudents[index].status;
+        if (modalSave) {
+            modalSave.addEventListener('click', async () => {
+                if (hasChanges) {
+                    showConfirmation('save', 'Do you want to save the attendance changes?', async () => {
+                        const success = await saveChangesToBackend();
+                        if (success) {
+                            if (editModal) {
+                                editModal.style.display = 'none';
+                            }
+                            alert('Attendance updated successfully!');
+                        }
                     });
-                    hasChanges = false;
-                    populateModalStudentsList();
-                    saveChanges();
-                    alert('Changes discarded.');
-                });
-            } else {
-                alert('No changes to discard.');
-            }
-        });
-
-        // CSV Export functionality
-        function generateCsvContent() {
-            const subjectCode = document.querySelector('.subject-code').textContent;
-            const courseCode = document.querySelector('.course-code').textContent;
-            const currentTime = new Date().toLocaleString();
-            
-            const csvHeader = 'Student Name,Time Marked,Attendance Category\n';
-            const csvRows = allStudents.map(student => {
-                return `"${student.name.replace(/"/g, '""')}","${currentTime}","${student.status}"`;
-            }).join('\n');
-            
-            return { content: csvHeader + csvRows, fileName: `${subjectCode}_${courseCode.replace(' ', '_')}.csv` };
-        }
-
-        function showCsvPreview() {
-            const currentTime = new Date().toLocaleString();
-            const tbody = document.querySelector('#csvPreviewContent tbody');
-            tbody.innerHTML = '';
-            
-            allStudents.forEach(student => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${student.name}</td>
-                    <td>${currentTime}</td>
-                    <td>${student.status}</td>
-                `;
-                tbody.appendChild(row);
+                } else {
+                    if (editModal) {
+                        editModal.style.display = 'none';
+                    }
+                }
             });
-            
-            document.getElementById('csvPreviewModal').style.display = 'flex';
         }
 
-        document.getElementById('exportBtn').addEventListener('click', showCsvPreview);
+        const saveBtn = document.getElementById('saveBtn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', async () => {
+                if (hasChanges) {
+                    showConfirmation('save', 'Do you want to save the attendance summary?', async () => {
+                        const success = await saveChangesToBackend();
+                        if (success) {
+                            alert('Attendance summary saved successfully!');
+                        }
+                    });
+                } else {
+                    alert('No changes to save.');
+                }
+            });
+        }
 
-        document.getElementById('closeCsvPreview').addEventListener('click', () => {
-            document.getElementById('csvPreviewModal').style.display = 'none';
-        });
+        const discardBtn = document.getElementById('discardBtn');
+        if (discardBtn) {
+            discardBtn.addEventListener('click', () => {
+                if (hasChanges) {
+                    showConfirmation('discard', 'Do you really want to discard changes? Unsaved changes will be lost.', () => {
+                        allStudents = JSON.parse(JSON.stringify(originalStudents));
+                        hasChanges = false;
+                        populateModalStudentsList();
+                        populateStudentLists();
+                        alert('Changes discarded.');
+                    });
+                } else {
+                    alert('No changes to discard.');
+                }
+            });
+        }
 
-        document.getElementById('cancelCsv').addEventListener('click', () => {
-            document.getElementById('csvPreviewModal').style.display = 'none';
-        });
-
-        document.getElementById('csvPreviewModal').addEventListener('click', (e) => {
-            if (e.target === document.getElementById('csvPreviewModal')) {
-                document.getElementById('csvPreviewModal').style.display = 'none';
-            }
-        });
-
-        document.getElementById('downloadCsv').addEventListener('click', () => {
-            const { content, fileName } = generateCsvContent();
-            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', fileName);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            document.getElementById('csvPreviewModal').style.display = 'none';
-            alert('Attendance summary downloaded as CSV!');
-        });
-
-        document.getElementById('printCsv').addEventListener('click', () => {
-            const subjectCode = document.querySelector('.subject-code').textContent;
-            const courseCode = document.querySelector('.course-code').textContent;
-            const currentTime = new Date().toLocaleString();
-            
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
-                <html>
-                    <head>
-                        <title>${subjectCode} ${courseCode} - Attendance Summary</title>
-                        <style>
-                            body { font-family: Arial, sans-serif; margin: 20px; }
-                            .header { text-align: center; margin-bottom: 20px; }
-                            .timestamp { color: #666; font-size: 14px; }
-                            table { width: 100%; border-collapse: collapse; font-size: 12pt; }
-                            th, td { border: 1px solid #000; padding: 8pt; text-align: left; }
-                            th { background-color: #eee; font-weight: 600; }
-                            tr:nth-child(even) { background-color: #f8f8f8; }
-                        </style>
-                    </head>
-                    <body>
-                        <div class="header">
-                            <h1>${subjectCode} - ${courseCode}</h1>
-                            <div class="timestamp">Attendance Summary - ${currentTime}</div>
-                        </div>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Student Name</th>
-                                    <th>Time Marked</th>
-                                    <th>Attendance Category</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${allStudents.map(student => `
-                                    <tr>
-                                        <td>${student.name}</td>
-                                        <td>${currentTime}</td>
-                                        <td>${student.status}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </body>
-                </html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
-            document.getElementById('csvPreviewModal').style.display = 'none';
-        });
+        // Export functionality
+        const exportBtn = document.getElementById('exportBtn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                exportToCSV();
+            });
+        }
 
         // Go Back to Dashboard functionality
-        document.getElementById('backBtn').addEventListener('click', () => {
-            if (hasChanges) {
-                showConfirmation('navigate', 'You have unsaved changes. Do you want to save before returning to the dashboard?', () => {
-                    saveChanges();
-                    window.location.href = '/dashboard';
-                }, () => {
-                    window.location.href = '/dashboard';
-                });
-            } else {
-                window.location.href = '/dashboard';
-            }
-        });
-
-        // Update time every second
-        function updateCurrentTime() {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('en-US', { 
-                hour: 'numeric', 
-                minute: '2-digit',
-                hour12: true 
-            }).toLowerCase();
+        const backBtn = document.getElementById('backBtn');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                if (hasChanges) {
+                    showConfirmation('navigate', 'You have unsaved changes. Do you want to save before returning to the dashboard?', async () => {
+                        const success = await saveChangesToBackend();
+                        if (success) {
+                            window.location.href = '/AdminDB';
+                        }
+                    });
+                } else {
+                    window.location.href = '/AdminDB';
+                }
+            });
         }
-
-        setInterval(updateCurrentTime, 1000);
-    </script>
+    });
+</script>
 </body>
 </html>

@@ -1,20 +1,25 @@
-#!/usr/bin/env python3
-import bcrypt
+import mysql.connector
+from mysql.connector import Error
 
-# Generate the correct hash for @101Pok3r5610
-password = "admin123"
-password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-print(f"Password: {password}")
-print(f"Hash: {password_hash.decode('utf-8')}")
+DB_CONFIG = {
+    'host': 'localhost',
+    'user': 'root',
+    'password': '',
+    'database': 'facesys',
+    'autocommit': False,
+    'pool_name': 'mypool',
+    'pool_size': 5
+}
 
-# Also generate SQL insert statement
-print(f"\n-- SQL INSERT statement:")
-print(f"INSERT INTO admins (admin_id, first_name, last_name, email, password_hash, role) VALUES")
-print(f"('ADMIN001', 'Super', 'Administrator', 'admin@wmsu.edu.ph', '{password_hash.decode('utf-8')}', 'super_admin')")
-print(f"ON DUPLICATE KEY UPDATE")
-print(f"    password_hash = '{password_hash.decode('utf-8')}',")
-print(f"    role = 'super_admin';")
-
-# Verify the hash works
-print(f"\n-- Verification:")
-print(f"Hash verification: {bcrypt.checkpw(password.encode('utf-8'), password_hash)}")
+try:
+    conn = mysql.connector.connect(**DB_CONFIG)
+    if conn.is_connected():
+        print("✅ Connection successful!")
+        cursor = conn.cursor()
+        cursor.execute("SHOW TABLES;")
+        print("Tables:", [row[0] for row in cursor.fetchall()])
+        conn.close()
+    else:
+        print("❌ Connection failed — no connection object returned.")
+except Error as e:
+    print("❌ Connection error:", e)

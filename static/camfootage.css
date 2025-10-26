@@ -683,15 +683,6 @@
             overflow: hidden;
         }
 
-        .minimized-header {
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 0.75rem;
-            background: rgba(255,255,255,0.1);
-            color: white;
-        }
 
         .minimized-video {
             width: 100%;
@@ -699,9 +690,6 @@
             object-fit: cover;
         }
 
-        body.minimized {
-            background: #f5f7fb;
-        }
 
    .btn-action {
             border: none;
@@ -876,4 +864,321 @@
     color: white;
     text-align: center;
     z-index: 10;
+}
+
+.minimized-view {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 300px;
+    height: 200px;
+    background: #1a1a1a;
+    border: 2px solid #333;
+    border-radius: 8px;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    overflow: hidden;
+    resize: both; /* Allows resizing */
+    min-width: 200px;
+    min-height: 150px;
+    cursor: move; /* Shows it's draggable */
+}
+
+.minimized-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #2d2d2d;
+    border-bottom: 1px solid #444;
+    color: white;
+    font-size: 12px;
+    height: 40px;
+    cursor: move; /* Makes header draggable */
+    user-select: none; /* Prevents text selection while dragging */
+}
+
+.maximize-btn {
+    background: #007bff;
+    border: none;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.maximize-btn:hover {
+    background: #444;
+}
+
+.cctv-section.minimized {
+    display: none;
+}
+
+/* --- Base Modal Styles (Ensure your existing modal styles are here) --- */
+/*
+.modal { display: none; ... }
+.modal-content { ... }
+*/
+
+/* --- Specific Styles for Dynamic Adjustments --- */
+
+/* Style for the container of the current value display */
+.live-setting-display {
+    padding: 10px 0;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: center;
+}
+
+/* Style for the large, current value text */
+#currentClassDurationDisplay,
+#currentLateThresholdDisplay {
+    display: inline-block;
+    font-size: 1.8em; /* Larger font for the current, live value */
+    font-weight: 700;
+    color: #007bff; /* Blue for emphasis */
+}
+
+/* Container for the adjustment buttons */
+.adjustment-buttons {
+    display: flex;
+    justify-content: space-around;
+    gap: 8px; /* Space between buttons */
+    margin-bottom: 20px;
+}
+
+/* General button styling for adjustments */
+.btn-sm {
+    padding: 8px 12px;
+    font-size: 0.9em;
+    font-weight: 600;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    flex-grow: 1;
+}
+
+.btn-minus {
+    background-color: #dc3545; /* Red for negative adjustment */
+    color: white;
+}
+
+.btn-plus {
+    background-color: #28a745; /* Green for positive adjustment */
+    color: white;
+}
+
+.btn-minus:hover {
+    background-color: #c82333;
+}
+
+.btn-plus:hover {
+    background-color: #218838;
+}
+
+/* Separator line */
+.modal-body hr {
+    margin: 20px 0;
+    border: 0;
+    border-top: 1px solid #eee;
+}
+
+/* --- Inline Notification/Alert Box Styles --- */
+
+/* Container for all notifications, placed at the top of the body */
+#modalNotificationContainer {
+    padding: 10px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    text-align: center;
+    opacity: 0; /* Hidden by default */
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+}
+
+/* Success style */
+.notification-success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+/* Error style */
+.notification-error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    
+        /* Custom Color Variables for consistency */
+        :root {
+            --primary: #4f46e5;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text-color: #1f2937;
+        }
+   
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #9ca3af;
+            transition: color 0.2s;
+        }
+
+        .close-modal:hover {
+            color: var(--danger);
+        }
+
+        /* --- Custom Button Styles --- */
+        .btn-submit {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background-color: var(--primary);
+            color: white;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .btn-submit:hover { background-color: #4338ca; }
+
+        .btn-cancel {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background-color: #f3f4f6;
+            color: var(--text-color);
+            border: 1px solid #d1d5db;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .btn-cancel:hover { background-color: #e5e7eb; }
+
+        .btn-action {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: transform 0.1s;
+        }
+        .btn-action:active { transform: scale(0.98); }
+
+        .btn-action.present {
+            background-color: var(--success);
+            color: white;
+        }
+        .btn-action.skip {
+            background-color: var(--warning);
+            color: white;
+        }
+        .face-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        /* --- Face Card Styles --- */
+        .unrecognized-faces {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            max-height: 250px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        .face-card {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100px;
+            transition: box-shadow 0.2s;
+        }
+        .face-card:hover {
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+        }
+        .face-card img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+        }
+        .face-label {
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        /* --- Notification Modal Specifics --- */
+        .notification-content {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            width: 90%;
+            max-width: 350px;
+            text-align: center;
+        }
+        .notification-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .notification-title {
+            font-weight: 700;
+            font-size: 1.125rem;
+            margin-bottom: 0.5rem;
+        }
+        .notification-message {
+            color: #4b5563;
+            margin-bottom: 1.5rem;
+        }
+        .notification-content.success .notification-icon { color: var(--success); }
+        .notification-content.error .notification-icon { color: var(--danger); }
+        .notification-content.warning .notification-icon { color: var(--warning); }
+        .notification-content.info .notification-icon { color: var(--primary); }
+
+        .select-all { margin-bottom: 1rem; font-weight: 600; }
+
+        /* Ensure notification modal is always on top */
+#notificationModal {
+    z-index: 9999 !important;
+}
+
+#unrecognizedFacesModal {
+    z-index: 1001;
+}
+
+#endSessionModal {
+    z-index: 1002;
 }

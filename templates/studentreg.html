@@ -629,32 +629,35 @@ function startFaceScan() {
         instructionEl.textContent = POSE_STATES[scanState].instruction;
     }
     
-    scanInterval = setInterval(automatedFaceScan, 2000);
+    scanInterval = setInterval(automatedFaceScan, 3000); // Changed from 2000ms to 3000ms
 }
 
 function checkPose(result, poseId) {
     if (!result) return false;
 
-    // Adjusted thresholds for better pose detection, aligned with backend
+    // Rely primarily on backend's success flag
+    if (result.success) return true;
+
+    // Fallback to local checks with backend-aligned thresholds
     switch (poseId) {
         case 'frontal':
             return result.is_frontal || 
-                   (Math.abs(result.yaw || 0) <= 35 && 
-                    Math.abs(result.pitch || 0) <= 30 && 
-                    Math.abs(result.roll || 0) <= 30);
+                   (Math.abs(result.yaw || 0) <= 60 && 
+                    Math.abs(result.pitch || 0) <= 50 && 
+                    Math.abs(result.roll || 0) <= 45);
         case 'left':
-            return result.is_left || (result.yaw >= 5); // Relaxed from 15 to 10
+            return result.is_left || (result.yaw >= 0); // Match backend
         case 'right':
-            return result.is_right || (result.yaw <= -5); // Relaxed from -15 to -10
+            return result.is_right || (result.yaw <= 0); // Match backend
         case 'up':
-            return result.is_up || (result.pitch <= -5); // Relaxed from -12 to -8
+            return result.is_up || (result.pitch <= 0); // Match backend
         case 'down':
-            return result.is_down || (result.pitch >= 5); // Relaxed from 12 to 8
+            return result.is_down || (result.pitch >= 0); // Match backend
         case 'mouth_open':
-            return result.is_mouth_open || (result.mar >= 0.18);
+            return result.is_mouth_open || (result.mar >= 0.10); // Match backend
         case 'eyes_closed':
             return result.is_eyes_closed || 
-                   (((result.left_ear || 0.3) + (result.right_ear || 0.3)) / 2 <= 0.32);
+                   (((result.left_ear || 0.3) + (result.right_ear || 0.3)) / 2 <= 0.5);
         default:
             return false;
     }
@@ -768,31 +771,39 @@ function automatedFaceScan() {
         // Provide specific feedback based on the current pose
         // In the else block where you provide feedback:
 let feedback = '';
-if (result) {
-    switch(currentPose.id) {
-        case 'up':
-            feedback = getUpPoseFeedback(result);
-            break;
-        case 'down':
-            feedback = getDownPoseFeedback(result);
-            break;
-        case 'mouth_open':
-            feedback = `Open your mouth wider (current: ${result.mar?.toFixed(2) || 'N/A'})`;
-            break;
-        case 'eyes_closed':
-            const avgEAR = ((result.left_ear || 0) + (result.right_ear || 0)) / 2;
-            feedback = `Close your eyes more completely (current: ${avgEAR.toFixed(2)})`;
-            break;
-        default:
-            feedback = result.message || 'Adjust position';
-    }
-} else {
-    feedback = 'No face detected. Ensure good lighting and center your face.';
-}
-        
-        if (instructionEl) {
-            instructionEl.textContent = `${currentPose.instruction} (${feedback} - Attempt ${scanAttempts}/${MAX_SCAN_ATTEMPTS})`;
+    if (result) {
+        switch (currentPose.id) {
+            case 'frontal':
+                feedback = result.message || 'Face the camera directly.';
+                break;
+            case 'left':
+                feedback = getLeftPoseFeedback(result);
+                break;
+            case 'right':
+                feedback = getRightPoseFeedback(result);
+                break;
+            case 'up':
+                feedback = getUpPoseFeedback(result);
+                break;
+            case 'down':
+                feedback = getDownPoseFeedback(result);
+                break;
+            case 'mouth_open':
+                feedback = getMouthOpenFeedback(result);
+                break;
+            case 'eyes_closed':
+                feedback = getEyesClosedFeedback(result);
+                break;
+            default:
+                feedback = result.message || 'Adjust position';
         }
+    } else {
+        feedback = 'No face detected. Ensure good lighting and center your face.';
+    }
+    if (instructionEl) {
+        instructionEl.textContent = `${currentPose.instruction} (${feedback} - Attempt ${scanAttempts}/${MAX_SCAN_ATTEMPTS})`;
+    }
+
     }
 }) }
 
@@ -877,11 +888,11 @@ async function captureFaceEncodingWithQuality() {
         
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const quality = assessImageQuality(imageData);
-        
-        if (quality < 0.3) {
-            console.log(`Image quality too low: ${quality}`);
-            return null;
-        }
+    console.log(`Image quality: ${quality.toFixed(3)}`); // Debug log
+    if (quality < 0.2) { // Lowered from 0.3
+        console.log(`Image quality too low: ${quality}`);
+        return { message: "Image quality too low. Improve lighting." };
+    }
         
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
         
@@ -890,10 +901,14 @@ async function captureFaceEncodingWithQuality() {
         formData.append('current_pose', POSE_STATES[scanState].id);
         
         const response = await fetch('/api/encode_face', {
-            method: 'POST',
-            body: formData
-        });
-        const data = await response.json();
+        method: 'POST',
+        body: formData
+    });
+    const data = await response.json();
+    console.log(`Backend response:`, data); // Debug log
+    if (!data.success) {
+        console.log(`Backend error: ${data.message}, Pose: ${data.current_pose}`);
+    }
         
         if (data.success) {
             console.log(`Received for ${POSE_STATES[scanState].id}:`, data);
