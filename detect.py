@@ -1305,20 +1305,32 @@ def mark_attendance(name, id, type, session_id=None):
                 'was_missing': was_missing  # 🆕 Track if this was a return from missing
             }
     
-    # ✅ Get section_id for this session
+    # ✅ Get section_id AND SUBJECT INFO for this session
     section_id = None
+    subject_code = None
+    subject_name = None
+    room = None
+    
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT section_id FROM attendance_sessions WHERE session_id = %s", (session_id,))
+        cursor.execute("""
+            SELECT section_id, subject_code, subject_name, room 
+            FROM attendance_sessions 
+            WHERE session_id = %s
+        """, (session_id,))
         session_result = cursor.fetchone()
-        if session_result and session_result.get('section_id'):
-            section_id = session_result['section_id']
-            logger.info(f"🔗 Found section_id: {section_id} for session: {session_id}")
+        
+        if session_result:
+            section_id = session_result.get('section_id')
+            subject_code = session_result.get('subject_code')
+            subject_name = session_result.get('subject_name')
+            room = session_result.get('room')
+            logger.info(f"🔗 Found session info - Section: {section_id}, Subject: {subject_code} - {subject_name}, Room: {room}")
         cursor.close()
         conn.close()
     except Exception as e:
-        logger.error(f"Error getting section_id: {e}")
+        logger.error(f"Error getting session info: {e}")
     
     # ✅ Check if student is already marked as excused in database
     if type == 'student':
@@ -1395,64 +1407,68 @@ def mark_attendance(name, id, type, session_id=None):
         with open(csv_file, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID'])
-            writer.writerow([id, name, time_str, type, status, session_id or 'N/A', section_id or 'N/A'])
+                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room'])
+            writer.writerow([id, name, time_str, type, status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A'])
         
         logger.info(f"📄 CSV saved: {name} ({id}) - {type} - {status}")
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
     
-    # ✅ FIXED: UPDATE database instead of INSERT - FIXED VERSION
+    # ✅ FIXED: UPDATE database instead of INSERT - WITH SUBJECT INFORMATION
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         if type == 'student':
-            # 🆕 FIX: SIMPLIFIED UPDATE - Update ANY record for this student in this session
+            # 🆕 FIX: UPDATE WITH SUBJECT INFORMATION
             cursor.execute("""
                 UPDATE attendance 
-                SET status = %s, timestamp = %s, name = %s
+                SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s
                 WHERE student_id = %s AND session_id = %s
-            """, (status, time_str, name, id, session_id))
+            """, (status, time_str, name, subject_code, subject_name, room, id, session_id))
             
-            # If no record was updated, create a new one
+            # If no record was updated, create a new one WITH SUBJECT INFORMATION
             if cursor.rowcount == 0:
                 if section_id:
                     cursor.execute("""
-                        INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id, section_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, (id, name, time_str, 'student', status, session_id, section_id))
+                        INSERT INTO attendance 
+                        (student_id, name, timestamp, person_type, status, session_id, section_id, subject_code, subject_name, room)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'student', status, session_id, section_id, subject_code, subject_name, room))
                 else:
                     cursor.execute("""
-                        INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (id, name, time_str, 'student', status, session_id))
+                        INSERT INTO attendance 
+                        (student_id, name, timestamp, person_type, status, session_id, subject_code, subject_name, room)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'student', status, session_id, subject_code, subject_name, room))
         else:  # faculty
-            # 🆕 FIX: SIMPLIFIED UPDATE - Update ANY record for this faculty in this session
+            # 🆕 FIX: UPDATE WITH SUBJECT INFORMATION
             cursor.execute("""
                 UPDATE attendance 
-                SET status = %s, timestamp = %s, name = %s
+                SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s
                 WHERE faculty_id = %s AND session_id = %s
-            """, (status, time_str, name, id, session_id))
+            """, (status, time_str, name, subject_code, subject_name, room, id, session_id))
             
-            # If no record was updated, create a new one
+            # If no record was updated, create a new one WITH SUBJECT INFORMATION
             if cursor.rowcount == 0:
                 if section_id:
                     cursor.execute("""
-                        INSERT INTO attendance (faculty_id, name, timestamp, person_type, status, session_id, section_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, (id, name, time_str, 'faculty', status, session_id, section_id))
+                        INSERT INTO attendance 
+                        (faculty_id, name, timestamp, person_type, status, session_id, section_id, subject_code, subject_name, room)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'faculty', status, session_id, section_id, subject_code, subject_name, room))
                 else:
                     cursor.execute("""
-                        INSERT INTO attendance (faculty_id, name, timestamp, person_type, status, session_id)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (id, name, time_str, 'faculty', status, session_id))
+                        INSERT INTO attendance 
+                        (faculty_id, name, timestamp, person_type, status, session_id, subject_code, subject_name, room)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'faculty', status, session_id, subject_code, subject_name, room))
         
         conn.commit()
         cursor.close()
         conn.close()
         
-        logger.info(f"💾 Database UPDATED: {name} ({id}) - {status} - Session: {session_id}")
+        logger.info(f"💾 Database UPDATED: {name} ({id}) - {status} - Subject: {subject_code} - {subject_name} - Room: {room}")
         
     except Exception as e:
         logger.error(f"Failed to update attendance in database: {e}")
@@ -4996,6 +5012,275 @@ def student_login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+@app.route('/api/student/attendance-data')
+def student_attendance_data():
+    """Get attendance data for the logged-in student"""
+    student_id = get_current_student_id()
+    
+    if not student_id:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    connection = None
+    cursor = None
+    
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        print(f"Fetching data for student: {student_id}")
+        
+        # 1. Get student's basic info and section
+        cursor.execute("""
+            SELECT student_id, first_name, last_name, course, year_section, section_id
+            FROM students 
+            WHERE student_id = %s AND status = 'active'
+        """, (student_id,))
+        
+        student_data = cursor.fetchone()
+        if not student_data:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        print(f"Found student: {student_data}")
+        
+        # 2. Get today's classes (based on schedule, not attendance)
+        today = date.today()
+        today_day = today.strftime('%A')  # Get today's day name (Monday, Tuesday, etc.)
+        
+        cursor.execute("""
+            SELECT DISTINCT 
+                s.subject_code, 
+                s.subject_name,
+                cs.class_type,
+                cs.start_time, 
+                cs.end_time, 
+                cs.room,
+                cs.day_of_week
+            FROM subjects s
+            JOIN class_schedules cs ON s.subject_id = cs.subject_id
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            WHERE ys.section_name = 'C' 
+            AND ys.year_level = 4
+            AND cs.day_of_week = %s
+            AND s.status = 'active'
+            AND cs.status = 'active'
+            ORDER BY cs.start_time
+        """, (today_day,))
+        
+        today_schedule = cursor.fetchall()
+        print(f"Today's schedule ({today_day}): {len(today_schedule)} classes")
+        
+        # 3. Get today's attendance to match with schedule
+        cursor.execute("""
+            SELECT 
+                a.session_id, 
+                a.status, 
+                a.timestamp,
+                ases.class_name,
+                ases.started_at, 
+                ases.ended_at
+            FROM attendance a
+            LEFT JOIN attendance_sessions ases ON a.session_id = ases.session_id
+            WHERE a.student_id = %s AND DATE(a.timestamp) = %s
+            ORDER BY a.timestamp DESC
+        """, (student_id, today))
+        
+        today_attendance = cursor.fetchall()
+        
+        # 4. Get attendance history (last 30 days) - UPDATED QUERY
+        cursor.execute("""
+            SELECT 
+                a.id,
+                a.session_id, 
+                a.status, 
+                a.timestamp,
+                a.subject_code,  -- ✅ GET FROM ATTENDANCE TABLE
+                a.subject_name,  -- ✅ GET FROM ATTENDANCE TABLE
+                a.room,          -- ✅ GET FROM ATTENDANCE TABLE
+                ases.class_name,
+                ases.started_at, 
+                ases.ended_at,
+                cs.class_type
+            FROM attendance a
+            LEFT JOIN attendance_sessions ases ON a.session_id = ases.session_id
+            LEFT JOIN class_schedules cs ON (
+                cs.room = a.room 
+                AND TIME(ases.started_at) BETWEEN TIME(cs.start_time) AND TIME(cs.end_time)
+            )
+            WHERE a.student_id = %s 
+            AND a.timestamp >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+            ORDER BY a.timestamp DESC
+            LIMIT 50
+        """, (student_id,))
+        
+        attendance_history = cursor.fetchall()
+        print(f"Attendance history: {len(attendance_history)} records")
+        
+        # 5. Get all subjects for BSIT 4C
+        cursor.execute("""
+            SELECT DISTINCT 
+                s.subject_code, 
+                s.subject_name, 
+                cs.day_of_week, 
+                TIME_FORMAT(cs.start_time, '%H:%i') as start_time,
+                TIME_FORMAT(cs.end_time, '%H:%i') as end_time,
+                cs.room,
+                cs.class_type,
+                ys.section_name,
+                ys.year_level,
+                p.program_name
+            FROM subjects s
+            JOIN class_schedules cs ON s.subject_id = cs.subject_id
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE ys.section_name = 'C' 
+            AND ys.year_level = 4
+            AND p.program_id = 'IT'
+            AND s.status = 'active'
+            AND cs.status = 'active'
+            ORDER BY cs.day_of_week, cs.start_time
+        """)
+        
+        semester_classes = cursor.fetchall()
+        print(f"Semester classes found: {len(semester_classes)}")
+        
+        # 6. Calculate attendance statistics
+        cursor.execute("""
+            SELECT 
+                COUNT(DISTINCT a.session_id) as total_sessions,
+                SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) as present_count,
+                SUM(CASE WHEN a.status = 'late' THEN 1 ELSE 0 END) as late_count,
+                SUM(CASE WHEN a.status = 'excused' THEN 1 ELSE 0 END) as excused_count
+            FROM attendance a
+            JOIN attendance_sessions ases ON a.session_id = ases.session_id
+            WHERE a.student_id = %s 
+            AND ases.status = 'completed'
+        """, (student_id,))
+        
+        stats = cursor.fetchone()
+        print(f"Stats: {stats}")
+        
+        total_classes = stats['total_sessions'] or 0
+        attended_classes = (stats['present_count'] or 0) + (stats['late_count'] or 0)
+        attendance_rate = (attended_classes / total_classes * 100) if total_classes > 0 else 0
+        
+        # Format today's classes - combine schedule with attendance
+        today_classes = []
+        for schedule in today_schedule:
+            # Find matching attendance record
+            attendance_status = 'Not Recorded'
+            for attendance in today_attendance:
+                if (schedule['subject_code'] in attendance.get('class_name', '') or 
+                    schedule['subject_name'] in attendance.get('class_name', '')):
+                    attendance_status = attendance['status']
+                    break
+            
+            today_classes.append({
+                'course': f"{schedule['subject_code']} - {schedule['subject_name']}",
+                'time': f"{schedule['start_time']} - {schedule['end_time']}",
+                'type': schedule['class_type'].title(),
+                'status': attendance_status,
+                'room': schedule['room']
+            })
+        
+        # Format attendance history - IMPROVED WITH DIRECT SUBJECT INFO
+        formatted_history = []
+        for record in attendance_history:
+            # Format time
+            start_time = record['started_at'].strftime('%H:%M') if record['started_at'] else 'N/A'
+            end_time = record['ended_at'].strftime('%H:%M') if record['ended_at'] else 'N/A'
+            
+            # Get course name - PRIORITIZE SUBJECT INFO FROM ATTENDANCE TABLE
+            if record['subject_code'] and record['subject_name']:
+                course_name = f"{record['subject_code']} - {record['subject_name']}"
+            elif record['class_name']:
+                # Format class name to be more readable
+                class_name = record['class_name']
+                if "Information Technology" in class_name:
+                    class_name = class_name.replace("Information Technology", "BSIT")
+                elif "Computer Science" in class_name:
+                    class_name = class_name.replace("Computer Science", "BSCS")
+                elif "Associate in Computer Technology" in class_name:
+                    class_name = class_name.replace("Associate in Computer Technology", "ACT")
+                course_name = class_name
+            else:
+                course_name = 'Unknown Class'
+            
+            formatted_history.append({
+                'date': record['timestamp'].strftime('%Y-%m-%d') if record['timestamp'] else 'N/A',
+                'course': course_name,
+                'time': f"{start_time} - {end_time}",
+                'room': record['room'] or 'N/A',
+                'status': record['status'] or 'absent',
+                'type': record['class_type'] or 'Class'
+            })
+        
+        # Format semester subjects
+        formatted_semester_classes = []
+        for subject in semester_classes:
+            days_map = {
+                'Monday': 'Mon',
+                'Tuesday': 'Tue', 
+                'Wednesday': 'Wed',
+                'Thursday': 'Thu',
+                'Friday': 'Fri',
+                'Saturday': 'Sat'
+            }
+            
+            day_abbr = days_map.get(subject['day_of_week'], subject['day_of_week'])
+            
+            formatted_semester_classes.append({
+                'course': f"{subject['subject_code']} - {subject['subject_name']}",
+                'schedule': f"{day_abbr}, {subject['start_time']} - {subject['end_time']}",
+                'room': subject['room'],
+                'type': subject['class_type'].title(),
+                'program': subject['program_name'],
+                'section': f"{subject['year_level']}{subject['section_name']}"
+            })
+        
+        response_data = {
+            'student': {
+                'name': f"{student_data['first_name']} {student_data['last_name']}",
+                'course': student_data['course'],
+                'section': student_data['year_section']
+            },
+            'stats': {
+                'attendance_rate': round(attendance_rate, 2),
+                'total_classes': total_classes,
+                'attended_classes': attended_classes
+            },
+            'today_classes': today_classes,
+            'attendance_history': formatted_history,
+            'semester_classes': formatted_semester_classes,
+            'today_date': today.strftime('%Y-%m-%d')
+        }
+        
+        print(f"Response data prepared successfully")
+        print(f"Today classes: {len(today_classes)}")
+        print(f"Attendance history: {len(formatted_history)}")
+        print(f"Semester classes: {len(formatted_semester_classes)}")
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Error fetching attendance data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to fetch attendance data: {str(e)}'}), 500
+        
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+def get_current_student_id():
+    """Get current student ID from session or token"""
+    # For demo purposes, using a fixed student ID
+    # In production, get from session/token
+    return '2022-01376'
+
 @app.route('/api/get_section_filters', methods=['GET'])
 @login_required
 def get_section_filters():
@@ -5195,9 +5480,10 @@ def get_summary_data():
                     'message': 'User not found'
                 }), 404
             
-            # Get the latest completed session
+            # Get the latest completed session WITH SUBJECT INFORMATION
             cursor.execute("""
-                SELECT * FROM attendance_sessions 
+                SELECT *, subject_code, subject_name, room 
+                FROM attendance_sessions 
                 WHERE status = 'completed' 
                 ORDER BY ended_at DESC 
                 LIMIT 1
@@ -5218,6 +5504,10 @@ def get_summary_data():
             print(f"   - Created At: {started_at}")
             print(f"   - Started At: {session_data['started_at']}")
             print(f"   - Ended At: {ended_at}")
+            print(f"🔍 DEBUG Subject Data:")
+            print(f"   - Subject Code: {session_data.get('subject_code')}")
+            print(f"   - Subject Name: {session_data.get('subject_name')}")
+            print(f"   - Room: {session_data.get('room')}")
             
             # Get duration from stored duration_time
             duration_time = session_data.get('duration_time', '00:00:00')
@@ -5240,26 +5530,14 @@ def get_summary_data():
             
             print(f"🔍 DEBUG Final duration_seconds for frontend: {duration_seconds}")
             
-            # Get subject information
-            cursor.execute("""
-                SELECT subject_code, subject_name 
-                FROM subjects 
-                WHERE subject_code = 'IT99' 
-                LIMIT 1
-            """)
-            subject_data = cursor.fetchone()
+            # ✅ GET SUBJECT INFORMATION FROM SESSION DATA INSTEAD OF SEPARATE QUERY
+            subject_code = session_data.get('subject_code', 'IT99')
+            subject_name = session_data.get('subject_name', 'AMBUTT UY')
+            room = session_data.get('room', 'Unknown Room')
             
-            # If IT99 not found, get any active subject
-            if not subject_data:
-                cursor.execute("""
-                    SELECT subject_code, subject_name 
-                    FROM subjects 
-                    WHERE status = 'active'
-                    LIMIT 1
-                """)
-                subject_data = cursor.fetchone()
+            print(f"🔍 DEBUG Using subject from session: {subject_code} - {subject_name} - {room}")
             
-            # ✅ FIXED: GET ALL ATTENDANCE RECORDS INCLUDING NULL session_id AND TEMPORARY STUDENTS
+            # ✅ FIXED: GET ALL ATTENDANCE RECORDS INCLUDING SUBJECT INFORMATION
             cursor.execute("""
                 SELECT 
                     a.student_id,
@@ -5267,6 +5545,9 @@ def get_summary_data():
                     a.status,
                     a.timestamp,
                     a.session_id,
+                    a.subject_code,  -- ✅ GET SUBJECT INFO FROM ATTENDANCE
+                    a.subject_name,  -- ✅ GET SUBJECT INFO FROM ATTENDANCE
+                    a.room,          -- ✅ GET ROOM INFO FROM ATTENDANCE
                     s.photo_path,
                     CASE 
                         WHEN a.session_id = 'manual_add' OR a.session_id IS NULL THEN TRUE 
@@ -5283,9 +5564,9 @@ def get_summary_data():
             
             print(f"🔍 DEBUG Found {len(all_attendance_records)} attendance records (including temporary and NULL session_id)")
             
-            # Debug: Print all found records
+            # Debug: Print all found records with subject info
             for i, record in enumerate(all_attendance_records):
-                print(f"🔍 DEBUG Record {i}: {record['student_id']} - {record['student_name']} - {record['status']} - session_id: {record['session_id']}")
+                print(f"🔍 DEBUG Record {i}: {record['student_id']} - {record['student_name']} - {record['status']} - Subject: {record['subject_code']} - {record['subject_name']}")
             
             # Create complete student list
             complete_student_list = []
@@ -5315,7 +5596,10 @@ def get_summary_data():
                     'status': record['status'],
                     'timestamp': record['timestamp'],
                     'photo': photo_path or '/static/images/default-avatar.jpg',
-                    'is_temporary': record['is_temporary']
+                    'is_temporary': record['is_temporary'],
+                    'subject_code': record['subject_code'] or subject_code,  # ✅ ADD SUBJECT INFO
+                    'subject_name': record['subject_name'] or subject_name,  # ✅ ADD SUBJECT INFO
+                    'room': record['room'] or room  # ✅ ADD ROOM INFO
                 })
             
             # Get regular students in section for absent count
@@ -5343,7 +5627,10 @@ def get_summary_data():
                         'status': 'absent',
                         'timestamp': ended_at,
                         'photo': student['photo_path'] or f"/static/images/student_photos/{student_id}.jpg",
-                        'is_temporary': False
+                        'is_temporary': False,
+                        'subject_code': subject_code,  # ✅ ADD SUBJECT INFO FOR ABSENT STUDENTS
+                        'subject_name': subject_name,  # ✅ ADD SUBJECT INFO FOR ABSENT STUDENTS
+                        'room': room  # ✅ ADD ROOM INFO FOR ABSENT STUDENTS
                     })
                     absent_count_added += 1
                     print(f"🔍 DEBUG Added absent student: {student_id} - {student['first_name']} {student['last_name']}")
@@ -5400,7 +5687,10 @@ def get_summary_data():
                     'present_count': present_count,
                     'late_count': late_count,
                     'absent_count': absent_count,
-                    'excused_count': excused_count
+                    'excused_count': excused_count,
+                    'subject_code': subject_code,  # ✅ ADD SUBJECT INFO TO SESSION
+                    'subject_name': subject_name,  # ✅ ADD SUBJECT INFO TO SESSION
+                    'room': room  # ✅ ADD ROOM INFO TO SESSION
                 },
                 'user': {
                     'name': f"{user['first_name']} {user['last_name']}",
@@ -5409,18 +5699,21 @@ def get_summary_data():
                     'photo_path': user['photo_path'] or '/static/images/default-avatar.jpg'
                 },
                 'subject': {
-                    'code': subject_data['subject_code'] if subject_data else 'IT99',
-                    'name': subject_data['subject_name'] if subject_data else 'AMBUTT UY'
+                    'code': subject_code,  # ✅ USE FROM SESSION DATA
+                    'name': subject_name,  # ✅ USE FROM SESSION DATA
+                    'room': room  # ✅ ADD ROOM INFO
                 },
                 'course_section': course_section_display,
                 'attendance': complete_student_list
             }
             
-            print(f"✅ DEBUG Summary with correct times:")
+            print(f"✅ DEBUG Summary with correct times and subject info:")
             print(f"   - Start: {summary_data['session']['started_at']} (from created_at)")
             print(f"   - End: {summary_data['session']['ended_at']} (from ended_at)")
             print(f"   - Duration: {duration_seconds} seconds")
             print(f"   - Total students: {total_students}")
+            print(f"   - Subject: {subject_code} - {subject_name}")
+            print(f"   - Room: {room}")
             
             return jsonify(summary_data)
             
@@ -5481,9 +5774,9 @@ def export_csv():
     
     try:
         with get_db_cursor() as cursor:
-            # Get session data with class name for manipulation
+            # ✅ FIXED: GET SESSION DATA WITH SUBJECT INFORMATION
             cursor.execute("""
-                SELECT class_name, started_at, ended_at 
+                SELECT class_name, started_at, ended_at, subject_code, subject_name, room 
                 FROM attendance_sessions 
                 WHERE session_id = %s
             """, (session_id,))
@@ -5493,6 +5786,14 @@ def export_csv():
                 return jsonify({'success': False, 'message': 'Session not found'}), 404
             
             class_name = session_data['class_name']
+            subject_code = session_data.get('subject_code', 'IT99')
+            subject_name = session_data.get('subject_name', 'AMBUTT UY')
+            room = session_data.get('room', 'Unknown Room')
+            
+            print(f"🔍 DEBUG Session Subject Info:")
+            print(f"   - Subject Code: {subject_code}")
+            print(f"   - Subject Name: {subject_name}")
+            print(f"   - Room: {room}")
             
             # ✅ FIXED: MANIPULATE PROGRAM NAME
             program_display = "BSIT"  # Default
@@ -5525,23 +5826,7 @@ def export_csv():
             
             print(f"🔍 DEBUG Program: {program_display}, Section: {section_display}")
             
-            # ✅ FIXED: GET SUBJECT INFORMATION PROPERLY
-            cursor.execute("""
-                SELECT subject_code, subject_name 
-                FROM subjects 
-                WHERE status = 'active'
-                ORDER BY subject_id DESC 
-                LIMIT 1
-            """)
-            subject_data = cursor.fetchone()
-            
-            # ✅ FIXED: USE ACTUAL SUBJECT DATA OR DEFAULT TO IT99/AMBUTT UY
-            subject_code = subject_data['subject_code'] if subject_data else 'IT99'
-            subject_name = subject_data['subject_name'] if subject_data else 'AMBUTT UY'
-            
-            print(f"🔍 DEBUG Subject: {subject_code} - {subject_name}")
-            
-            # ✅ FIXED: GET ALL STUDENTS INCLUDING ABSENT AND TEMPORARY
+            # ✅ FIXED: GET ALL STUDENTS INCLUDING ABSENT AND TEMPORARY WITH SUBJECT INFO
             cursor.execute("""
                 -- Get regular students with their attendance status (INCLUDING ABSENT)
                 SELECT 
@@ -5550,7 +5835,10 @@ def export_csv():
                     %s as year_section,  -- Use manipulated section
                     COALESCE(a.status, 'absent') as status,
                     COALESCE(a.timestamp, %s) as attendance_timestamp,
-                    'No' as is_temporary
+                    'No' as is_temporary,
+                    COALESCE(a.subject_code, %s) as subject_code,  -- ✅ GET SUBJECT INFO
+                    COALESCE(a.subject_name, %s) as subject_name,  -- ✅ GET SUBJECT INFO
+                    COALESCE(a.room, %s) as room                   -- ✅ GET ROOM INFO
                 FROM students s
                 LEFT JOIN attendance a ON s.student_id = a.student_id AND a.session_id = %s
                 WHERE s.year_section LIKE '%%4C%%'  -- Match students in this section
@@ -5564,14 +5852,25 @@ def export_csv():
                     %s as year_section,  -- Use manipulated section
                     a.status,
                     a.timestamp as attendance_timestamp,
-                    'Yes' as is_temporary
+                    'Yes' as is_temporary,
+                    COALESCE(a.subject_code, %s) as subject_code,  -- ✅ GET SUBJECT INFO
+                    COALESCE(a.subject_name, %s) as subject_name,  -- ✅ GET SUBJECT INFO
+                    COALESCE(a.room, %s) as room                   -- ✅ GET ROOM INFO
                 FROM attendance a
                 WHERE a.session_id = 'manual_add'
                 AND DATE(a.timestamp) = DATE(%s)
                 AND a.person_type = 'student'
                 
                 ORDER BY status, student_name
-            """, (section_display, session_data['ended_at'], session_id, section_display, session_data['ended_at']))
+            """, (
+                section_display, 
+                session_data['ended_at'], 
+                subject_code, subject_name, room,  # ✅ SUBJECT PARAMS FOR REGULAR STUDENTS
+                session_id,
+                section_display,
+                subject_code, subject_name, room,  # ✅ SUBJECT PARAMS FOR TEMPORARY STUDENTS
+                session_data['ended_at']
+            ))
             
             records = cursor.fetchall()
             
@@ -5579,6 +5878,10 @@ def export_csv():
                 return jsonify({'success': False, 'message': 'No student data found'}), 404
             
             print(f"🔍 DEBUG CSV Export: Found {len(records)} total students")
+            
+            # Debug: Print first few records with subject info
+            for i, record in enumerate(records[:3]):
+                print(f"🔍 DEBUG Record {i}: {record['student_id']} - {record['student_name']} - {record['status']} - Subject: {record['subject_code']} - {record['subject_name']}")
             
             # Create CSV content
             import csv
@@ -5588,8 +5891,19 @@ def export_csv():
             output = io.StringIO()
             writer = csv.writer(output)
             
-            # Write headers
-            writer.writerow(['Student ID', 'Student Name', 'Status', 'Time Recorded', 'Subject Code', 'Subject Name', 'Program', 'Section', 'Temporary Student'])
+            # ✅ FIXED: ADD ROOM COLUMN TO HEADERS
+            writer.writerow([
+                'Student ID', 
+                'Student Name', 
+                'Status', 
+                'Time Recorded', 
+                'Subject Code', 
+                'Subject Name', 
+                'Room',  # ✅ ADD ROOM COLUMN
+                'Program', 
+                'Section', 
+                'Temporary Student'
+            ])
             
             # Write data
             for record in records:
@@ -5615,8 +5929,9 @@ def export_csv():
                     record['student_name'],
                     record['status'].upper(),
                     time_recorded,
-                    subject_code,
-                    subject_name,
+                    record['subject_code'] or subject_code,  # ✅ USE RECORD SUBJECT OR FALLBACK
+                    record['subject_name'] or subject_name,  # ✅ USE RECORD SUBJECT OR FALLBACK
+                    record['room'] or room,  # ✅ USE RECORD ROOM OR FALLBACK
                     program_display,
                     section_display,
                     record['is_temporary']
@@ -5634,6 +5949,7 @@ def export_csv():
             filename = f"{subject_code}_{clean_subject_name}_{program_display}-{section_display}_attendance_{timestamp}.csv"
             
             print(f"🔍 DEBUG Final Filename: {filename}")
+            print(f"🔍 DEBUG CSV Content Preview: {len(csv_content)} characters")
             
             # Create response with proper headers to prevent caching
             from flask import Response
@@ -9282,31 +9598,14 @@ def initialize_session():
             except Exception as e:
                 logger.warning(f"⚠️ Error finding section: {e}")
         
-        # ✅ SAVE SESSION TO DATABASE WITH SECTION_ID
-        try:
-            cursor.execute("""
-                INSERT INTO attendance_sessions 
-                (session_id, class_name, started_at, late_threshold_minutes, total_duration_minutes, created_by, status, section_id)
-                VALUES (%s, %s, %s, %s, %s, %s, 'active', %s)
-            """, (
-                schedule_id,
-                f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
-                session_start_time,
-                session_threshold_seconds // 60,
-                session_total_duration_seconds // 60,
-                data.get('instructor', 'System'),
-                section_id
-            ))
-            logger.info(f"💾 Session saved to database with section_id: {section_id}")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not save session to database: {e}")
-        
-        # ✅ GET SUBJECT AND ROOM INFO
+        # ✅ GET SUBJECT AND ROOM INFO - ENHANCED QUERY
         subject_code = 'Unknown Subject'
+        subject_name = 'Unknown Subject'
         room = 'Unknown Room'
+        
         try:
             cursor.execute("""
-                SELECT s.subject_code, cs.room
+                SELECT s.subject_code, s.subject_name, cs.room
                 FROM class_schedules cs
                 JOIN subjects s ON cs.subject_id = s.subject_id
                 WHERE cs.schedule_id = %s
@@ -9314,10 +9613,36 @@ def initialize_session():
             result = cursor.fetchone()
             if result:
                 subject_code = result.get('subject_code', 'Unknown Subject')
+                subject_name = result.get('subject_name', 'Unknown Subject')
                 room = result.get('room', 'Unknown Room')
-                logger.info(f"📚 Subject info: {subject_code} - {room}")
+                logger.info(f"📚 Subject info: {subject_code} - {subject_name} - {room}")
+            else:
+                logger.warning(f"⚠️ No subject found for schedule_id: {schedule_id}")
         except Exception as e:
             logger.warning(f"⚠️ Could not fetch subject info: {e}")
+        
+        # ✅ SAVE SESSION TO DATABASE WITH SUBJECT INFORMATION
+        try:
+            cursor.execute("""
+                INSERT INTO attendance_sessions 
+                (session_id, class_name, subject_code, subject_name, room, started_at, 
+                 late_threshold_minutes, total_duration_minutes, created_by, status, section_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s)
+            """, (
+                schedule_id,
+                f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
+                subject_code,
+                subject_name,
+                room,
+                session_start_time,
+                session_threshold_seconds // 60,
+                session_total_duration_seconds // 60,
+                data.get('instructor', 'System'),
+                section_id
+            ))
+            logger.info(f"💾 Session saved to database with subject info: {subject_code} - {subject_name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not save session to database: {e}")
         
         # ✅ GET FACULTY INFO
         faculty_name = data.get('instructor', 'Unknown Instructor')
@@ -9385,6 +9710,7 @@ def initialize_session():
             'schedule_id': schedule_id,
             'instructor': faculty_name,
             'subject_code': subject_code,
+            'subject_name': subject_name,  # ✅ ADD SUBJECT NAME
             'room': room,
             'role': faculty_role,
             'faculty_photo': faculty_photo,
@@ -9405,7 +9731,7 @@ def initialize_session():
         logger.info(f"✅ SESSION INITIALIZED: {session_start_time}")
         logger.info(f"👤 Faculty: {faculty_name} - Role: {faculty_role}")
         logger.info(f"🏫 Class: {data.get('program')} {data.get('year_level')}{data.get('section')}")
-        logger.info(f"📚 Subject: {subject_code} - {room}")
+        logger.info(f"📚 Subject: {subject_code} - {subject_name} - {room}")
         logger.info(f"🔗 Section ID: {section_id}")
         logger.info(f"🎯 Session ID returned: {schedule_id}")  # Debug log
         
@@ -9835,7 +10161,7 @@ def get_session_threshold():
 @app.route('/api/manage_student', methods=['POST'])
 def manage_student():
     """Handle student management actions"""
-    global session_start_time, session_threshold_seconds
+    global session_start_time, session_threshold_seconds, current_session_id
     
     try:
         data = request.json
@@ -9872,13 +10198,43 @@ def manage_student():
                     status = 'late'
                     logger.info(f"⏰ TEMPORARY STUDENT LATE: {student_name} arrived {time_difference.total_seconds():.1f} seconds after start (threshold: {threshold_seconds} seconds)")
             
+            # ✅ GET SESSION SUBJECT INFORMATION
+            subject_code = 'Unknown Subject'
+            subject_name = 'Unknown Subject'
+            room = 'Unknown Room'
+            section_id = None
+            
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT subject_code, subject_name, room, section_id 
+                    FROM attendance_sessions 
+                    WHERE session_id = %s
+                """, (current_session_id,))
+                session_result = cursor.fetchone()
+                
+                if session_result:
+                    subject_code = session_result.get('subject_code', 'Unknown Subject')
+                    subject_name = session_result.get('subject_name', 'Unknown Subject')
+                    room = session_result.get('room', 'Unknown Room')
+                    section_id = session_result.get('section_id')
+                    logger.info(f"🔗 Found session subject: {subject_code} - {subject_name}")
+                
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fetch session subject info: {e}")
+            
             conn = get_db_connection()
             cursor = conn.cursor()
             
+            # ✅ FIXED: INSERT WITH SUBJECT INFORMATION
             cursor.execute("""
-                INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id, remarks)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (None, display_name, current_time, 'student', status, 'manual_add', remarks))
+                INSERT INTO attendance 
+                (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (None, display_name, current_time, 'student', status, 'manual_add', remarks, subject_code, subject_name, room, section_id))
             
             conn.commit()
             cursor.close()
@@ -9886,7 +10242,7 @@ def manage_student():
             
             student_status[student_id] = status
             
-            logger.info(f"✅ TEMPORARY ATTENDANCE ADDED: {student_name} ({student_id}) - {status}")
+            logger.info(f"✅ TEMPORARY ATTENDANCE ADDED: {student_name} ({student_id}) - {status} - Subject: {subject_code}")
             return jsonify({
                 'success': True, 
                 'title': 'Success',
@@ -10031,6 +10387,33 @@ def manage_student():
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             today = datetime.now().strftime("%Y-%m-%d")
             
+            # ✅ GET SESSION SUBJECT INFORMATION
+            subject_code = 'Unknown Subject'
+            subject_name = 'Unknown Subject'
+            room = 'Unknown Room'
+            section_id = None
+            
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT subject_code, subject_name, room, section_id 
+                    FROM attendance_sessions 
+                    WHERE session_id = %s
+                """, (current_session_id,))
+                session_result = cursor.fetchone()
+                
+                if session_result:
+                    subject_code = session_result.get('subject_code', 'Unknown Subject')
+                    subject_name = session_result.get('subject_name', 'Unknown Subject')
+                    room = session_result.get('room', 'Unknown Room')
+                    section_id = session_result.get('section_id')
+                
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fetch session subject info: {e}")
+            
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             
@@ -10057,19 +10440,21 @@ def manage_student():
                     existing_record = cursor.fetchone()
                     
                     if existing_record:
-                        # Update existing record regardless of current status
+                        # ✅ FIXED: UPDATE WITH SUBJECT INFORMATION
                         cursor.execute("""
                             UPDATE attendance 
-                            SET status = 'excused', remarks = %s, timestamp = %s
+                            SET status = 'excused', remarks = %s, timestamp = %s,
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
                             WHERE id = %s
-                        """, (remarks, current_time, existing_record['id']))
+                        """, (remarks, current_time, subject_code, subject_name, room, section_id, existing_record['id']))
                         action_type = "updated"
                     else:
-                        # Insert new attendance record
+                        # ✅ FIXED: INSERT WITH SUBJECT INFORMATION
                         cursor.execute("""
-                            INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id, remarks)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, (student_id, student_name, current_time, 'student', 'excused', 'manual_excuse', remarks))
+                            INSERT INTO attendance 
+                            (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (student_id, student_name, current_time, 'student', 'excused', 'manual_excuse', remarks, subject_code, subject_name, room, section_id))
                         action_type = "marked"
                     
                     conn.commit()
@@ -10079,7 +10464,7 @@ def manage_student():
                     # Update frontend status
                     student_status[student_id] = 'excused'
                     
-                    logger.info(f"📝 REGULAR STUDENT EXCUSED: {student_name} ({student_id})")
+                    logger.info(f"📝 REGULAR STUDENT EXCUSED: {student_name} ({student_id}) - Subject: {subject_code}")
                     return jsonify({
                         'success': True, 
                         'title': 'Student Excused',
@@ -10114,15 +10499,16 @@ def manage_student():
                         temp_student = cursor.fetchone()
                     
                     if temp_student:
-                        # Update temporary student record
+                        # ✅ FIXED: UPDATE TEMPORARY STUDENT WITH SUBJECT INFORMATION
                         cursor.execute("""
                             UPDATE attendance 
-                            SET status = 'excused', remarks = %s, timestamp = %s
+                            SET status = 'excused', remarks = %s, timestamp = %s,
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
                             WHERE student_id IS NULL 
                             AND session_id = 'manual_add'
                             AND DATE(timestamp) = %s
                             AND (name LIKE %s OR remarks LIKE %s)
-                        """, (remarks, current_time, today, f"%{student_id}%", f"%{student_id}%"))
+                        """, (remarks, current_time, subject_code, subject_name, room, section_id, today, f"%{student_id}%", f"%{student_id}%"))
                         
                         conn.commit()
                         cursor.close()
@@ -10131,7 +10517,7 @@ def manage_student():
                         # Update frontend status
                         student_status[student_id] = 'excused'
                         
-                        logger.info(f"📝 TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id})")
+                        logger.info(f"📝 TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id}) - Subject: {subject_code}")
                         return jsonify({
                             'success': True, 
                             'title': 'Student Excused',
@@ -10176,6 +10562,33 @@ def manage_student():
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             today = datetime.now().strftime("%Y-%m-%d")
             
+            # ✅ GET SESSION SUBJECT INFORMATION
+            subject_code = 'Unknown Subject'
+            subject_name = 'Unknown Subject'
+            room = 'Unknown Room'
+            section_id = None
+            
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT subject_code, subject_name, room, section_id 
+                    FROM attendance_sessions 
+                    WHERE session_id = %s
+                """, (current_session_id,))
+                session_result = cursor.fetchone()
+                
+                if session_result:
+                    subject_code = session_result.get('subject_code', 'Unknown Subject')
+                    subject_name = session_result.get('subject_name', 'Unknown Subject')
+                    room = session_result.get('room', 'Unknown Room')
+                    section_id = session_result.get('section_id')
+                
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fetch session subject info: {e}")
+            
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             
@@ -10202,19 +10615,21 @@ def manage_student():
                     existing_record = cursor.fetchone()
                     
                     if existing_record:
-                        # Update existing record
+                        # ✅ FIXED: UPDATE WITH SUBJECT INFORMATION
                         cursor.execute("""
                             UPDATE attendance 
-                            SET status = %s, remarks = %s, timestamp = %s
+                            SET status = %s, remarks = %s, timestamp = %s,
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
                             WHERE id = %s
-                        """, (status, remarks, current_time, existing_record['id']))
+                        """, (status, remarks, current_time, subject_code, subject_name, room, section_id, existing_record['id']))
                         action_type = "updated"
                     else:
-                        # Insert new record
+                        # ✅ FIXED: INSERT WITH SUBJECT INFORMATION
                         cursor.execute("""
-                            INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id, remarks)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, (student_id, student_name, current_time, 'student', status, 'manual_status', remarks))
+                            INSERT INTO attendance 
+                            (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (student_id, student_name, current_time, 'student', status, 'manual_status', remarks, subject_code, subject_name, room, section_id))
                         action_type = "marked"
                     
                     conn.commit()
@@ -10224,7 +10639,7 @@ def manage_student():
                     # Update frontend status
                     student_status[student_id] = status
                     
-                    logger.info(f"🔄 MANUAL STATUS: {student_name} -> {status}")
+                    logger.info(f"🔄 MANUAL STATUS: {student_name} -> {status} - Subject: {subject_code}")
                     return jsonify({
                         'success': True, 
                         'title': 'Status Updated',
@@ -10244,15 +10659,16 @@ def manage_student():
                     temp_student = cursor.fetchone()
                     
                     if temp_student:
-                        # Update temporary student
+                        # ✅ FIXED: UPDATE TEMPORARY STUDENT WITH SUBJECT INFORMATION
                         cursor.execute("""
                             UPDATE attendance 
-                            SET status = %s, remarks = %s, timestamp = %s
+                            SET status = %s, remarks = %s, timestamp = %s,
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
                             WHERE student_id IS NULL 
                             AND session_id = 'manual_add'
                             AND DATE(timestamp) = %s
                             AND (name LIKE %s OR remarks LIKE %s)
-                        """, (status, remarks, current_time, today, f"%{student_id}%", f"%temp_id:{student_id}%"))
+                        """, (status, remarks, current_time, subject_code, subject_name, room, section_id, today, f"%{student_id}%", f"%temp_id:{student_id}%"))
                         
                         conn.commit()
                         cursor.close()
@@ -10260,7 +10676,7 @@ def manage_student():
                         
                         student_status[student_id] = status
                         
-                        logger.info(f"🔄 TEMPORARY STUDENT STATUS: {temp_student['name']} -> {status}")
+                        logger.info(f"🔄 TEMPORARY STUDENT STATUS: {temp_student['name']} -> {status} - Subject: {subject_code}")
                         return jsonify({
                             'success': True, 
                             'title': 'Status Updated',
@@ -10850,9 +11266,9 @@ def end_session():
         with get_db_cursor() as cursor:
             print(f"🔍 DEBUG Database connection established")
             
-            # 1. Get session start time first
-            print(f"🔍 DEBUG Getting session start time")
-            cursor.execute("SELECT started_at FROM attendance_sessions WHERE session_id = %s", (session_id,))
+            # 1. Get session start time AND SUBJECT INFO first
+            print(f"🔍 DEBUG Getting session start time and subject info")
+            cursor.execute("SELECT started_at, subject_code, subject_name, room FROM attendance_sessions WHERE session_id = %s", (session_id,))
             session_result = cursor.fetchone()
             
             if not session_result:
@@ -10860,7 +11276,12 @@ def end_session():
                 return jsonify({'success': False, 'message': 'Session not found'}), 404
             
             started_at = session_result['started_at'] if isinstance(session_result, dict) else session_result[0]
+            subject_code = session_result['subject_code'] if isinstance(session_result, dict) else session_result[1]
+            subject_name = session_result['subject_name'] if isinstance(session_result, dict) else session_result[2]
+            room = session_result['room'] if isinstance(session_result, dict) else session_result[3]
+            
             print(f"🔍 DEBUG Session started at: {started_at}")
+            print(f"🔍 DEBUG Subject info - Code: {subject_code}, Name: {subject_name}, Room: {room}")
             
             # 2. Calculate duration as TIME format (HH:MM:SS)
             from datetime import datetime, timedelta
@@ -10947,7 +11368,7 @@ def end_session():
             absent_count = max(0, total_enrolled - present_count - late_count - excused_count)
             print(f"🔍 DEBUG Calculated absent count: {absent_count}")
 
-            # 8. MARK ABSENT STUDENTS
+            # 8. MARK ABSENT STUDENTS WITH SUBJECT INFORMATION
             if absent_count > 0:
                 print(f"🔍 DEBUG Marking {absent_count} students as absent")
                 try:
@@ -10964,7 +11385,7 @@ def end_session():
                     
                     print(f"🔍 DEBUG Found {len(absent_students)} students to mark as absent")
                     
-                    # Insert absent records for each missing student
+                    # Insert absent records for each missing student WITH SUBJECT INFORMATION
                     for student in absent_students:
                         student_id = student['student_id'] if isinstance(student, dict) else student[0]
                         first_name = student['first_name'] if isinstance(student, dict) else student[1]
@@ -10972,11 +11393,11 @@ def end_session():
                         
                         cursor.execute("""
                             INSERT INTO attendance 
-                            (student_id, person_type, name, timestamp, status, session_id, section_id)
-                            VALUES (%s, 'student', %s, NOW(), 'absent', %s, %s)
-                        """, (student_id, f"{first_name} {last_name}", session_id, section_id))
+                            (student_id, person_type, name, timestamp, status, session_id, section_id, subject_code, subject_name, room)
+                            VALUES (%s, 'student', %s, NOW(), 'absent', %s, %s, %s, %s, %s)
+                        """, (student_id, f"{first_name} {last_name}", session_id, section_id, subject_code, subject_name, room))
                     
-                    print(f"🔍 DEBUG Successfully inserted {len(absent_students)} absent records")
+                    print(f"🔍 DEBUG Successfully inserted {len(absent_students)} absent records with subject info")
                     
                 except Exception as e:
                     print(f"❌ ERROR inserting absent records: {e}")
