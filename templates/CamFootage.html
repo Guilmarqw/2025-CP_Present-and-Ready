@@ -539,6 +539,8 @@ let currentSectionId = null;
 let detectionStopped = false;
 let current_fps = 30.0;
 let frame_timestamps = [];
+let isDetectionStopped = false;
+let isSessionEnding = false;
 let totalPausedTime = 0;
 let isTimerPaused = false;
 let timerInterval;
@@ -586,47 +588,63 @@ window.addEventListener('load', () => {
         }
         return res.json();
     })
-.then(data => {
-    if (data.success) {
-        console.log('✅ Session initialized:', data.data);
+    .then(data => {
+        console.log('🔍 DEBUG: Full API response:', data); // Debug log
         
-        // 🎯 CRITICAL FIX: Store the dynamic IDs globally WITH VALIDATION
-        currentSessionId = data.data.session_id || data.data.id; // Try different possible keys
-        currentSectionId = data.data.section_id || data.data.section_id; 
-        
-        // Validate that we actually got the IDs
-        if (!currentSessionId || !currentSectionId) {
-            console.error('❌ CRITICAL: Session ID or Section ID is missing from backend response:', data.data);
-            // Try to extract from URL as fallback
-            currentSessionId = urlParams.get('schedule_id'); // Use schedule_id as fallback
-            currentSectionId = data.data.section || urlParams.get('section'); // Use section as fallback
-        }
-        
-        console.log(`🎯 Global Session ID set to: ${currentSessionId}`);
-        console.log(`🎯 Global Section ID set to: ${currentSectionId}`);
-        
-        updateSessionUI(data.data);
-        loadClassStudents(data.data.program, data.data.year_level, data.data.section);
+        if (data.success) {
+            console.log('✅ Session initialized:', data.data);
+            
+            // 🎯 CRITICAL FIX: Properly extract session_id and section_id
+            currentSessionId = data.data.session_id; // This should be in data.data.session_id
+            currentSectionId = data.data.section_id; // This should be in data.data.section_id
+            
+            // 🎯 DEBUG: Check what keys are available
+            console.log('🔍 DEBUG: Available keys in data.data:', Object.keys(data.data));
+            console.log('🔍 DEBUG: session_id value:', data.data.session_id);
+            console.log('🔍 DEBUG: section_id value:', data.data.section_id);
+            
+            // Validate that we actually got the IDs
+            if (!currentSessionId) {
+                console.warn('⚠️ session_id not found in response, using schedule_id as fallback');
+                currentSessionId = sessionData.schedule_id;
+            }
+            
+            if (!currentSectionId) {
+                console.warn('⚠️ section_id not found in response, using section as fallback');
+                currentSectionId = sessionData.section;
+            }
+            
+            console.log(`🎯 Global Session ID set to: ${currentSessionId}`);
+            console.log(`🎯 Global Section ID set to: ${currentSectionId}`);
+            
+            updateSessionUI(data.data);
+            
+            // 🎯 Wait a moment to ensure session ID is set, then load students
+            setTimeout(() => {
+                loadClassStudents(data.data.program, data.data.year_level, data.data.section);
+            }, 100);
             
             // Start auto-refresh
             updateStudentCount(); // Initial update
             setInterval(updateStudentCount, 2000); // Update every 2 seconds
             
-            // ✅ LOG SESSION STATUS
-            if (data.existing_session) {
-                console.log('🔄 Continuing existing session');
-            } else {
-                console.log('🚀 Starting new session');
-            }
+            console.log('🚀 Starting FRESH new session');
+            
         } else {
             console.error('❌ Session initialization failed:', data.message);
-            // Continue anyway with default values
+            // Use URL parameters as fallback
+            currentSessionId = sessionData.schedule_id;
+            currentSectionId = sessionData.section;
+            console.log('🔄 Using URL parameters as fallback');
             loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
         }
     })
     .catch(err => {
         console.error('❌ Error initializing session:', err);
-        // Continue anyway with URL parameters
+        // Use URL parameters as fallback
+        currentSessionId = sessionData.schedule_id;
+        currentSectionId = sessionData.section;
+        console.log('🔄 Using URL parameters due to error');
         loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
     });
     
@@ -637,20 +655,47 @@ window.addEventListener('load', () => {
     });
 });
 
-// Add this to your initialization code
+// 🆕 ADD THIS FUNCTION - Complete session resumption
+async function resumeSession() {
+    console.log('Resuming session...');
+    
+    try {
+        // Reset flags
+        isSessionEnding = false;
+        isDetectionStopped = false;
+        
+        // Resume Python detection
+        await resumePythonDetection();
+        
+        // Restart timer if needed
+        if (!isRunning) {
+            startTimer();
+        }
+        
+        console.log('Session resumed successfully');
+    } catch (err) {
+        console.error('Error resuming session:', err);
+    }
+}
+
+// 🆕 REPLACE ALL your DOMContentLoaded with this SINGLE version:
 document.addEventListener('DOMContentLoaded', function() {
+    // Enrollment button
+    const enrollBtn = document.getElementById('confirmEnrollBtn');
+    if (enrollBtn) {
+        enrollBtn.addEventListener('click', enrollSelectedFace);
+    }
+    
+    // 🆕 Modal close handlers
     const unrecognizedModal = document.getElementById('unrecognizedFacesModal');
     if (unrecognizedModal) {
         unrecognizedModal.addEventListener('modalClosed', function(event) {
-            const modalId = event.detail.modalId;
-            console.log(`Modal ${modalId} was closed`);
+            console.log('Unrecognized faces modal closed');
             
-            // Check if we're not proceeding to confirmation
-            const endSessionModal = document.getElementById('endSessionModal');
-            if (!endSessionModal || endSessionModal.style.display !== 'block') {
-                // User closed the unrecognized modal without proceeding - resume detection
-                console.log('Resuming detection because modal was closed without proceeding');
-                resumePythonDetection();
+            // 🆕 ONLY resume if we're not in session ending flow
+            if (!isSessionEnding) {
+                console.log('Resuming detection - session not ending');
+                resumeSession();
             }
         });
     }
@@ -658,22 +703,45 @@ document.addEventListener('DOMContentLoaded', function() {
     const endSessionModal = document.getElementById('endSessionModal');
     if (endSessionModal) {
         endSessionModal.addEventListener('modalClosed', function(event) {
-            const modalId = event.detail.modalId;
-            console.log(`Modal ${modalId} was closed`);
+            console.log('End session modal closed');
             
-            // If end session modal is closed without confirming, resume detection
-            resumePythonDetection();
+            // 🆕 ONLY resume if user canceled end session
+            if (!isSessionEnding) {
+                console.log('Resuming detection - end session canceled');
+                resumeSession();
+            }
+        });
+    }
+    
+    const enrollModal = document.getElementById('enrollStudentModal');
+    if (enrollModal) {
+        enrollModal.addEventListener('modalClosed', function(event) {
+            console.log('Enroll student modal closed');
+            
+            // 🆕 ONLY resume if we're not in session ending flow
+            if (!isSessionEnding) {
+                console.log('Resuming detection - enrollment finished');
+                resumeSession();
+            }
         });
     }
 });
 
-// --- MODAL UTILITY FUNCTIONS ---
 function openModal(modalId) {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.style.display = 'flex';
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'flex';
+        
+        // 🆕 STOP DETECTION when enrollment-related modals open
+        if (modalId === 'unrecognizedFacesModal' || 
+            modalId === 'enrollStudentModal' || 
+            modalId === 'endSessionModal') {
+            console.log('Stopping detection for modal:', modalId);
+            stopPythonDetection();
+            isDetectionStopped = true;
         }
     }
+}
 
     function showAlertModal(type, message, title) {
     const modal = document.getElementById('notificationModal');
@@ -919,6 +987,11 @@ function updateSessionUI(data) {
 
 
 function updateTimer() {
+     // 🆕 STOP TIMER UPDATES WHEN SESSION IS ENDING
+    if (isSessionEnding || isDetectionStopped) {
+        return;
+    }
+
     if (isTimerPaused) return;
 
     try {
@@ -1281,15 +1354,21 @@ async function saveStaticSettings() {
     }
 }
 
- function endSession() {
+function endSession() {
     console.log('endSession clicked');
     
     try {
+        // 🆕 Set session ending flag
+        isSessionEnding = true;
+        isDetectionStopped = true;
+        
+        // Stop detection and timer immediately
+        stopPythonDetection();
+        clearInterval(timerInterval);
+        isRunning = false;
+        
         const hasUnrecognizedFaces = checkUnrecognizedFaces();
         if (hasUnrecognizedFaces) {
-            // Stop detection when showing unrecognized faces modal
-            stopPythonDetection();
-            
             const modal = document.getElementById('unrecognizedFacesModal');
             if (modal) {
                 openModal('unrecognizedFacesModal');
@@ -1298,8 +1377,7 @@ async function saveStaticSettings() {
                 showAlertModal('error', 'Unrecognized faces modal not found.');
             }
         } else {
-            // No unrecognized faces - stop detection permanently
-            stopPythonDetection();
+            // No unrecognized faces - show confirmation directly
             showEndSessionConfirmation();
         }
     } catch (err) {
@@ -1341,6 +1419,23 @@ function cancelUnrecognizedModal() {
     console.log('Cancelling unrecognized faces modal and resuming detection');
     closeModal('unrecognizedFacesModal');
     resumePythonDetection();
+}
+
+// 🆕 ADD THIS FUNCTION - Cancel end session and resume
+function cancelEndSession() {
+    console.log('Canceling end session - resuming');
+    
+    // Reset flags
+    isSessionEnding = false;
+    isDetectionStopped = false;
+    
+    // Close all modals
+    closeModal('endSessionModal');
+    closeModal('unrecognizedFacesModal');
+    closeModal('enrollStudentModal');
+    
+    // Resume session
+    resumeSession();
 }
 
 function showEndSessionConfirmation() {
@@ -1615,7 +1710,29 @@ function loadClassStudents(program, yearLevel, section) {
         return;
     }
     
-    fetch(`/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`)
+    // 🎯 ADD VALIDATION: Check if currentSessionId exists
+    if (!currentSessionId) {
+        console.error('❌ Cannot load students: currentSessionId is null. Retrying in 1 second...');
+        setTimeout(() => {
+            if (currentSessionId) {
+                loadClassStudents(program, yearLevel, section);
+            } else {
+                console.error('❌ Still no session ID after retry. Loading students as absent.');
+                // Fallback: Load students without session filtering
+                loadStudentsFallback(program, yearLevel, section);
+            }
+        }, 1000);
+        return;
+    }
+    
+    // 🎯 ADD DEBUG: Log what we're sending
+    console.log(`🔍 DEBUG: Loading students with session_id=${currentSessionId}, section=${section}`);
+    
+    const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&session_id=${encodeURIComponent(currentSessionId)}`;
+    
+    console.log(`🎯 Loading students for session: ${currentSessionId}`);
+    
+    fetch(url)
         .then(res => {
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}`);
@@ -1624,6 +1741,13 @@ function loadClassStudents(program, yearLevel, section) {
         })
         .then(data => {
             if (data.success) {
+                console.log(`📊 Loaded ${data.students.length} students for session ${currentSessionId}`);
+                
+                // 🎯 DEBUG: Check student statuses
+                const presentStudents = data.students.filter(s => s.status === 'present');
+                const absentStudents = data.students.filter(s => s.status === 'absent');
+                console.log(`📊 Present: ${presentStudents.length}, Absent: ${absentStudents.length}`);
+                
                 updateStudentList(data.students || []);
                 updateStudentCount();
             } else {
@@ -1633,6 +1757,30 @@ function loadClassStudents(program, yearLevel, section) {
         })
         .catch(err => {
             console.error('Error fetching students:', err);
+            updateStudentList([]);
+        });
+}
+
+function loadStudentsFallback(program, yearLevel, section) {
+    const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`;
+    
+    console.log('🔄 Using fallback student loading (no session ID)');
+    
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                // Force all students to be absent for fallback
+                const studentsWithAbsentStatus = data.students.map(student => ({
+                    ...student,
+                    status: 'absent'
+                }));
+                updateStudentList(studentsWithAbsentStatus);
+                updateStudentCount();
+            }
+        })
+        .catch(err => {
+            console.error('Error in fallback student loading:', err);
             updateStudentList([]);
         });
 }
@@ -1668,6 +1816,17 @@ async function loadClassSettings() {
     }
 }
 
+// Frontend code
+function startFaceScan() {
+    fetch('/api/start_face_scan', {method: 'POST'})
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showScanTimer();
+            }
+        });
+}
+
 function updateStudentList(students) {
     const studentList = document.getElementById('studentList');
     const searchInput = document.querySelector('.search-bar input');
@@ -1695,6 +1854,10 @@ function updateStudentList(students) {
             case 'excused':
                 statusClass = 'excused';
                 statusText = 'Excused';
+                break;
+            case 'missing':  // 🆕 ADD MISSING STATUS
+                statusClass = 'missing';
+                statusText = 'Missing';
                 break;
             default:
                 statusClass = 'absent';
@@ -1791,6 +1954,15 @@ function updateStudentCount() {
                 
                 if (detectedElement) detectedElement.textContent = data.detected_count || 0;
                 if (totalElement) totalElement.textContent = data.total_count || 0;
+                
+                // 🆕 DEBUG: Log detailed student counts
+                const presentStudents = data.students.filter(s => s.status === 'present');
+                const lateStudents = data.students.filter(s => s.status === 'late');
+                const missingStudents = data.students.filter(s => s.status === 'missing');
+                const absentStudents = data.students.filter(s => s.status === 'absent');
+                const excusedStudents = data.students.filter(s => s.status === 'excused');
+                
+                console.log(`🔄 Student Status - Present: ${presentStudents.length}, Late: ${lateStudents.length}, Missing: ${missingStudents.length}, Absent: ${absentStudents.length}, Excused: ${excusedStudents.length}, Total: ${data.total_count}`);
                 
                 // Update student list
                 updateStudentList(data.students || []);
@@ -2018,6 +2190,9 @@ function showStatusContextMenu(x, y, studentRow) {
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'late')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
                 ⏰ Mark as Late
             </div>
+            <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'missing')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
+                🚶 Mark as Missing
+            </div>
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'excused')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
                 📝 Mark as Excused
             </div>
@@ -2043,7 +2218,6 @@ function closeContextMenu() {
     document.removeEventListener('click', closeContextMenu);
 }
 
-// Function to change student status
 function changeStudentStatus(studentId, newStatus) {
     closeContextMenu();
     
@@ -2052,7 +2226,8 @@ function changeStudentStatus(studentId, newStatus) {
     switch(newStatus) {
         case 'present':
         case 'late':
-        case 'absent':  // CHANGED: Use mark_present for absent too
+        case 'missing':  // 🆕 ADD MISSING STATUS
+        case 'absent':
             action = 'mark_present';
             student_data = { 
                 student_id: studentId, 
@@ -2072,7 +2247,7 @@ function changeStudentStatus(studentId, newStatus) {
             return;
     }
     
-    manageStudent(action, student_data); // REMOVED: await
+    manageStudent(action, student_data);
 }
 
 function submitAddStudent() {
@@ -2297,14 +2472,13 @@ if (!currentSessionId || !currentSectionId) {
     }
 
 function skipSelected() {
-    console.log('skipSelected called - stopping detection and timer');
+    console.log('skipSelected called');
     
-    // Stop detection immediately
+    // 🆕 Stop detection and timer (already stopped by endSession, but double ensure)
     stopPythonDetection();
-    
-    // Stop the timer
     clearInterval(timerInterval);
     isRunning = false;
+    isSessionEnding = true;
     
     const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
     
@@ -2334,10 +2508,61 @@ function skipSelected() {
         }
     });
 
-    // Proceed to confirmation
-    closeModal('unrecognizedFacesModal');
-    showEndSessionConfirmation();
+    // 🆕 Check if any faces remain
+    const remainingFaces = document.querySelectorAll('.unrecognized-faces .face-card').length;
+    if (remainingFaces === 0) {
+        closeModal('unrecognizedFacesModal');
+        showEndSessionConfirmation();
+    }
 }
+
+// 🆕 ADD THIS FUNCTION - Handle the actual enrollment
+async function enrollSelectedFace() {
+    const studentSelect = document.getElementById('studentSelect');
+    const studentId = studentSelect.value;
+    const faceId = document.getElementById('faceToEnrollID').value;
+    const faceEncoding = document.getElementById('faceToEnrollEncoding').value;
+    const sessionId = currentSessionId;
+
+    console.log('🔍 DEBUG: Enrollment data:', {
+        studentId, faceId, sessionId, 
+        encodingLength: faceEncoding?.length
+    });
+
+    if (!studentId || !faceId || !sessionId) {
+        showAlertModal('error', 'Please select a student and ensure session is active.', 'Missing Data');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/enroll_unknown_face', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                student_id: studentId,
+                unrecognized_face_id: faceId,  // This should be DATABASE ID
+                face_encoding: faceEncoding,
+                session_id: sessionId
+            })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlertModal('success', 'Student enrolled successfully!', 'Success');
+            closeModal('enrollStudentModal');
+            
+            // Refresh the unrecognized faces list
+            await checkUnrecognizedFaces();
+        } else {
+            showAlertModal('error', result.message || 'Enrollment failed', 'Error');
+        }
+    } catch (error) {
+        console.error('Enrollment error:', error);
+        showAlertModal('error', 'Enrollment failed: ' + error.message, 'Network Error');
+    }
+}
+
 
 async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
     const studentSelect = document.getElementById('studentSelect');
@@ -2396,17 +2621,15 @@ async function confirmEnrollment() {
     
     closeModal('enrollStudentModal'); 
 
-    // 1. Prepare and Send data to the backend
     try {
         const response = await fetch('/api/enroll_unknown_face', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 student_id: studentId,
-                // The backend expects a JSON array, so parse the stringified encoding
                 face_encoding: JSON.parse(faceEncoding), 
-                unrecognized_face_id: faceId, // CRITICAL: The ID to resolve the face record
-                session_id: currentSessionId // CRITICAL: The ID to update attendance
+                unrecognized_face_id: faceId,
+                session_id: currentSessionId
             }),
         });
 
@@ -2415,16 +2638,18 @@ async function confirmEnrollment() {
         if (response.ok && data.success) {
             showAlertModal('success', 'Enrollment successful! Student marked as Present.', 'Confirmed');
             
-            // 2. Remove the processed face card
+            // Remove the processed face card
             const faceCardToRemove = document.querySelector(`.unrecognized-faces .face-card[data-face-id="${faceId}"]`);
             if (faceCardToRemove) {
                 faceCardToRemove.remove();
             }
             
-            // 3. Check for remaining faces and transition
-            if (!checkUnrecognizedFaces()) { 
+            // 🆕 Check remaining faces WITHOUT restarting detection
+            const remainingFaces = document.querySelectorAll('.unrecognized-faces .face-card').length;
+            if (remainingFaces === 0) {
                 showEndSessionConfirmation();
             } else {
+                // 🆕 Keep detection stopped, just show modal
                 openModal('unrecognizedFacesModal');
             }
         } else {

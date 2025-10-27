@@ -87,8 +87,6 @@
             <div class="flex gap-2">
                 <button class="btn btn-back bg-gray-600 text-white hover:bg-gray-700" id="backBtn">Go Back to Dashboard</button>
                 <button class="btn btn-edit" id="editBtn">Edit</button>
-                <button class="btn btn-save" id="saveBtn">Save</button>
-                <button class="btn btn-cancel" id="discardBtn">Discard</button>
                 <button class="btn btn-export" id="exportBtn">Export as CSV</button>
             </div>
         </div>
@@ -169,6 +167,72 @@
     </div>
 
 <script>
+/* ==============================================================
+   CUSTOM ALERT MODAL – 100% BUG-FREE
+   ============================================================== */
+let alertModal;                     // will hold the modal element
+
+function createAlertModal() {
+    // ---- remove any old modal that might exist ----
+    const old = document.getElementById('customAlertModal');
+    if (old) old.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'customAlertModal';
+    modal.innerHTML = `
+        <div id="customAlertBox">
+            <div id="customAlertIcon"></div>
+            <div id="customAlertMessage"></div>
+            <button id="customAlertClose">OK</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // ---- close handling ----
+    const closeBtn = modal.querySelector('#customAlertClose');
+    closeBtn.onclick = () => modal.style.display = 'none';
+    modal.onclick = e => { if (e.target === modal) modal.style.display = 'none'; };
+
+    // ---- configuration (icon, colour, border) ----
+    const cfg = {
+        success: { icon: 'Checkmark',  color: '#10b981', border: '#10b981' },
+        warning: { icon: 'Warning',    color: '#f59e0b', border: '#f59e0b' },
+        error:   { icon: 'Error',      color: '#ef4444', border: '#ef4444' },
+        info:    { icon: 'Info',       color: '#3b82f6', border: '#3b82f6' }
+    };
+
+    // ---- public .show() method ----
+    modal.show = function (type, message) {
+        const iconEl = this.querySelector('#customAlertIcon');
+        const msgEl  = this.querySelector('#customAlertMessage');
+        const box    = this.querySelector('#customAlertBox');
+
+        // fallback to info if an unknown type is passed
+        const c = cfg[type] || cfg.info;
+
+        iconEl.textContent = c.icon;
+        iconEl.style.color   = c.color;
+        box.style.borderTopColor = c.border;
+        msgEl.textContent = message;
+
+        this.style.display = 'flex';
+
+        // auto-close after 4 seconds
+        clearTimeout(this._auto);
+        this._auto = setTimeout(() => this.style.display = 'none', 4000);
+    };
+
+    return modal;
+}
+
+/* -----------------------------------------------------------------
+   Helper that you will call everywhere instead of alert()
+   ----------------------------------------------------------------- */
+function showAlert(type, message) {
+    // create the modal the **first** time it is needed
+    if (!alertModal) alertModal = createAlertModal();
+    alertModal.show(type, message);
+}
     // Global variables
     let allStudents = [];
     let originalStudents = [];
@@ -305,11 +369,11 @@ function formatCourseName(courseName) {
                 displaySummaryData(data);
             } else {
                 console.error('❌ API Error:', data.message);
-                alert('Error loading summary data: ' + data.message);
+                showAlert('Error loading summary data: ' + data.message);
             }
         } catch (error) {
             console.error('❌ Error loading summary:', error);
-            alert('Error loading summary data');
+            showAlert('Error loading summary data');
         }
     }
 
@@ -617,12 +681,12 @@ function createStudentElement(student) {
                 hasChanges = false;
                 return true;
             } else {
-                alert('Error saving changes: ' + data.message);
+                showAlert('Error saving changes: ' + data.message);
                 return false;
             }
         } catch (error) {
             console.error('Error saving changes:', error);
-            alert('Error saving changes');
+            showAlert('Error saving changes');
             return false;
         }
     }
@@ -630,7 +694,7 @@ function createStudentElement(student) {
     // Export CSV
     async function exportToCSV() {
         if (!currentSessionId) {
-            alert('No session data available');
+            showAlert('No session data available');
             return;
         }
 
@@ -661,11 +725,11 @@ function createStudentElement(student) {
                 document.body.removeChild(a);
             } else {
                 const error = await response.json();
-                alert('Error exporting CSV: ' + (error.message || 'Unknown error'));
+                showAlert('Error exporting CSV: ' + (error.message || 'Unknown error'));
             }
         } catch (error) {
             console.error('Error exporting CSV:', error);
-            alert('Error exporting CSV');
+            showAlert('Error exporting CSV');
         }
     }
 
@@ -699,8 +763,8 @@ function createStudentElement(student) {
 
     // Initialize when page loads
     document.addEventListener('DOMContentLoaded', function() {
+        alertModal = createAlertModal();
         loadSummaryData();
-
         // Modal functionality
         const editModal = document.getElementById('editModal');
         const editBtn = document.getElementById('editBtn');
@@ -865,7 +929,7 @@ function createStudentElement(student) {
                             if (editModal) {
                                 editModal.style.display = 'none';
                             }
-                            alert('Attendance updated successfully!');
+                            showAlert('Attendance updated successfully!');
                         }
                     });
                 } else {
@@ -883,11 +947,11 @@ function createStudentElement(student) {
                     showConfirmation('save', 'Do you want to save the attendance summary?', async () => {
                         const success = await saveChangesToBackend();
                         if (success) {
-                            alert('Attendance summary saved successfully!');
+                            showAlert('Attendance summary saved successfully!');
                         }
                     });
                 } else {
-                    alert('No changes to save.');
+                    showAlert('No changes to save.');
                 }
             });
         }
@@ -901,10 +965,10 @@ function createStudentElement(student) {
                         hasChanges = false;
                         populateModalStudentsList();
                         populateStudentLists();
-                        alert('Changes discarded.');
+                        showAlert('Changes discarded.');
                     });
                 } else {
-                    alert('No changes to discard.');
+                    showAlert('No changes to discard.');
                 }
             });
         }

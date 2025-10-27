@@ -1182,3 +1182,12 @@
 #endSessionModal {
     z-index: 1002;
 }
+
+.status.missing {
+    background: #ff9800;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
