@@ -12219,12 +12219,13 @@ if __name__ == "__main__":
         
         # Start with simple configuration
         app.run(
-            host="0.0.0.0",  # Accessible from all interfaces
-            port=5000, 
-            debug=False, 
-            threaded=True, 
-            ssl_context=None  # No HTTPS for now
+            host="0.0.0.0",
+            port=5000,
+            debug=False,
+            threaded=True,
+            ssl_context=('cert.pem', 'key.pem')
         )
+
     
     except OSError as e:
         if "10049" in str(e) or "not valid" in str(e):
