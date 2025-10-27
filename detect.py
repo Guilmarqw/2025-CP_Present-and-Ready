@@ -4863,7 +4863,7 @@ def summary_page():
 @app.route('/api/summary_data')
 @login_required
 def get_summary_data():
-    """Get complete summary data for the latest session"""
+    """Get complete summary data for the latest session - INCLUDING TEMPORARY STUDENTS"""
     try:
         user_id = session.get('user_id')
         
@@ -4896,39 +4896,33 @@ def get_summary_data():
                     'message': 'No completed sessions found'
                 }), 404
             
-            # ✅ FIXED: PROPERLY EXTRACT duration_time FROM THE RESULT
-            print(f"🔍 DEBUG Session data keys: {list(session_data.keys())}")
-            print(f"🔍 DEBUG Raw duration_time value: {session_data.get('duration_time')}")
-            print(f"🔍 DEBUG Type of duration_time: {type(session_data.get('duration_time'))}")
+            # ✅ FIXED: Use created_at for start time, ended_at for end time
+            started_at = session_data['created_at']  # Use created_at instead of started_at
+            ended_at = session_data['ended_at']
             
-            duration_time = session_data.get('duration_time')
+            print(f"🔍 DEBUG Time Data:")
+            print(f"   - Created At: {started_at}")
+            print(f"   - Started At: {session_data['started_at']}")
+            print(f"   - Ended At: {ended_at}")
+            
+            # Get duration from stored duration_time
+            duration_time = session_data.get('duration_time', '00:00:00')
             duration_seconds = 0
-            
-            if duration_time:
-                if isinstance(duration_time, str):
-                    # Handle string format "00:00:08"
-                    try:
-                        hours, minutes, seconds = map(int, duration_time.split(':'))
-                        duration_seconds = hours * 3600 + minutes * 60 + seconds
-                        print(f"🔍 DEBUG Parsed duration from string: {duration_time} -> {duration_seconds} seconds")
-                    except Exception as e:
-                        print(f"❌ ERROR parsing duration_time string: {e}")
-                elif hasattr(duration_time, 'total_seconds'):
-                    # Handle timedelta object
-                    duration_seconds = int(duration_time.total_seconds())
-                    print(f"🔍 DEBUG Parsed duration from timedelta: {duration_seconds} seconds")
-                elif isinstance(duration_time, (int, float)):
-                    # Handle direct seconds
-                    duration_seconds = int(duration_time)
-                    print(f"🔍 DEBUG Parsed duration from number: {duration_seconds} seconds")
+            if duration_time and isinstance(duration_time, str):
+                try:
+                    hours, minutes, seconds = map(int, duration_time.split(':'))
+                    duration_seconds = hours * 3600 + minutes * 60 + seconds
+                    print(f"🔍 DEBUG Parsed duration from string: {duration_time} -> {duration_seconds} seconds")
+                except:
+                    # Fallback calculation using created_at and ended_at
+                    if started_at and ended_at:
+                        duration_seconds = int((ended_at - started_at).total_seconds())
+                        print(f"🔍 DEBUG Fallback duration calculation: {duration_seconds} seconds")
             else:
-                print("❌ WARNING: duration_time is None or empty")
-                # Fallback: calculate from start/end times
-                started_at = session_data['started_at']
-                ended_at = session_data['ended_at']
+                # Calculate from created_at and ended_at
                 if started_at and ended_at:
                     duration_seconds = int((ended_at - started_at).total_seconds())
-                    print(f"🔍 DEBUG Fallback duration calculation: {duration_seconds} seconds")
+                    print(f"🔍 DEBUG Duration from created/ended: {duration_seconds} seconds")
             
             print(f"🔍 DEBUG Final duration_seconds for frontend: {duration_seconds}")
             
@@ -4951,7 +4945,66 @@ def get_summary_data():
                 """)
                 subject_data = cursor.fetchone()
             
-            # Get ALL students for BSIT-4C
+            # ✅ FIXED: GET ALL ATTENDANCE RECORDS INCLUDING NULL session_id AND TEMPORARY STUDENTS
+            cursor.execute("""
+                SELECT 
+                    a.student_id,
+                    a.name as student_name,
+                    a.status,
+                    a.timestamp,
+                    a.session_id,
+                    s.photo_path,
+                    CASE 
+                        WHEN a.session_id = 'manual_add' OR a.session_id IS NULL THEN TRUE 
+                        ELSE FALSE 
+                    END as is_temporary
+                FROM attendance a
+                LEFT JOIN students s ON a.student_id = s.student_id
+                WHERE (a.session_id = %s OR a.session_id = 'manual_add' OR a.session_id IS NULL)
+                AND a.person_type = 'student'
+                AND DATE(a.timestamp) = DATE(%s)
+                ORDER BY a.status, a.name
+            """, (session_data['session_id'], ended_at))
+            all_attendance_records = cursor.fetchall()
+            
+            print(f"🔍 DEBUG Found {len(all_attendance_records)} attendance records (including temporary and NULL session_id)")
+            
+            # Debug: Print all found records
+            for i, record in enumerate(all_attendance_records):
+                print(f"🔍 DEBUG Record {i}: {record['student_id']} - {record['student_name']} - {record['status']} - session_id: {record['session_id']}")
+            
+            # Create complete student list
+            complete_student_list = []
+            
+            # Add all attendance records (both regular and temporary)
+            for record in all_attendance_records:
+                # Handle photo path for temporary students
+                photo_path = record['photo_path']
+                if record['is_temporary']:
+                    # For temporary students, try to extract ID from name or use default
+                    student_id = record['student_id']
+                    if not student_id and 'ID:' in record['student_name']:
+                        # Extract ID from name like "Rhodmin Lou Berioso (ID: 2022-091324)"
+                        try:
+                            student_id = record['student_name'].split('ID:')[-1].split(')')[0].strip()
+                        except:
+                            student_id = 'temp'
+                    
+                    photo_path = f"/static/images/student_photos/{student_id}.jpg" if student_id and student_id != 'temp' else '/static/images/default-avatar.jpg'
+                else:
+                    # For regular students, use their photo or default
+                    photo_path = record['photo_path'] or f"/static/images/student_photos/{record['student_id']}.jpg"
+                
+                complete_student_list.append({
+                    'student_id': record['student_id'] or 'temp',
+                    'name': record['student_name'],
+                    'status': record['status'],
+                    'timestamp': record['timestamp'],
+                    'photo': photo_path or '/static/images/default-avatar.jpg',
+                    'is_temporary': record['is_temporary']
+                })
+            
+            # Get regular students in section for absent count
             cursor.execute("""
                 SELECT student_id, first_name, last_name, photo_path 
                 FROM students 
@@ -4959,50 +5012,29 @@ def get_summary_data():
             """)
             all_section_students = cursor.fetchall()
             
-            # Get attendance records for this session
-            cursor.execute("""
-                SELECT 
-                    a.student_id,
-                    CONCAT(s.first_name, ' ', s.last_name) as student_name,
-                    a.status,
-                    a.timestamp,
-                    s.photo_path
-                FROM attendance a
-                JOIN students s ON a.student_id = s.student_id
-                WHERE a.session_id = %s AND a.person_type = 'student'
-                ORDER BY a.status, student_name
-            """, (session_data['session_id'],))
-            attendance_records = cursor.fetchall()
+            # Add absent students (only regular students who don't have any attendance record)
+            attended_regular_student_ids = [r['student_id'] for r in all_attendance_records if r['student_id'] and not r['is_temporary']]
             
-            # Create complete student list
-            complete_student_list = []
-            attended_student_ids = [r['student_id'] for r in attendance_records]
+            print(f"🔍 DEBUG Regular students in section: {len(all_section_students)}")
+            print(f"🔍 DEBUG Attended regular student IDs: {attended_regular_student_ids}")
             
-            # Add students with attendance records
-            for record in attendance_records:
-                complete_student_list.append({
-                    'student_id': record['student_id'],
-                    'name': record['student_name'],
-                    'status': record['status'],
-                    'timestamp': record['timestamp'],
-                    'photo': record['photo_path'] or f"/static/images/student_photos/{record['student_id']}.jpg"
-                })
-            
-            # Add absent students
+            absent_count_added = 0
             for student in all_section_students:
                 student_id = student['student_id']
-                first_name = student['first_name']
-                last_name = student['last_name']
-                photo_path = student['photo_path']
                 
-                if student_id not in attended_student_ids:
+                if student_id not in attended_regular_student_ids:
                     complete_student_list.append({
                         'student_id': student_id,
-                        'name': f"{first_name} {last_name}",
+                        'name': f"{student['first_name']} {student['last_name']}",
                         'status': 'absent',
-                        'timestamp': session_data['ended_at'],
-                        'photo': photo_path or f"/static/images/student_photos/{student_id}.jpg"
+                        'timestamp': ended_at,
+                        'photo': student['photo_path'] or f"/static/images/student_photos/{student_id}.jpg",
+                        'is_temporary': False
                     })
+                    absent_count_added += 1
+                    print(f"🔍 DEBUG Added absent student: {student_id} - {student['first_name']} {student['last_name']}")
+            
+            print(f"🔍 DEBUG Added {absent_count_added} absent students")
             
             # Calculate counts
             present_count = len([s for s in complete_student_list if s['status'] == 'present'])
@@ -5010,6 +5042,11 @@ def get_summary_data():
             absent_count = len([s for s in complete_student_list if s['status'] == 'absent'])
             excused_count = len([s for s in complete_student_list if s['status'] == 'excused'])
             total_students = len(complete_student_list)
+            
+            # Count temporary students for debugging
+            temp_count = len([s for s in complete_student_list if s.get('is_temporary')])
+            print(f"🔍 DEBUG Student breakdown: {temp_count} temporary, {total_students - temp_count} regular")
+            print(f"🔍 DEBUG Status breakdown: Present: {present_count}, Late: {late_count}, Absent: {absent_count}, Excused: {excused_count}")
             
             # Format course display
             class_name = session_data['class_name']
@@ -5035,16 +5072,16 @@ def get_summary_data():
             
             course_section_display = f"{program_display}-{section_display}"
             
-            # Format data
+            # ✅ FIXED: Use created_at for start time, ended_at for end time
             summary_data = {
                 'success': True,
                 'session': {
                     'session_id': session_data['session_id'],
                     'class_name': session_data['class_name'],
-                    'started_at': session_data['started_at'].strftime('%Y-%m-%d %I:%M%p') if session_data['started_at'] else '',
-                    'ended_at': session_data['ended_at'].strftime('%Y-%m-%d %I:%M%p') if session_data['ended_at'] else '',
-                    'duration_seconds': duration_seconds,  # ✅ NOW SHOULD BE 8 SECONDS
-                    'late_threshold_minutes': session_data.get('late_threshold_minutes', 30) or 30,
+                    'started_at': started_at.strftime('%Y-%m-%d %I:%M%p') if started_at else '',  # Use created_at
+                    'ended_at': ended_at.strftime('%Y-%m-%d %I:%M%p') if ended_at else '',  # Use ended_at
+                    'duration_seconds': duration_seconds,
+                    'late_threshold_minutes': session_data.get('late_threshold_minutes', 20) or 20,
                     'total_students': total_students,
                     'present_count': present_count,
                     'late_count': late_count,
@@ -5065,11 +5102,11 @@ def get_summary_data():
                 'attendance': complete_student_list
             }
             
-            print(f"✅ DEBUG Summary data prepared:")
+            print(f"✅ DEBUG Summary with correct times:")
+            print(f"   - Start: {summary_data['session']['started_at']} (from created_at)")
+            print(f"   - End: {summary_data['session']['ended_at']} (from ended_at)")
             print(f"   - Duration: {duration_seconds} seconds")
-            print(f"   - Started: {summary_data['session']['started_at']}")
-            print(f"   - Ended: {summary_data['session']['ended_at']}")
-            print(f"   - Present: {present_count}, Absent: {absent_count}")
+            print(f"   - Total students: {total_students}")
             
             return jsonify(summary_data)
             
@@ -5081,7 +5118,7 @@ def get_summary_data():
             'success': False,
             'message': f'Error loading summary data: {str(e)}'
         }), 500
-
+    
 @app.route('/api/update_attendance', methods=['POST'])
 @login_required
 def update_attendance():
@@ -5122,7 +5159,7 @@ def update_attendance():
 @app.route('/api/export_csv')
 @login_required
 def export_csv():
-    """Export attendance data as CSV - FIXED FORMAT"""
+    """Export attendance data as CSV - COMPLETE FIXED VERSION"""
     session_id = request.args.get('session_id')
     
     if not session_id:
@@ -5130,7 +5167,7 @@ def export_csv():
     
     try:
         with get_db_cursor() as cursor:
-            # Get session data
+            # Get session data with class name for manipulation
             cursor.execute("""
                 SELECT class_name, started_at, ended_at 
                 FROM attendance_sessions 
@@ -5141,12 +5178,13 @@ def export_csv():
             if not session_data:
                 return jsonify({'success': False, 'message': 'Session not found'}), 404
             
-            # Convert class name to program code
             class_name = session_data['class_name']
+            
+            # ✅ FIXED: MANIPULATE PROGRAM NAME
             program_display = "BSIT"  # Default
             
             if 'Associate in Computer Technology' in class_name:
-                 program_display = 'ACT'
+                program_display = 'ACT'
             elif 'Information Technology' in class_name:
                 program_display = 'BSIT'
             elif 'Computer Science' in class_name:
@@ -5160,23 +5198,73 @@ def export_csv():
             elif 'Architecture' in class_name:
                 program_display = 'BSARCH'
             
-            # Get ALL students with attendance
+            # ✅ FIXED: MANIPULATE SECTION (4th YearC -> 4C)
+            section_display = "4C"  # Default
+            if '4th Year' in class_name:
+                section_part = class_name.split('4th Year')[-1].strip()
+                if section_part:
+                    section_display = f"4{section_part[0]}"  # Get first character after "4th Year"
+            elif '2nd Year' in class_name:
+                section_part = class_name.split('2nd Year')[-1].strip()
+                if section_part:
+                    section_display = f"2{section_part[0]}"
+            
+            print(f"🔍 DEBUG Program: {program_display}, Section: {section_display}")
+            
+            # ✅ FIXED: GET SUBJECT INFORMATION PROPERLY
             cursor.execute("""
+                SELECT subject_code, subject_name 
+                FROM subjects 
+                WHERE status = 'active'
+                ORDER BY subject_id DESC 
+                LIMIT 1
+            """)
+            subject_data = cursor.fetchone()
+            
+            # ✅ FIXED: USE ACTUAL SUBJECT DATA OR DEFAULT TO IT99/AMBUTT UY
+            subject_code = subject_data['subject_code'] if subject_data else 'IT99'
+            subject_name = subject_data['subject_name'] if subject_data else 'AMBUTT UY'
+            
+            print(f"🔍 DEBUG Subject: {subject_code} - {subject_name}")
+            
+            # ✅ FIXED: GET ALL STUDENTS INCLUDING ABSENT AND TEMPORARY
+            cursor.execute("""
+                -- Get regular students with their attendance status (INCLUDING ABSENT)
                 SELECT 
                     s.student_id,
                     CONCAT(s.first_name, ' ', s.last_name) as student_name,
-                    s.year_section,
+                    %s as year_section,  -- Use manipulated section
                     COALESCE(a.status, 'absent') as status,
-                    a.timestamp as attendance_timestamp
+                    COALESCE(a.timestamp, %s) as attendance_timestamp,
+                    'No' as is_temporary
                 FROM students s
                 LEFT JOIN attendance a ON s.student_id = a.student_id AND a.session_id = %s
-                WHERE s.year_section LIKE '%%4C%%'
-                ORDER BY a.status, student_name
-            """, (session_id,))
+                WHERE s.year_section LIKE '%%4C%%'  -- Match students in this section
+                
+                UNION ALL
+                
+                -- Get temporary students
+                SELECT 
+                    COALESCE(a.student_id, 'TEMP') as student_id,
+                    a.name as student_name,
+                    %s as year_section,  -- Use manipulated section
+                    a.status,
+                    a.timestamp as attendance_timestamp,
+                    'Yes' as is_temporary
+                FROM attendance a
+                WHERE a.session_id = 'manual_add'
+                AND DATE(a.timestamp) = DATE(%s)
+                AND a.person_type = 'student'
+                
+                ORDER BY status, student_name
+            """, (section_display, session_data['ended_at'], session_id, section_display, session_data['ended_at']))
+            
             records = cursor.fetchall()
             
             if not records:
                 return jsonify({'success': False, 'message': 'No student data found'}), 404
+            
+            print(f"🔍 DEBUG CSV Export: Found {len(records)} total students")
             
             # Create CSV content
             import csv
@@ -5186,16 +5274,19 @@ def export_csv():
             output = io.StringIO()
             writer = csv.writer(output)
             
-            # Write headers - REMOVED PHOTO PATH, ADDED PROGRAM
-            writer.writerow(['Student ID', 'Student Name', 'Status', 'Time Recorded', 'Subject Code', 'Subject Name', 'Program', 'Section'])
+            # Write headers
+            writer.writerow(['Student ID', 'Student Name', 'Status', 'Time Recorded', 'Subject Code', 'Subject Name', 'Program', 'Section', 'Temporary Student'])
             
             # Write data
             for record in records:
-                # Handle timestamp - USE SESSION END TIME FOR ABSENT STUDENTS
                 timestamp = record['attendance_timestamp']
                 time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')  # Default to session end time
                 
-                if timestamp and record['status'] != 'absent':
+                # For absent students, use session end time
+                if record['status'] == 'absent':
+                    time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')
+                elif timestamp:
+                    # For present/late/excused students, use their actual timestamp
                     if isinstance(timestamp, str):
                         try:
                             timestamp = datetime.strptime(timestamp, '%Y-%m-%d %I:%M%p')
@@ -5209,24 +5300,38 @@ def export_csv():
                     record['student_id'],
                     record['student_name'],
                     record['status'].upper(),
-                    time_recorded,  # Will show actual time for present/late, session end time for absent
-                    'IT99',  # FORCE IT99
-                    'AMBUTT UY',  # FORCE AMBUTT UY
-                    program_display,  # BSIT, BSCS, etc.
-                    record['year_section'] or '4C'
+                    time_recorded,
+                    subject_code,
+                    subject_name,
+                    program_display,
+                    section_display,
+                    record['is_temporary']
                 ])
             
             csv_content = output.getvalue()
             output.close()
             
-            # Create response
+            # ✅ FIXED: PROPER FILENAME FORMATTING AND HEADERS
+            # Remove spaces and special characters from subject name
+            clean_subject_name = subject_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+            
+            # Create filename: IT99_AMBUTT_UY_BSIT-4C_attendance_20251027_032654.csv
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{subject_code}_{clean_subject_name}_{program_display}-{section_display}_attendance_{timestamp}.csv"
+            
+            print(f"🔍 DEBUG Final Filename: {filename}")
+            
+            # Create response with proper headers to prevent caching
             from flask import Response
             response = Response(
                 csv_content,
                 mimetype="text/csv",
                 headers={
-                    "Content-Disposition": f"attachment;filename=attendance_{session_id}.csv",
-                    "Content-type": "text/csv"
+                    "Content-Disposition": f"attachment; filename=\"{filename}\"",
+                    "Content-Type": "text/csv; charset=utf-8",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0"
                 }
             )
             
