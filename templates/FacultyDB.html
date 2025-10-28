@@ -377,10 +377,12 @@
     faculty.forEach(facultyMember => {
         const row = document.createElement('tr');
         
-        // UPDATED: Better photo URL handling with multiple fallbacks
+        // FIXED: Use idNumber as the ID since backend returns idNumber as the identifier
+        const facultyId = facultyMember.idNumber; // This is the faculty_id from database
+        
+        // UPDATED: Better photo URL handling
         const photoUrl = facultyMember.photo || 
-                        facultyMember.photoPath || 
-                        `/static/images/faculty/${facultyMember.idNumber}.jpg` ||
+                        `/static/images/faculty/${facultyId}.jpg` ||
                         `https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random`;
         
         row.innerHTML = `
@@ -395,13 +397,13 @@
             <td>${facultyMember.department}</td>
             <td>${facultyMember.designation}</td>
             <td class="action-buttons">
-                <button class="action-btn edit-btn" data-id="${facultyMember.id}" title="Edit">
+                <button class="action-btn edit-btn" data-id="${facultyId}" title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button class="action-btn view-btn" data-id="${facultyMember.id}" title="View">
+                <button class="action-btn view-btn" data-id="${facultyId}" title="View">
                     <i class="fas fa-eye"></i>
                 </button>
-                <button class="action-btn delete-btn" data-id="${facultyMember.id}" title="Delete">
+                <button class="action-btn delete-btn" data-id="${facultyId}" title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
             </td>
@@ -547,45 +549,45 @@
         }
 
         // Add event listeners to a table row
-        function addEventListenersToRow(row) {
-            const editBtn = row.querySelector('.edit-btn');
-            const viewBtn = row.querySelector('.view-btn');
-            const deleteBtn = row.querySelector('.delete-btn');
-            
-            editBtn?.addEventListener('click', function() {
-                const facultyId = this.getAttribute('data-id');
-                const faculty = allFaculty.find(f => f.id === facultyId);
+function addEventListenersToRow(row) {
+    const editBtn = row.querySelector('.edit-btn');
+    const viewBtn = row.querySelector('.view-btn');
+    const deleteBtn = row.querySelector('.delete-btn');
+    
+    editBtn?.addEventListener('click', function() {
+        const facultyId = this.getAttribute('data-id');
+        const faculty = allFaculty.find(f => f.idNumber === facultyId); // FIXED: Use idNumber
 
-                if (faculty) {
-                    populateEditForm(faculty);
-                    openModal(editFacultyMemberModal);
-                }
-            });
-            
-            viewBtn?.addEventListener('click', function() {
-                const facultyId = this.getAttribute('data-id');
-                const faculty = allFaculty.find(f => f.id === facultyId);
-
-                if (faculty) {
-                    populateViewModal(faculty);
-                    openModal(viewFacultyMemberModal);
-                }
-            });
-            
-            deleteBtn?.addEventListener('click', function() {
-                const facultyId = this.getAttribute('data-id');
-                const faculty = allFaculty.find(f => f.id === facultyId);
-
-                if (faculty) {
-                    const deleteFacultyMemberName = document.getElementById('deleteFacultyMemberName');
-                    if (deleteFacultyMemberName && confirmDelete) {
-                        deleteFacultyMemberName.textContent = faculty.name;
-                        confirmDelete.setAttribute('data-id', faculty.id);
-                        openModal(deleteFacultyMemberModal);
-                    }
-                }
-            });
+        if (faculty) {
+            populateEditForm(faculty);
+            openModal(editFacultyMemberModal);
         }
+    });
+    
+    viewBtn?.addEventListener('click', function() {
+        const facultyId = this.getAttribute('data-id');
+        const faculty = allFaculty.find(f => f.idNumber === facultyId); // FIXED: Use idNumber
+
+        if (faculty) {
+            populateViewModal(faculty);
+            openModal(viewFacultyMemberModal);
+        }
+    });
+    
+    deleteBtn?.addEventListener('click', function() {
+        const facultyId = this.getAttribute('data-id');
+        const faculty = allFaculty.find(f => f.idNumber === facultyId); // FIXED: Use idNumber
+
+        if (faculty) {
+            const deleteFacultyMemberName = document.getElementById('deleteFacultyMemberName');
+            if (deleteFacultyMemberName && confirmDelete) {
+                deleteFacultyMemberName.textContent = faculty.name;
+                confirmDelete.setAttribute('data-id', faculty.idNumber); // FIXED: Use idNumber
+                openModal(deleteFacultyMemberModal);
+            }
+        }
+    });
+}
 
 // Populate edit form with faculty data - FIXED VERSION
 function populateEditForm(faculty) {
@@ -610,10 +612,11 @@ function populateEditForm(faculty) {
         }
     }
     
-    document.getElementById('editFacultyId').value = faculty.id;
-    document.getElementById('editFirstName').value = firstName;
-    document.getElementById('editMiddleName').value = middleName;
-    document.getElementById('editLastName').value = lastName;
+ // Use the actual fields from backend response
+    document.getElementById('editFacultyId').value = faculty.idNumber; // Use idNumber as ID
+    document.getElementById('editFirstName').value = faculty.firstName || '';
+    document.getElementById('editMiddleName').value = faculty.middleName || '';
+    document.getElementById('editLastName').value = faculty.lastName || '';
     document.getElementById('editFacultyIdNumber').value = faculty.idNumber || '';
     document.getElementById('editEmail').value = faculty.email || '';
     document.getElementById('editDepartment').value = faculty.department || '';

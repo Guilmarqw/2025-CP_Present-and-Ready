@@ -4377,6 +4377,20 @@ def verify_otp():
         logger.error(f"Database error during OTP verification for {email}: {e}")
         return jsonify({'success': False, 'message': f'Database error: {str(e)}'})
 
+def detect_liveness_cctv(face_image, liveness_threshold):
+    try:
+        gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
+        fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+        adjusted_threshold = liveness_threshold * 0.8
+        if fm < adjusted_threshold:
+            logger.warning(f"Liveness detection failed: variance {fm} < threshold {adjusted_threshold}")
+            return False
+        logger.info(f"Liveness detection passed: variance {fm}")
+        return True
+    except Exception as e:
+        logger.error(f"Liveness detection error: {e}")
+        return True
+
 @app.route('/api/encode_face', methods=['POST'])
 def encode_face():
     try:
@@ -4405,19 +4419,14 @@ def encode_face():
                 'next_pose': current_pose
             }), 400
         
-        enhanced_img = enhance_lighting(img)
-        
-        # Make liveness detection more lenient
-        if not detect_liveness_cctv(enhanced_img, liveness_threshold=0.1):  # Very low threshold for leniency
-            logger.warning("Liveness detection failed, but continuing anyway for testing")
-            # Don't return error, just log and continue
+        enhanced_img = img
         
         faces = face_analysis.get(enhanced_img)
         if not faces:
             logger.warning("No face detected in image during registration")
             return jsonify({
                 'success': False,
-                'message': 'No face detected. Please ensure your face is clearly visible and centered.',
+                'message': 'No face detected. Please ensure your face is clearly visible.',
                 'current_pose': current_pose,
                 'next_pose': current_pose
             }), 400
@@ -4427,9 +4436,8 @@ def encode_face():
         yaw, pitch, roll = face.pose
         landmarks = face.landmark_2d_106
         
-        # MIRROR CORRECTION: Invert yaw and roll for mirrored camera
-        yaw = -yaw
-        roll = -roll
+        # SIMPLIFIED MIRROR CORRECTION: Only invert yaw
+        yaw = -yaw  # Correct left/right for mirror
         
         left_eye_indices = [96, 97, 98, 99, 100, 101]
         left_ear = calculate_ear(landmarks, left_eye_indices)
@@ -4438,65 +4446,147 @@ def encode_face():
         mouth_indices = [76, 77, 78, 79, 80, 81, 82, 83]
         mar = calculate_mar(landmarks, mouth_indices)
         
-        # EXTREMELY LENIENT pose detection thresholds for mirror view
+        # IMPROVED pose detection with BETTER up/down thresholds
         pose_results = {
-            'is_frontal': bool(abs(yaw) <= 60 and abs(pitch) <= 50 and abs(roll) <= 45),  # Much wider range
-            'is_left': bool(yaw >= 2),   # Positive yaw for user's left
-            'is_right': bool(yaw <= -2), # Negative yaw for user's right
-            'is_up': bool(pitch <= -2),   
-            'is_down': bool(pitch >= 2),  
-            'is_mouth_open': bool(mar >= 0.10),  
-            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.45)  
+            'is_frontal': bool(abs(yaw) <= 20 and abs(pitch) <= 15),
+            'is_left': bool(yaw >= 6),
+            'is_right': bool(yaw <= -6),
+            'is_up': bool(pitch <= -4),   # LOWER threshold for up (more negative)
+            'is_down': bool(pitch >= 3),  # HIGHER threshold for down (more positive)
+            'is_mouth_open': bool(mar >= 0.08),
+            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.35)
         }
         
-        logger.info(f"Pose results for {current_pose}: {pose_results}, yaw={yaw:.2f} (corrected), pitch={pitch:.2f}, roll={roll:.2f} (corrected), mar={mar:.3f}, left_ear={left_ear:.3f}, right_ear={right_ear:.3f}")
+        logger.info(f"Pose results for {current_pose}: yaw={yaw:.1f}, pitch={pitch:.1f}, mar={mar:.2f}, ear_avg={(left_ear + right_ear)/2:.2f}")
         
         pose_satisfied = False
         message = ""
         
-        # SUPER FLEXIBLE pose checking - accept even minimal movements
+        # IMPROVED pose checking with BETTER up/down logic
         if current_pose == 'frontal':
-            pose_satisfied = pose_results['is_frontal'] or (abs(yaw) < 30 and abs(pitch) < 25)
-            message = "Frontal pose detected successfully." if pose_satisfied else "Please face the camera directly."
+            if abs(yaw) <= 10 and abs(pitch) <= 8:
+                pose_satisfied = True
+                message = "✅ Perfect! Face centered."
+            elif abs(yaw) <= 20 and abs(pitch) <= 15:
+                pose_satisfied = True
+                message = "✅ Good! Face detected."
+            else:
+                if abs(yaw) > 20:
+                    direction = "left" if yaw > 0 else "right"
+                    message = f"↔️ Face the camera. You're facing {direction}."
+                elif abs(pitch) > 15:
+                    direction = "up" if pitch < 0 else "down"
+                    message = f"↕️ Face the camera. You're looking {direction}."
+                else:
+                    message = "👀 Look straight at the camera."
         
         elif current_pose == 'left':
-            pose_satisfied = pose_results['is_left'] or yaw > 0
-            message = "Left pose detected successfully." if pose_satisfied else "Please turn your head to the LEFT."
+            if yaw >= 10:
+                pose_satisfied = True
+                message = "✅ Perfect! Good left turn."
+            elif yaw >= 5:
+                pose_satisfied = True
+                message = "✅ Good! Left turn detected."
+            else:
+                if yaw < 0:
+                    message = "🔄 Turn your head to the LEFT"
+                elif yaw < 3:
+                    message = "↩️ Turn a bit more to the left"
+                else:
+                    message = "👍 Almost there! Turn slightly more left"
         
         elif current_pose == 'right':
-            pose_satisfied = pose_results['is_right'] or yaw < 0
-            message = "Right pose detected successfully." if pose_satisfied else "Please turn your head to the RIGHT."
+            if yaw <= -10:
+                pose_satisfied = True
+                message = "✅ Perfect! Good right turn."
+            elif yaw <= -5:
+                pose_satisfied = True
+                message = "✅ Good! Right turn detected."
+            else:
+                if yaw > 0:
+                    message = "🔄 Turn your head to the RIGHT"
+                elif yaw > -3:
+                    message = "↪️ Turn a bit more to the right"
+                else:
+                    message = "👍 Almost there! Turn slightly more right"
         
         elif current_pose == 'up':
-            pose_satisfied = pose_results['is_up'] or pitch < 0
-            message = "Upward pose detected successfully." if pose_satisfied else "Please tilt your head UP slightly."
+            # IMPROVED UP DETECTION - More lenient and clear
+            if pitch <= -20:
+                pose_satisfied = True
+                message = "✅ Perfect! Great upward tilt."
+            elif pitch <= -15:
+                pose_satisfied = True
+                message = "✅ Excellent! Upward tilt detected."
+            elif pitch <= -10:
+                pose_satisfied = True
+                message = "✅ Good! Upward movement detected."
+            else:
+                if pitch > 5:
+                    message = "🔼 Tilt your head UP (chin up, look at ceiling)"
+                elif pitch > 0:
+                    message = "⬆️ Tilt more upward"
+                elif pitch > -5:
+                    message = "👆 A bit more upward"
+                else:
+                    message = "👍 Almost there! Tilt slightly more up"
         
         elif current_pose == 'down':
-            pose_satisfied = pose_results['is_down'] or pitch > 0
-            message = "Downward pose detected successfully." if pose_satisfied else "Please tilt your head DOWN slightly."
+            # IMPROVED DOWN DETECTION - More lenient and clear
+            if pitch >= 20:
+                pose_satisfied = True
+                message = "✅ Perfect! Great downward tilt."
+            elif pitch >= 15:
+                pose_satisfied = True
+                message = "✅ Excellent! Downward tilt detected."
+            elif pitch >= 10:
+                pose_satisfied = True
+                message = "✅ Good! Downward movement detected."
+            else:
+                if pitch < -5:
+                    message = "🔽 Tilt your head DOWN (chin down, look at floor)"
+                elif pitch < 0:
+                    message = "⬇️ Tilt more downward"
+                elif pitch < 5:
+                    message = "👇 A bit more downward"
+                else:
+                    message = "👍 Almost there! Tilt slightly more down"
         
         elif current_pose == 'mouth_open':
-            pose_satisfied = pose_results['is_mouth_open'] or mar >= 0.10
-            message = "Mouth open detected successfully." if pose_satisfied else "Please open your mouth slightly."
+            if mar >= 0.12:
+                pose_satisfied = True
+                message = "✅ Perfect! Mouth open detected."
+            elif mar >= 0.08:
+                pose_satisfied = True
+                message = "✅ Good! Mouth open detected."
+            else:
+                message = "😮 Open your mouth slightly"
         
         elif current_pose == 'eyes_closed':
-            pose_satisfied = pose_results['is_eyes_closed'] or ((left_ear + right_ear) / 2 <= 0.5)
-            message = "Eyes closed detected successfully." if pose_satisfied else "Please close your eyes slightly."
-        
-        # AUTO-ADVANCE if we detect ANY movement in the right direction
-        if not pose_satisfied:
-            if current_pose == 'left' and yaw > 0:
+            avg_ear = (left_ear + right_ear) / 2
+            if avg_ear <= 0.25:
                 pose_satisfied = True
-                message = "Left movement detected - advancing."
+                message = "✅ Perfect! Eyes closed detected."
+            elif avg_ear <= 0.35:
+                pose_satisfied = True
+                message = "✅ Good! Eyes closed detected."
+            else:
+                message = "😌 Close your eyes gently"
+        
+        # INSTANT SUCCESS for ANY up/down movement (very lenient)
+        if not pose_satisfied:
+            if current_pose == 'up' and pitch < 0:  # ANY negative pitch for up
+                pose_satisfied = True
+                message = "✅ Good! Upward movement detected."
+            elif current_pose == 'down' and pitch > 0:  # ANY positive pitch for down
+                pose_satisfied = True
+                message = "✅ Good! Downward movement detected."
+            elif current_pose == 'left' and yaw > 0:
+                pose_satisfied = True
+                message = "✅ Good! Left movement detected."
             elif current_pose == 'right' and yaw < 0:
                 pose_satisfied = True
-                message = "Right movement detected - advancing."
-            elif current_pose == 'up' and pitch < 0:
-                pose_satisfied = True
-                message = "Upward movement detected - advancing."
-            elif current_pose == 'down' and pitch > 0:
-                pose_satisfied = True
-                message = "Downward movement detected - advancing."
+                message = "✅ Good! Right movement detected."
         
         if pose_satisfied:
             pose_embeddings[current_pose] = face_embedding.tolist()
@@ -4509,16 +4599,15 @@ def encode_face():
         
         encoding_response = face_embedding.tolist() if current_pose == 'frontal' else []
         
-        # Convert all numpy types to native Python types
         return jsonify({
             'success': bool(pose_satisfied),
             'message': str(message),
             'current_pose': str(current_pose),
             'next_pose': str(next_pose),
             'encoding': encoding_response,
-            'yaw': float(yaw),  # Return corrected yaw
+            'yaw': float(yaw),
             'pitch': float(pitch),
-            'roll': float(roll),  # Return corrected roll
+            'roll': float(roll),
             'mar': float(mar),
             'left_ear': float(left_ear),
             'right_ear': float(right_ear),
@@ -4780,12 +4869,17 @@ def register_faculty():
                         conn.close()
                         return jsonify({'success': False, 'message': 'No face detected in uploaded photo.'})
         
-        # Insert faculty with hashed password and role
+        # Get current timestamp
+        current_time = datetime.now()
+        
+        # Insert faculty with ALL required fields including status and timestamps
         cursor.execute(
             """INSERT INTO faculty 
-            (faculty_id, first_name, last_name, middle_name, department, designation, email, face_encoding, photo_path, password_hash, role) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (faculty_id, first_name, last_name, middle_name or None, department, designation, email, encoding_str, photo_path, password_hash, role)
+            (faculty_id, first_name, last_name, middle_name, department, designation, email, 
+             face_encoding, photo_path, password_hash, role, status, created_at, updated_at) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (faculty_id, first_name, last_name, middle_name or None, department, designation, email, 
+             encoding_str, photo_path, password_hash, role, 'active', current_time, current_time)
         )
         conn.commit()  # COMMIT THE FACULTY INSERT FIRST
         cursor.close()
