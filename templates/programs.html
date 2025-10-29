@@ -33,7 +33,6 @@
   <div class="modal-content" style="width: 700px; max-width: 90%;">
     <div class="modal-header">
       <h3><i class="fas fa-calendar-alt"></i> Switch Active Period</h3>
-      <span class="close" onclick="hideSwitchYearModal()">&times;</span>
     </div>
     <div class="modal-body">
       <div class="form-group">
@@ -151,15 +150,17 @@
       </a>
     </div>
     <div class="years-table">
-      <h3>Available Academic Years</h3>
-      <button id="addAcademicYearBtn" class="btn btn-primary">
-        <i class="fas fa-plus"></i> Add Academic Year
-      </button>
+<div class="academic-header">
+  <h3>Available Academic Years</h3>
+  <button id="addAcademicYearBtn" class="btn btn-primary">
+    <i class="fas fa-plus"></i> Add Academic Year
+  </button>
+</div>
       <table id="academicYearsTable">
   <thead>
     <tr>
       <th>Academic Year</th>
-      <th>Actions</th>
+      <th class="action-btuttons">Actions</th>
     </tr>
   </thead>
   <tbody></tbody>
@@ -176,10 +177,12 @@
       </a>
     </div>
     <div class="semesters-table">
-      <h3>Available Semesters</h3>
-      <button id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
-        <i class="fas fa-plus"></i> Add Semester
-      </button>
+     <div class="semester-header">
+  <h3>Available Semesters</h3>
+  <button id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
+    <i class="fas fa-plus"></i> Add Semester
+  </button>
+</div>
      <table id="semestersTable">
   <thead>
     <tr>
@@ -263,7 +266,6 @@
     <div class="modal-content">
       <div class="modal-header">
         <h3 id="alertModalTitle"><i class="fas fa-info-circle"></i> Notice</h3>
-        <span class="close" onclick="hideAlertModal()">&times;</span>
       </div>
       <div class="modal-body">
         <p id="alertModalMessage"></p>
@@ -279,7 +281,6 @@
     <div class="modal-content">
       <div class="modal-header">
         <h3><i class="fas fa-question-circle"></i> Confirm Action</h3>
-        <span class="close" onclick="hideConfirmModal()">&times;</span>
       </div>
       <div class="modal-body">
         <p id="confirmModalMessage"></p>
@@ -296,7 +297,6 @@
     <div class="modal-content" style="width: 500px; max-width: 90%;">
       <div class="modal-header">
         <h3>Add New Program</h3>
-        <span class="close" onclick="hideAddProgramModal()">&times;</span>
       </div>
       <form id="addProgramForm">
         <div class="form-group">
@@ -331,7 +331,6 @@
   <div class="modal-content" style="width: 500px; max-width: 90%;">
     <div class="modal-header">
       <h3>Edit Program</h3>
-      <span class="close" onclick="hideEditProgramModal()">&times;</span>
     </div>
     <form id="editProgramForm">
       <div class="form-group">
@@ -367,7 +366,6 @@
     <div class="modal-content" style="width: 500px; max-width: 90%;">
       <div class="modal-header">
         <h3>Add New Academic Year</h3>
-        <span class="close" onclick="hideAddAcademicYearModal()">&times;</span>
       </div>
       <form id="addAcademicYearForm">
         <div class="form-group">
@@ -394,7 +392,6 @@
   <div class="modal-content" style="width: 500px; max-width: 90%;">
     <div class="modal-header">
       <h3>Edit Academic Year</h3>
-      <span class="close" onclick="hideEditAcademicYearModal()">&times;</span>
     </div>
     <form id="editAcademicYearForm">
       <div class="form-group">
@@ -415,7 +412,6 @@
   <div class="modal-content" style="width: 500px; max-width: 90%;">
     <div class="modal-header">
       <h3>Add New Semester</h3>
-      <span class="close" onclick="hideAddSemesterModal()">&times;</span>
     </div>
     <form id="addSemesterForm">
       <div class="form-group">
@@ -447,7 +443,6 @@
   <div class="modal-content" style="width: 500px; max-width: 90%;">
     <div class="modal-header">
       <h3>Edit Semester</h3>
-      <span class="close" onclick="hideEditSemesterModal()">&times;</span>
     </div>
     <form id="editSemesterForm">
       <div class="form-group">
@@ -478,7 +473,6 @@
     <div class="modal-content" style="width: 500px; max-width: 90%;">
       <div class="modal-header">
         <h3>Add New Section</h3>
-        <span class="close" onclick="hideAddSectionModal()">&times;</span>
       </div>
       <form id="addSectionForm">
         <div class="form-group">
@@ -508,7 +502,6 @@
     <div class="modal-content" style="width: 600px; max-width: 90%;">
       <div class="modal-header">
         <h3 id="modalTitle">Add New Subject Schedule</h3>
-        <span class="close" onclick="hideAddSubjectModal()">&times;</span>
       </div>
       <form id="addSubjectForm">
         <div class="form-group">
