@@ -594,9 +594,16 @@ window.addEventListener('load', () => {
         if (data.success) {
             console.log('✅ Session initialized:', data.data);
             
-            // 🎯 CRITICAL FIX: Properly extract session_id and section_id
-            currentSessionId = data.data.session_id; // This should be in data.data.session_id
-            currentSectionId = data.data.section_id; // This should be in data.data.section_id
+            // 🎯 CRITICAL FIX: Store session data in window._sessionData
+            window._sessionData = {
+                session_id: data.data.session_id, // This should be in data.data.session_id
+                section_id: data.data.section_id, // This should be in data.data.section_id
+                duration: data.data.duration || 3600,
+                threshold: data.data.threshold || 900,
+                program: data.data.program,
+                year_level: data.data.year_level,
+                section: data.data.section
+            };
             
             // 🎯 DEBUG: Check what keys are available
             console.log('🔍 DEBUG: Available keys in data.data:', Object.keys(data.data));
@@ -604,18 +611,17 @@ window.addEventListener('load', () => {
             console.log('🔍 DEBUG: section_id value:', data.data.section_id);
             
             // Validate that we actually got the IDs
-            if (!currentSessionId) {
+            if (!window._sessionData.session_id) {
                 console.warn('⚠️ session_id not found in response, using schedule_id as fallback');
-                currentSessionId = sessionData.schedule_id;
+                window._sessionData.session_id = sessionData.schedule_id;
             }
             
-            if (!currentSectionId) {
+            if (!window._sessionData.section_id) {
                 console.warn('⚠️ section_id not found in response, using section as fallback');
-                currentSectionId = sessionData.section;
+                window._sessionData.section_id = sessionData.section;
             }
             
-            console.log(`🎯 Global Session ID set to: ${currentSessionId}`);
-            console.log(`🎯 Global Section ID set to: ${currentSectionId}`);
+            console.log(`🎯 Global Session Data set:`, window._sessionData);
             
             updateSessionUI(data.data);
             
@@ -633,8 +639,15 @@ window.addEventListener('load', () => {
         } else {
             console.error('❌ Session initialization failed:', data.message);
             // Use URL parameters as fallback
-            currentSessionId = sessionData.schedule_id;
-            currentSectionId = sessionData.section;
+            window._sessionData = {
+                session_id: sessionData.schedule_id,
+                section_id: sessionData.section,
+                duration: sessionData.duration,
+                threshold: sessionData.threshold,
+                program: sessionData.program,
+                year_level: sessionData.year_level,
+                section: sessionData.section
+            };
             console.log('🔄 Using URL parameters as fallback');
             loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
         }
@@ -642,8 +655,15 @@ window.addEventListener('load', () => {
     .catch(err => {
         console.error('❌ Error initializing session:', err);
         // Use URL parameters as fallback
-        currentSessionId = sessionData.schedule_id;
-        currentSectionId = sessionData.section;
+        window._sessionData = {
+            session_id: sessionData.schedule_id,
+            section_id: sessionData.section,
+            duration: sessionData.duration,
+            threshold: sessionData.threshold,
+            program: sessionData.program,
+            year_level: sessionData.year_level,
+            section: sessionData.section
+        };
         console.log('🔄 Using URL parameters due to error');
         loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
     });
@@ -1204,16 +1224,16 @@ function goToDashboard() {
 async function openSettings() {
     console.log('openSettings clicked and fetching data');
     const settingsModal = document.getElementById('settingsModal');
-    if (settingsModal) settingsModal.style.display = 'flex'; // Use your style method to show modal
+    if (settingsModal) settingsModal.style.display = 'flex';
     
-    const urlParams = new URLSearchParams(window.location.search);
-    const schedule_id = urlParams.get('schedule_id');
+    // ✅ GET THE CURRENT SESSION ID FROM YOUR GLOBAL VARIABLE
+    const session_id = window._sessionData?.session_id;
 
-    if (!schedule_id) return;
+    if (!session_id) return;
 
     try {
         // Fetch LIVE session settings and current config
-        const response = await fetch(`/api/get_session_settings?schedule_id=${schedule_id}`);
+        const response = await fetch(`/api/get_session_settings?schedule_id=${session_id}`); // ✅ USE SESSION_ID
         const data = await response.json();
 
         if (data && data.success) {
@@ -1227,26 +1247,31 @@ async function openSettings() {
             if (videoQualitySelect) {
                 videoQualitySelect.value = settings.video_quality || '720';
             }
+            
+            // Update global session data
+            if (window._sessionData) {
+                window._sessionData.duration = settings.live_duration_seconds;
+                window._sessionData.threshold = settings.live_threshold_seconds;
+            }
         }
     } catch (error) {
         console.error('Error fetching settings:', error);
-        showModalNotification('Error loading current settings.', 'error', 5000); // REPLACEMENT
+        showModalNotification('Error loading current settings.', 'error', 5000);
     }
 }
 
-
-// Function to handle adding or subtracting time from the live session (Replaces timer-related saving)
 async function adjustSessionTime(type, minutes) {
     console.log(`Adjusting ${type} by ${minutes} minutes...`);
-    const urlParams = new URLSearchParams(window.location.search);
-    const schedule_id = urlParams.get('schedule_id'); 
-
-    if (!schedule_id) {
-        showModalNotification('Session ID is missing. Cannot adjust time.', 'error', 5000); // REPLACEMENT
+    
+    // ✅ GET THE CURRENT SESSION ID FROM YOUR GLOBAL VARIABLE
+    const session_id = window._sessionData?.session_id; // This should be the unique session ID like "24_5a92f32d_1762090714"
+    
+    if (!session_id) {
+        showModalNotification('Session ID is missing. Cannot adjust time.', 'error', 5000);
         return;
     }
 
-    // Read current displayed values (which were loaded by openSettings)
+    // Read current displayed values
     const currentDurationText = document.getElementById('currentClassDurationDisplay').innerText;
     const currentThresholdText = document.getElementById('currentLateThresholdDisplay').innerText;
 
@@ -1262,9 +1287,9 @@ async function adjustSessionTime(type, minutes) {
         newThreshold = currentThreshold + minutes;
     }
     
-    // --- Frontend Constraints (Replacement of alerts) ---
+    // Frontend Constraints
     if (newDuration <= 0) {
-        showModalNotification('Class Duration must be greater than 0.', 'error'); // REPLACEMENT
+        showModalNotification('Class Duration must be greater than 0.', 'error');
         return;
     }
     
@@ -1273,23 +1298,22 @@ async function adjustSessionTime(type, minutes) {
     const elapsedMinutes = Math.floor(elapsedMilliseconds / 60000); 
 
     if (type === 'duration' && newDuration < elapsedMinutes) {
-        showModalNotification(`New Duration (${newDuration} min) cannot be less than the elapsed time (${elapsedMinutes} min).`, 'error', 5000); // REPLACEMENT
+        showModalNotification(`New Duration (${newDuration} min) cannot be less than the elapsed time (${elapsedMinutes} min).`, 'error', 5000);
         return;
     }
     
     if (newThreshold >= newDuration) {
-        showModalNotification('Late Threshold must be strictly less than the Class Duration.', 'error', 5000); // REPLACEMENT
+        showModalNotification('Late Threshold must be strictly less than the Class Duration.', 'error', 5000);
         return;
     }
-    // --- End Constraints ---
 
     try {
         const response = await fetch('/api/adjust_session_time', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                schedule_id: schedule_id,
-                adjustment_type: type, // 'duration' or 'threshold'
+                schedule_id: session_id, // ✅ USE SESSION_ID NOT SCHEDULE_ID
+                adjustment_type: type,
                 adjustment_minutes: minutes,
                 elapsed_minutes: elapsedMinutes
             })
@@ -1300,35 +1324,35 @@ async function adjustSessionTime(type, minutes) {
         if (data && data.success) {
             console.log('Adjustment successful:', data);
             
-            // Update the displayed values instantly
-            document.getElementById('currentClassDurationDisplay').innerText = data.new_duration + ' minutes';
-            document.getElementById('currentLateThresholdDisplay').innerText = data.new_threshold + ' minutes';
+            // Update displayed values
+            document.getElementById('currentClassDurationDisplay').innerText = data.new_duration_minutes + ' minutes';
+            document.getElementById('currentLateThresholdDisplay').innerText = data.new_threshold_minutes + ' minutes';
 
-            // **CRITICAL:** Update global session data (in seconds) to affect the live timer
-            window._sessionData.duration = data.new_duration * 60; 
-            window._sessionData.threshold = data.new_threshold * 60; 
+            // Update global session data with seconds values
+            window._sessionData.duration = data.new_duration_seconds; 
+            window._sessionData.threshold = data.new_threshold_seconds; 
             
-            showModalNotification(`Successfully adjusted ${type} to ${type === 'duration' ? data.new_duration : data.new_threshold} minutes.`, 'success'); // REPLACEMENT
+            showModalNotification(`Successfully adjusted ${type} to ${type === 'duration' ? data.new_duration_minutes : data.new_threshold_minutes} minutes.`, 'success');
             
         } else {
-            showModalNotification((data && data.message) ? data.message : 'Failed to adjust time. Check console.', 'error', 5000); // REPLACEMENT
+            showModalNotification((data && data.message) ? data.message : 'Failed to adjust time. Check console.', 'error', 5000);
         }
     } catch (err) {
         console.error('Error adjusting session time:', err);
-        showModalNotification('Network error while adjusting session time.', 'error', 5000); // REPLACEMENT
+        showModalNotification('Network error while adjusting session time.', 'error', 5000);
     }
 }
 
-
-// Function to save ONLY the static settings (video quality)
 async function saveStaticSettings() {
     console.log('saveStaticSettings called for Video Quality');
-    const urlParams = new URLSearchParams(window.location.search);
-    const schedule_id = urlParams.get('schedule_id');
+    
+    // ✅ GET THE CURRENT SESSION ID FROM YOUR GLOBAL VARIABLE
+    const session_id = window._sessionData?.session_id;
+    
     const videoQuality = document.getElementById('videoQuality')?.value || '720'; 
 
-    if (!schedule_id) {
-        showModalNotification('Session ID is missing. Cannot save quality.', 'error', 5000); // REPLACEMENT
+    if (!session_id) {
+        showModalNotification('Session ID is missing. Cannot save quality.', 'error', 5000);
         return;
     }
 
@@ -1337,20 +1361,20 @@ async function saveStaticSettings() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                schedule_id: schedule_id,
+                schedule_id: session_id, // ✅ USE SESSION_ID
                 video_quality: videoQuality
             })
         });
         const data = await res.json();
 
         if (res.ok && data && data.success) {
-            showModalNotification('Video Quality saved successfully.', 'success'); // REPLACEMENT
+            showModalNotification('Video Quality saved successfully.', 'success');
         } else {
-            showModalNotification((data && data.message) ? data.message : 'Failed to save quality.', 'error', 5000); // REPLACEMENT
+            showModalNotification((data && data.message) ? data.message : 'Failed to save quality.', 'error', 5000);
         }
     } catch (err) {
         console.error('Error in saveStaticSettings:', err);
-        showModalNotification('Error saving video quality.', 'error', 5000); // REPLACEMENT
+        showModalNotification('Error saving video quality.', 'error', 5000);
     }
 }
 

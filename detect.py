@@ -125,8 +125,8 @@ frame_timestamps = []
 skip_frame_counter = 0
 
 session_start_time = None
-session_total_duration_seconds = 10800  # Default 3 hours
-session_threshold_seconds = 900  # Default 15 minutes
+session_total_duration_seconds = 3600  # Default 60 minutes
+session_threshold_seconds = 900        # Default 15 minutes
 
 pending_confirmations = {}  # {person_id: {'frames': [], 'body_boxes': [], 'name': str, 'type': str}}
 locked_track_reid_features = {}
@@ -1228,11 +1228,33 @@ def periodic_attendance_save():
 attendance_save_thread = threading.Thread(target=periodic_attendance_save, daemon=True)
 attendance_save_thread.start()
 
-# Update the mark_attendance function to handle excused status
 def mark_attendance(name, id, type, session_id=None):
-    """Mark attendance for both students and faculty with late status - FIXED MISSING TRACKING"""
+    """Mark attendance for both students and faculty - FIXED: Handles missing status properly"""
     global session_start_time, current_session_id, session_threshold_seconds, session_total_duration_seconds
     global student_presence_tracker
+    
+    # ✅ Load threshold from database if not set
+    if not session_threshold_seconds and current_session_id:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT threshold_seconds_total 
+                FROM attendance_sessions 
+                WHERE session_id = %s
+            """, (current_session_id,))
+            session_data = cursor.fetchone()
+            if session_data and session_data.get('threshold_seconds_total'):
+                session_threshold_seconds = session_data['threshold_seconds_total']
+                logger.info(f"🎯 Loaded threshold from database: {session_threshold_seconds} seconds")
+            else:
+                logger.warning(f"⚠️ No threshold found for session {current_session_id}, using default 900s")
+                session_threshold_seconds = 900
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load threshold from database: {e}")
+            session_threshold_seconds = 900
     
     if type not in ['student', 'faculty']:
         return
@@ -1244,66 +1266,14 @@ def mark_attendance(name, id, type, session_id=None):
     if not session_id:
         session_id = current_session_id
     
-    # 🆕 FIX: TRACK STUDENT PRESENCE - MOVE THIS TO THE TOP
+    # 🎯 Update presence tracker
     if type == 'student' and session_id:
-        was_missing = False
-        return_from_missing = False
-        
-        if id in student_presence_tracker:
-            # Student was previously missing, now returned
-            last_seen = student_presence_tracker[id].get('last_seen')
-            if last_seen and (current_time - last_seen).total_seconds() > 5:  # 🆕 CHANGED: 5 seconds threshold
-                was_missing = True
-                
-                # 🆕 NEW: Check if student was marked as missing (not present)
-                if not student_presence_tracker[id].get('present', True):
-                    return_from_missing = True
-                    logger.info(f"🔄 Student {name} returned after being missing")
-        
-        # 🆕 NEW: Handle return from missing with 2-second delay
-        if return_from_missing:
-            # Check if we have a return timestamp
-            if 'return_detected_at' not in student_presence_tracker[id]:
-                # First detection after missing - start the 2-second timer
-                student_presence_tracker[id]['return_detected_at'] = current_time
-                student_presence_tracker[id]['present'] = False  # Still not present until timer completes
-                logger.info(f"⏱️ Started 2-second return timer for {name}")
-                return  # Don't proceed until timer completes
-            else:
-                # Check if 2 seconds have passed since return detection
-                time_since_return = (current_time - student_presence_tracker[id]['return_detected_at']).total_seconds()
-                if time_since_return >= 2:
-                    # 2 seconds passed - mark as present and call API
-                    student_presence_tracker[id]['present'] = True
-                    student_presence_tracker[id]['last_seen'] = current_time
-                    
-                    try:
-                        # Call API to record student returned - THIS UPDATES missing_periods
-                        import requests
-                        response = requests.post('http://localhost:5000/api/student_returned', 
-                                    json={'student_id': id, 'session_id': session_id},
-                                    timeout=2)
-                        if response.status_code == 200:
-                            logger.info(f"📥 Student returned after absence: {name} (2-second delay completed)")
-                        else:
-                            logger.warning(f"⚠️ student_returned API failed: {response.status_code}")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not call student_returned API for {name}: {e}")
-                    
-                    # Clear the return timer
-                    student_presence_tracker[id].pop('return_detected_at', None)
-                else:
-                    # Still waiting for 2 seconds to pass
-                    logger.debug(f"⏳ Waiting for return timer: {time_since_return:.1f}/2.0 seconds for {name}")
-                    return  # Don't proceed with attendance marking until timer completes
-        else:
-            # Normal case (not returning from missing) - update presence immediately
-            student_presence_tracker[id] = {
-                'last_seen': current_time,
-                'name': name,
-                'present': True,
-                'was_missing': was_missing  # 🆕 Track if this was a return from missing
-            }
+        student_presence_tracker[id] = {
+            'last_seen': current_time,
+            'last_body_seen': current_time,
+            'name': name,
+            'present': True
+        }
     
     # ✅ Get section_id AND SUBJECT INFO for this session
     section_id = None
@@ -1326,65 +1296,122 @@ def mark_attendance(name, id, type, session_id=None):
             subject_code = session_result.get('subject_code')
             subject_name = session_result.get('subject_name')
             room = session_result.get('room')
-            logger.info(f"🔗 Found session info - Section: {section_id}, Subject: {subject_code} - {subject_name}, Room: {room}")
+            logger.info(f"🔗 Found session info - Section: {section_id}, Subject: {subject_code}")
         cursor.close()
         conn.close()
     except Exception as e:
         logger.error(f"Error getting session info: {e}")
     
-    # ✅ Check if student is already marked as excused in database
-    if type == 'student':
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor(dictionary=True)
+    # 🎯 CRITICAL FIX: Check existing status and missing periods
+    original_status = None
+    existing_record_id = None
+    missing_duration = 0
+    is_returning_from_missing = False
+    restored_original_status = None
+    is_currently_missing = False
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # 🎯 Get the MOST RECENT attendance record for this student in this session
+        cursor.execute("""
+            SELECT id, status, timestamp FROM attendance 
+            WHERE student_id = %s AND session_id = %s
+            ORDER BY timestamp DESC LIMIT 1
+        """, (id, session_id))
+        existing_record = cursor.fetchone()
+        
+        if existing_record:
+            existing_record_id = existing_record['id']
+            original_status = existing_record['status']
             
-            # 🆕 FIX: Check for existing excused status in this session (not just today)
+            # 🎯 CHECK IF STUDENT IS CURRENTLY MISSING
+            if original_status == 'missing':
+                is_currently_missing = True
+                logger.info(f"🎯 Student {name} is CURRENTLY MISSING")
+        
+        # 🎯 FIXED: Check if student is currently in missing_periods with original_status
+        cursor.execute("""
+            SELECT id, missing_start, original_status, TIMESTAMPDIFF(SECOND, missing_start, NOW()) as missing_seconds
+            FROM missing_periods 
+            WHERE student_id = %s AND session_id = %s AND returned = FALSE
+            LIMIT 1
+        """, (id, session_id))
+        
+        active_missing_period = cursor.fetchone()
+        
+        if active_missing_period:
+            is_returning_from_missing = True
+            missing_duration = active_missing_period['missing_seconds'] or 0
+            restored_original_status = active_missing_period['original_status']
+            
+            logger.info(f"🔄 Student {name} is RETURNING from missing - was missing for {missing_duration} seconds, original status: {restored_original_status}")
+            
+            # 🎯 MARK THE MISSING PERIOD AS RETURNED
             cursor.execute("""
-                SELECT status FROM attendance 
-                WHERE student_id = %s AND session_id = %s AND status = 'excused'
-                ORDER BY timestamp DESC LIMIT 1
-            """, (id, session_id))
+                UPDATE missing_periods 
+                SET missing_end = NOW(), duration_seconds = %s, returned = TRUE
+                WHERE id = %s
+            """, (missing_duration, active_missing_period['id']))
             
-            existing_excused = cursor.fetchone()
-            cursor.close()
-            conn.close()
-            
-            if existing_excused:
-                logger.info(f"🎯 Student {name} is excused in this session, skipping attendance mark")
-                return  # Don't override excused status
+            logger.info(f"✅ Marked missing period as returned for {name}")
+        
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error checking existing status: {e}")
+    
+    # 🎯 FIXED STATUS DETERMINATION: Handle missing status properly
+    if is_currently_missing:
+        # 🎯 CRITICAL: If student is currently missing, we need to restore their original status
+        if is_returning_from_missing and restored_original_status in ['present', 'late']:
+            # 🎯 RESTORE ORIGINAL STATUS from missing_periods table
+            status = restored_original_status
+            logger.info(f"🔄 RESTORING ORIGINAL STATUS (from missing): {name} -> {status}")
+        elif original_status in ['present', 'late']:
+            # Fallback: Use original_status from attendance table
+            status = original_status
+            logger.info(f"🔄 RESTORING ORIGINAL STATUS (fallback from missing): {name} -> {status}")
+        else:
+            # If no original status found, calculate new status
+            status = 'present'
+            if session_start_time:
+                time_difference = current_time - session_start_time
+                time_diff_seconds = time_difference.total_seconds()
                 
-        except Exception as e:
-            logger.error(f"Error checking excused status: {e}")
+                threshold_seconds = session_threshold_seconds
+                
+                if time_diff_seconds > threshold_seconds:
+                    status = 'late'
+                    logger.info(f"⏰ LATE (after missing): {name} arrived {time_diff_seconds:.1f}s after start")
+                else:
+                    logger.info(f"✅ PRESENT (after missing): {name} arrived on time")
     
-    # ✅ FIXED: Determine status (present or late) - USE STORED THRESHOLD
-    status = 'present'
-    
-    # Calculate late status based on session start time
-    if session_start_time:
-        time_difference = current_time - session_start_time
-        time_diff_seconds = time_difference.total_seconds()
+    elif is_returning_from_missing and restored_original_status in ['present', 'late']:
+        # 🎯 RESTORE ORIGINAL STATUS when returning from missing
+        status = restored_original_status
+        logger.info(f"🔄 RESTORING ORIGINAL STATUS: {name} returning from missing -> {status}")
         
-        # ✅ USE THE STORED THRESHOLD FROM SESSION INITIALIZATION
-        threshold_seconds = session_threshold_seconds
+    elif is_returning_from_missing and original_status in ['present', 'late']:
+        # Fallback: Use original_status from attendance table
+        status = original_status
+        logger.info(f"🔄 RESTORING ORIGINAL STATUS (fallback): {name} returning from missing -> {status}")
         
-        if time_diff_seconds > threshold_seconds:
-            status = 'late'
-            # ✅ FIX: Convert to integers before formatting
-            threshold_hours = int(threshold_seconds // 3600)
-            threshold_minutes = int((threshold_seconds % 3600) // 60)
-            threshold_seconds_int = int(threshold_seconds % 60)
-            threshold_display = f"{threshold_hours:02d}:{threshold_minutes:02d}:{threshold_seconds_int:02d}"
-            
-            # ✅ FIX: Convert time_diff_seconds to integers for formatting
-            arrival_hours = int(time_diff_seconds // 3600)
-            arrival_minutes = int((time_diff_seconds % 3600) // 60)
-            arrival_seconds = int(time_diff_seconds % 60)
-            arrival_display = f"{arrival_hours:02d}:{arrival_minutes:02d}:{arrival_seconds:02d}"
-            
-            logger.info(f"⏰ LATE DETECTION: {name} arrived at {arrival_display} (threshold: {threshold_display})")
     else:
-        # If no session start time is set, log a warning but still mark as present
-        logger.warning(f"⚠️ No session start time set, marking {name} as present")
+        # New detection or no previous status - calculate based on arrival time
+        status = 'present'
+        if session_start_time:
+            time_difference = current_time - session_start_time
+            time_diff_seconds = time_difference.total_seconds()
+            
+            threshold_seconds = session_threshold_seconds
+            
+            if time_diff_seconds > threshold_seconds:
+                status = 'late'
+                logger.info(f"⏰ LATE: {name} arrived {time_diff_seconds:.1f}s after start")
+            else:
+                logger.info(f"✅ PRESENT: {name} arrived on time")
     
     # Save to memory
     attendance[id] = {
@@ -1397,9 +1424,9 @@ def mark_attendance(name, id, type, session_id=None):
     # ✅ Update student status for frontend
     if type == 'student':
         student_status[id] = status
-        logger.info(f"🎯 STUDENT STATUS UPDATED: {name} -> {status}")
+        logger.info(f"🎯 STUDENT STATUS: {name} -> {status}")
     
-    # Save to CSV immediately
+    # Save to CSV
     try:
         csv_file = "attendance_log.csv"
         file_exists = os.path.isfile(csv_file)
@@ -1407,49 +1434,74 @@ def mark_attendance(name, id, type, session_id=None):
         with open(csv_file, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room'])
-            writer.writerow([id, name, time_str, type, status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A'])
+                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room', 'MissingDuration', 'IsReturning', 'RestoredStatus', 'WasMissing'])
+            writer.writerow([id, name, time_str, type, status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A', missing_duration, is_returning_from_missing, restored_original_status or 'N/A', is_currently_missing])
         
-        logger.info(f"📄 CSV saved: {name} ({id}) - {type} - {status}")
+        logger.info(f"📄 CSV saved: {name} ({id}) - {type} - {status} - Missing: {missing_duration}s - Returning: {is_returning_from_missing} - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
     
-    # ✅ FIXED: UPDATE database instead of INSERT - WITH SUBJECT INFORMATION
+    # 🎯 FIXED: Update database with proper status handling
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         if type == 'student':
-            # 🆕 FIX: UPDATE WITH SUBJECT INFORMATION
+            # Check if record already exists first
             cursor.execute("""
-                UPDATE attendance 
-                SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s
+                SELECT id, status, timestamp FROM attendance 
                 WHERE student_id = %s AND session_id = %s
-            """, (status, time_str, name, subject_code, subject_name, room, id, session_id))
+                ORDER BY timestamp DESC LIMIT 1
+            """, (id, session_id))
             
-            # If no record was updated, create a new one WITH SUBJECT INFORMATION
-            if cursor.rowcount == 0:
+            existing_record = cursor.fetchone()
+            
+            if existing_record:
+                # Record exists - UPDATE it
+                existing_id = existing_record[0]
+                existing_db_status = existing_record[1]
+                existing_timestamp = existing_record[2]
+                
+                # Convert string timestamp to datetime if needed
+                if isinstance(existing_timestamp, str):
+                    existing_timestamp = datetime.strptime(existing_timestamp, "%Y-%m-%d %H:%M:%S")
+                
+                time_since_update = (current_time - existing_timestamp).total_seconds()
+                
+                # 🎯 CRITICAL: Only update if status changed OR student is returning from missing OR was missing
+                if existing_db_status != status or is_returning_from_missing or is_currently_missing:
+                    # 🎯 FIXED: Update with missing_duration and proper status
+                    cursor.execute("""
+                        UPDATE attendance 
+                        SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s, missing_duration = %s
+                        WHERE id = %s
+                    """, (status, time_str, name, subject_code, subject_name, room, missing_duration, existing_id))
+                    logger.info(f"🔄 Updated attendance: {name} - {status} (was {existing_db_status}) - Missing: {missing_duration}s - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
+                else:
+                    logger.info(f"⏭️ Skipping update for {name} - status unchanged: {status}")
+            else:
+                # No record exists - INSERT new one
                 if section_id:
                     cursor.execute("""
                         INSERT INTO attendance 
-                        (student_id, name, timestamp, person_type, status, session_id, section_id, subject_code, subject_name, room)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (id, name, time_str, 'student', status, session_id, section_id, subject_code, subject_name, room))
+                        (student_id, name, timestamp, person_type, status, session_id, section_id, subject_code, subject_name, room, missing_duration)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'student', status, session_id, section_id, subject_code, subject_name, room, missing_duration))
                 else:
                     cursor.execute("""
                         INSERT INTO attendance 
-                        (student_id, name, timestamp, person_type, status, session_id, subject_code, subject_name, room)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (id, name, time_str, 'student', status, session_id, subject_code, subject_name, room))
+                        (student_id, name, timestamp, person_type, status, session_id, subject_code, subject_name, room, missing_duration)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'student', status, session_id, subject_code, subject_name, room, missing_duration))
+                logger.info(f"📝 Created NEW attendance record: {name} - {status}")
         else:  # faculty
-            # 🆕 FIX: UPDATE WITH SUBJECT INFORMATION
+            # Faculty logic remains the same
             cursor.execute("""
                 UPDATE attendance 
                 SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s
                 WHERE faculty_id = %s AND session_id = %s
             """, (status, time_str, name, subject_code, subject_name, room, id, session_id))
             
-            # If no record was updated, create a new one WITH SUBJECT INFORMATION
             if cursor.rowcount == 0:
                 if section_id:
                     cursor.execute("""
@@ -1468,7 +1520,7 @@ def mark_attendance(name, id, type, session_id=None):
         cursor.close()
         conn.close()
         
-        logger.info(f"💾 Database UPDATED: {name} ({id}) - {status} - Subject: {subject_code} - {subject_name} - Room: {room}")
+        logger.info(f"💾 Database UPDATED: {name} ({id}) - {status} - Missing Duration: {missing_duration}s - Returning: {is_returning_from_missing} - Restored Status: {restored_original_status} - Was Missing: {is_currently_missing}")
         
     except Exception as e:
         logger.error(f"Failed to update attendance in database: {e}")
@@ -1620,76 +1672,31 @@ def calculate_real_fps():
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
     Update trackers with body-only tracking for LOCKED tracks.
-    ✅ FIXED: Uses BODY tracking for missing detection (5 seconds without body = missing)
-    ✅ FIXED: When body reappears + face detected, mark present after 2 seconds
+    ✅ FIXED: HTTPS API calls with proper error handling
     """
     global tracks, locked_tracks, pending_confirmations, current_fps
     global detectionStopped, student_presence_tracker, current_session_id
     
     # Stop detection if session ended
     if detectionStopped:
-        return  # ← This will exit the function immediately
+        return
     
     # Calculate real FPS
     real_fps = calculate_real_fps()
-    if real_fps < 5:  # Very slow processing
-        real_fps = 5  # Minimum reasonable FPS
+    if real_fps < 5:
+        real_fps = 5
 
     h, w = frame.shape[:2]
     
-    # 🆕 CHECK FOR MISSING STUDENTS BASED ON BODY TRACKING (every 30 frames ~1 second)
-    if frame_idx % 30 == 0 and current_session_id:
-        current_time = datetime.now()
-        
-        for student_id, track_info in list(student_presence_tracker.items()):
-            if track_info.get('present'):
-                # Check if student has active body tracking
-                has_active_body = False
-                
-                # Look for this student in locked tracks with recent body detection
-                for person_id, lock_info in locked_tracks.items():
-                    if (lock_info.get('type') == 'student' and 
-                        lock_info.get('id') == student_id and
-                        frame_idx - lock_info.get('last_seen', 0) <= 150):  # 5 seconds at 30fps
-                        has_active_body = True
-                        track_info['last_body_seen'] = current_time  # Update body tracking time
-                        track_info['last_seen'] = current_time  # 🆕 CRITICAL FIX: Update last_seen timestamp
-                        break
-                
-                if not has_active_body:
-                    # No active body tracking - check how long since last body was seen
-                    last_body_seen = track_info.get('last_body_seen')
-                    if last_body_seen:
-                        time_since_body_seen = (current_time - last_body_seen).total_seconds()
-                        
-                        # If no body tracking for 5+ seconds, mark as missing
-                        if time_since_body_seen > 5:
-                            track_info['present'] = False
-                            track_info['last_seen'] = current_time  # 🆕 CRITICAL FIX: Update last_seen when marking missing
-                            
-                            try:
-                                import requests
-                                requests.post('http://localhost:5000/api/student_left', 
-                                            json={'student_id': student_id, 'session_id': current_session_id},
-                                            timeout=1)
-                                logger.info(f"📤 Student marked missing (no body): {track_info['name']}")
-                            except:
-                                logger.warning(f"⚠️ Could not call student_left API for {track_info['name']}")
-        
-        # Cleanup old entries (students who left more than 1 hour ago)
-        for student_id in list(student_presence_tracker.keys()):
-            track_info = student_presence_tracker[student_id]
-            if (not track_info.get('present') and 
-                track_info.get('last_seen') and 
-                (current_time - track_info['last_seen']).total_seconds() > 3600):  # 1 hour
-                del student_presence_tracker[student_id]
-    
-    # Step 1: Detect bodies for locked track matching
+    # Step 1: Detect bodies FIRST - this is critical
     body_detections = detect_bodies(frame)
     logger.debug(f"Detected {len(body_detections)} bodies in frame {frame_idx}")
     
-    kept_unlocked = []
-    to_remove_locks = []
+    # 🎯 CRITICAL FIX: Check for missing bodies IMMEDIATELY every frame
+    current_time = datetime.now()
+    
+    # Track which locked tracks have matching bodies in CURRENT frame
+    locked_tracks_with_bodies = set()
     
     # Step 2: Extract ReID features for ALL bodies first
     body_reid_features = []
@@ -1697,23 +1704,191 @@ def update_trackers_with_body(rgb, frame, frame_idx):
     
     for body_det in body_detections:
         body_box = tuple(body_det['box'])
-        # Filter out very small body detections
         bx1, by1, bx2, by2 = body_box
-        if (bx2 - bx1) < 50 or (by2 - by1) < 100:  # Minimum body size
+        if (bx2 - bx1) < 50 or (by2 - by1) < 100:
             continue
             
         reid_feature = extract_reid_features(frame, body_box)
         body_reid_features.append(reid_feature)
         body_boxes_clean.append(body_det)
     
-    body_detections = body_boxes_clean  # Use filtered detections
+    body_detections = body_boxes_clean
     matched_body_indices = set()
     
-    # Step 3: Update LOCKED tracks with BODY detection only
+    # 🎯 CRITICAL FIX: IMMEDIATE BODY MATCHING - Check every frame
+    to_remove_locks = []
+    
+    for person_id, lock_info in list(locked_tracks.items()):
+        frames_since_seen = frame_idx - lock_info.get('last_seen', frame_idx)
+        
+        # 🎯 IMMEDIATE CHECK: If no body found in current frame, start counting immediately
+        body_found_in_current_frame = False
+        last_body_box = lock_info.get('body_box')
+        
+        if last_body_box and body_detections:
+            # Try to match with current frame bodies
+            for idx, body_det in enumerate(body_detections):
+                if idx in matched_body_indices:
+                    continue
+                    
+                body_box = body_det['box']
+                
+                # Quick spatial matching
+                overlap_iou = iou(tuple(body_box), last_body_box)
+                if overlap_iou > 0.1:  # Low threshold for quick matching
+                    body_found_in_current_frame = True
+                    matched_body_indices.add(idx)
+                    
+                    # Update track immediately
+                    lock_info['body_box'] = tuple(body_box)
+                    lock_info['last_seen'] = frame_idx
+                    lock_info['missed_detections'] = 0
+                    
+                    # Update presence tracker
+                    if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
+                        student_presence_tracker[lock_info['id']]['last_body_seen'] = current_time
+                        student_presence_tracker[lock_info['id']]['last_seen'] = current_time
+                        student_presence_tracker[lock_info['id']]['present'] = True
+                    
+                    locked_tracks_with_bodies.add(person_id)
+                    break
+        
+        # 🎯 CRITICAL: If no body found in current frame, mark for immediate removal
+        if not body_found_in_current_frame:
+            lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
+            
+            # 🎯 IMMEDIATE REMOVAL: Remove after just 1-2 seconds (not 10 seconds)
+            if lock_info['missed_detections'] > 30:  # 1 second at 30fps
+                to_remove_locks.append(person_id)
+                logger.info(f"❌ IMMEDIATE REMOVAL: {lock_info.get('name', person_id)} - no body for 1 second")
+    
+    # 🎯 CRITICAL FIX: Remove tracks immediately when no body found
+    for person_id in to_remove_locks:
+        lock_info = locked_tracks.get(person_id)
+        if lock_info and lock_info.get('type') == 'student':
+            student_id = lock_info.get('id')
+            student_name = lock_info.get('name', person_id)
+            
+            # 🎯 FIXED HTTPS API CALL with proper data format
+            try:
+                import requests
+                import time
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                
+                # 🎯 PROPER DATA FORMAT
+                api_data = {
+                    'student_id': student_id,
+                    'session_id': current_session_id
+                }
+                
+                # Try 3 times with better connection handling
+                success = False
+                for attempt in range(3):
+                    try:
+                        response = requests.post(
+                            'https://192.168.0.100:5000/api/student_left',
+                            json=api_data,  # 🎯 FIXED: Use proper JSON data
+                            timeout=5,
+                            headers={
+                                'Connection': 'close',
+                                'Content-Type': 'application/json'
+                            },
+                            verify=False  # 🎯 CRITICAL: Disable SSL verification for self-signed cert
+                        )
+                        
+                        if response.status_code == 200:
+                            logger.info(f"🎯 SUCCESS: student_left API called for {student_name}")
+                            success = True
+                            break
+                        elif response.status_code == 400:
+                            # Parse the actual error message
+                            try:
+                                error_data = response.json()
+                                logger.warning(f"⚠️ API returned {response.status_code}: {error_data.get('message', 'Unknown error')}")
+                            except:
+                                logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
+                            break
+                        else:
+                            logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
+                            if attempt < 2:
+                                time.sleep(0.3)
+                                
+                    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as conn_err:
+                        logger.error(f"❌ Connection error (attempt {attempt + 1}/3): {conn_err}")
+                        if attempt < 2:
+                            time.sleep(0.5)
+                    except Exception as req_err:
+                        logger.error(f"❌ Request error (attempt {attempt + 1}/3): {req_err}")
+                        if attempt < 2:
+                            time.sleep(0.5)
+                
+                if not success:
+                    logger.error(f"❌ FAILED after 3 attempts: Could not mark {student_name} as missing")
+                    
+            except Exception as e:
+                logger.error(f"❌ Fatal error calling student_left API: {e}")
+            
+            # Update presence tracker if exists
+            if student_id in student_presence_tracker:
+                student_presence_tracker[student_id]['present'] = False
+                student_presence_tracker[student_id]['last_seen'] = current_time
+        
+        locked_tracks.pop(person_id, None)
+        locked_track_reid_features.pop(person_id, None)
+        logger.info(f"🔓 IMMEDIATE UNLOCK: {person_id}")
+    
+    # 🎯 SIMPLE MISSING DETECTION - Backup check every 30 frames
+    if frame_idx % 30 == 0 and current_session_id:
+        for student_id, track_info in list(student_presence_tracker.items()):
+            if track_info.get('present'):
+                has_active_body = student_id in locked_tracks_with_bodies
+                
+                if not has_active_body:
+                    last_body_seen = track_info.get('last_body_seen')
+                    if last_body_seen:
+                        time_since_body_seen = (current_time - last_body_seen).total_seconds()
+                        
+                        if time_since_body_seen > 5:  # Reduced to 5 seconds for backup
+                            track_info['present'] = False
+                            track_info['last_seen'] = current_time
+                            
+                            try:
+                                import requests
+                                import urllib3
+                                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                                
+                                api_data = {
+                                    'student_id': student_id,
+                                    'session_id': current_session_id
+                                }
+                                response = requests.post(
+                                    'https://192.168.0.100:5000/api/student_left', 
+                                    json=api_data,
+                                    timeout=2,
+                                    verify=False  # 🎯 ADDED: Disable SSL verification
+                                )
+                                if response.status_code == 200:
+                                    logger.info(f"📤 BACKUP MISSING: {track_info['name']}")
+                            except Exception as e:
+                                logger.warning(f"⚠️ API call failed: {e}")
+        
+        # Cleanup old entries
+        for student_id in list(student_presence_tracker.keys()):
+            track_info = student_presence_tracker[student_id]
+            if (not track_info.get('present') and 
+                track_info.get('last_seen') and 
+                (current_time - track_info['last_seen']).total_seconds() > 3600):
+                del student_presence_tracker[student_id]
+    
+    # Step 3: Update LOCKED tracks with remaining detection logic
+    to_remove_locks = []
+    
     for person_id, lock_info in list(locked_tracks.items()):
         frames_since_seen = frame_idx - lock_info.get('last_seen', frame_idx)
 
-        if frames_since_seen > 150:  # 5 seconds at 30fps
+        # 🎯 SIMPLE: 10 second timeout
+        if frames_since_seen > 300:
             to_remove_locks.append(person_id)
             logger.info(f"❌ Person {lock_info.get('name', person_id)} disappeared - releasing lock")
             continue
@@ -1722,7 +1897,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         last_reid_feature = locked_track_reid_features.get(person_id)
         matched = False
         
-        # Try ReID matching FIRST
+        # Try ReID matching
         if last_reid_feature is not None and body_detections:
             best_reid_match_idx = None
             best_reid_distance = 0.35
@@ -1757,10 +1932,11 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 lock_info['missed_detections'] = 0
                 locked_track_reid_features[person_id] = new_reid_feature
                 
-                # 🆕 Update body tracking time for presence tracker
+                # 🎯 SIMPLE: Update presence tracker when body detected
                 if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
                     student_presence_tracker[lock_info['id']]['last_body_seen'] = datetime.now()
-                    student_presence_tracker[lock_info['id']]['last_seen'] = datetime.now()  # 🆕 FIX: Update last_seen
+                    student_presence_tracker[lock_info['id']]['last_seen'] = datetime.now()
+                    student_presence_tracker[lock_info['id']]['present'] = True
                 
                 matched = True
         
@@ -1789,10 +1965,11 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 lock_info['last_seen'] = frame_idx
                 lock_info['missed_detections'] = 0
                 
-                # 🆕 Update body tracking time for presence tracker
+                # 🎯 SIMPLE: Update presence tracker when body detected
                 if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
                     student_presence_tracker[lock_info['id']]['last_body_seen'] = datetime.now()
-                    student_presence_tracker[lock_info['id']]['last_seen'] = datetime.now()  # 🆕 FIX: Update last_seen
+                    student_presence_tracker[lock_info['id']]['last_seen'] = datetime.now()
+                    student_presence_tracker[lock_info['id']]['present'] = True
                 
                 if new_reid_feature is not None:
                     locked_track_reid_features[person_id] = new_reid_feature
@@ -1800,39 +1977,75 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         
         if not matched:
             lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
-            if lock_info['missed_detections'] > 30:  # 1 second at 30fps
+            # 🎯 SIMPLE: 5 second tolerance
+            if lock_info['missed_detections'] > 150:
                 to_remove_locks.append(person_id)
     
     # Remove expired locks
     for person_id in to_remove_locks:
         lock_info = locked_tracks.get(person_id)
         if lock_info and lock_info.get('type') == 'student':
-            # 🆕 Track that student left (body tracking lost)
-            if person_id in student_presence_tracker:
-                student_presence_tracker[person_id]['present'] = False
-                student_presence_tracker[person_id]['last_seen'] = datetime.now()  # 🆕 FIX: Update last_seen
-                
+            student_id = lock_info.get('id')
+            student_name = lock_info.get('name', person_id)
+            
+            if student_id in student_presence_tracker:
+                student_presence_tracker[student_id]['present'] = False
+                student_presence_tracker[student_id]['last_seen'] = datetime.now()
+            
+            # 🎯 SIMPLE: Call API to mark as missing WITH RETRY LOGIC
             try:
                 import requests
-                requests.post('http://localhost:5000/api/student_left', 
-                            json={'student_id': person_id, 'session_id': current_session_id},
-                            timeout=1)
-                logger.info(f"📤 Student left (body tracking lost): {lock_info.get('name', person_id)}")
-            except:
-                logger.warning(f"⚠️ Could not call student_left API for {lock_info.get('name', person_id)}")
+                import time
+                
+                # Try 3 times with better connection handling
+                success = False
+                for attempt in range(3):
+                    try:
+                        response = requests.post(
+                            'https://192.168.0.100:5000/api/student_left',
+                            json={'student_id': student_id, 'session_id': current_session_id},
+                            timeout=5,
+                            headers={'Connection': 'close'}
+                        )
+                        
+                        if response.status_code == 200:
+                            logger.info(f"📤 Student marked as MISSING: {student_name}")
+                            success = True
+                            break
+                        elif response.status_code == 400:
+                            logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
+                            break
+                        else:
+                            logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
+                            if attempt < 2:
+                                time.sleep(0.3)
+                                
+                    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as conn_err:
+                        logger.error(f"❌ Connection error (attempt {attempt + 1}/3): {conn_err}")
+                        if attempt < 2:
+                            time.sleep(0.5)
+                    except Exception as req_err:
+                        logger.error(f"❌ Request error (attempt {attempt + 1}/3): {req_err}")
+                        if attempt < 2:
+                            time.sleep(0.5)
+                
+                if not success:
+                    logger.error(f"❌ FAILED after 3 attempts: Could not mark {student_name} as missing")
+                    
+            except Exception as e:
+                logger.error(f"❌ Fatal error calling student_left API: {e}")
         
         locked_tracks.pop(person_id, None)
         locked_track_reid_features.pop(person_id, None)
         logger.info(f"🔓 Unlocked track for {person_id}")
     
-    # ✅ FIXED: Maintain tracks list with tracking duration
+    # Maintain tracks list
     current_tracks = []
     
-    # Add all locked tracks (BODY tracking only)
+    # Add locked tracks
     for person_id, lock_info in locked_tracks.items():
         lock_start = lock_info.get('lock_start', frame_idx)
         frames_tracked = frame_idx - lock_start
-        # Use real FPS instead of assuming 30fps
         duration_seconds = frames_tracked / real_fps if real_fps > 0 else frames_tracked / 30
         
         locked_track = {
@@ -1843,18 +2056,17 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             'body_box': lock_info.get('body_box'),
             'last_seen': lock_info.get('last_seen', frame_idx),
             'confidence': 1.0,
-            'tracking_duration': int(duration_seconds),  # Integer seconds
+            'tracking_duration': int(duration_seconds),
             'lock_start': lock_start,
-            'real_fps': real_fps  # For debugging
+            'real_fps': real_fps
         }
         current_tracks.append(locked_track)
     
-    # Step 4: Update UNLOCKED tracks (FACE tracking for recognition)
+    # Update UNLOCKED tracks
     for tr in list(tracks):
         if tr.get('id') in locked_tracks:
             continue
         
-        # Skip if this track was just confirmed and locked
         if tr.get('is_locked'):
             continue
             
@@ -1869,7 +2081,6 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     x1, y1 = int(pos.left()), int(pos.top())
                     x2, y2 = int(pos.right()), int(pos.bottom())
                     
-                    # Validate position
                     if (x2 > x1 and y2 > y1 and 
                         0 <= x1 < w and 0 <= y1 < h and 
                         x2 <= w and y2 <= h):
@@ -1877,7 +2088,6 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         tr['last_seen'] = frame_idx
                         tracker_ok = True
                         
-                        # Decay confidence for unlocked tracks
                         tr['confidence'] = max(0.3, tr.get('confidence', 0.5) * 0.99)
         except Exception as e:
             logger.debug(f"Unlocked tracker update failed: {e}")
@@ -1889,21 +2099,29 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             duration_seconds = frames_tracked / real_fps if real_fps > 0 else frames_tracked / 30
             tr['tracking_duration'] = int(duration_seconds)
             tr['start_frame'] = start_frame
-            tr['real_fps'] = real_fps  # For debugging
+            tr['real_fps'] = real_fps
             
             current_tracks.append(tr)
         else:
             tr['consecutive_failures'] = tr.get('consecutive_failures', 0) + 1
             if tr['consecutive_failures'] < 5:
-                # Calculate tracking duration even for failing tracks
                 start_frame = tr.get('start_frame', frame_idx)
                 frames_tracked = frame_idx - start_frame
                 duration_seconds = frames_tracked // 30
                 tr['tracking_duration'] = duration_seconds
                 current_tracks.append(tr)
     
-    # Update global tracks list
+    # Update global tracks
     tracks[:] = current_tracks
+    
+    # Cleanup old unknown tracks
+    current_tracks = [
+        tr for tr in tracks
+        if not (tr.get('name') == "Unknown" and frame_idx - tr.get('last_seen', 0) > 30)
+    ]
+    tracks[:] = current_tracks
+    
+    # 🎯 ENHANCED DRAWING: BOLDER BOXES and LARGER TEXT
     
     # Step 5: Draw PENDING CONFIRMATIONS (Orange BODY boxes)
     active_pending = {pid: data for pid, data in pending_confirmations.items() 
@@ -1914,26 +2132,30 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             body_box = conf_data['body_boxes'][-1]
             bx1, by1, bx2, by2 = body_box
             
-            # Orange box for confirmation phase
-            cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 165, 255), 3)
+            # 🎯 BOLDER Orange box for confirmation phase (thicker border)
+            cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 165, 255), 5)  # Increased thickness from 4 to 5
             
             display_name = conf_data.get('name', f'Person {person_id}')
             progress = len(conf_data['frames'])
             
-            # Draw name and progress
+            # 🎯 LARGER TEXT for name and progress
             font = cv2.FONT_HERSHEY_SIMPLEX
-            # Name
-            (name_w, name_h), _ = cv2.getTextSize(display_name, font, 0.7, 2)
-            name_y = max(15, by1 - 10)
-            cv2.rectangle(frame, (bx1, name_y - name_h - 6), (bx1 + name_w + 12, name_y + 6), (0, 0, 0), -1)
-            cv2.putText(frame, display_name, (bx1 + 6, name_y), font, 0.7, (255, 255, 255), 2)
+            font_scale_name = 1.1  # Increased from 0.9
+            font_scale_status = 0.9  # Increased from 0.7
+            thickness = 3  # Increased from 2
             
-            # Progress
+            # Name with larger text
+            (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale_name, thickness)
+            name_y = max(25, by1 - 15)  # Increased margin
+            cv2.rectangle(frame, (bx1, name_y - name_h - 10), (bx1 + name_w + 20, name_y + 10), (0, 0, 0), -1)
+            cv2.putText(frame, display_name, (bx1 + 10, name_y), font, font_scale_name, (255, 255, 255), thickness)
+            
+            # Progress with larger text
             status_label = f"CONFIRMING {progress}/{CONFIRMATION_FRAMES_REQUIRED}"
-            (status_w, status_h), _ = cv2.getTextSize(status_label, font, 0.6, 1)
-            status_y = by2 + status_h + 10
-            cv2.rectangle(frame, (bx1, status_y - status_h - 4), (bx1 + status_w + 8, status_y + 4), (0, 140, 255), -1)
-            cv2.putText(frame, status_label, (bx1 + 4, status_y), font, 0.6, (255, 255, 255), 1)
+            (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale_status, thickness)
+            status_y = by2 + status_h + 20  # Increased spacing
+            cv2.rectangle(frame, (bx1, status_y - status_h - 8), (bx1 + status_w + 15, status_y + 8), (0, 140, 255), -1)
+            cv2.putText(frame, status_label, (bx1 + 8, status_y), font, font_scale_status, (255, 255, 255), thickness)
     
     # Step 6: Draw LOCKED tracks (Green BODY boxes only)
     for person_id, lock_info in locked_tracks.items():
@@ -1943,8 +2165,8 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         
         bx1, by1, bx2, by2 = body_box
         
-        # Green box for locked body tracking
-        cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 255, 0), 3)
+        # 🎯 BOLDER Green box for locked body tracking (thicker border)
+        cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 255, 0), 5)  # Increased thickness from 4 to 5
         
         display_name = lock_info.get('name', f'Person {person_id}')
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -1954,29 +2176,34 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         tracking_seconds = (frame_idx - lock_start) // 30
         time_label = f"Time: {tracking_seconds}s"
         
-        # Draw name at top
-        (name_w, name_h), _ = cv2.getTextSize(display_name, font, 0.7, 2)
-        name_y = max(15, by1 - 10)
-        cv2.rectangle(frame, (bx1, name_y - name_h - 6), (bx1 + name_w + 12, name_y + 6), (0, 0, 0), -1)
-        cv2.putText(frame, display_name, (bx1 + 6, name_y), font, 0.7, (255, 255, 255), 2)
+        # 🎯 LARGER TEXT settings
+        font_scale_name = 1.1  # Increased from 0.9
+        font_scale_info = 0.9  # Increased from 0.7
+        thickness = 3  # Increased from 2
         
-        # Draw tracking time at bottom
-        (time_w, time_h), _ = cv2.getTextSize(time_label, font, 0.6, 1)
-        time_y = by2 + time_h + 10
-        cv2.rectangle(frame, (bx1, time_y - time_h - 4), (bx1 + time_w + 8, time_y + 4), (0, 200, 0), -1)
-        cv2.putText(frame, time_label, (bx1 + 4, time_y), font, 0.6, (255, 255, 255), 1)
+        # Draw name at top with larger text
+        (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale_name, thickness)
+        name_y = max(25, by1 - 15)  # Increased margin
+        cv2.rectangle(frame, (bx1, name_y - name_h - 10), (bx1 + name_w + 20, name_y + 10), (0, 0, 0), -1)
+        cv2.putText(frame, display_name, (bx1 + 10, name_y), font, font_scale_name, (255, 255, 255), thickness)
         
-        # Draw status
+        # Draw tracking time at bottom with larger text
+        (time_w, time_h), _ = cv2.getTextSize(time_label, font, font_scale_info, thickness)
+        time_y = by2 + time_h + 20  # Increased spacing
+        cv2.rectangle(frame, (bx1, time_y - time_h - 8), (bx1 + time_w + 15, time_y + 8), (0, 200, 0), -1)
+        cv2.putText(frame, time_label, (bx1 + 8, time_y), font, font_scale_info, (255, 255, 255), thickness)
+        
+        # Draw status with larger text
         status_label = "LOCKED"
-        (status_w, status_h), _ = cv2.getTextSize(status_label, font, 0.6, 1)
-        status_y = time_y + status_h + 8
-        cv2.rectangle(frame, (bx1, status_y - status_h - 4), (bx1 + status_w + 8, status_y + 4), (0, 150, 0), -1)
-        cv2.putText(frame, status_label, (bx1 + 4, status_y), font, 0.6, (255, 255, 255), 1)
+        (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale_info, thickness)
+        status_y = time_y + status_h + 15  # Increased spacing
+        cv2.rectangle(frame, (bx1, status_y - status_h - 8), (bx1 + status_w + 15, status_y + 8), (0, 150, 0), -1)
+        cv2.putText(frame, status_label, (bx1 + 8, status_y), font, font_scale_info, (255, 255, 255), thickness)
     
     # Step 7: Draw UNLOCKED tracks (Yellow FACE boxes)
     for tr in tracks:
         if tr.get('is_locked') or tr.get('id') in locked_tracks:
-            continue  # Skip locked tracks (already drawn above)
+            continue
         
         face_box = tr.get('box')
         if not face_box or face_box == (0, 0, 0, 0):
@@ -1984,8 +2211,8 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             
         x1, y1, x2, y2 = face_box
         
-        # Yellow box for face scanning
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+        # 🎯 BOLDER Yellow box for face scanning (thicker border)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 4)  # Increased thickness from 3 to 4
         
         display_name = tr.get('name', 'Unknown')
         confidence = tr.get('confidence', 0.0)
@@ -1993,33 +2220,40 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         
         font = cv2.FONT_HERSHEY_SIMPLEX
         
-        # Draw name
-        (name_w, name_h), _ = cv2.getTextSize(display_name, font, 0.6, 2)
-        name_y = max(10, y1 - 10)
-        cv2.rectangle(frame, (x1, name_y - name_h - 4), (x1 + name_w + 8, name_y + 4), (0, 0, 0), -1)
-        cv2.putText(frame, display_name, (x1 + 4, name_y), font, 0.6, (255, 255, 255), 2)
+        # 🎯 LARGER TEXT settings
+        font_scale_name = 1.0  # Increased from 0.8
+        font_scale_info = 0.8  # Increased from 0.6
+        thickness = 3  # Increased from 2
         
-        # Draw tracking time
+        # Draw name with larger text
+        (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale_name, thickness)
+        name_y = max(20, y1 - 15)  # Increased margin
+        cv2.rectangle(frame, (x1, name_y - name_h - 8), (x1 + name_w + 15, name_y + 8), (0, 0, 0), -1)
+        cv2.putText(frame, display_name, (x1 + 8, name_y), font, font_scale_name, (255, 255, 255), thickness)
+        
+        # Draw tracking time with larger text
         time_label = f"Time: {duration}s"
-        (time_w, time_h), _ = cv2.getTextSize(time_label, font, 0.5, 1)
-        time_y = y2 + time_h + 8
-        cv2.rectangle(frame, (x1, time_y - time_h - 4), (x1 + time_w + 8, time_y + 4), (0, 180, 180), -1)
-        cv2.putText(frame, time_label, (x1 + 4, time_y), font, 0.5, (255, 255, 255), 1)
+        (time_w, time_h), _ = cv2.getTextSize(time_label, font, font_scale_info, thickness)
+        time_y = y2 + time_h + 15  # Increased spacing
+        cv2.rectangle(frame, (x1, time_y - time_h - 8), (x1 + time_w + 12, time_y + 8), (0, 180, 180), -1)
+        cv2.putText(frame, time_label, (x1 + 6, time_y), font, font_scale_info, (255, 255, 255), thickness)
         
-        # Draw confidence for unknown faces
+        # Draw confidence for unknown faces with larger text
         if display_name == "Unknown":
             conf_label = f"Conf: {confidence:.2f}"
-            (conf_w, conf_h), _ = cv2.getTextSize(conf_label, font, 0.5, 1)
-            conf_y = time_y + conf_h + 6
-            cv2.rectangle(frame, (x1, conf_y - conf_h - 4), (x1 + conf_w + 8, conf_y + 4), (0, 0, 0), -1)
-            cv2.putText(frame, conf_label, (x1 + 4, conf_y), font, 0.5, (255, 255, 255), 1)
+            (conf_w, conf_h), _ = cv2.getTextSize(conf_label, font, font_scale_info, thickness)
+            conf_y = time_y + conf_h + 12  # Increased spacing
+            cv2.rectangle(frame, (x1, conf_y - conf_h - 8), (x1 + conf_w + 12, conf_y + 8), (0, 0, 0), -1)
+            cv2.putText(frame, conf_label, (x1 + 6, conf_y), font, font_scale_info, (255, 255, 255), thickness)
         
-        # Draw status
+        # Draw status with larger text
         status_label = "SCANNING"
-        (status_w, status_h), _ = cv2.getTextSize(status_label, font, 0.5, 1)
-        status_y = (conf_y if display_name == "Unknown" else time_y) + status_h + 6
-        cv2.rectangle(frame, (x1, status_y - status_h - 4), (x1 + status_w + 8, status_y + 4), (0, 150, 150), -1)
-        cv2.putText(frame, status_label, (x1 + 4, status_y), font, 0.5, (255, 255, 255), 1)
+        (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale_info, thickness)
+        status_y = (conf_y if display_name == "Unknown" else time_y) + status_h + 12  # Increased spacing
+        cv2.rectangle(frame, (x1, status_y - status_h - 8), (x1 + status_w + 12, status_y + 8), (0, 150, 150), -1)
+        cv2.putText(frame, status_label, (x1 + 6, status_y), font, font_scale_info, (255, 255, 255), thickness)
+
+    logger.info(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
 
 def cleanup_locked_tracks(current_frame, lock_timeout_frames):
     global locked_tracks
@@ -9628,7 +9862,7 @@ def start_session():
 def initialize_session():
     """Initialize session with parameters from URL"""
     global session_start_time, current_session_id, session_threshold_seconds, session_total_duration_seconds
-    global current_session_id  # Make sure this exists at the top of your file
+    global current_session_id
     connection = None
     cursor = None
     
@@ -9646,7 +9880,11 @@ def initialize_session():
         if not schedule_id:
             return jsonify({'success': False, 'message': 'Missing schedule_id'}), 400
         
-        current_session_id = schedule_id
+        # ✅ GENERATE UNIQUE SESSION ID
+        import uuid
+        import datetime
+        unique_session_id = f"{schedule_id}_{uuid.uuid4().hex[:8]}_{int(datetime.datetime.now().timestamp())}"
+        current_session_id = unique_session_id
         
         # Handle duration and threshold
         try:
@@ -9657,8 +9895,9 @@ def initialize_session():
             session_threshold_seconds = 900
         
         # ✅ SET SESSION START TIME
-        session_start_time = datetime.now()
+        session_start_time = datetime.datetime.now()
         
+        logger.info(f"🎯 Generated unique session ID: {unique_session_id}")
         logger.info(f"✅ SESSION PARAMS - Duration: {session_total_duration_seconds}s, Threshold: {session_threshold_seconds}s")
         
         # Get database connection
@@ -9715,28 +9954,101 @@ def initialize_session():
         except Exception as e:
             logger.warning(f"⚠️ Could not fetch subject info: {e}")
         
-        # ✅ SAVE SESSION TO DATABASE WITH SUBJECT INFORMATION
+        # ✅ SAVE SESSION TO DATABASE WITH UNIQUE SESSION ID AND BOTH MINUTES & SECONDS
         try:
+            # First, try to get the next session instance number
+            cursor.execute("""
+                SELECT COALESCE(MAX(session_instance), 0) + 1 as next_instance 
+                FROM attendance_sessions 
+                WHERE original_schedule_id = %s
+            """, (schedule_id,))
+            instance_result = cursor.fetchone()
+            next_instance = instance_result['next_instance'] if instance_result else 1
+            
+            # 🎯 CRITICAL FIX: Store BOTH minutes AND seconds in database
             cursor.execute("""
                 INSERT INTO attendance_sessions 
                 (session_id, class_name, subject_code, subject_name, room, started_at, 
-                 late_threshold_minutes, total_duration_minutes, created_by, status, section_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s)
+                 late_threshold_minutes, total_duration_minutes, 
+                 threshold_seconds_total, session_duration_seconds_total,
+                 created_by, status, section_id,
+                 original_schedule_id, session_instance)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)
             """, (
-                schedule_id,
+                unique_session_id,  # Use unique session ID
                 f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
                 subject_code,
                 subject_name,
                 room,
                 session_start_time,
-                session_threshold_seconds // 60,
-                session_total_duration_seconds // 60,
+                session_threshold_seconds // 60,  # Store minutes
+                session_total_duration_seconds // 60,  # Store minutes
+                session_threshold_seconds,  # 🎯 STORE SECONDS
+                session_total_duration_seconds,  # 🎯 STORE SECONDS
                 data.get('instructor', 'System'),
-                section_id
+                section_id,
+                schedule_id,  # Store original schedule_id for reference
+                next_instance  # Session instance counter
             ))
-            logger.info(f"💾 Session saved to database with subject info: {subject_code} - {subject_name}")
+            logger.info(f"💾 Session saved to database with unique ID: {unique_session_id}, instance: {next_instance}")
+            logger.info(f"⏰ STORED TIMING: Duration={session_total_duration_seconds}s, Threshold={session_threshold_seconds}s")
+            
         except Exception as e:
             logger.warning(f"⚠️ Could not save session to database: {e}")
+            # If insert fails, try without instance number but STILL with seconds
+            try:
+                cursor.execute("""
+                    INSERT INTO attendance_sessions 
+                    (session_id, class_name, subject_code, subject_name, room, started_at, 
+                     late_threshold_minutes, total_duration_minutes, 
+                     threshold_seconds_total, session_duration_seconds_total,
+                     created_by, status, section_id, original_schedule_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s)
+                """, (
+                    unique_session_id,
+                    f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
+                    subject_code,
+                    subject_name,
+                    room,
+                    session_start_time,
+                    session_threshold_seconds // 60,
+                    session_total_duration_seconds // 60,
+                    session_threshold_seconds,  # 🎯 STORE SECONDS
+                    session_total_duration_seconds,  # 🎯 STORE SECONDS
+                    data.get('instructor', 'System'),
+                    section_id,
+                    schedule_id
+                ))
+                logger.info(f"💾 Session saved without instance number: {unique_session_id}")
+            except Exception as retry_error:
+                logger.error(f"❌ Failed to save session even with retry: {retry_error}")
+                # If still failing, try basic insert but STILL with seconds
+                try:
+                    cursor.execute("""
+                        INSERT INTO attendance_sessions 
+                        (session_id, class_name, subject_code, subject_name, room, started_at, 
+                         late_threshold_minutes, total_duration_minutes, 
+                         threshold_seconds_total, session_duration_seconds_total,
+                         created_by, status, section_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s)
+                    """, (
+                        unique_session_id,
+                        f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
+                        subject_code,
+                        subject_name,
+                        room,
+                        session_start_time,
+                        session_threshold_seconds // 60,
+                        session_total_duration_seconds // 60,
+                        session_threshold_seconds,  # 🎯 STORE SECONDS
+                        session_total_duration_seconds,  # 🎯 STORE SECONDS
+                        data.get('instructor', 'System'),
+                        section_id
+                    ))
+                    logger.info(f"💾 Session saved with basic insert: {unique_session_id}")
+                except Exception as final_error:
+                    logger.error(f"❌ All insert attempts failed: {final_error}")
+                    raise final_error
         
         # ✅ GET FACULTY INFO
         faculty_name = data.get('instructor', 'Unknown Instructor')
@@ -9798,10 +10110,10 @@ def initialize_session():
             else:
                 return f"{minutes:02d}:{secs:02d}"
         
-        # ✅ STORE SESSION DATA - FIXED: ADD session_id TO RESPONSE
+        # ✅ STORE SESSION DATA - USE UNIQUE SESSION ID
         session_data = {
-            'session_id': schedule_id,  # 🎯 CRITICAL: Add session_id to response
-            'schedule_id': schedule_id,
+            'session_id': unique_session_id,  # 🎯 CRITICAL: Use unique session ID
+            'schedule_id': schedule_id,  # Keep original schedule_id for reference
             'instructor': faculty_name,
             'subject_code': subject_code,
             'subject_name': subject_name,  # ✅ ADD SUBJECT NAME
@@ -9827,7 +10139,7 @@ def initialize_session():
         logger.info(f"🏫 Class: {data.get('program')} {data.get('year_level')}{data.get('section')}")
         logger.info(f"📚 Subject: {subject_code} - {subject_name} - {room}")
         logger.info(f"🔗 Section ID: {section_id}")
-        logger.info(f"🎯 Session ID returned: {schedule_id}")  # Debug log
+        logger.info(f"🎯 Unique Session ID returned: {unique_session_id}")
         
         return jsonify({
             'success': True, 
@@ -10040,8 +10352,9 @@ student_status = {}  # In-memory dictionary to track student status
 
 @app.route('/api/get_student_status')
 def get_student_status():
-    """Get current status of all students for the frontend - FIXED MISSING STATUS"""
+    """Get current status of all students - FIXED: Proper status display with missing periods"""
     global session_start_time, session_threshold_seconds, current_session_id, student_presence_tracker
+    global locked_tracks
     
     try:
         program = request.args.get('program')
@@ -10049,7 +10362,31 @@ def get_student_status():
         section = request.args.get('section')
         session_id = request.args.get('session_id', current_session_id)
         
+        # ✅ Load threshold from database if not set
+        if not session_threshold_seconds and current_session_id:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT threshold_seconds_total 
+                    FROM attendance_sessions 
+                    WHERE session_id = %s
+                """, (current_session_id,))
+                session_data = cursor.fetchone()
+                if session_data and session_data.get('threshold_seconds_total'):
+                    session_threshold_seconds = session_data['threshold_seconds_total']
+                    logger.info(f"🎯 Loaded threshold: {session_threshold_seconds} seconds")
+                else:
+                    logger.warning(f"⚠️ No threshold found, using default 900s")
+                    session_threshold_seconds = 900
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load threshold: {e}")
+                session_threshold_seconds = 900
+        
         threshold_seconds = session_threshold_seconds
+        logger.info(f"⏰ Using threshold: {threshold_seconds} seconds")
         
         if not threshold_seconds:
             logger.warning("⚠️ No threshold set, using default 900 seconds")
@@ -10094,104 +10431,122 @@ def get_student_status():
         student_list = []
         detected_count = 0
         
-        # 🆕 CHECK FOR MISSING STUDENTS - BUT PRIORITIZE RECENT ATTENDANCE RECORDS
+        # 🎯 CRITICAL FIX: Check missing periods
         missing_student_ids = []
+        currently_present_ids = set()
+        
         if session_id:
             try:
+                # Check database for missing periods
                 cursor.execute("""
-                    SELECT student_id FROM missing_periods 
+                    SELECT student_id, missing_start FROM missing_periods 
                     WHERE session_id = %s AND returned = FALSE
                 """, (session_id,))
                 missing_records = cursor.fetchall()
                 missing_student_ids = [record['student_id'] for record in missing_records]
-                logger.info(f"🔍 Found {len(missing_student_ids)} currently missing students")
+                
+                logger.info(f"🔍 DB MISSING CHECK: Found {len(missing_student_ids)} in database")
+                
             except Exception as e:
                 logger.warning(f"⚠️ Error checking missing students: {e}")
         
+        # Check real-time tracking data for currently present students
+        try:
+            if locked_tracks:
+                for person_id, lock_info in locked_tracks.items():
+                    if lock_info.get('type') == 'student':
+                        student_id = lock_info.get('id')
+                        if student_id:
+                            currently_present_ids.add(student_id)
+                
+                logger.info(f"🔍 REAL-TIME CHECK: {len(currently_present_ids)} students currently tracked: {currently_present_ids}")
+        except Exception as e:
+            logger.warning(f"⚠️ Error checking locked_tracks: {e}")
+        
         for student in students:
             student_id = student['student_id']
+            student_name = f"{student['first_name']} {student['last_name']}"
             
-            # 🆕 FIX: Get the LATEST attendance record for this session (not just today's)
-            cursor.execute("""
-                SELECT status, timestamp FROM attendance 
-                WHERE student_id = %s AND session_id = %s
-                ORDER BY timestamp DESC LIMIT 1
-            """, (student_id, session_id))
+            # 🎯 CRITICAL FIX: Four-tier status determination
             
-            attendance_record = cursor.fetchone()
+            # Priority 1: Real-time tracking shows student is currently present
+            if student_id in currently_present_ids:
+                current_status = 'present'
+                logger.info(f"✅ REAL-TIME PRESENT: {student_name} is currently being tracked")
             
-            # 🆕 CRITICAL FIX: Check if student is PRESENT in real-time tracking
-            is_present_in_tracker = False
-            if student_id in student_presence_tracker and student_presence_tracker[student_id].get('present'):
-                is_present_in_tracker = True
-                logger.info(f"🎯 Student PRESENT in tracker: {student['first_name']} {student['last_name']}")
+            # Priority 2: Student is currently missing
+            elif student_id in missing_student_ids:
+                current_status = 'missing'
+                logger.info(f"🎯 CURRENTLY MISSING: {student_name} ({student_id})")
             
-            # 🆕 CHECK IF STUDENT IS CURRENTLY MISSING - ONLY if no recent present record AND not present in tracker
-            if (student_id in missing_student_ids and 
-                (not attendance_record or attendance_record['status'] != 'present') and
-                not is_present_in_tracker):  # 🆕 ADDED: Check real-time presence
-                status = 'missing'
-                logger.info(f"🎯 Student marked as MISSING: {student['first_name']} {student['last_name']}")
+            # Priority 3: Check attendance records for original status
             else:
+                cursor.execute("""
+                    SELECT status, timestamp FROM attendance 
+                    WHERE student_id = %s AND session_id = %s
+                    ORDER BY timestamp DESC LIMIT 1
+                """, (student_id, session_id))
+                
+                attendance_record = cursor.fetchone()
+                
                 if attendance_record:
-                    status = attendance_record['status']
+                    current_status = attendance_record['status']
                     
-                    # ✅ FIXED: Use global session_start_time and threshold_seconds
-                    if status == 'present' and session_start_time:
+                    # Late check for 'present' status
+                    if current_status == 'present' and session_start_time:
                         arrival_time = attendance_record['timestamp']
                         if isinstance(arrival_time, str):
                             arrival_time = datetime.strptime(arrival_time, "%Y-%m-%d %H:%M:%S")
                         
                         time_difference = arrival_time - session_start_time
-                        if time_difference.total_seconds() > threshold_seconds:
-                            status = 'late'
-                            # Update the database
+                        time_diff_seconds = time_difference.total_seconds()
+                        
+                        if time_diff_seconds > threshold_seconds:
+                            current_status = 'late'
+                            # Update if needed
                             cursor.execute("""
                                 UPDATE attendance 
                                 SET status = 'late' 
                                 WHERE student_id = %s AND session_id = %s AND timestamp = %s
                             """, (student_id, session_id, attendance_record['timestamp']))
-                            logger.info(f"🔄 UPDATED TO LATE: {student['first_name']} {student['last_name']} - {time_difference.total_seconds():.1f}s > {threshold_seconds}s")
+                            logger.info(f"🔄 UPDATED TO LATE: {student_name}")
                 else:
-                    status = 'absent'
+                    current_status = 'absent'
             
-            # 🆕 OVERRIDE: If student is present in real-time tracker, force status to present
-            if is_present_in_tracker:
-                status = 'present'
-                logger.info(f"🎯 OVERRIDE to PRESENT: {student['first_name']} {student['last_name']} - Real-time detection")
+            logger.debug(f"🔍 FINAL STATUS: {student_name} -> {current_status}")
             
-            if status in ['present', 'late']:
+            if current_status in ['present', 'late']:
                 detected_count += 1
             
             student_list.append({
                 'id': student_id,
-                'name': f"{student['first_name']} {student['last_name']}",
-                'status': status,
+                'name': student_name,
+                'status': current_status,
                 'type': 'regular'
             })
         
+        # Process temporary students (unchanged)
         temp_counter = 1
         for temp_student in temp_students:
             temp_name = temp_student['name']
             temp_remarks = temp_student.get('remarks', '')
-            status = temp_student['status']
+            current_status = temp_student['status']
             
-            # ✅ FIXED: Use global session_start_time and threshold_seconds
-            if status == 'present' and session_start_time:
+            if current_status == 'present' and session_start_time:
                 arrival_time = temp_student['timestamp']
                 if isinstance(arrival_time, str):
                     arrival_time = datetime.strptime(arrival_time, "%Y-%m-%d %H:%M:%S")
                 
                 time_difference = arrival_time - session_start_time
-                if time_difference.total_seconds() > threshold_seconds:
-                    status = 'late'
-                    # Update the database
+                time_diff_seconds = time_difference.total_seconds()
+                
+                if time_diff_seconds > threshold_seconds:
+                    current_status = 'late'
                     cursor.execute("""
                         UPDATE attendance 
                         SET status = 'late' 
                         WHERE name = %s AND DATE(timestamp) = %s AND timestamp = %s
                     """, (temp_name, today, temp_student['timestamp']))
-                    logger.info(f"🔄 TEMP UPDATED TO LATE: {temp_name} - {time_difference.total_seconds():.1f}s > {threshold_seconds}s")
             
             temp_id = None
             display_name = temp_name
@@ -10213,17 +10568,23 @@ def get_student_status():
             student_list.append({
                 'id': temp_id,
                 'name': display_name,
-                'status': status,
+                'status': current_status,
                 'type': 'temporary'
             })
             
-            if status in ['present', 'late']:
+            if current_status in ['present', 'late']:
                 detected_count += 1
         
-        # ✅ FIXED: Commit the late status updates
         conn.commit()
         cursor.close()
         conn.close()
+        
+        # Status summary
+        status_counts = {}
+        for student in student_list:
+            status_counts[student['status']] = status_counts.get(student['status'], 0) + 1
+        
+        logger.info(f"📊 STATUS SUMMARY: {status_counts} | Real-time present: {len(currently_present_ids)}, DB missing: {len(missing_student_ids)}")
         
         return jsonify({
             'success': True,
@@ -10232,11 +10593,14 @@ def get_student_status():
             'total_count': len(student_list),
             'threshold_seconds': threshold_seconds,
             'session_start_time': session_start_time.isoformat() if session_start_time else None,
-            'current_session_id': current_session_id
+            'current_session_id': current_session_id,
+            'status_summary': status_counts,
+            'missing_count_in_db': len(missing_student_ids),
+            'real_time_present_count': len(currently_present_ids)
         })
         
     except Exception as e:
-        logger.error(f"Error getting student status: {e}")
+        logger.error(f"❌ Error getting student status: {e}")
         return jsonify({'success': False, 'message': str(e)})
     
 @app.route('/api/get_session_threshold')
@@ -10977,7 +11341,6 @@ def reset_admin_password():
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
-# Add this function to get session start time
 def get_session_start_time():
     """Get the session start time"""
     global session_start_time
@@ -10990,11 +11353,138 @@ def set_session_start_time():
     session_start_time = datetime.now()
     logger.info(f"🕐 SESSION START TIME SET: {session_start_time}")
 
+
+@app.route('/api/adjust_session_time', methods=['POST'])
+def adjust_session_time():
+    global session_total_duration_seconds, session_threshold_seconds
+    
+    data = request.get_json()
+    schedule_id = data.get('schedule_id') # Used as session_id and user_id
+    adj_type = data.get('adjustment_type')
+    adj_minutes = data.get('adjustment_minutes', 0)
+    elapsed_minutes = data.get('elapsed_minutes', 0)
+
+    if not all([schedule_id, adj_type, isinstance(adj_minutes, int)]):
+        return jsonify({'success': False, 'message': 'Invalid input data.'}), 400
+
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        
+    cursor = connection.cursor(dictionary=True)
+    
+    try:
+        # 1. Fetch current LIVE values from attendance_sessions
+        cursor.execute("""
+            SELECT total_duration_minutes, late_threshold_minutes,
+                   session_duration_seconds_total, threshold_seconds_total
+            FROM attendance_sessions 
+            WHERE session_id = %s AND status = 'active'
+        """, (schedule_id,))
+        live_session = cursor.fetchone()
+        
+        if not live_session:
+             return jsonify({'success': False, 'message': 'Active session not found.'}), 404
+
+        # 🎯 FIXED: Use seconds if available, otherwise convert
+        if live_session.get('session_duration_seconds_total'):
+            current_duration_seconds = live_session['session_duration_seconds_total']
+            current_threshold_seconds = live_session['threshold_seconds_total']
+            current_duration_minutes = current_duration_seconds // 60
+            current_threshold_minutes = current_threshold_seconds // 60
+        else:
+            current_duration_minutes = live_session['total_duration_minutes']
+            current_threshold_minutes = live_session['late_threshold_minutes']
+            current_duration_seconds = current_duration_minutes * 60
+            current_threshold_seconds = current_threshold_minutes * 60
+        
+        # 2. Calculate new values
+        new_duration_minutes = current_duration_minutes
+        new_threshold_minutes = current_threshold_minutes
+        
+        if adj_type == 'duration':
+            new_duration_minutes += adj_minutes
+        elif adj_type == 'threshold':
+            new_threshold_minutes += adj_minutes
+
+        new_duration_seconds = new_duration_minutes * 60
+        new_threshold_seconds = new_threshold_minutes * 60
+
+        # 3. Backend Constraints Check
+        if new_duration_seconds <= 0:
+            return jsonify({'success': False, 'message': 'Duration must be positive.'}), 400
+        
+        elapsed_seconds = elapsed_minutes * 60
+        if adj_type == 'duration' and adj_minutes < 0 and new_duration_seconds < elapsed_seconds:
+            return jsonify({'success': False, 'message': f'New Duration ({new_duration_minutes} min) cannot be less than the elapsed time ({elapsed_minutes} min).'}), 400
+
+        if new_threshold_seconds >= new_duration_seconds:
+            return jsonify({'success': False, 'message': 'Late Threshold must be less than the Class Duration.'}), 400
+
+        # 4. Perform the DUAL UPDATE
+        
+        # A) Update the LIVE session data in attendance_sessions (BOTH minutes and seconds)
+        if adj_type == 'duration':
+            update_live_sql = """
+                UPDATE attendance_sessions 
+                SET total_duration_minutes = %s, session_duration_seconds_total = %s
+                WHERE session_id = %s
+            """
+            cursor.execute(update_live_sql, (new_duration_minutes, new_duration_seconds, schedule_id))
+        elif adj_type == 'threshold':
+            update_live_sql = """
+                UPDATE attendance_sessions 
+                SET late_threshold_minutes = %s, threshold_seconds_total = %s
+                WHERE session_id = %s
+            """
+            cursor.execute(update_live_sql, (new_threshold_minutes, new_threshold_seconds, schedule_id))
+            
+        
+        # B) Update the DEFAULT settings in session_settings (UPSERT: Update or Insert)
+        upsert_config_sql = """
+        INSERT INTO session_settings (user_id, class_duration, late_threshold, video_quality)
+        VALUES (%s, %s, %s, '720')
+        ON DUPLICATE KEY UPDATE 
+            class_duration = VALUES(class_duration),
+            late_threshold = VALUES(late_threshold),
+            updated_at = CURRENT_TIMESTAMP()
+        """
+        cursor.execute(upsert_config_sql, (schedule_id, new_duration_minutes, new_threshold_minutes))
+        
+        connection.commit()
+
+        # 🎯 CRITICAL: Update global variables
+        if adj_type == 'duration':
+            session_total_duration_seconds = new_duration_seconds
+        elif adj_type == 'threshold':
+            session_threshold_seconds = new_threshold_seconds
+
+        logger.info(f"🎯 TIME ADJUSTED: {adj_type} -> Duration: {new_duration_seconds}s, Threshold: {new_threshold_seconds}s")
+
+        # 5. Return the newly set values (in both minutes and seconds)
+        return jsonify({
+            'success': True, 
+            'message': f'Successfully adjusted {adj_type}.',
+            'new_duration_minutes': new_duration_minutes,
+            'new_threshold_minutes': new_threshold_minutes,
+            'new_duration_seconds': new_duration_seconds,
+            'new_threshold_seconds': new_threshold_seconds
+        })
+
+    except Exception as e:
+        connection.rollback()
+        logger.error(f"Database error during adjustment: {e}")
+        return jsonify({'success': False, 'message': 'An internal server error occurred.'}), 500
+    finally:
+        cursor.close()
+        connection.close()
+
 # MODIFIED: New endpoint to GET both live and static settings
 @app.route('/api/get_session_settings', methods=['GET'])
-# @login_required # Assuming login_required is defined
 def get_session_settings():
     """Retrieve class settings: live duration/threshold and default video quality."""
+    global session_total_duration_seconds, session_threshold_seconds
+    
     schedule_id = request.args.get('schedule_id')
     if not schedule_id:
         return jsonify({'success': False, 'message': 'Schedule ID required'}), 400
@@ -11010,7 +11500,8 @@ def get_session_settings():
         
         # 1. Get LIVE settings from attendance_sessions
         cursor.execute("""
-            SELECT total_duration_minutes, late_threshold_minutes
+            SELECT total_duration_minutes, late_threshold_minutes,
+                   session_duration_seconds_total, threshold_seconds_total
             FROM attendance_sessions
             WHERE session_id = %s AND status = 'active'
         """, (schedule_id,))
@@ -11026,19 +11517,44 @@ def get_session_settings():
         """, (schedule_id,))
         default_config = cursor.fetchone()
         
-        # Establish base values (either from live session or defaults/hardcoded fallback)
-        live_duration = live_settings['total_duration_minutes'] if live_settings else (default_config['class_duration'] if default_config else 180)
-        live_threshold = live_settings['late_threshold_minutes'] if live_settings else (default_config['late_threshold'] if default_config else 15)
-        video_quality = default_config['video_quality'] if default_config else '720'
+        # 🎯 FIXED: Use seconds if available, otherwise convert minutes to seconds
+        if live_settings:
+            # Prefer seconds values if they exist in database
+            if live_settings.get('session_duration_seconds_total'):
+                live_duration_seconds = live_settings['session_duration_seconds_total']
+                live_threshold_seconds = live_settings['threshold_seconds_total']
+                live_duration_minutes = live_duration_seconds // 60
+                live_threshold_minutes = live_threshold_seconds // 60
+            else:
+                # Fallback to minutes conversion
+                live_duration_minutes = live_settings['total_duration_minutes']
+                live_threshold_minutes = live_settings['late_threshold_minutes']
+                live_duration_seconds = live_duration_minutes * 60
+                live_threshold_seconds = live_threshold_minutes * 60
+        else:
+            # Use default config or fallback values
+            live_duration_minutes = default_config['class_duration'] if default_config else 60
+            live_threshold_minutes = default_config['late_threshold'] if default_config else 15
+            live_duration_seconds = live_duration_minutes * 60
+            live_threshold_seconds = live_threshold_minutes * 60
+            
+            logger.warning(f"⚠️ No active attendance session found for {schedule_id}. Using default/config values.")
+
+        # 🎯 CRITICAL: Update global variables
+        session_total_duration_seconds = live_duration_seconds
+        session_threshold_seconds = live_threshold_seconds
         
-        if not live_settings:
-             logger.warning(f"⚠️ No active attendance session found for {schedule_id}. Using default/config values.")
+        video_quality = default_config['video_quality'] if default_config else '720'
+
+        logger.info(f"🎯 SESSION SETTINGS LOADED: Duration={live_duration_seconds}s ({live_duration_minutes}min), Threshold={live_threshold_seconds}s ({live_threshold_minutes}min)")
 
         return jsonify({
             'success': True,
             'settings': {
-                'live_duration_minutes': live_duration,
-                'live_threshold_minutes': live_threshold,
+                'live_duration_minutes': live_duration_minutes,
+                'live_threshold_minutes': live_threshold_minutes,
+                'live_duration_seconds': live_duration_seconds,
+                'live_threshold_seconds': live_threshold_seconds,
                 'video_quality': video_quality
             }
         })
@@ -11049,97 +11565,6 @@ def get_session_settings():
     finally:
         if cursor: cursor.close()
         if connection: connection.close()
-
-# New endpoint to handle adding/subtracting time
-@app.route('/api/adjust_session_time', methods=['POST'])
-def adjust_session_time():
-    data = request.get_json()
-    schedule_id = data.get('schedule_id') # Used as session_id and user_id
-    adj_type = data.get('adjustment_type')
-    adj_minutes = data.get('adjustment_minutes', 0)
-    elapsed_minutes = data.get('elapsed_minutes', 0)
-
-    if not all([schedule_id, adj_type, isinstance(adj_minutes, int)]):
-        return jsonify({'success': False, 'message': 'Invalid input data.'}), 400
-
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-    
-    try:
-        # 1. Fetch current LIVE values from attendance_sessions
-        cursor.execute("""
-            SELECT total_duration_minutes, late_threshold_minutes 
-            FROM attendance_sessions 
-            WHERE session_id = %s AND status = 'active'
-        """, (schedule_id,))
-        live_session = cursor.fetchone()
-        
-        if not live_session:
-             return jsonify({'success': False, 'message': 'Active session not found.'}), 404
-
-        current_duration = live_session['total_duration_minutes']
-        current_threshold = live_session['late_threshold_minutes']
-        
-        # 2. Calculate new values
-        new_duration = current_duration
-        new_threshold = current_threshold
-        
-        if adj_type == 'duration':
-            new_duration += adj_minutes
-        elif adj_type == 'threshold':
-            new_threshold += adj_minutes
-
-        # 3. Backend Constraints Check
-        if new_duration <= 0:
-            return jsonify({'success': False, 'message': 'Duration must be positive.'}), 400
-        
-        if adj_type == 'duration' and adj_minutes < 0 and new_duration < elapsed_minutes:
-            return jsonify({'success': False, 'message': f'New Duration ({new_duration} min) cannot be less than the elapsed time ({elapsed_minutes} min).'}), 400
-
-        if new_threshold >= new_duration:
-            return jsonify({'success': False, 'message': 'Late Threshold must be less than the Class Duration.'}), 400
-
-        # 4. Perform the DUAL UPDATE
-        
-        # A) Update the LIVE session data in attendance_sessions
-        if adj_type == 'duration':
-            update_live_sql = "UPDATE attendance_sessions SET total_duration_minutes = %s WHERE session_id = %s"
-            cursor.execute(update_live_sql, (new_duration, schedule_id))
-        elif adj_type == 'threshold':
-            update_live_sql = "UPDATE attendance_sessions SET late_threshold_minutes = %s WHERE session_id = %s"
-            cursor.execute(update_live_sql, (new_threshold, schedule_id))
-            
-        
-        # B) Update the DEFAULT settings in session_settings (UPSERT: Update or Insert)
-        # This keeps the 'user_id' config updated for future sessions
-        upsert_config_sql = """
-        INSERT INTO session_settings (user_id, class_duration, late_threshold, video_quality)
-        VALUES (%s, %s, %s, '720')
-        ON DUPLICATE KEY UPDATE 
-            class_duration = VALUES(class_duration),
-            late_threshold = VALUES(late_threshold),
-            updated_at = CURRENT_TIMESTAMP();
-        """
-        # Note: We update both fields to ensure consistency with the running session
-        cursor.execute(upsert_config_sql, (schedule_id, new_duration, new_threshold))
-        
-        connection.commit()
-
-        # 5. Return the newly set values (in minutes)
-        return jsonify({
-            'success': True, 
-            'message': f'Successfully adjusted {adj_type}.',
-            'new_duration': new_duration,
-            'new_threshold': new_threshold
-        })
-
-    except Exception as e:
-        connection.rollback()
-        logger.error(f"Database error during adjustment: {e}")
-        return jsonify({'success': False, 'message': 'An internal server error occurred.'}), 500
-    finally:
-        cursor.close()
-        connection.close()
 
 # New endpoint for static video quality update
 @app.route('/api/update_video_quality', methods=['POST'])
@@ -11158,7 +11583,6 @@ def update_video_quality():
         cursor = connection.cursor()
 
         # Update or Insert (UPSERT) video_quality in session_settings
-        # Note: We do NOT update class_duration or late_threshold here, only video_quality
         cursor.execute("""
         INSERT INTO session_settings (user_id, video_quality)
         VALUES (%s, %s)
@@ -11168,6 +11592,7 @@ def update_video_quality():
         """, (schedule_id, video_quality))
         
         connection.commit()
+        logger.info(f"🎯 VIDEO QUALITY UPDATED: {schedule_id} -> {video_quality}")
         return jsonify({'success': True, 'message': 'Video Quality updated.'})
 
     except Exception as e:
@@ -11177,6 +11602,45 @@ def update_video_quality():
     finally:
         if cursor: cursor.close()
         if connection: connection.close()
+
+# 🎯 NEW: Function to initialize session timing
+def initialize_session_timing(schedule_id):
+    """Initialize session timing when session starts"""
+    global session_start_time, session_total_duration_seconds, session_threshold_seconds
+    
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get session settings
+        cursor.execute("""
+            SELECT total_duration_minutes, late_threshold_minutes,
+                   session_duration_seconds_total, threshold_seconds_total
+            FROM attendance_sessions 
+            WHERE session_id = %s AND status = 'active'
+        """, (schedule_id,))
+        
+        session_data = cursor.fetchone()
+        
+        if session_data:
+            # Use seconds if available, otherwise convert minutes
+            if session_data.get('session_duration_seconds_total'):
+                session_total_duration_seconds = session_data['session_duration_seconds_total']
+                session_threshold_seconds = session_data['threshold_seconds_total']
+            else:
+                session_total_duration_seconds = session_data['total_duration_minutes'] * 60
+                session_threshold_seconds = session_data['late_threshold_minutes'] * 60
+            
+            # Set session start time
+            session_start_time = datetime.now()
+            
+            logger.info(f"🎯 SESSION TIMING INITIALIZED: Start={session_start_time}, Duration={session_total_duration_seconds}s, Threshold={session_threshold_seconds}s")
+        
+        cursor.close()
+        connection.close()
+        
+    except Exception as e:
+        logger.error(f"❌ Error initializing session timing: {e}")
 
 # ------------------------------------------------------------------
 # API Route 1: FETCH ABSENT STUDENTS (FIXED)
@@ -12022,7 +12486,7 @@ def remove_unknown_face(face_id):
 
 @app.route('/api/student_left', methods=['POST'])
 def student_left():
-    """Record when a student leaves the classroom - FIXED VERSION"""
+    """Record when a student leaves the classroom - FIXED: Update status to missing but preserve original status"""
     try:
         data = request.get_json()
         student_id = data.get('student_id')
@@ -12039,7 +12503,7 @@ def student_left():
         student = cursor.fetchone()
         student_name = f"{student['first_name']} {student['last_name']}" if student else f"Student {student_id}"
         
-        # Check if there's an active missing period
+        # 🎯 CRITICAL FIX: Check if there's an active missing period
         cursor.execute("""
             SELECT id FROM missing_periods 
             WHERE student_id = %s AND session_id = %s AND returned = FALSE
@@ -12048,15 +12512,28 @@ def student_left():
         existing_missing = cursor.fetchone()
         
         if existing_missing:
+            logger.info(f"⏭️ Student {student_name} already marked as missing")
+            cursor.close()
+            conn.close()
             return jsonify({'success': False, 'message': 'Student already marked as missing'}), 400
         
-        # Start new missing period
+        # 🎯 FIXED: Get the CURRENT status before updating to missing
         cursor.execute("""
-            INSERT INTO missing_periods (student_id, session_id, missing_start, returned)
-            VALUES (%s, %s, NOW(), FALSE)
+            SELECT status FROM attendance 
+            WHERE student_id = %s AND session_id = %s
+            ORDER BY timestamp DESC LIMIT 1
         """, (student_id, session_id))
         
-        # 🆕 FIX: SIMPLIFIED UPDATE - Update ANY record for this student in this session
+        current_attendance = cursor.fetchone()
+        original_status = current_attendance['status'] if current_attendance else None
+        
+        # 🎯 FIXED: Start new missing period AND record original status
+        cursor.execute("""
+            INSERT INTO missing_periods (student_id, session_id, missing_start, returned, original_status)
+            VALUES (%s, %s, NOW(), FALSE, %s)
+        """, (student_id, session_id, original_status))
+        
+        # 🎯 FIXED: Update attendance status to 'missing'
         cursor.execute("""
             UPDATE attendance 
             SET status = 'missing', timestamp = NOW()
@@ -12074,27 +12551,32 @@ def student_left():
         cursor.close()
         conn.close()
         
-        logger.info(f"📤 Student left: {student_name} ({student_id}) - missing_periods CREATED")
+        logger.info(f"📤 STUDENT LEFT: {student_name} ({student_id}) - Status changed to MISSING (was {original_status})")
         
         return jsonify({
             'success': True, 
-            'message': f'{student_name} marked as missing'
+            'message': f'{student_name} marked as missing (was {original_status})'
         })
         
     except Exception as e:
-        logger.error(f"Error in student_left: {e}")
+        logger.error(f"❌ Error in student_left: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
     
 @app.route('/api/student_returned', methods=['POST'])
 def student_returned():
-    """Record when a student returns to the classroom - FIXED VERSION"""
+    """Record when a student returns - FIXED: Use original_status to restore correct status"""
     try:
         data = request.get_json()
         student_id = data.get('student_id')
-        session_id = data.get('session_id')
+        session_id = data.get('session_id', current_session_id)
         
-        if not student_id or not session_id:
-            return jsonify({'success': False, 'message': 'Missing student_id or session_id'}), 400
+        logger.info(f"↩️ STUDENT_RETURNED CALLED: student_id={student_id}, session_id={session_id}")
+        
+        if not student_id:
+            return jsonify({'success': False, 'message': 'Missing student_id'}), 400
+        
+        if not session_id:
+            return jsonify({'success': False, 'message': 'Missing session_id and no current session'}), 400
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -12104,9 +12586,9 @@ def student_returned():
         student = cursor.fetchone()
         student_name = f"{student['first_name']} {student['last_name']}" if student else f"Student {student_id}"
         
-        # Find the MOST RECENT active missing period for this student
+        # 🎯 FIXED: Get the missing period WITH original_status
         cursor.execute("""
-            SELECT id, missing_start FROM missing_periods 
+            SELECT id, missing_start, original_status FROM missing_periods 
             WHERE student_id = %s AND session_id = %s AND returned = FALSE
             ORDER BY missing_start DESC LIMIT 1
         """, (student_id, session_id))
@@ -12123,30 +12605,26 @@ def student_returned():
         missing_start = missing_period['missing_start']
         missing_end = datetime.now()
         duration_seconds = int((missing_end - missing_start).total_seconds())
+        original_status = missing_period['original_status']
         
-        # 🆕 FIX: Update the missing period with end time and duration
+        # 🎯 FIXED: Update missing_periods table
         cursor.execute("""
             UPDATE missing_periods 
             SET missing_end = %s, duration_seconds = %s, returned = TRUE
             WHERE id = %s
         """, (missing_end, duration_seconds, missing_period['id']))
         
-        # 🆕 FIX: SIMPLIFIED UPDATE - Update ANY record for this student in this session
-        cursor.execute("""
-            UPDATE attendance 
-            SET status = 'present', timestamp = %s
-            WHERE student_id = %s AND session_id = %s
-        """, (missing_end, student_id, session_id))
-        
-        # If no record was updated, create a new one
-        if cursor.rowcount == 0:
+        # 🎯 FIXED: RESTORE ORIGINAL STATUS in attendance table
+        if original_status and original_status != 'missing':
             cursor.execute("""
-                INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id)
-                VALUES (%s, %s, %s, 'student', 'present', %s)
-            """, (student_id, student_name, missing_end, session_id))
-            logger.info(f"📝 Created new attendance record for returned student: {student_name}")
+                UPDATE attendance 
+                SET status = %s, timestamp = NOW()
+                WHERE student_id = %s AND session_id = %s
+            """, (original_status, student_id, session_id))
+            
+            logger.info(f"🔄 RESTORED STATUS: {student_name} -> {original_status}")
         else:
-            logger.info(f"✅ Updated existing attendance record for returned student: {student_name}")
+            logger.warning(f"⚠️ No valid original_status found for {student_name}")
         
         conn.commit()
         cursor.close()
@@ -12158,17 +12636,18 @@ def student_returned():
         seconds = duration_seconds % 60
         duration_display = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
-        logger.info(f"📥 Student returned: {student_name} after {duration_display} - missing_periods UPDATED")
+        logger.info(f"✅ SUCCESS: {student_name} returned after {duration_display} - Status: {original_status}")
         
         return jsonify({
             'success': True, 
-            'message': f'{student_name} returned after {duration_display}',
+            'message': f'{student_name} returned after {duration_display} - Status: {original_status}',
             'duration_seconds': duration_seconds,
-            'duration_display': duration_display
+            'duration_display': duration_display,
+            'restored_status': original_status
         })
         
     except Exception as e:
-        logger.error(f"Error in student_returned: {e}")
+        logger.error(f"❌ ERROR in student_returned: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/get_missing_students')
@@ -12307,19 +12786,30 @@ if __name__ == "__main__":
     attendance_save_thread.start()
     
     try:
-        # SIMPLIFIED SERVER START - HTTP ONLY
-        logger.info("🚀 Starting Flask server on http://localhost:5000")
-        logger.info("📱 Access the system at: http://localhost:5000")
+        # 🎯 FIXED SSL CONFIGURATION
+        ssl_context = None
+        cert_file = 'cert.pem'
+        key_file = 'key.pem'
         
-        # Start with simple configuration
+        # Check if SSL certificate files exist
+        if os.path.exists(cert_file) and os.path.exists(key_file):
+            ssl_context = (cert_file, key_file)
+            logger.info("🔐 SSL certificates found - Starting HTTPS server")
+            logger.info("🚀 Starting Flask server on https://192.168.0.100:5000")
+            logger.info("📱 Access the system at: https://192.168.0.100:5000")
+        else:
+            logger.warning("⚠️ SSL certificates not found - Starting HTTP server")
+            logger.info("🚀 Starting Flask server on http://192.168.0.100:5000")
+            logger.info("📱 Access the system at: http://192.168.0.100:5000")
+        
+        # Start server with proper configuration
         app.run(
-            host="0.0.0.0",
+            host="192.168.0.100",  # 🎯 FIXED: Use your specific IP
             port=5000,
             debug=False,
             threaded=True,
-            ssl_context=('cert.pem', 'key.pem')
+            ssl_context=ssl_context  # 🎯 FIXED: Only use SSL if certificates exist
         )
-
     
     except OSError as e:
         if "10049" in str(e) or "not valid" in str(e):
@@ -12354,5 +12844,3 @@ if __name__ == "__main__":
             logger.error(f"Final attendance save failed: {e}")
         
         logger.info("Application shutdown complete")
-
-    
