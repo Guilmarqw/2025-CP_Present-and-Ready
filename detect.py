@@ -11479,6 +11479,254 @@ def adjust_session_time():
         cursor.close()
         connection.close()
 
+@app.route('/api/end_session', methods=['POST'])
+def end_session():
+    """
+    API 3: Finalizes the session, saves summary statistics INCLUDING DURATION
+    """
+    print("🎯 DEBUG: /api/end_session endpoint HIT!")
+    
+    data = request.get_json()
+    session_data = data.get('session_data')
+    unrecognized_faces = data.get('unrecognized_faces', [])
+    session_id = data.get('session_id')
+
+    print(f"🔍 DEBUG end_session called with session_id: {session_id}")
+
+    if not session_id:
+        return jsonify({'success': False, 'message': 'Missing session_id.'}), 400
+
+    try:
+        with get_db_cursor() as cursor:
+            print(f"🔍 DEBUG Database connection established")
+            
+            # 1. Get session start time AND SUBJECT INFO first
+            print(f"🔍 DEBUG Getting session start time and subject info")
+            cursor.execute("SELECT started_at, subject_code, subject_name, room FROM attendance_sessions WHERE session_id = %s", (session_id,))
+            session_result = cursor.fetchone()
+            
+            if not session_result:
+                print(f"❌ DEBUG Session not found: {session_id}")
+                print(f"❌ DEBUG Available sessions in database:")
+                # List all available sessions for debugging
+                cursor.execute("SELECT session_id, status FROM attendance_sessions ORDER BY started_at DESC LIMIT 10")
+                all_sessions = cursor.fetchall()
+                for session in all_sessions:
+                    print(f"   - {session['session_id'] if isinstance(session, dict) else session[0]} (status: {session['status'] if isinstance(session, dict) else session[1]})")
+                
+                return jsonify({
+                    'success': False, 
+                    'message': f'Session not found: {session_id}',
+                    'available_sessions': [s['session_id'] if isinstance(s, dict) else s[0] for s in all_sessions]
+                }), 404
+            
+            started_at = session_result['started_at'] if isinstance(session_result, dict) else session_result[0]
+            subject_code = session_result['subject_code'] if isinstance(session_result, dict) else session_result[1]
+            subject_name = session_result['subject_name'] if isinstance(session_result, dict) else session_result[2]
+            room = session_result['room'] if isinstance(session_result, dict) else session_result[3]
+            
+            print(f"🔍 DEBUG Session started at: {started_at}")
+            print(f"🔍 DEBUG Subject info - Code: {subject_code}, Name: {subject_name}, Room: {room}")
+            
+            # 2. Calculate duration as TIME format (HH:MM:SS)
+            from datetime import datetime, timedelta
+            ended_at = datetime.now()
+            duration_timedelta = ended_at - started_at
+            
+            # Convert to hours, minutes, seconds
+            total_seconds = int(duration_timedelta.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+            
+            # Format as TIME string (HH:MM:SS)
+            duration_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            
+            print(f"🔍 DEBUG Calculated duration: {duration_time} (HH:MM:SS)")
+            
+            # 3. Finalize Unrecognized Faces
+            print(f"🔍 DEBUG Processing {len(unrecognized_faces)} unrecognized faces")
+            for face in unrecognized_faces:
+                face_status = face.get('status', 'skipped')
+                unrecognized_id = face.get('unrecognized_face_id') 
+
+                if unrecognized_id:
+                    try:
+                        unrecognized_sql = """
+                            UPDATE unrecognized_faces
+                            SET final_status = %s, notes = %s
+                            WHERE id = %s AND session_id = %s;
+                        """
+                        notes = face.get('notes', f'Final status set to {face_status} during session end.')
+                        cursor.execute(unrecognized_sql, (face_status, notes, unrecognized_id, session_id))
+                        print(f"🔍 DEBUG Updated unrecognized face: {unrecognized_id}")
+                    except Exception as e:
+                        print(f"⚠️ WARNING: Could not update unrecognized face {unrecognized_id}: {e}")
+                        continue
+
+            # 4. Get section_id for this session
+            print(f"🔍 DEBUG Getting section_id for session: {session_id}")
+            cursor.execute("SELECT section_id FROM attendance_sessions WHERE session_id = %s", (session_id,))
+            session_result = cursor.fetchone()
+            
+            section_id = session_result['section_id'] if isinstance(session_result, dict) else session_result[0]
+            print(f"🔍 DEBUG Found section_id: {section_id}")
+
+            # 5. Get total enrolled students in this section
+            print(f"🔍 DEBUG Getting total enrolled students for section: {section_id}")
+            cursor.execute("SELECT COUNT(*) as count FROM students WHERE section_id = %s", (section_id,))
+            total_enrolled_result = cursor.fetchone()
+            total_enrolled = total_enrolled_result['count'] if isinstance(total_enrolled_result, dict) else total_enrolled_result[0]
+            print(f"🔍 DEBUG Total enrolled students: {total_enrolled}")
+
+            # 6. Get actual attendance counts from attendance table
+            print(f"🔍 DEBUG Getting attendance counts for session: {session_id}")
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_attended,
+                    SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count,
+                    SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_count,
+                    SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_count
+                FROM attendance 
+                WHERE session_id = %s AND person_type = 'student'
+            """, (session_id,))
+            attendance_stats = cursor.fetchone()
+            
+            # Handle dictionary cursor and NULL values
+            if attendance_stats:
+                if isinstance(attendance_stats, dict):
+                    present_count = attendance_stats['present_count'] or 0
+                    late_count = attendance_stats['late_count'] or 0
+                    excused_count = attendance_stats['excused_count'] or 0
+                    total_attended = attendance_stats['total_attended'] or 0
+                else:
+                    present_count = attendance_stats[1] or 0
+                    late_count = attendance_stats[2] or 0
+                    excused_count = attendance_stats[3] or 0
+                    total_attended = attendance_stats[0] or 0
+            else:
+                present_count = late_count = excused_count = total_attended = 0
+
+            print(f"🔍 DEBUG Current attendance - Present: {present_count}, Late: {late_count}, Excused: {excused_count}, Total Attended: {total_attended}")
+
+            # 7. Calculate absent count
+            absent_count = max(0, total_enrolled - present_count - late_count - excused_count)
+            print(f"🔍 DEBUG Calculated absent count: {absent_count}")
+
+            # 8. MARK ABSENT STUDENTS WITH SUBJECT INFORMATION
+            if absent_count > 0:
+                print(f"🔍 DEBUG Marking {absent_count} students as absent")
+                try:
+                    # Get students who are NOT in attendance table for this session
+                    cursor.execute("""
+                        SELECT s.student_id, s.first_name, s.last_name 
+                        FROM students s 
+                        WHERE s.section_id = %s 
+                        AND s.student_id NOT IN (
+                            SELECT student_id FROM attendance WHERE session_id = %s
+                        )
+                    """, (section_id, session_id))
+                    absent_students = cursor.fetchall()
+                    
+                    print(f"🔍 DEBUG Found {len(absent_students)} students to mark as absent")
+                    
+                    # Insert absent records for each missing student WITH SUBJECT INFORMATION
+                    for student in absent_students:
+                        student_id = student['student_id'] if isinstance(student, dict) else student[0]
+                        first_name = student['first_name'] if isinstance(student, dict) else student[1]
+                        last_name = student['last_name'] if isinstance(student, dict) else student[2]
+                        
+                        cursor.execute("""
+                            INSERT INTO attendance 
+                            (student_id, person_type, name, timestamp, status, session_id, section_id, subject_code, subject_name, room)
+                            VALUES (%s, 'student', %s, NOW(), 'absent', %s, %s, %s, %s, %s)
+                        """, (student_id, f"{first_name} {last_name}", session_id, section_id, subject_code, subject_name, room))
+                    
+                    print(f"🔍 DEBUG Successfully inserted {len(absent_students)} absent records with subject info")
+                    
+                except Exception as e:
+                    print(f"❌ ERROR inserting absent records: {e}")
+                    return jsonify({
+                        'success': False,
+                        'message': f'Failed to insert absent records: {str(e)}'
+                    }), 500
+
+            # 9. Get FINAL counts after inserting absent records
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_attended,
+                    SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count,
+                    SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_count,
+                    SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_count,
+                    SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_count
+                FROM attendance 
+                WHERE session_id = %s AND person_type = 'student'
+            """, (session_id,))
+            final_stats = cursor.fetchone()
+            
+            if final_stats:
+                if isinstance(final_stats, dict):
+                    final_present = final_stats['present_count'] or 0
+                    final_late = final_stats['late_count'] or 0
+                    final_absent = final_stats['absent_count'] or 0
+                    final_excused = final_stats['excused_count'] or 0
+                else:
+                    final_present = final_stats[1] or 0
+                    final_late = final_stats[2] or 0
+                    final_absent = final_stats[3] or 0
+                    final_excused = final_stats[4] or 0
+            else:
+                final_present = final_late = final_absent = final_excused = 0
+
+            print(f"🔍 DEBUG Final counts - Present: {final_present}, Late: {final_late}, Absent: {final_absent}, Excused: {final_excused}")
+
+            # 10. Update attendance_sessions with FINAL data INCLUDING DURATION
+            print(f"🔍 DEBUG Updating attendance_sessions table with duration")
+            summary_sql = """
+                UPDATE attendance_sessions
+                SET ended_at = NOW(), status = 'completed',
+                    total_students = %s, present_count = %s, absent_count = %s, 
+                    late_count = %s, excused_count = %s, duration_time = %s
+                WHERE session_id = %s;
+            """
+            cursor.execute(summary_sql, (
+                total_enrolled,
+                final_present,
+                final_absent,
+                final_late,
+                final_excused,
+                duration_time,  # STORE AS TIME FORMAT
+                session_id
+            ))
+            print(f"🔍 DEBUG Updated attendance_sessions successfully with duration: {duration_time}")
+
+        print(f"✅ DEBUG Session ended successfully")
+        return jsonify({
+            'success': True, 
+            'message': 'Session ended successfully.',
+            'stats': {
+                'total': total_enrolled,
+                'present': final_present,
+                'absent': final_absent,
+                'late': final_late,
+                'excused': final_excused,
+                'duration': duration_time  # RETURN DURATION
+            }
+        }), 200
+
+    except Exception as e:
+        print(f"\n❌ ERROR in /api/end_session:")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        import traceback
+        print(f"Full traceback:")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': 'Internal Server Error',
+            'message': f'A server error occurred: {str(e)}'
+        }), 500
+
 # MODIFIED: New endpoint to GET both live and static settings
 @app.route('/api/get_session_settings', methods=['GET'])
 def get_session_settings():
@@ -11804,241 +12052,6 @@ def enroll_unknown_face():
 # ------------------------------------------------------------------
 # API Route 3: END SESSION
 # ------------------------------------------------------------------
-
-@app.route('/api/end_session', methods=['POST'])
-def end_session():
-    """
-    API 3: Finalizes the session, saves summary statistics INCLUDING DURATION
-    """
-    data = request.get_json()
-    session_data = data.get('session_data')
-    unrecognized_faces = data.get('unrecognized_faces', [])
-    session_id = data.get('session_id')
-
-    print(f"🔍 DEBUG end_session called with session_id: {session_id}")
-
-    if not session_id:
-        return jsonify({'success': False, 'message': 'Missing session_id.'}), 400
-
-    try:
-        with get_db_cursor() as cursor:
-            print(f"🔍 DEBUG Database connection established")
-            
-            # 1. Get session start time AND SUBJECT INFO first
-            print(f"🔍 DEBUG Getting session start time and subject info")
-            cursor.execute("SELECT started_at, subject_code, subject_name, room FROM attendance_sessions WHERE session_id = %s", (session_id,))
-            session_result = cursor.fetchone()
-            
-            if not session_result:
-                print(f"❌ DEBUG Session not found: {session_id}")
-                return jsonify({'success': False, 'message': 'Session not found'}), 404
-            
-            started_at = session_result['started_at'] if isinstance(session_result, dict) else session_result[0]
-            subject_code = session_result['subject_code'] if isinstance(session_result, dict) else session_result[1]
-            subject_name = session_result['subject_name'] if isinstance(session_result, dict) else session_result[2]
-            room = session_result['room'] if isinstance(session_result, dict) else session_result[3]
-            
-            print(f"🔍 DEBUG Session started at: {started_at}")
-            print(f"🔍 DEBUG Subject info - Code: {subject_code}, Name: {subject_name}, Room: {room}")
-            
-            # 2. Calculate duration as TIME format (HH:MM:SS)
-            from datetime import datetime, timedelta
-            ended_at = datetime.now()
-            duration_timedelta = ended_at - started_at
-            
-            # Convert to hours, minutes, seconds
-            total_seconds = int(duration_timedelta.total_seconds())
-            hours = total_seconds // 3600
-            minutes = (total_seconds % 3600) // 60
-            seconds = total_seconds % 60
-            
-            # Format as TIME string (HH:MM:SS)
-            duration_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            
-            print(f"🔍 DEBUG Calculated duration: {duration_time} (HH:MM:SS)")
-            
-            # 3. Finalize Unrecognized Faces
-            print(f"🔍 DEBUG Processing {len(unrecognized_faces)} unrecognized faces")
-            for face in unrecognized_faces:
-                face_status = face.get('status', 'skipped')
-                unrecognized_id = face.get('unrecognized_face_id') 
-
-                if unrecognized_id:
-                    try:
-                        unrecognized_sql = """
-                            UPDATE unrecognized_faces
-                            SET final_status = %s, notes = %s
-                            WHERE id = %s AND session_id = %s;
-                        """
-                        notes = face.get('notes', f'Final status set to {face_status} during session end.')
-                        cursor.execute(unrecognized_sql, (face_status, notes, unrecognized_id, session_id))
-                        print(f"🔍 DEBUG Updated unrecognized face: {unrecognized_id}")
-                    except Exception as e:
-                        print(f"⚠️ WARNING: Could not update unrecognized face {unrecognized_id}: {e}")
-                        continue
-
-            # 4. Get section_id for this session
-            print(f"🔍 DEBUG Getting section_id for session: {session_id}")
-            cursor.execute("SELECT section_id FROM attendance_sessions WHERE session_id = %s", (session_id,))
-            session_result = cursor.fetchone()
-            
-            section_id = session_result['section_id'] if isinstance(session_result, dict) else session_result[0]
-            print(f"🔍 DEBUG Found section_id: {section_id}")
-
-            # 5. Get total enrolled students in this section
-            print(f"🔍 DEBUG Getting total enrolled students for section: {section_id}")
-            cursor.execute("SELECT COUNT(*) as count FROM students WHERE section_id = %s", (section_id,))
-            total_enrolled_result = cursor.fetchone()
-            total_enrolled = total_enrolled_result['count'] if isinstance(total_enrolled_result, dict) else total_enrolled_result[0]
-            print(f"🔍 DEBUG Total enrolled students: {total_enrolled}")
-
-            # 6. Get actual attendance counts from attendance table
-            print(f"🔍 DEBUG Getting attendance counts for session: {session_id}")
-            cursor.execute("""
-                SELECT 
-                    COUNT(*) as total_attended,
-                    SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count,
-                    SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_count,
-                    SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_count
-                FROM attendance 
-                WHERE session_id = %s AND person_type = 'student'
-            """, (session_id,))
-            attendance_stats = cursor.fetchone()
-            
-            # Handle dictionary cursor and NULL values
-            if attendance_stats:
-                if isinstance(attendance_stats, dict):
-                    present_count = attendance_stats['present_count'] or 0
-                    late_count = attendance_stats['late_count'] or 0
-                    excused_count = attendance_stats['excused_count'] or 0
-                    total_attended = attendance_stats['total_attended'] or 0
-                else:
-                    present_count = attendance_stats[1] or 0
-                    late_count = attendance_stats[2] or 0
-                    excused_count = attendance_stats[3] or 0
-                    total_attended = attendance_stats[0] or 0
-            else:
-                present_count = late_count = excused_count = total_attended = 0
-
-            print(f"🔍 DEBUG Current attendance - Present: {present_count}, Late: {late_count}, Excused: {excused_count}, Total Attended: {total_attended}")
-
-            # 7. Calculate absent count
-            absent_count = max(0, total_enrolled - present_count - late_count - excused_count)
-            print(f"🔍 DEBUG Calculated absent count: {absent_count}")
-
-            # 8. MARK ABSENT STUDENTS WITH SUBJECT INFORMATION
-            if absent_count > 0:
-                print(f"🔍 DEBUG Marking {absent_count} students as absent")
-                try:
-                    # Get students who are NOT in attendance table for this session
-                    cursor.execute("""
-                        SELECT s.student_id, s.first_name, s.last_name 
-                        FROM students s 
-                        WHERE s.section_id = %s 
-                        AND s.student_id NOT IN (
-                            SELECT student_id FROM attendance WHERE session_id = %s
-                        )
-                    """, (section_id, session_id))
-                    absent_students = cursor.fetchall()
-                    
-                    print(f"🔍 DEBUG Found {len(absent_students)} students to mark as absent")
-                    
-                    # Insert absent records for each missing student WITH SUBJECT INFORMATION
-                    for student in absent_students:
-                        student_id = student['student_id'] if isinstance(student, dict) else student[0]
-                        first_name = student['first_name'] if isinstance(student, dict) else student[1]
-                        last_name = student['last_name'] if isinstance(student, dict) else student[2]
-                        
-                        cursor.execute("""
-                            INSERT INTO attendance 
-                            (student_id, person_type, name, timestamp, status, session_id, section_id, subject_code, subject_name, room)
-                            VALUES (%s, 'student', %s, NOW(), 'absent', %s, %s, %s, %s, %s)
-                        """, (student_id, f"{first_name} {last_name}", session_id, section_id, subject_code, subject_name, room))
-                    
-                    print(f"🔍 DEBUG Successfully inserted {len(absent_students)} absent records with subject info")
-                    
-                except Exception as e:
-                    print(f"❌ ERROR inserting absent records: {e}")
-                    return jsonify({
-                        'success': False,
-                        'message': f'Failed to insert absent records: {str(e)}'
-                    }), 500
-
-            # 9. Get FINAL counts after inserting absent records
-            cursor.execute("""
-                SELECT 
-                    COUNT(*) as total_attended,
-                    SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count,
-                    SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_count,
-                    SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_count,
-                    SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_count
-                FROM attendance 
-                WHERE session_id = %s AND person_type = 'student'
-            """, (session_id,))
-            final_stats = cursor.fetchone()
-            
-            if final_stats:
-                if isinstance(final_stats, dict):
-                    final_present = final_stats['present_count'] or 0
-                    final_late = final_stats['late_count'] or 0
-                    final_absent = final_stats['absent_count'] or 0
-                    final_excused = final_stats['excused_count'] or 0
-                else:
-                    final_present = final_stats[1] or 0
-                    final_late = final_stats[2] or 0
-                    final_absent = final_stats[3] or 0
-                    final_excused = final_stats[4] or 0
-            else:
-                final_present = final_late = final_absent = final_excused = 0
-
-            print(f"🔍 DEBUG Final counts - Present: {final_present}, Late: {final_late}, Absent: {final_absent}, Excused: {final_excused}")
-
-            # 10. Update attendance_sessions with FINAL data INCLUDING DURATION
-            print(f"🔍 DEBUG Updating attendance_sessions table with duration")
-            summary_sql = """
-                UPDATE attendance_sessions
-                SET ended_at = NOW(), status = 'completed',
-                    total_students = %s, present_count = %s, absent_count = %s, 
-                    late_count = %s, excused_count = %s, duration_time = %s
-                WHERE session_id = %s;
-            """
-            cursor.execute(summary_sql, (
-                total_enrolled,
-                final_present,
-                final_absent,
-                final_late,
-                final_excused,
-                duration_time,  # STORE AS TIME FORMAT
-                session_id
-            ))
-            print(f"🔍 DEBUG Updated attendance_sessions successfully with duration: {duration_time}")
-
-        print(f"✅ DEBUG Session ended successfully")
-        return jsonify({
-            'success': True, 
-            'message': 'Session ended successfully.',
-            'stats': {
-                'total': total_enrolled,
-                'present': final_present,
-                'absent': final_absent,
-                'late': final_late,
-                'excused': final_excused,
-                'duration': duration_time  # RETURN DURATION
-            }
-        }), 200
-
-    except Exception as e:
-        print(f"\n❌ ERROR in /api/end_session:")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Error message: {str(e)}")
-        import traceback
-        print(f"Full traceback:")
-        traceback.print_exc()
-        return jsonify({
-            'success': False,
-            'error': 'Internal Server Error',
-            'message': f'A server error occurred: {str(e)}'
-        }), 500
 
 @app.route('/api/debug_session', methods=['GET'])
 def debug_session():

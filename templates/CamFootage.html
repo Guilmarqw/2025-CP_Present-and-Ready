@@ -1540,7 +1540,6 @@ function calculateStatisticsFromStudentList() {
     }
 }
 
-    // Update confirmEndSession to ensure detection stays stopped
 async function confirmEndSession() {
     console.log('confirmEndSession clicked');
     
@@ -1581,8 +1580,19 @@ async function confirmEndSession() {
             });
         });
 
+        // 🎯 CRITICAL FIX: Use window._sessionData.session_id instead of currentSessionId
+        const session_id = window._sessionData?.session_id;
+        
+        if (!session_id) {
+            console.error('❌ No session_id found in window._sessionData');
+            showAlertModal('error', 'Session ID not found. Cannot end session.', 'Error');
+            return;
+        }
+
+        console.log('🎯 Using session_id:', session_id);
+
         const payload = {
-            session_id: currentSessionId,
+            session_id: session_id, // 🎯 FIXED: Use the correct session_id
             session_data: {
                 duration: elapsedSeconds,
                 total_students: stats.total,
