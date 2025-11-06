@@ -110,7 +110,7 @@ current_session_id = None  # Make sure this is set
 
 # Initialize FaceAnalysis with SCRFD
 face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-face_analysis.prepare(ctx_id=0, det_size=(640, 480))  # Adjust det_size for your resolution
+face_analysis.prepare(ctx_id=0, det_size=(320, 320))  # Adjust det_size for your resolution
 
 
 # Add these global variables at the top with your other globals
@@ -135,10 +135,10 @@ current_session_students = []  # List of student IDs for current class
 
 # ✅ OPTIMIZED: Confirmation parameters for fast & accurate recognition
 CONFIRMATION_FRAMES_REQUIRED = 2  # 2 consecutive frames = ~0.067 seconds
-CONFIRMATION_SIMILARITY_THRESHOLD = 0.60  # Balanced threshold (not too strict, not too loose)
-BODY_MATCH_IOU_THRESHOLD = 0.05  # Low threshold for better body matching
-FACE_TO_BODY_VERTICAL_RATIO = 0.6  # Face should be in upper 60% of body
-REID_DISTANCE_THRESHOLD = 0.35  # Strict ReID for overlap prevention
+CONFIRMATION_SIMILARITY_THRESHOLD = 0.50  # Balanced threshold (not too strict, not too loose)
+BODY_MATCH_IOU_THRESHOLD = 0.03  # Low threshold for better body matching
+FACE_TO_BODY_VERTICAL_RATIO = 0.7  # Face should be in upper 60% of body
+REID_DISTANCE_THRESHOLD = 0.4  # Strict ReID for overlap prevention
 DETECT_EVERY = 1
 
 current_rtsp_url = None
@@ -177,7 +177,7 @@ MAX_RECOGNITION_DISTANCE = 10
 FACE_SIZE_FOR_DISTANCE = 90
 
 # ✅ OPTIMIZED: Locking configuration
-LOCK_TIMEOUT_FRAMES = 90  # 3 seconds at 30 FPS (was 60)
+LOCK_TIMEOUT_FRAMES = 120  # 3 seconds at 30 FPS (was 60)
 LOCK_MISS_THRESHOLD = 15  # 0.5 seconds before removing lock (faster cleanup)
 PENDING_CONFIRMATION_TIMEOUT = 10  # Frames before cleaning up stale confirmations
 ACTIVE_PENDING_WINDOW = 5  # Only draw confirmations seen in last 5 frames
@@ -223,6 +223,161 @@ session_config = {
     'total_duration_minutes': 180,      # int
     'class_details': {}                 # arbitrary dict
 }
+
+# =========================
+# Load YOLOv8-Face (Single initialization)
+# =========================
+if not os.path.exists(WEIGHTS_PATH):
+    raise FileNotFoundError(f"'{WEIGHTS_PATH}' not found. Download yolov8n-face.pt and place it next to this script.")
+
+# Define device once
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Initialize face detector
+yolo = YOLO(WEIGHTS_PATH)
+yolo.to(DEVICE)
+logger.info(f"Using device: {DEVICE}  |  Model: {WEIGHTS_PATH}")
+
+# Initialize body detector for person tracking (Single initialization with error handling)
+try:
+    body_detector = YOLO('yolov8n.pt')  # Standard YOLO for person detection
+    body_detector.to(DEVICE)
+    logger.info(f"✅ Body detector (YOLOv8n) loaded successfully on {DEVICE}")
+except Exception as e:
+    logger.error(f"❌ Failed to load body detector: {e}")
+    logger.info("Downloading yolov8n.pt model...")
+    body_detector = YOLO('yolov8n.pt')  # This will auto-download
+    body_detector.to(DEVICE)
+
+# Initialize ByteTrack
+byte_tracker = ByteTrack(
+    track_activation_threshold=0.25,
+    lost_track_buffer=30,
+    minimum_matching_threshold=0.8,
+    frame_rate=30
+)
+logger.info("✅ ByteTrack initialized for body tracking")
+
+# =========================
+# TorchReID OSNet Model - WORKING VERSION
+# =========================
+try:
+    reid_model = torchreid.models.build_model(
+        name='osnet_x1_0',
+        num_classes=1000,
+        use_gpu=torch.cuda.is_available()
+    )
+
+    # Use the exact path to the cached file
+    cache_path = os.path.expanduser("~/.cache/torch/checkpoints/osnet_x1_0_imagenet.pth")
+    
+    if os.path.exists(cache_path):
+        torchreid.utils.load_pretrained_weights(reid_model, cache_path)
+        logger.info(f"✅ TorchReID model loaded from cache: {cache_path}")
+    else:
+        logger.error("ReID model cache file not found")
+        reid_model = None
+        raise FileNotFoundError("ReID model cache file not found")
+    
+    reid_model.eval()
+    if torch.cuda.is_available():
+        reid_model = reid_model.cuda()
+    logger.info(f"✅ TorchReID model loaded successfully on {DEVICE}")
+    
+except Exception as e:
+    logger.error(f"Failed to load reid: {e}")
+    reid_model = None
+
+# =========================
+# Load InsightFace model - FIXED CUDA INITIALIZATION
+# =========================
+try:
+    available_providers = ort.get_available_providers()
+    logger.info(f"Available ONNX Runtime providers: {available_providers}")
+
+    # ✅ SIMPLIFIED CUDA SETUP - Remove problematic options
+    providers = []
+    
+    # Check if CUDA is available
+    if 'CUDAExecutionProvider' in available_providers:
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        # 🎯 SIMPLIFIED: Remove problematic 'memory_pattern' option
+        provider_options = [
+            {
+                'device_id': 0,
+                'arena_extend_strategy': 'kNextPowerOfTwo',
+                'cudnn_conv_algo_search': 'HEURISTIC',
+                'do_copy_in_default_stream': True,
+            },
+            {}
+        ]
+        ctx_id = 0
+        logger.info("✅ Using CUDA + CPU providers")
+    else:
+        # Fallback to CPU only
+        providers = ['CPUExecutionProvider']
+        provider_options = [{}]
+        ctx_id = -1
+        logger.info("⚠️ CUDA not available, using CPU only")
+
+    # Initialize FaceAnalysis
+    face_analysis = insightface.app.FaceAnalysis(
+        name=INSIGHTFACE_MODEL,
+        providers=providers,
+        provider_options=provider_options
+    )
+
+    # Prepare with optimized settings
+    face_analysis.prepare(
+        ctx_id=ctx_id,
+        det_size=(320, 320),  # Lower resolution = less GPU memory usage
+        det_thresh=0.6
+    )
+
+    logger.info(f"🎯 InsightFace model '{INSIGHTFACE_MODEL}' loaded successfully")
+
+    # Test the model to verify it works
+    try:
+        # Create a small test image to verify detection works
+        test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        test_faces = face_analysis.get(test_img)
+        logger.info("✅ InsightFace model test passed - detection method is available")
+    except Exception as test_error:
+        logger.error(f"❌ InsightFace model test failed: {test_error}")
+        raise ValueError("FaceAnalysis detect method not working properly")
+
+except Exception as e:
+    logger.error(f"❌ Failed to load InsightFace model: {e}")
+    
+    # More robust fallback with multiple attempts
+    fallback_success = False
+    fallback_models = ['buffalo_l', 'antelopev2', 'buffalo_s']
+    
+    for model_name in fallback_models:
+        try:
+            logger.info(f"🔄 Attempting fallback with model: {model_name}")
+            face_analysis = insightface.app.FaceAnalysis(name=model_name, providers=['CPUExecutionProvider'])
+            face_analysis.prepare(ctx_id=-1, det_size=(320, 320))
+            
+            # Test the fallback model
+            test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+            test_faces = face_analysis.get(test_img)
+            
+            logger.info(f"✅ Fallback successful with model: {model_name}")
+            fallback_success = True
+            INSIGHTFACE_MODEL = model_name  # Update the model name
+            break
+            
+        except Exception as fallback_error:
+            logger.warning(f"⚠️ Fallback with {model_name} failed: {fallback_error}")
+            continue
+    
+    if not fallback_success:
+        logger.error("❌ All initialization methods failed - InsightFace cannot be loaded")
+        face_analysis = None
+        ENABLE_RECOGNITION = False
+    else:
+        ENABLE_RECOGNITION = True
 
 # =========================
 # Utilities
@@ -765,135 +920,6 @@ def calculate_mar(landmarks, mouth_indices):
     mar = (A + B + C) / (3.0 * D)
     return mar
 
-# =========================
-# Initialize InsightFace with SCRFD-10G (FIXED)
-# =========================
-try:
-    # Method 1: Try with buffalo_l model which includes SCRFD
-    face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-    face_analysis.prepare(ctx_id=0, det_size=(640, 640))
-    logger.info("InsightFace initialized successfully with buffalo_l model")
-except Exception as e:
-    logger.error(f"Failed to initialize with buffalo_l: {e}")
-    try:
-        # Method 2: Manual download and initialization
-        logger.info("Attempting manual model initialization...")
-        from insightface.model_zoo import get_model
-        
-        # Try to use pre-downloaded model or antelopev2
-        face_analysis = FaceAnalysis(name='antelopev2', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-        face_analysis.prepare(ctx_id=0, det_size=(640, 640))
-        logger.info("InsightFace initialized successfully with antelopev2 model")
-    except Exception as e2:
-        logger.error(f"Failed to initialize InsightFace: {e2}")
-        logger.info("Please download models manually from: https://github.com/deepinsight/insightface/releases/")
-        raise
-
-
-# =========================
-# Load InsightFace model - CUDA ONLY (TensorRT Disabled)
-# =========================
-try:
-    available_providers = ort.get_available_providers()
-    logger.info(f"Available ONNX Runtime providers: {available_providers}")
-
-    # ✅ Use CUDA + CPU only (TensorRT disabled for stability and lower memory usage)
-    providers = []
-    
-    # Check if CUDA is available and add it first
-    if 'CUDAExecutionProvider' in available_providers:
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        provider_options = [
-            {
-                'device_id': 0,
-                'arena_extend_strategy': 'kNextPowerOfTwo',
-                'cudnn_conv_algo_search': 'HEURISTIC',
-                'do_copy_in_default_stream': True,
-                'cudnn_conv_use_max_workspace': True,
-                'enable_cuda_graph': False,
-            },
-            {}
-        ]
-        ctx_id = 0
-        logger.info("✅ Using CUDA + CPU providers")
-    else:
-        # Fallback to CPU only
-        providers = ['CPUExecutionProvider']
-        provider_options = [{}]
-        ctx_id = -1
-        logger.info("⚠️ CUDA not available, using CPU only")
-
-    # Initialize FaceAnalysis
-    face_analysis = insightface.app.FaceAnalysis(
-        name=INSIGHTFACE_MODEL,
-        providers=providers,
-        provider_options=provider_options
-    )
-
-    # Prepare with optimized settings
-    face_analysis.prepare(
-        ctx_id=ctx_id,
-        det_size=(320, 320),  # Lower resolution = less GPU memory usage
-        det_thresh=0.6
-    )
-
-    logger.info(f"🎯 InsightFace model '{INSIGHTFACE_MODEL}' loaded successfully")
-
-    # Test the model to verify it works
-    try:
-        # Create a small test image to verify detection works
-        test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-        test_faces = face_analysis.get(test_img)
-        logger.info("✅ InsightFace model test passed - detection method is available")
-    except Exception as test_error:
-        logger.error(f"❌ InsightFace model test failed: {test_error}")
-        raise ValueError("FaceAnalysis detect method not working properly")
-
-except Exception as e:
-    logger.error(f"❌ Failed to load InsightFace model: {e}")
-    
-    # More robust fallback with multiple attempts
-    fallback_success = False
-    fallback_models = ['buffalo_l', 'antelopev2', 'buffalo_s']
-    
-    for model_name in fallback_models:
-        try:
-            logger.info(f"🔄 Attempting fallback with model: {model_name}")
-            face_analysis = insightface.app.FaceAnalysis(name=model_name, providers=['CPUExecutionProvider'])
-            face_analysis.prepare(ctx_id=-1, det_size=(320, 320))
-            
-            # Test the fallback model
-            test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
-            test_faces = face_analysis.get(test_img)
-            
-            logger.info(f"✅ Fallback successful with model: {model_name}")
-            fallback_success = True
-            INSIGHTFACE_MODEL = model_name  # Update the model name
-            break
-            
-        except Exception as fallback_error:
-            logger.warning(f"⚠️ Fallback with {model_name} failed: {fallback_error}")
-            continue
-    
-    if not fallback_success:
-        logger.error("❌ All initialization methods failed - InsightFace cannot be loaded")
-        face_analysis = None
-        ENABLE_RECOGNITION = False
-    else:
-        ENABLE_RECOGNITION = True
-
-# Clear leftover GPU cache
-if torch.cuda.is_available():
-    torch.cuda.empty_cache()
-logger.info("Memory cache cleared after model initialization")
-
-# Final verification
-if face_analysis is not None:
-    logger.info(f"✅ InsightFace initialization completed successfully with model: {INSIGHTFACE_MODEL}")
-else:
-    logger.error("❌ InsightFace initialization failed - face recognition disabled")
-    ENABLE_RECOGNITION = False
-
 
 # =========================
 # Load known faces from database
@@ -1001,80 +1027,6 @@ load_known_faces_from_db()
 load_known_faculties_from_db()
 finalize_known_faces() # <- NEW: Call the finalizer after loading all faces
 
-# =========================
-# Load YOLOv8-Face
-# =========================
-
-# Initialize body detector for person tracking
-if not os.path.exists(WEIGHTS_PATH):
-    raise FileNotFoundError(f"'{WEIGHTS_PATH}' not found. Download yolov8n-face.pt and place it next to this script.")
-
-yolo = YOLO(WEIGHTS_PATH)
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # <-- DEVICE is defined here
-yolo.to(DEVICE)
-logger.info(f"Using device: {DEVICE}  |  Model: {WEIGHTS_PATH}")
-
-try:
-    body_detector = YOLO('yolov8n.pt')  # Standard YOLO for person detection
-    body_detector.to(DEVICE)
-    logger.info(f"✅ Body detector (YOLOv8n) loaded successfully on {DEVICE}")
-except Exception as e:
-    logger.error(f"❌ Failed to load body detector: {e}")
-    logger.info("Downloading yolov8n.pt model...")
-    body_detector = YOLO('yolov8n.pt')
-    body_detector.to(DEVICE)
-
-# Initialize ByteTrack
-byte_tracker = ByteTrack(
-    track_activation_threshold=0.25,
-    lost_track_buffer=30,
-    minimum_matching_threshold=0.8,
-    frame_rate=30
-)
-logger.info("✅ ByteTrack initialized for body tracking")
-
-
-body_detector = YOLO('yolov8n.pt') 
-
-
-if not os.path.exists(WEIGHTS_PATH):
-    raise FileNotFoundError(f"'{WEIGHTS_PATH}' not found. Download yolov8n-face.pt and place it next to this script.")
-
-yolo = YOLO(WEIGHTS_PATH)
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-yolo.to(DEVICE)
-logger.info(f"Using device: {DEVICE}  |  Model: {WEIGHTS_PATH}")
-
-
-# =========================
-# TorchReID OSNet Model - WORKING VERSION
-# =========================
-try:
-    reid_model = torchreid.models.build_model(
-        name='osnet_x1_0',
-        num_classes=1000,
-        use_gpu=torch.cuda.is_available()
-    )
-
-    # Use the exact path to the cached file
-    cache_path = os.path.expanduser("~/.cache/torch/checkpoints/osnet_x1_0_imagenet.pth")
-    
-    if os.path.exists(cache_path):
-        torchreid.utils.load_pretrained_weights(reid_model, cache_path)
-        logger.info(f"✅ TorchReID model loaded from cache: {cache_path}")
-    else:
-        logger.error("ReID model cache file not found")
-        reid_model = None
-        raise FileNotFoundError("ReID model cache file not found")
-    
-    reid_model.eval()
-    if torch.cuda.is_available():
-        reid_model = reid_model.cuda()
-    logger.info(f"✅ TorchReID model loaded successfully on {DEVICE}")
-    
-except Exception as e:
-    logger.error(f"Failed to load reid: {e}")
-    reid_model = None
 
 # =========================
 # Laptop camera capture
@@ -1547,14 +1499,17 @@ def save_attendance_to_csv(person_id, name, timestamp, person_type):
 # =========================
 
 def detect_bodies(frame):
-    """Detect people bodies using YOLOv8"""
+    """Detect people bodies using YOLOv8 - OPTIMIZED WITH FP16"""
     if body_detector is None:
         logger.warning("Body detector not initialized")
         return []
     
     try:
-        # Run YOLO detection for person class only
-        results = body_detector(frame, classes=[0], verbose=False, conf=0.3)
+        # 🎯 ADD FP16 SUPPORT - Run YOLO detection for person class only
+        if DEVICE == "cuda":
+            results = body_detector(frame, classes=[0], verbose=False, conf=0.3, half=True)  # 🆕 half=True
+        else:
+            results = body_detector(frame, classes=[0], verbose=False, conf=0.3)
         
         detections = []
         if len(results) > 0 and results[0].boxes is not None:
@@ -1591,7 +1546,7 @@ def convert_to_supervision_format(detections):
     )
 
 
-def match_face_to_body(face_box, body_detections, iou_threshold=0.05):
+def match_face_to_body(face_box, body_detections, iou_threshold=0.1):
     """
     Match a face detection to a body detection with improved accuracy.
     Face should be in the upper portion of the body bounding box.
@@ -1628,7 +1583,7 @@ def match_face_to_body(face_box, body_detections, iou_threshold=0.05):
         expected_face_width = body_width * 0.3  # Face should be ~30% of body width
         width_ratio = min(face_width, expected_face_width) / max(face_width, expected_face_width)
         
-        if width_ratio < 0.3:  # Face size too different from expected
+        if width_ratio < 0.4:  # Face size too different from expected
             continue
         
         # Calculate position score (higher = better)
@@ -1641,7 +1596,7 @@ def match_face_to_body(face_box, body_detections, iou_threshold=0.05):
         size_score = width_ratio
         
         # Combined score (weighted average)
-        total_score = (position_score * 0.5) + (overlap_iou * 0.3) + (size_score * 0.2)
+        total_score = (position_score * 0.4) + (overlap_iou * 0.4) + (size_score * 0.2)
         
         if total_score > best_score and overlap_iou > iou_threshold:
             best_score = total_score
@@ -2482,7 +2437,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     box_width = x2 - x1
                     box_height = y2 - y1
                     
-                    if box_width >= 40 and box_height >= 40:  # Minimum face size
+                    if box_width >= 30 and box_height >= 30:  
                         
                         is_locked_face = False
                         face_center_x = (x1 + x2) // 2
@@ -2500,11 +2455,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 face_area = box_width * box_height
                                 body_area = body_width * body_height
                                 
-                                if (face_relative_y < body_height * 0.35 and
-                                    face_relative_x > body_width * 0.2 and 
-                                    face_relative_x < body_width * 0.8 and
-                                    face_area > body_area * 0.02 and
-                                    face_area < body_area * 0.15):
+                                if (face_relative_y < body_height * 0.4 and
+                                    face_relative_x > body_width * 0.15 and 
+                                    face_relative_x < body_width * 0.85 and
+                                    face_area > body_area * 0.015 and
+                                    face_area < body_area * 0.2):
                                     is_locked_face = True
                                     break
                         
@@ -2599,7 +2554,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     best_match_index = int(np.argmax(similarities))
                     best_similarity = float(similarities[best_match_index])
 
-                    if best_similarity >= 0.60:
+                    if best_similarity >= 0.55:
                         name = known_face_names[best_match_index]
                         person_id = known_face_ids[best_match_index]
                         ptype = known_face_types[best_match_index]
@@ -2904,7 +2859,7 @@ def cleanup_pending_confirmations(current_frame, timeout_frames=10):
 # ============================================
 
 def extract_reid_features(frame, body_box):
-    """Extract person re-id features from body crop"""
+    """Extract person re-id features from body crop - OPTIMIZED WITH FP16"""
     if reid_model is None:
         return None
     try:
@@ -2916,21 +2871,33 @@ def extract_reid_features(frame, body_box):
         
         body_crop_resized = cv2.resize(body_crop, (128, 256))
         body_crop_normalized = body_crop_resized.astype(np.float32) / 255.0
+        
+        # 🎯 CONVERT TO FP16 FOR GPU INFERENCE
+        if DEVICE == "cuda":
+            body_crop_normalized = body_crop_normalized.astype(np.float16)  # 🆕 FP16 conversion
+        
         body_crop_tensor = torch.from_numpy(
             np.transpose(body_crop_normalized, (2, 0, 1))
         ).unsqueeze(0)
         
         if torch.cuda.is_available():
             body_crop_tensor = body_crop_tensor.cuda()
+            # 🎯 ENSURE TENSOR MATCHES MODEL PRECISION
+            if next(reid_model.parameters()).dtype == torch.float16:
+                body_crop_tensor = body_crop_tensor.half()  # 🆕 Match model precision
         
         with torch.no_grad():
             reid_features = reid_model(body_crop_tensor)
+        
+        # 🎯 CONVERT BACK TO FP32 FOR CONSISTENT PROCESSING
+        if reid_features.dtype == torch.float16:
+            reid_features = reid_features.float()  # 🆕 Convert back to FP32 for numpy
         
         return reid_features.cpu().numpy()[0]
     except Exception as e:
         logger.debug(f"Reid extraction error: {e}")
         return None
-
+    
 def calculate_box_distance(box1, box2):
     """
     Calculate center-to-center distance between two bounding boxes
@@ -2953,8 +2920,9 @@ def calculate_reid_distance(feat1, feat2):
     if feat1 is None or feat2 is None:
         return 1.0
     
-    feat1 = feat1.flatten()
-    feat2 = feat2.flatten()
+    # 🎯 ENSURE FP32 FOR ACCURATE MATH OPERATIONS
+    feat1 = feat1.flatten().astype(np.float32)  # 🆕 Ensure FP32
+    feat2 = feat2.flatten().astype(np.float32)  # 🆕 Ensure FP32
     
     dot_product = np.dot(feat1, feat2)
     norm1 = np.linalg.norm(feat1)
@@ -2967,7 +2935,13 @@ def calculate_reid_distance(feat1, feat2):
     cosine_distance = 1.0 - cosine_sim
     
     return cosine_distance
-    
+
+def optimize_memory():
+    """Optimize GPU memory usage - CALL THIS PERIODICALLY"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        logger.debug("🧹 GPU memory optimized")
 
 # Add the custom JSON encoder here
 class CustomJSONEncoder(json.JSONEncoder):
@@ -6564,10 +6538,13 @@ def video_feed():
                 frame = latest_frame.copy()
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
-                # ✅ FIX: Use the COMPLETE drawing function instead of basic drawing
+                # Step 1: Face detection and recognition (no drawing)
                 refresh_with_detections(frame, rgb, frame_idx)
-                update_trackers_with_body(rgb, frame, frame_idx)  # ✅ THIS DRAWS EVERYTHING
+                
+                # Step 2: Body tracking and drawing (draws everything once)
+                update_trackers_with_body(rgb, frame, frame_idx)
 
+                # Encode frame
                 ret, buffer = cv2.imencode('.jpg', frame)
                 frame_bytes = buffer.tobytes()
                 
@@ -9863,10 +9840,24 @@ def initialize_session():
     """Initialize session with parameters from URL"""
     global session_start_time, current_session_id, session_threshold_seconds, session_total_duration_seconds
     global current_session_id
+    global detectionStopped, tracks, locked_tracks, pending_confirmations  # 🎯 ADD THESE
+    global student_presence_tracker, locked_track_reid_features  # 🎯 ADD THESE
+
     connection = None
     cursor = None
     
     logger.info("🔄 INITIALIZE_SESSION CALLED")
+
+    detectionStopped = False
+
+    tracks = []
+    locked_tracks = {}
+    pending_confirmations = {}
+    student_presence_tracker = {}
+    locked_track_reid_features = {}
+    
+    logger.info("🟢 Detection flag RESET to False for new session")
+    logger.info(f"🧹 Cleared: {len(tracks)} tracks, {len(locked_tracks)} locked tracks, {len(pending_confirmations)} pending")
     
     try:
         # Get request data
@@ -11855,6 +11846,11 @@ def update_video_quality():
 def initialize_session_timing(schedule_id):
     """Initialize session timing when session starts"""
     global session_start_time, session_total_duration_seconds, session_threshold_seconds
+    global detectionStopped
+
+     # 🎯 RESET DETECTION FLAG WHEN STARTING NEW SESSION
+    detectionStopped = False
+    logger.info("🟢 Detection enabled for new session")
     
     try:
         connection = get_db_connection()
@@ -12808,12 +12804,9 @@ if __name__ == "__main__":
         if os.path.exists(cert_file) and os.path.exists(key_file):
             ssl_context = (cert_file, key_file)
             logger.info("🔐 SSL certificates found - Starting HTTPS server")
-            logger.info("🚀 Starting Flask server on https://192.168.0.100:5000")
-            logger.info("📱 Access the system at: https://192.168.0.100:5000")
         else:
             logger.warning("⚠️ SSL certificates not found - Starting HTTP server")
-            logger.info("🚀 Starting Flask server on http://192.168.0.100:5000")
-            logger.info("📱 Access the system at: http://192.168.0.100:5000")
+          
         
         # Start server with proper configuration
         app.run(

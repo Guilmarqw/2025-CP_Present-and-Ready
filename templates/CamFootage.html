@@ -555,6 +555,11 @@ const MAX_VIDEO_RETRIES = 3;
 window.addEventListener('load', () => {
     console.log('Page loaded, initializing...');
     
+    // 🎯 CRITICAL FIX: Reset detection flags for new session
+    isSessionEnding = false;
+    isDetectionStopped = false;
+    console.log('🟢 Detection flags RESET for new session');
+    
     initializeMinimizedView();
     initializeSearch();
     setupStudentContextMenu();
@@ -568,8 +573,8 @@ window.addEventListener('load', () => {
         year_level: urlParams.get('year_level'),
         program: urlParams.get('program'),
         section: urlParams.get('section'),
-        duration: urlParams.get('duration') || 3600, // Default 1 hour
-        threshold: urlParams.get('threshold') || 900, // Default 15 minutes
+        duration: urlParams.get('duration') || 3600,
+        threshold: urlParams.get('threshold') || 900,
         rtsp_url: decodeURIComponent(urlParams.get('rtsp_url') || ''),
         mode: urlParams.get('mode')
     };
@@ -589,15 +594,21 @@ window.addEventListener('load', () => {
         return res.json();
     })
     .then(data => {
-        console.log('🔍 DEBUG: Full API response:', data); // Debug log
+        console.log('🔍 DEBUG: Full API response:', data);
         
         if (data.success) {
             console.log('✅ Session initialized:', data.data);
             
-            // 🎯 CRITICAL FIX: Store session data in window._sessionData
+            // 🎯 CRITICAL FIX: Ensure detection is enabled after session init
+            isSessionEnding = false;
+            isDetectionStopped = false;
+            resumePythonDetection(); // 🎯 EXPLICITLY RESUME DETECTION
+            console.log('🟢 Detection EXPLICITLY ENABLED for new session');
+            
+            // Store session data in window._sessionData
             window._sessionData = {
-                session_id: data.data.session_id, // This should be in data.data.session_id
-                section_id: data.data.section_id, // This should be in data.data.section_id
+                session_id: data.data.session_id,
+                section_id: data.data.section_id,
                 duration: data.data.duration || 3600,
                 threshold: data.data.threshold || 900,
                 program: data.data.program,
@@ -605,7 +616,6 @@ window.addEventListener('load', () => {
                 section: data.data.section
             };
             
-            // 🎯 DEBUG: Check what keys are available
             console.log('🔍 DEBUG: Available keys in data.data:', Object.keys(data.data));
             console.log('🔍 DEBUG: session_id value:', data.data.session_id);
             console.log('🔍 DEBUG: section_id value:', data.data.section_id);
@@ -625,19 +635,22 @@ window.addEventListener('load', () => {
             
             updateSessionUI(data.data);
             
-            // 🎯 Wait a moment to ensure session ID is set, then load students
+            // Wait a moment to ensure session ID is set, then load students
             setTimeout(() => {
                 loadClassStudents(data.data.program, data.data.year_level, data.data.section);
             }, 100);
             
             // Start auto-refresh
-            updateStudentCount(); // Initial update
-            setInterval(updateStudentCount, 2000); // Update every 2 seconds
+            updateStudentCount();
+            setInterval(updateStudentCount, 2000);
             
-            console.log('🚀 Starting FRESH new session');
+            console.log('🚀 Starting FRESH new session with detection ENABLED');
             
         } else {
             console.error('❌ Session initialization failed:', data.message);
+            // Ensure detection is enabled even on fallback
+            resumePythonDetection();
+            
             // Use URL parameters as fallback
             window._sessionData = {
                 session_id: sessionData.schedule_id,
@@ -654,6 +667,9 @@ window.addEventListener('load', () => {
     })
     .catch(err => {
         console.error('❌ Error initializing session:', err);
+        // Ensure detection is enabled even on error
+        resumePythonDetection();
+        
         // Use URL parameters as fallback
         window._sessionData = {
             session_id: sessionData.schedule_id,
@@ -1412,10 +1428,20 @@ function endSession() {
 
 async function resumePythonDetection() {
     try {
-        await fetch('/api/resume_detection', {
+        // 🎯 CRITICAL: Update frontend flags first
+        isDetectionStopped = false;
+        isSessionEnding = false;
+        
+        const response = await fetch('/api/resume_detection', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
+        
+        if (response.ok) {
+            console.log('✅ Python detection resumed successfully');
+        } else {
+            console.error('❌ Failed to resume Python detection');
+        }
     } catch (err) {
         console.error('Error resuming Python detection:', err);
     }
