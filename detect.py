@@ -12810,7 +12810,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.0.100",  # 🎯 FIXED: Use your specific IP
+            host="192.168.254.102",  # 🎯 FIXED: Use your specific IP
             port=5000,
             debug=False,
             threaded=True,

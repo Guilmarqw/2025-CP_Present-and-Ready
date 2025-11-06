@@ -128,7 +128,9 @@
       cursor: pointer;
       font-weight: bold;
     }
-
+    .goback-btn {
+      background: #1f4c66;
+    }
     .edit-btn {
       background: #8a75e8;
     }
@@ -136,7 +138,9 @@
     .logout-btn {
       background: #e74c3c;
     }
-
+    .goback-btn:hover, .edit-btn:hover, .logout-btn:hover, .change-btn:hover {
+     opacity: 0.9;
+    }
     .profile-section {
       text-align: center;
       margin-bottom: 30px;

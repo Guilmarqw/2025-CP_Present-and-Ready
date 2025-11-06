@@ -6,33 +6,186 @@
   <title>Admin Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
   <link rel="stylesheet" href="../static/settings.css">
+  
+  <style>
+    /* Responsive Form Rows */
+.form-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 18px;
+}
+
+.form-group.half {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+  background-color: white;
+}
+
+.form-group select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+}
+
+/* Responsive for small screens */
+@media (max-width: 600px) {
+  .form-row {
+    flex-direction: column;
+  }
+  .form-group.half {
+    width: 100%;
+  }
+}
+    /* Modal Styles */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  animation: fadeIn 0.3s ease;
+  overflow: auto; /* Allows scrolling if content overflows */
+}
+
+.modal-content {
+  background-color: white;
+  padding: 30px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  animation: slideDown 0.4s ease forwards;
+}
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 1.5rem;
+      color: #333;
+    }
+
+    .close {
+      font-size: 28px;
+      font-weight: bold;
+      color: #aaa;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    .close:hover {
+      color: #d9534f;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      color: #444;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 1rem;
+      transition: border 0.2s;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #007bff;
+      box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #eee;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-cancel {
+      background-color: #f8f9fa;
+      color: #6c757d;
+      border: 1px solid #ddd;
+    }
+
+    .btn-cancel:hover {
+      background-color: #e9ecef;
+    }
+
+    .btn-save {
+      background-color: #007bff;
+      color: white;
+    }
+
+    .btn-save:hover {
+      background-color: #0056b3;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -60%); /* Start slightly above center */
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%); /* End exactly at center */
+  }
+}
+  </style>
 </head>
 <body>
-  <div class="header">
-    <div class="header-left">
-      <img src="../static/images/logo.png" alt="University Logo" class="logo">
-      <div class="title">Admin Side</div>
-    </div>
-    <div class="header-right">
-      <div class="user-info">
-        <div class="name">Guilmar Acabo Quimba</div>
-        <div class="role">Admin</div>
-      </div>
-      <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="User" class="profile-pic" onclick="toggleDropdown()">
-      <div class="dropdown" id="dropdown">
-        <a href="#" onclick="showAccountSettings()">Account Settings</a>
-        <a href="#">Go back to Session</a>
-        <a href="#">Logout</a>
-      </div>
-    </div>
-  </div>
 
   <div class="main-content" id="account-settings">
     <div class="card">
       <div class="card-header">
         <h2>Personal Information</h2>
         <div class="buttons">
-          <button class="edit-btn">Edit</button>
+          <a href="../templates/AdminDB.html"><button class="goback-btn">Go Back to Dashboard</button></a>
+          <button class="edit-btn" id="editBtn">Edit</button>
           <button class="logout-btn">Logout</button>
         </div>
       </div>
@@ -55,11 +208,11 @@
           <label>LAST NAME</label>
           <div>Quimba</div>
         </div>
-                 <div class="info-item">
+        <div class="info-item">
           <label>COURSE</label>
           <div>BS Computer Science</div>
         </div>
-                         <div class="info-item">
+        <div class="info-item">
           <label>YEAR AND SECTION</label>
           <div>BSCS 1A</div>
         </div>
@@ -71,7 +224,6 @@
           <label>EMAIL</label>
           <div><a href="mailto:guilmar12@example.com">guilmar12@example.com</a></div>
         </div>
-
       </div>
     </div>
 
@@ -82,13 +234,159 @@
           <label>Password</label>
           <div>*******</div>
         </div>
-        <button class="change-btn">Change Password</button>
+        <button class="change-btn" id="changePassBtn">Change Password</button>
       </div>
     </div>
   </div>
 
+  <!-- Edit Profile Modal -->
+ <div id="editModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Edit Profile</h2>
+      <span class="close" data-modal="editModal">×</span>
+    </div>
+    <form id="editForm">
+      <!-- Row 1: Names -->
+      <div class="form-row">
+        <div class="form-group half">
+          <label>First Name</label>
+          <input type="text" value="Guilmar" required />
+        </div>
+        <div class="form-group half">
+          <label>Middle Name</label>
+          <input type="text" value="Acabo" />
+        </div>
+      </div>
+
+      <!-- Row 2: Last Name + Email -->
+      <div class="form-row">
+        <div class="form-group half">
+          <label>Last Name</label>
+          <input type="text" value="Quimba" required />
+        </div>
+        <div class="form-group half">
+          <label>Email</label>
+          <input type="email" value="guilmar12@example.com" required />
+        </div>
+      </div>
+
+      <!-- Row 3: Course + Year & Section -->
+      <div class="form-row">
+        <div class="form-group half">
+          <label>Course</label>
+          <select required>
+            <option value="BS Computer Science" selected>BS Computer Science</option>
+            <option value="BS Information Technology">BS Information Technology</option>
+            <option value="Associate in Computer Technology">Associate in Computer Technology</option>
+          </select>
+        </div>
+        <div class="form-group half">
+          <label>Year & Section</label>
+          <input type="text" value="BSCS 1A" required />
+        </div>
+      </div>
+
+      <!-- Row 4: Student ID (Read-only) -->
+      <div class="form-group">
+        <label>Student ID</label>
+        <input type="text" value="2022-00954" readonly style="background-color: #f8f9fa; color: #6c757d;" />
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-cancel" data-modal="editModal">Cancel</button>
+        <button type="submit" class="btn btn-save">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+  <!-- Change Password Modal -->
+  <div id="changePassModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Change Password</h2>
+        <span class="close" data-modal="changePassModal">×</span>
+      </div>
+      <form id="changePassForm">
+        <div class="form-group">
+          <label>Current Password</label>
+          <input type="password" required />
+        </div>
+        <div class="form-group">
+          <label>New Password</label>
+          <input type="password" required />
+        </div>
+        <div class="form-group">
+          <label>Confirm New Password</label>
+          <input type="password" required />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-cancel" data-modal="changePassModal">Cancel</button>
+          <button type="submit" class="btn btn-save">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
-        const dropdown = document.getElementById("dropdown");
+    // Modal Controls
+    const editBtn = document.getElementById('editBtn');
+    const changePassBtn = document.getElementById('changePassBtn');
+    const modals = {
+      editModal: document.getElementById('editModal'),
+      changePassModal: document.getElementById('changePassModal')
+    };
+
+    // Open Modal
+    editBtn.addEventListener('click', () => openModal('editModal'));
+    changePassBtn.addEventListener('click', () => openModal('changePassModal'));
+
+    function openModal(modalId) {
+      modals[modalId].style.display = 'block';
+      document.body.style.overflow = 'hidden'; // Prevent background scroll
+    }
+
+    // Close Modal
+    document.querySelectorAll('.close, .btn-cancel').forEach(el => {
+      el.addEventListener('click', () => {
+        const modalId = el.getAttribute('data-modal');
+        closeModal(modalId);
+      });
+    });
+
+    window.addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) {
+        closeModal(e.target.id);
+      }
+    });
+
+    function closeModal(modalId) {
+      modals[modalId].style.display = 'none';
+      document.body.style.overflow = 'auto';
+    }
+
+    // Form Submit Handlers (Prevent default + simulate save)
+    document.getElementById('editForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      alert('Profile updated successfully!');
+      closeModal('editModal');
+    });
+
+    document.getElementById('changePassForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const newPass = this.querySelectorAll('input[type="password"]')[1].value;
+      const confirmPass = this.querySelectorAll('input[type="password"]')[2].value;
+      if (newPass !== confirmPass) {
+        alert('New passwords do not match!');
+        return;
+      }
+      alert('Password changed successfully!');
+      closeModal('changePassModal');
+    });
+
+    // Existing dropdown script (unchanged)
+    const dropdown = document.getElementById("dropdown");
     const profilePic = document.querySelector(".profile-pic");
 
     function toggleDropdown() {
