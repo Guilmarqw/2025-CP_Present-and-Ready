@@ -446,7 +446,6 @@ async function startSession(event) {
         });
         
         const rtspData = await rtspResponse.json();
-
         hideLoading();
 
         if (!rtspData.success) {
@@ -474,6 +473,28 @@ async function startSession(event) {
     // Save to localStorage for persistence
     localStorage.setItem('rtspUrl', rtspUrl);
     
+    // 🚀 --- FIXED LOGIC --- 🚀
+    
+    // Get all the DOM elements first
+    const subjectDropdown = document.getElementById('subjectCode');
+    const sectionDropdown = document.getElementById('courseSection');
+    
+    let scheduleIdToSend;
+    let subjectCodeToSend;
+    let sectionToSend;
+
+    if (timerMode === 'default') {
+        // In default mode, get ID from the button dataset and value from dropdown
+        scheduleIdToSend = document.getElementById('startBtn').dataset.scheduleId;
+        subjectCodeToSend = subjectDropdown.value; // This will be the schedule_id
+        sectionToSend = sectionDropdown.value;
+    } else {
+        // In custom mode, the schedule_id IS the value of the subject dropdown
+        scheduleIdToSend = subjectDropdown.value;
+        subjectCodeToSend = subjectDropdown.value; // Send the same ID
+        sectionToSend = sectionDropdown.value;
+    }
+    
     const settings = {
         timer: {
             session: {
@@ -489,23 +510,27 @@ async function startSession(event) {
         },
         classDetails: {
             instructor: document.getElementById('subjectInstructor').value,
-            subjectCode: document.getElementById('subjectCode').value,
+            subjectCode: subjectCodeToSend, // Use the correct variable
             yearLevel: document.getElementById('yearLevel').value,
             course: document.getElementById('course').value,
-            section: document.getElementById('courseSection').value
+            section: sectionToSend // Use the correct variable
         },
         rtspUrl: rtspUrl,
         mode: timerMode,
-        scheduleId: document.getElementById('startBtn').dataset.scheduleId || document.getElementById('subjectCode').value
+        scheduleId: scheduleIdToSend // Use the correct variable
     };
     
+    // 🚀 --- END FIXED LOGIC --- 🚀
+
     localStorage.setItem('classSettings', JSON.stringify(settings));
     
     // Validation
     if (!settings.classDetails.instructor || 
-        !settings.classDetails.subjectCode || 
+        !settings.classDetails.subjectCode || // This now checks our new variable
         !settings.classDetails.section) {
-        showModal('Validation Error', 'Please fill in all class details');
+        
+        console.error('Validation Failed:', settings.classDetails); // Log what failed
+        showModal('Validation Error', 'Please fill in all class details (Instructor, Subject, Section)');
         return;
     }
     
@@ -535,16 +560,20 @@ async function startSession(event) {
     const params = new URLSearchParams({
         schedule_id: settings.scheduleId,
         instructor: settings.classDetails.instructor,
-        subject: settings.classDetails.subjectCode,
+        subject: settings.classDetails.subjectCode, // This is now the schedule_id
         year_level: settings.classDetails.yearLevel,
         program: settings.classDetails.course,
         section: settings.classDetails.section,
         duration: totalSeconds,
-        threshold: (parseInt(settings.timer.threshold.hours) * 3600 + 
-           parseInt(settings.timer.threshold.minutes) * 60 + 
-           parseInt(settings.timer.threshold.seconds)),
+        threshold: thresholdSeconds, // Use the variable
         rtsp_url: encodeURIComponent(rtspUrl),
         mode: timerMode
+    });
+
+    // 🚀 DEBUG LOG: Log exactly what is being sent to the next page
+    console.log('🚀 REDIRECTING WITH PARAMS:');
+    params.forEach((value, key) => {
+        console.log(`  ${key}: ${value}`);
     });
     
     // Add a small delay to ensure camera is ready

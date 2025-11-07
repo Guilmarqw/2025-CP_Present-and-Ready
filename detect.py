@@ -1,5 +1,6 @@
 import csv
 from functools import wraps
+import hashlib
 import os
 import sys
 import cv2
@@ -41,6 +42,7 @@ from insightface.app import FaceAnalysis
 from insightface.model_zoo import get_model
 from supervision import ByteTrack
 from supervision.tracker.byte_tracker.core import ByteTrack
+import supervision as sv
 from typing import List, Dict, Any, Tuple
 
 
@@ -104,7 +106,6 @@ if torch.cuda.is_available():
 
 face_scan_start_time = None
 
-# Add these to your global variables
 student_presence_tracker = {}  # Tracks when students are present/missing
 current_session_id = None  # Make sure this is set
 
@@ -112,7 +113,7 @@ current_session_id = None  # Make sure this is set
 face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 face_analysis.prepare(ctx_id=0, det_size=(320, 320))  # Adjust det_size for your resolution
 
-
+FRAME_BUFFER = []
 # Add these global variables at the top with your other globals
 ACTIVE_FACE_TRACKS = {}
 FACE_COOLDOWN_PERIOD = 30  # seconds
@@ -249,14 +250,62 @@ except Exception as e:
     body_detector = YOLO('yolov8n.pt')  # This will auto-download
     body_detector.to(DEVICE)
 
-# Initialize ByteTrack
-byte_tracker = ByteTrack(
-    track_activation_threshold=0.25,
-    lost_track_buffer=30,
-    minimum_matching_threshold=0.8,
-    frame_rate=30
-)
-logger.info("✅ ByteTrack initialized for body tracking")
+# =========================
+# ByteTrack Initialization - FIXED VERSION
+# =========================
+try:
+    # Use the simpler initialization
+    byte_tracker = ByteTrack(
+        track_activation_threshold=0.25,
+        lost_track_buffer=30,
+        minimum_matching_threshold=0.8,
+        frame_rate=30
+    )
+    logger.info("✅ ByteTrack initialized successfully for body tracking")
+    
+    # Test ByteTrack with dummy detection - FIXED IMPORT
+    test_detection = sv.Detections(  # ✅ FIXED: Changed from 'Detection' to 'Detections'
+        xyxy=np.array([[100, 100, 200, 200]]),
+        confidence=np.array([0.8]),
+        class_id=np.array([0])
+    )
+    test_tracks = byte_tracker.update_with_detections(detections=test_detection)
+    logger.info("✅ ByteTrack test passed - working correctly")
+    
+except Exception as e:
+    logger.error(f"❌ ByteTrack initialization failed: {e}")
+    # Create a simple fallback tracker
+    class SimpleTracker:
+        def __init__(self):
+            self.track_id_counter = 0
+            self.tracks = {}
+            
+        def update_with_detections(self, detections):
+            tracks = []
+            # Handle both array format and Detections object
+            if hasattr(detections, 'xyxy'):
+                # Detections object format
+                for i, (xyxy, confidence, class_id) in enumerate(zip(detections.xyxy, detections.confidence, detections.class_id)):
+                    track_id = self.track_id_counter + i
+                    tracks.append(type('Track', (), {
+                        'tracker_id': track_id,
+                        'detection': np.concatenate([xyxy, [confidence]]),
+                        'confidence': confidence
+                    }))
+            else:
+                # Array format
+                for i, detection in enumerate(detections):
+                    track_id = self.track_id_counter + i
+                    tracks.append(type('Track', (), {
+                        'tracker_id': track_id,
+                        'detection': detection,
+                        'confidence': detection[4] if len(detection) > 4 else 0.8
+                    }))
+            self.track_id_counter += len(tracks)
+            return tracks
+    
+    byte_tracker = SimpleTracker()
+    logger.info("🔄 Using simple fallback tracker instead of ByteTrack")
 
 # =========================
 # TorchReID OSNet Model - WORKING VERSION
@@ -387,18 +436,15 @@ except Exception as e:
 def create_dummy_frame():
     """Create a dummy frame when no camera is available"""
     try:
-        frame = np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)  # Use new dimensions
-        
-        # Add background color (dark gray)
+        frame = np.zeros((STREAM_HEIGHT, STREAM_WIDTH, 3), dtype=np.uint8)  # Use new dimensions       
+    
         frame[:] = (40, 40, 40)
 
-        # Add text
         text = 'No Camera Connected'
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 1.5
         thickness = 3
 
-        # Get text size for centering
         (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
 
         # Center text
@@ -858,9 +904,9 @@ def get_db_cursor(commit=True):
     try:
         yield cursor
         if commit:
-            conn.commit()  # ✅ ADD THIS LINE - commit the transaction
+            conn.commit()  
     except Exception as e:
-        conn.rollback()    # ✅ ADD THIS LINE - rollback on error
+        conn.rollback()    
         raise e
     finally:
         cursor.close()
@@ -924,12 +970,11 @@ def calculate_mar(landmarks, mouth_indices):
 # =========================
 # Load known faces from database
 # =========================
-known_face_encodings = np.array([]) # Initialize as a NumPy array (will be empty)
+known_face_encodings = np.array([]) 
 known_face_names = []
 known_face_ids = []
 known_face_types = []  # 'student' or 'faculty'
-KNOWN_FACE_ENCODINGS_ARRAY = None # New variable to hold the final, stacked NumPy array
-
+KNOWN_FACE_ENCODINGS_ARRAY = None 
 def finalize_known_faces():
     """Converts the list of encodings to a single NumPy array for fast vector comparison."""
     global known_face_encodings, KNOWN_FACE_ENCODINGS_ARRAY
@@ -1025,14 +1070,14 @@ def load_known_faculties_from_db():
 known_face_encodings, known_face_names, known_face_ids, known_face_types = [], [], [], []
 load_known_faces_from_db()
 load_known_faculties_from_db()
-finalize_known_faces() # <- NEW: Call the finalizer after loading all faces
-
+finalize_known_faces() 
 
 # =========================
-# Laptop camera capture
+# OPTIMIZED CAMERA CAPTURE
 # =========================
 cap_lock = threading.Lock()
 cap = None
+last_frame_time = time.time()
 
 def open_stream(rtsp_url=None):
     global cap, camera_available, use_dummy_feed, current_rtsp_url
@@ -1049,108 +1094,99 @@ def open_stream(rtsp_url=None):
             if cap is not None:
                 try:
                     cap.release()
-                    logger.info("Released previous camera connection")
-                except Exception as e:
-                    logger.warning(f"Error releasing previous capture: {e}")
+                except:
+                    pass
                 cap = None
             
-            # Small delay to ensure camera is released
-            time.sleep(0.5)
+            time.sleep(0.3)
                     
-            # Try to connect to RTSP with timeout
-            logger.info(f"Attempting to connect to RTSP: {rtsp_url}")
+            logger.info(f"Connecting to RTSP: {rtsp_url}")
             
-            # Use OpenCV with better RTSP settings
+            # 🎯 OPTIMIZED CAMERA SETTINGS
             cap = cv2.VideoCapture(rtsp_url)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)  
             cap.set(cv2.CAP_PROP_FPS, 30)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)  # Reduced from 3840 for better performance
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080) # Reduced from 2160 for better performance
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  
             
-            # Set timeout for connection
+            # Quick connection test
             start_time = time.time()
-            while time.time() - start_time < 5:  # 5 second timeout
+            while time.time() - start_time < 3:
                 if cap.isOpened():
                     ret, test_frame = cap.read()
                     if ret and test_frame is not None:
                         camera_available = True
                         use_dummy_feed = False
                         current_rtsp_url = rtsp_url
-                        logger.info(f"✅ RTSP stream connected successfully: {rtsp_url}")
+                        logger.info(f"✅ Camera connected: 640x480 @ 30 FPS")
                         return True
                 time.sleep(0.1)
             
-            # If we get here, connection failed
             cap.release()
             cap = None
-            raise Exception("RTSP connection timeout")
+            raise Exception("Camera connection timeout")
                 
     except Exception as e:
-        logger.warning(f"❌ RTSP connection failed: {e}")
-        
-        # Fallback to dummy feed
+        logger.warning(f"❌ Camera connection failed: {e}")
         camera_available = False
         use_dummy_feed = True
         if cap is not None:
-            try:
-                cap.release()
-            except:
-                pass
+            cap.release()
             cap = None
-        
         return False
 
 def grabber():
-    global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url
+    global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url, last_frame_time
     empty_count = 0
-    frame_count = 0
+    consecutive_failures = 0
     
     while not stop_flag:
-        if use_dummy_feed or cap is None:
+        grab_start = time.time()
+        
+        if use_dummy_feed:
+            # 🎯 SMOOTH DUMMY FEED
             latest_frame = create_dummy_frame()
-            time.sleep(0.1)
+            time.sleep(0.033)  # Consistent timing
             continue
             
         with cap_lock:
             if cap is None:
-                time.sleep(0.1)
+                time.sleep(0.01)
                 continue
-                
-            ok, f = cap.read()
+            ok, frame = cap.read()
             
-        if not ok:
+        if not ok or frame is None:
             empty_count += 1
-            if empty_count > MAX_EMPTY_GRABS:
-                logger.warning("Camera connection lost. Switching to dummy feed...")
+            consecutive_failures += 1
+            
+            if empty_count > 10 or consecutive_failures > 5:
+                logger.warning("Camera connection issues, switching to dummy feed")
                 camera_available = False
                 use_dummy_feed = True
+                consecutive_failures = 0
                 
-                with cap_lock:
-                    if cap is not None:
-                        try:
-                            cap.release()
-                        except:
-                            pass
-                        cap = None
-                
-                empty_count = 0
+                # Attempt recovery in background
+                if current_rtsp_url:
+                    def attempt_recovery():
+                        time.sleep(2.0)
+                        logger.info("Attempting camera reconnection...")
+                        open_stream(current_rtsp_url)
+                    
+                    recovery_thread = threading.Thread(target=attempt_recovery, daemon=True)
+                    recovery_thread.start()
             else:
                 time.sleep(0.01)
             continue
-            
+               
         empty_count = 0
-        latest_frame = f
+        consecutive_failures = 0
+        latest_frame = frame
+        last_frame_time = time.time()
         
-        # Log every 30 frames to verify it's working
-        frame_count += 1
-        if frame_count % 30 == 0:
-            logger.info(f"✅ Capturing frames: {frame_count} frames captured")
-        
-        time.sleep(GRAB_SLEEP)
-
-grab_thread = threading.Thread(target=grabber, daemon=True)
-grab_thread.start()
+        grab_time = time.time() - grab_start
+        sleep_time = max(0.001, 0.03 - grab_time)  # Target ~33 FPS grabbing
+        time.sleep(sleep_time)
 
 # =========================
 # Tracking & attendance
@@ -1181,9 +1217,9 @@ attendance_save_thread = threading.Thread(target=periodic_attendance_save, daemo
 attendance_save_thread.start()
 
 def mark_attendance(name, id, type, session_id=None):
-    """Mark attendance for both students and faculty - FIXED: Handles missing status properly"""
+    """Mark attendance for both students and faculty - FIXED: Better manual status detection and duplicate prevention"""
     global session_start_time, current_session_id, session_threshold_seconds, session_total_duration_seconds
-    global student_presence_tracker
+    global student_presence_tracker, student_status
     
     # ✅ Load threshold from database if not set
     if not session_threshold_seconds and current_session_id:
@@ -1218,7 +1254,7 @@ def mark_attendance(name, id, type, session_id=None):
     if not session_id:
         session_id = current_session_id
     
-    # 🎯 Update presence tracker
+    # 🎯 Update presence tracker (ALWAYS update this regardless of manual status)
     if type == 'student' and session_id:
         student_presence_tracker[id] = {
             'last_seen': current_time,
@@ -1226,6 +1262,7 @@ def mark_attendance(name, id, type, session_id=None):
             'name': name,
             'present': True
         }
+        logger.info(f"📍 PRESENCE TRACKER UPDATED: {name} is currently present")
     
     # ✅ Get section_id AND SUBJECT INFO for this session
     section_id = None
@@ -1254,9 +1291,105 @@ def mark_attendance(name, id, type, session_id=None):
     except Exception as e:
         logger.error(f"Error getting session info: {e}")
     
-    # 🎯 CRITICAL FIX: Check existing status and missing periods
+    # 🎯 CRITICAL FIX: BETTER Manual Status Detection
+    is_manual_status = False
     original_status = None
     existing_record_id = None
+    existing_session_id = None
+    existing_remarks = None
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # 🎯 Get the MOST RECENT attendance record for this student in this session
+        cursor.execute("""
+            SELECT id, status, timestamp, session_id, remarks FROM attendance 
+            WHERE student_id = %s AND session_id = %s
+            ORDER BY timestamp DESC LIMIT 1
+        """, (id, session_id))
+        existing_record = cursor.fetchone()
+        
+        if existing_record:
+            existing_record_id = existing_record['id']
+            original_status = existing_record['status']
+            existing_session_id = existing_record.get('session_id')
+            existing_remarks = existing_record.get('remarks', '')
+            
+            # 🎯 CONSISTENT MANUAL STATUS DETECTION (SAME AS ALL OTHER ENDPOINTS)
+            manual_excuse_sessions = ['manual_excuse']  # Only for excused students
+            manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
+            manual_statuses = ['excused']  # Only truly manual statuses
+            
+            is_manual_status = (
+                # Only specific manual session types (not manual_add)
+                existing_session_id in manual_excuse_sessions or
+                existing_session_id in manual_status_sessions or
+                # Only specific manual statuses
+                original_status in manual_statuses or
+                # Only specific manual remarks (not temp_id)
+                'Manually marked' in existing_remarks or
+                'Manual status' in existing_remarks or
+                'Manually marked as excused' in existing_remarks
+            )
+            
+            if is_manual_status:
+                logger.info(f"🔒 MANUAL STATUS DETECTED: {name} has manual status '{original_status}' (session: {existing_session_id}, remarks: {existing_remarks}) - PRESERVING")
+            else:
+                logger.info(f"🔄 AUTO STATUS: {name} has status '{original_status}' (session: {existing_session_id}) - CAN BE UPDATED")
+            
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error checking existing status: {e}")
+    
+    # 🎯 CRITICAL: If manual status exists, UPDATE TIMESTAMP ONLY and RETURN IMMEDIATELY
+    if is_manual_status and original_status:
+        # Update presence tracker but don't change status
+        if type == 'student':
+            student_status[id] = original_status
+        
+        # Update CSV with preserved status
+        try:
+            csv_file = "attendance_log.csv"
+            file_exists = os.path.isfile(csv_file)
+            
+            with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room', 'MissingDuration', 'IsReturning', 'RestoredStatus', 'WasMissing', 'ManualStatus'])
+                writer.writerow([id, name, time_str, type, original_status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A', 0, False, 'N/A', False, True])
+            
+            logger.info(f"📄 CSV saved: {name} - MANUAL STATUS PRESERVED: {original_status}")
+        except Exception as e:
+            logger.error(f"Failed to save attendance to CSV: {e}")
+        
+        # Update database timestamp only (preserve manual status)
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            if existing_record_id:
+                # Only update timestamp, keep status as is
+                cursor.execute("""
+                    UPDATE attendance 
+                    SET timestamp = %s
+                    WHERE id = %s
+                """, (time_str, existing_record_id))
+                logger.info(f"🔒 Updated timestamp only for {name} - Status '{original_status}' preserved")
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Failed to update timestamp in database: {e}")
+        
+        # 🎯 CRITICAL: EARLY RETURN - don't process auto-detection logic
+        return
+
+    # 🎯 STANDARD STATUS DETERMINATION (only runs if NOT manual status)
+    # Continue with your existing logic for non-manual statuses...
     missing_duration = 0
     is_returning_from_missing = False
     restored_original_status = None
@@ -1266,24 +1399,19 @@ def mark_attendance(name, id, type, session_id=None):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # 🎯 Get the MOST RECENT attendance record for this student in this session
+        # 🎯 CHECK IF STUDENT IS CURRENTLY MISSING
         cursor.execute("""
-            SELECT id, status, timestamp FROM attendance 
-            WHERE student_id = %s AND session_id = %s
+            SELECT id, status FROM attendance 
+            WHERE student_id = %s AND session_id = %s AND status = 'missing'
             ORDER BY timestamp DESC LIMIT 1
         """, (id, session_id))
-        existing_record = cursor.fetchone()
         
-        if existing_record:
-            existing_record_id = existing_record['id']
-            original_status = existing_record['status']
-            
-            # 🎯 CHECK IF STUDENT IS CURRENTLY MISSING
-            if original_status == 'missing':
-                is_currently_missing = True
-                logger.info(f"🎯 Student {name} is CURRENTLY MISSING")
+        missing_record = cursor.fetchone()
+        if missing_record:
+            is_currently_missing = True
+            logger.info(f"🎯 Student {name} is CURRENTLY MISSING")
         
-        # 🎯 FIXED: Check if student is currently in missing_periods with original_status
+        # 🎯 Check if student is currently in missing_periods
         cursor.execute("""
             SELECT id, missing_start, original_status, TIMESTAMPDIFF(SECOND, missing_start, NOW()) as missing_seconds
             FROM missing_periods 
@@ -1312,21 +1440,17 @@ def mark_attendance(name, id, type, session_id=None):
         cursor.close()
         conn.close()
     except Exception as e:
-        logger.error(f"Error checking existing status: {e}")
+        logger.error(f"Error checking missing status: {e}")
     
-    # 🎯 FIXED STATUS DETERMINATION: Handle missing status properly
+    # 🎯 STATUS DETERMINATION LOGIC (your existing code continues here)
     if is_currently_missing:
-        # 🎯 CRITICAL: If student is currently missing, we need to restore their original status
         if is_returning_from_missing and restored_original_status in ['present', 'late']:
-            # 🎯 RESTORE ORIGINAL STATUS from missing_periods table
             status = restored_original_status
             logger.info(f"🔄 RESTORING ORIGINAL STATUS (from missing): {name} -> {status}")
         elif original_status in ['present', 'late']:
-            # Fallback: Use original_status from attendance table
             status = original_status
             logger.info(f"🔄 RESTORING ORIGINAL STATUS (fallback from missing): {name} -> {status}")
         else:
-            # If no original status found, calculate new status
             status = 'present'
             if session_start_time:
                 time_difference = current_time - session_start_time
@@ -1341,12 +1465,10 @@ def mark_attendance(name, id, type, session_id=None):
                     logger.info(f"✅ PRESENT (after missing): {name} arrived on time")
     
     elif is_returning_from_missing and restored_original_status in ['present', 'late']:
-        # 🎯 RESTORE ORIGINAL STATUS when returning from missing
         status = restored_original_status
         logger.info(f"🔄 RESTORING ORIGINAL STATUS: {name} returning from missing -> {status}")
         
     elif is_returning_from_missing and original_status in ['present', 'late']:
-        # Fallback: Use original_status from attendance table
         status = original_status
         logger.info(f"🔄 RESTORING ORIGINAL STATUS (fallback): {name} returning from missing -> {status}")
         
@@ -1386,14 +1508,14 @@ def mark_attendance(name, id, type, session_id=None):
         with open(csv_file, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room', 'MissingDuration', 'IsReturning', 'RestoredStatus', 'WasMissing'])
-            writer.writerow([id, name, time_str, type, status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A', missing_duration, is_returning_from_missing, restored_original_status or 'N/A', is_currently_missing])
+                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room', 'MissingDuration', 'IsReturning', 'RestoredStatus', 'WasMissing', 'ManualStatus'])
+            writer.writerow([id, name, time_str, type, status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A', missing_duration, is_returning_from_missing, restored_original_status or 'N/A', is_currently_missing, False])
         
         logger.info(f"📄 CSV saved: {name} ({id}) - {type} - {status} - Missing: {missing_duration}s - Returning: {is_returning_from_missing} - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
     
-    # 🎯 FIXED: Update database with proper status handling
+    # 🎯 Update database with proper status handling
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1422,7 +1544,7 @@ def mark_attendance(name, id, type, session_id=None):
                 
                 # 🎯 CRITICAL: Only update if status changed OR student is returning from missing OR was missing
                 if existing_db_status != status or is_returning_from_missing or is_currently_missing:
-                    # 🎯 FIXED: Update with missing_duration and proper status
+                    # 🎯 Update with missing_duration and proper status
                     cursor.execute("""
                         UPDATE attendance 
                         SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s, missing_duration = %s
@@ -1624,10 +1746,743 @@ def calculate_real_fps():
     
     return current_fps
 
+def cleanup_locked_tracks(current_frame, lock_timeout_frames):
+    global locked_tracks
+    
+    to_remove = []
+    for id, lock_info in locked_tracks.items():
+        if current_frame - lock_info['last_seen'] > lock_timeout_frames * 2:
+            to_remove.append(id)
+            logger.info(f"Cleaning up locked track for {id}")
+    
+    for id in to_remove:
+        del locked_tracks[id]
+
+
+def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.7, is_locked_track=False):  # Increased tolerance
+    global KNOWN_FACE_ENCODINGS_ARRAY
+    try:
+        distance = estimate_distance(face_width_pixels)
+
+        # INCREASED MAX RECOGNITION DISTANCE
+        if distance > MAX_RECOGNITION_DISTANCE * 1.5:  # 50% more range
+            logger.info(f"Face too far for recognition: {distance:.1f}m")
+            return "Unknown", None, float('inf'), distance, 0.0, None
+
+        # IMPROVED IMAGE ENHANCEMENT for better recognition at distance
+        if len(face_image.shape) == 3:
+            # More aggressive enhancement for distant faces
+            gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
+            gray = cv2.equalizeHist(gray)
+            # Apply CLAHE for better contrast
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            gray = clahe.apply(gray)
+            gray = cv2.bilateralFilter(gray, 9, 75, 75)
+            enhanced = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        else:
+            enhanced = face_image
+
+        start_time = time.time()
+        faces = face_analysis.get(enhanced)
+        logger.info(f"Face analysis inference time: {time.time() - start_time:.4f} seconds")
+        if not faces:
+            return "Unknown", None, float('inf'), distance, 0.0, None
+
+        face_embedding = faces[0].embedding
+
+        # 👇 OPTIMIZATION: Vectorized Cosine Similarity Calculation
+        if KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
+            # 1. Calculate dot products (numerator)
+            dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+            
+            # 2. Calculate norms (denominator parts)
+            norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
+            norm_b = np.linalg.norm(face_embedding)
+            
+            # 3. Calculate similarities (division)
+            denominator = (norm_a * norm_b)
+            similarities = np.divide(dot_products, denominator, 
+                                     out=np.zeros_like(dot_products), where=denominator!=0)
+        else:
+            similarities = np.array([])
+        # 👆 END OF OPTIMIZATION
+
+        if similarities.size > 0:
+            best_match_index = int(np.argmax(similarities))
+            best_similarity = float(similarities[best_match_index])
+
+            # LOWER THRESHOLD for recognition, especially for redetection
+            recognition_threshold = 0.85 if is_locked_track else 0.80  # Reduced thresholds
+            confidence = best_similarity
+
+            if is_locked_track or confidence >= recognition_threshold:
+                name = known_face_names[best_match_index]
+                id = known_face_ids[best_match_index]
+                role_type = known_face_types[best_match_index]
+
+                if role_type == 'faculty':
+                    name = f"Faculty: {name}"
+
+                return (
+                    name,
+                    id,
+                    1 - confidence,
+                    distance,
+                    confidence,
+                    role_type
+                )
+
+        return "Unknown", None, float('inf'), distance, 0.0, None
+
+    except Exception as e:
+        logger.error(f"Error in enhanced_recognize_face: {e}")
+        return "Unknown", None, float('inf'), None, 0.0, None
+
+
+def detect_liveness_cctv(face_image, liveness_threshold):
+    try:
+        gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
+        fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+        adjusted_threshold = liveness_threshold * 0.8
+        if fm < adjusted_threshold:
+            logger.warning(f"Liveness detection failed: variance {fm} < threshold {adjusted_threshold}")
+            return False
+        logger.info(f"Liveness detection passed: variance {fm}")
+        return True
+    except Exception as e:
+        logger.error(f"Liveness detection error: {e}")
+        return True
+
+
+def estimate_distance(face_width_pixels):
+    if face_width_pixels < 20:
+        return float('inf')
+    estimated_distance = (FACE_SIZE_FOR_DISTANCE * 2) / face_width_pixels
+    return estimated_distance
+
+
+def recognize_face_with_anti_spoofing(face_image, tolerance=0.6, liveness_threshold=100):
+    if not detect_liveness_cctv(face_image, liveness_threshold):
+        return "Unknown", None, float('inf'), False, 0.0
+    face_width = face_image.shape[1]
+    name, student_id, distance, est_distance, confidence, role_type = enhanced_recognize_face(face_image, face_width, tolerance)
+    return name, student_id, distance, est_distance, True, confidence
+
+
+# Add this helper function at the top of detect.py
+def calculate_late_status(attendance_time, session_start, threshold_minutes):
+    """Calculate if student is late based on threshold"""
+    try:
+        att_time = datetime.strptime(attendance_time, "%Y-%m-%d %H:%M:%S")
+        time_diff = (att_time - session_start).total_seconds() / 60
+        
+        if time_diff <= threshold_minutes:
+            return 'present'
+        else:
+            return 'late'
+    except:
+        return 'present'
+
+def refresh_with_detections(frame, rgb, frame_idx):
+    """
+    FIXED: ByteTrack coordinate extraction - was treating bbox as track_id
+    FIXED: Strong anti-swapping with strict ReID + spatial validation
+    PRESERVED: Fast recognition and instant locking system
+    """
+    logger.info(f"🔍 refresh_with_detections CALLED - Frame {frame_idx}")
+    global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
+    global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
+    if detectionStopped:
+        return
+    # Skip every other frame if FPS is too low
+    if current_fps < 10 and frame_idx % 2 == 0:
+        return
+    h, w = frame.shape[:2]
+    # Dynamic detection frequency
+    if len(tracks) > MAX_TRACKS:
+        locked_track_count = len(locked_tracks)
+        unlocked_tracks = [tr for tr in tracks if tr.get('id') not in locked_tracks]
+        unlocked_tracks.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+        unlocked_tracks = unlocked_tracks[:MAX_UNLOCKED_TRACKS]
+        tracks[:] = unlocked_tracks
+        logger.info(f"Track cleanup: {locked_track_count} locked + {len(unlocked_tracks)} unlocked")
+    # Cleanup stale pending confirmations
+    cleanup_pending_confirmations(frame_idx, timeout_frames=15)
+    # Step 1: Face detection
+    try:
+        faces = face_analysis.get(rgb)
+    except Exception as e:
+        logger.error(f"Face detection failed: {e}")
+        return
+    # Step 2: Body detection
+    body_detections = detect_bodies(frame)
+    # Step 3: Use ByteTrack for BODY tracking - FIXED COORDINATE EXTRACTION
+    body_tracks = []
+    if len(body_detections) > 0:
+        # Convert to proper ByteTrack format
+        detections_list = []
+        for body_det in body_detections:
+            body_box = body_det['box']
+            x1, y1, x2, y2 = body_box
+            conf = body_det['confidence']
+        
+            # Filter small bodies
+            if (x2 - x1) < 50 or (y2 - y1) < 100:
+                continue
+            
+            detections_list.append([x1, y1, x2, y2, conf])
+    
+        if detections_list:
+            detections_array = np.array(detections_list)
+        
+            try:
+                # Use sv.Detections
+                supervision_detections = sv.Detections(
+                    xyxy=detections_array[:, :4],
+                    confidence=detections_array[:, 4],
+                    class_id=np.array([0] * len(detections_array))
+                )
+            
+                # Update ByteTrack
+                tracks_byte = byte_tracker.update_with_detections(
+                    detections=supervision_detections
+                )
+            
+                # 🆕 FIXED: ByteTrack returns sv.Detections object, not list of tracks
+                if tracks_byte is not None and hasattr(tracks_byte, 'xyxy'):
+                    # ByteTrack returns a Detections object with tracker_id attribute
+                    xyxy = tracks_byte.xyxy
+                    tracker_ids = tracks_byte.tracker_id if hasattr(tracks_byte, 'tracker_id') else None
+                    confidences = tracks_byte.confidence if hasattr(tracks_byte, 'confidence') else np.array([0.8] * len(xyxy))
+                    
+                    if tracker_ids is not None:
+                        for idx in range(len(xyxy)):
+                            try:
+                                x1, y1, x2, y2 = xyxy[idx]
+                                track_id = int(tracker_ids[idx])
+                                confidence = float(confidences[idx]) if idx < len(confidences) else 0.8
+                                
+                                body_box = (int(x1), int(y1), int(x2), int(y2))
+                                
+                                # Extract ReID features
+                                reid_features = extract_reid_features(frame, body_box)
+                                
+                                body_tracks.append({
+                                    'track_id': track_id,
+                                    'body_box': body_box,
+                                    'confidence': confidence,
+                                    'reid_features': reid_features
+                                })
+                            except Exception as e:
+                                logger.warning(f"Error processing track {idx}: {e}")
+                                continue
+                    else:
+                        # No tracker_ids - fallback to index-based IDs
+                        logger.warning("⚠️ ByteTrack returned detections without tracker_ids")
+                        for idx in range(len(xyxy)):
+                            x1, y1, x2, y2 = xyxy[idx]
+                            confidence = float(confidences[idx]) if idx < len(confidences) else 0.8
+                            
+                            body_box = (int(x1), int(y1), int(x2), int(y2))
+                            reid_features = extract_reid_features(frame, body_box)
+                            
+                            body_tracks.append({
+                                'track_id': frame_idx * 1000 + idx,
+                                'body_box': body_box,
+                                'confidence': confidence,
+                                'reid_features': reid_features
+                            })
+            
+                logger.info(f"✅ ByteTrack: {len(body_tracks)} body tracks")
+            
+            except Exception as e:
+                logger.error(f"❌ ByteTrack failed: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Fallback with ReID features
+                for i, det in enumerate(detections_list):
+                    body_box = (int(det[0]), int(det[1]), int(det[2]), int(det[3]))
+                    reid_features = extract_reid_features(frame, body_box)
+                
+                    body_tracks.append({
+                        'track_id': i + frame_idx * 1000,
+                        'body_box': body_box,
+                        'confidence': det[4],
+                        'reid_features': reid_features
+                    })
+                logger.info(f"✅ Fallback: {len(body_tracks)} body tracks")
+    # Filter out locked faces
+    locked_body_boxes = []
+    for person_id, lock_info in locked_tracks.items():
+        body_box = lock_info.get('body_box')
+        if body_box:
+            bx1, by1, bx2, by2 = body_box
+            expand_margin = 8
+            expanded_body_box = (
+                max(0, bx1 - expand_margin),
+                max(0, by1 - expand_margin),
+                min(w, bx2 + expand_margin),
+                min(h, by2 + expand_margin)
+            )
+            locked_body_boxes.append((person_id, expanded_body_box, lock_info.get('name', person_id)))
+    # Check if locked students who were missing are now detected
+    for person_id, lock_info in locked_tracks.items():
+        if (lock_info.get('type') == 'student' and
+            person_id in student_presence_tracker and
+            not student_presence_tracker[person_id].get('present', True)):
+        
+            for face in faces:
+                try:
+                    x1, y1, x2, y2 = face.bbox.astype(int)
+                    face_center_x = (x1 + x2) // 2
+                    face_center_y = (y1 + y2) // 2
+                
+                    body_box = lock_info.get('body_box')
+                    if body_box:
+                        bx1, by1, bx2, by2 = body_box
+                        if (bx1 <= face_center_x <= bx2 and by1 <= face_center_y <= by2):
+                            logger.info(f"Missing locked student detected: {lock_info.get('name')}")
+                            mark_attendance(lock_info.get('name'), person_id, lock_info.get('type', 'student'))
+                            break
+                except Exception as e:
+                    continue
+    # Add face size validation
+    dets = []
+    face_embeddings = []
+    for idx, face in enumerate(faces):
+        face_idx = idx
+        face_obj = face
+        try:
+            x1, y1, x2, y2 = face.bbox.astype(int)
+            conf = face.det_score
+        
+            if x2 > x1 and y2 > y1:
+                is_within_bounds = (x1 >= -30 and y1 >= -30 and x2 <= w + 30 and y2 <= h + 30)
+                if is_within_bounds:
+                    box_width = x2 - x1
+                    box_height = y2 - y1
+                
+                    if box_width >= 30 and box_height >= 30:
+                    
+                        is_locked_face = False
+                        face_center_x = (x1 + x2) // 2
+                        face_center_y = (y1 + y2) // 2
+                    
+                        for locked_person_id, locked_body_box, locked_name in locked_body_boxes:
+                            bx1, by1, bx2, by2 = locked_body_box
+                        
+                            if (bx1 <= face_center_x <= bx2 and by1 <= face_center_y <= by2):
+                                body_height = by2 - by1
+                                body_width = bx2 - bx1
+                                face_relative_y = face_center_y - by1
+                                face_relative_x = face_center_x - bx1
+                            
+                                face_area = box_width * box_height
+                                body_area = body_width * body_height
+                            
+                                if (face_relative_y < body_height * 0.4 and
+                                    face_relative_x > body_width * 0.15 and
+                                    face_relative_x < body_width * 0.85 and
+                                    face_area > body_area * 0.015 and
+                                    face_area < body_area * 0.2):
+                                    is_locked_face = True
+                                    break
+                    
+                        if not is_locked_face:
+                            try:
+                                embedding = face_obj.embedding
+                                face_embeddings.append(embedding)
+                            except:
+                                face_embeddings.append(None)
+                            
+                            dets.append((x1, y1, x2, y2, conf, face_idx, face_obj))
+    
+        except Exception as e:
+            logger.error(f"Error processing face detection (idx: {face_idx}): {e}")
+            continue
+    logger.info(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces")
+    # Step 4: ULTRA STRONG ReID MATCHING FOR LOCKED TRACKS (Anti-Swapping)
+    new_tracks = []
+    used_detections = set()
+    used_body_tracks = set()
+    # 🆕 IMPROVED: Ultra-strict ReID matching with multi-validation
+    for person_id, lock_info in locked_tracks.items():
+        last_reid_features = lock_info.get('reid_features')
+        last_body_box = lock_info.get('body_box')
+    
+        if last_reid_features is not None and body_tracks:
+            best_match_idx = None
+            best_reid_distance = 0.18  # 🆕 ULTRA STRICT for maximum anti-swapping
+            best_spatial_match = None
+        
+            # Try ReID matching with multi-stage validation
+            for idx, body_track in enumerate(body_tracks):
+                if idx in used_body_tracks:
+                    continue
+                
+                current_reid_features = body_track['reid_features']
+                if current_reid_features is None:
+                    continue
+            
+                # Stage 1: Calculate ReID distance
+                reid_dist = calculate_reid_distance(last_reid_features, current_reid_features)
+                if reid_dist >= best_reid_distance:
+                    continue
+            
+                # Stage 2: 🆕 STRICT SPATIAL CONSTRAINT - Movement limit
+                if last_body_box:
+                    movement = calculate_box_distance(last_body_box, body_track['body_box'])
+                    # 🆕 Maximum 60 pixels movement (stricter than before)
+                    if movement > 60:
+                        continue
+            
+                # Stage 3: 🆕 STRICT SIZE CONSISTENCY - Prevent body size jumps
+                if last_body_box:
+                    last_area = (last_body_box[2] - last_body_box[0]) * (last_body_box[3] - last_body_box[1])
+                    new_area = (body_track['body_box'][2] - body_track['body_box'][0]) * (body_track['body_box'][3] - body_track['body_box'][1])
+                    
+                    # Avoid division by zero
+                    if max(last_area, new_area) == 0:
+                        continue
+                    
+                    area_ratio = min(last_area, new_area) / max(last_area, new_area)
+                    # 🆕 Body size must be within 70% similarity (stricter)
+                    if area_ratio < 0.70:
+                        continue
+                
+                # Stage 4: 🆕 ASPECT RATIO VALIDATION - Prevent shape distortion
+                if last_body_box:
+                    last_width = last_body_box[2] - last_body_box[0]
+                    last_height = last_body_box[3] - last_body_box[1]
+                    new_width = body_track['body_box'][2] - body_track['body_box'][0]
+                    new_height = body_track['body_box'][3] - body_track['body_box'][1]
+                    
+                    if last_height > 0 and new_height > 0:
+                        last_aspect = last_width / last_height
+                        new_aspect = new_width / new_height
+                        aspect_diff = abs(last_aspect - new_aspect)
+                        # 🆕 Aspect ratio change must be minimal
+                        if aspect_diff > 0.15:
+                            continue
+            
+                # All validations passed - this is the best match
+                best_reid_distance = reid_dist
+                best_match_idx = idx
+        
+            if best_match_idx is not None:
+                # Found matching body via strict ReID + spatial validation
+                matched_body = body_tracks[best_match_idx]
+                used_body_tracks.add(best_match_idx)
+            
+                # Update locked track with new position
+                lock_info['body_box'] = matched_body['body_box']
+                lock_info['last_seen'] = frame_idx
+                lock_info['missed_detections'] = 0
+                
+                # Update ReID features with high retention for stability
+                if matched_body['reid_features'] is not None:
+                    alpha = 0.92  # 🆕 Very high retention for maximum stability
+                    lock_info['reid_features'] = (
+                        alpha * last_reid_features +
+                        (1 - alpha) * matched_body['reid_features']
+                    )
+            
+                logger.info(f"✅ Locked {lock_info.get('name', person_id)} updated via ReID (dist: {best_reid_distance:.3f})")
+            else:
+                # No match - preserve last position and count miss
+                lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
+                logger.debug(f"❌ No ReID match for {lock_info.get('name', person_id)} - Preserving last detection")
+    # Add locked tracks to new_tracks
+    for person_id, lock_info in locked_tracks.items():
+        lock_start = lock_info.get('lock_start', frame_idx)
+        tracking_seconds = (frame_idx - lock_start) // 30
+    
+        locked_track_obj = {
+            'id': person_id,
+            'name': lock_info.get('name', f'Person {person_id}'),
+            'type': lock_info.get('type', 'student'),
+            'is_locked': True,
+            'body_box': lock_info.get('body_box'),
+            'last_seen': lock_info.get('last_seen', frame_idx),
+            'confidence': 1.0,
+            'tracking_duration': tracking_seconds,
+            'lock_start': lock_start
+        }
+        new_tracks.append(locked_track_obj)
+    # Update existing unlocked tracks
+    for tr in tracks:
+        if tr.get('id') in locked_tracks:
+            continue
+    
+        frames_since_seen = frame_idx - tr.get('last_seen', 0)
+        if frames_since_seen > 20:
+            continue
+    
+        best_detection = None
+        best_iou = 0.4
+        best_idx = -1
+        tr_box = tr.get('box')
+        if tr_box:
+            for idx_det, (x1, y1, x2, y2, conf, face_idx_val, face_obj) in enumerate(dets):
+                if idx_det in used_detections:
+                    continue
+                overlap_iou = iou((x1, y1, x2, y2), tr_box)
+                if overlap_iou > best_iou:
+                    best_iou = overlap_iou
+                    best_detection = (x1, y1, x2, y2, conf, face_idx_val, face_obj)
+                    best_idx = idx_det
+            if best_detection:
+                used_detections.add(best_idx)
+                x1, y1, x2, y2, conf, face_idx_val, face_obj = best_detection
+                tr['box'] = (x1, y1, x2, y2)
+                tr['last_seen'] = frame_idx
+                new_tracks.append(tr)
+            else:
+                if frames_since_seen < 8:
+                    new_tracks.append(tr)
+    # Step 5: Process NEW face detections (PRESERVED: Fast recognition)
+    for idx_det, (x1, y1, x2, y2, conf, face_idx_val, face_obj) in enumerate(dets):
+        if idx_det in used_detections:
+            continue
+        # Check overlap with existing tracks
+        overlaps_existing = False
+        for existing_tr in new_tracks:
+            if iou((x1, y1, x2, y2), existing_tr.get('box', (0, 0, 0, 0))) > 0.3:
+                overlaps_existing = True
+                break
+        if overlaps_existing:
+            continue
+        # Face Recognition (PRESERVED: Fast instant recognition)
+        name = "Unknown"
+        person_id = None
+        ptype = None
+        confidence = conf
+        face_embedding = None
+        best_similarity = 0
+        if conf >= 0.15 and KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
+            try:
+                face_embedding = face_obj.embedding
+            
+                if len(known_face_names) == 0 or len(KNOWN_FACE_ENCODINGS_ARRAY) == 0:
+                    logger.warning("No known faces loaded for recognition")
+                    name = "Unknown"
+                else:
+                    dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                    norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
+                    norm_b = np.linalg.norm(face_embedding)
+                    denominator = norm_a * norm_b
+                    similarities = np.divide(dot_products, denominator,
+                                             out=np.zeros_like(dot_products, dtype=float),
+                                             where=denominator != 0)
+                    if similarities.size > 0:
+                        best_match_index = int(np.argmax(similarities))
+                        best_similarity = float(similarities[best_match_index])
+                        if best_similarity >= 0.50:  # PRESERVED: Fast recognition threshold
+                            name = known_face_names[best_match_index]
+                            person_id = known_face_ids[best_match_index]
+                            ptype = known_face_types[best_match_index]
+                            confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
+                        
+                            if ptype == 'faculty':
+                                name = f"Faculty: {name}"
+                        
+                            logger.info(f"✅ RECOGNITION MATCH: {name} ({person_id}) - Similarity: {best_similarity:.3f}")
+                        else:
+                            logger.info(f"❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold 0.50")
+                            name = "Unknown"
+                        
+            except Exception as e:
+                logger.error(f"❌ Error in recognition: {e}")
+                name = "Unknown"
+        # Handle unknown faces
+        if name == "Unknown" and face_embedding is not None:
+            try:
+                face_crop = frame[y1:y2, x1:x2]
+                if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
+                    session_id = get_current_session_id()
+                    if session_id:
+                        success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
+                        if success:
+                            logger.info(f"📸 CAPTURED UNKNOWN FACE - Added to enrollment system")
+            except Exception as e:
+                logger.error(f"❌ Error capturing unknown face: {e}")
+        # Match face to body with 🆕 ANTI-SWAP validation
+        matched_body_track = None
+        face_center_x = (x1 + x2) // 2
+        face_center_y = (y1 + y2) // 2
+    
+        for body_track in body_tracks:
+            if body_track['track_id'] in used_body_tracks:
+                continue
+            
+            body_box = body_track['body_box']
+            bx1, by1, bx2, by2 = body_box
+        
+            # Check if face is within upper body region
+            body_height = by2 - by1
+            upper_body_y1 = by1
+            upper_body_y2 = by1 + int(body_height * 0.6)
+        
+            if (bx1 <= face_center_x <= bx2 and
+                upper_body_y1 <= face_center_y <= upper_body_y2):
+                
+                # 🆕 ADDITIONAL: Validate face-body size ratio (anti-swap)
+                face_area = (x2 - x1) * (y2 - y1)
+                body_area = (bx2 - bx1) * (by2 - by1)
+                face_body_ratio = face_area / body_area if body_area > 0 else 0
+                
+                # Face should be 1.5% to 20% of body area
+                if 0.015 <= face_body_ratio <= 0.20:
+                    matched_body_track = body_track
+                    used_body_tracks.add(body_track['track_id'])
+                    logger.info(f"✅ Face-Body matched: track_id={body_track['track_id']}, ratio={face_body_ratio:.3f}")
+                    break
+        # If still unknown after recognition attempt
+        if person_id is None:
+            unique_id = f"U-{frame_idx}-{x1}"
+        
+            if matched_body_track:
+                track_obj = {
+                    'id': unique_id,
+                    'box': (x1, y1, x2, y2),
+                    'body_box': matched_body_track['body_box'],
+                    'byte_track_id': matched_body_track['track_id'],
+                    'confidence': max(0.3, conf),
+                    'last_seen': frame_idx,
+                    'is_locked': False,
+                    'name': "Unknown",
+                    'type': 'unknown',
+                    'start_frame': frame_idx,
+                    'reid_features': matched_body_track['reid_features']
+                }
+                new_tracks.append(track_obj)
+                logger.info(f"📍 Unknown face with body tracking")
+            else:
+                new_tracks.append({
+                    'id': unique_id,
+                    'box': (x1, y1, x2, y2),
+                    'confidence': max(0.3, conf),
+                    'last_seen': frame_idx,
+                    'is_locked': False,
+                    'name': "Unknown",
+                    'type': 'unknown',
+                    'start_frame': frame_idx
+                })
+                logger.info(f"📍 Unknown face without body")
+        else:
+            # Known person (PRESERVED: Fast locking)
+            if matched_body_track and person_id not in locked_tracks:
+                if person_id not in pending_confirmations:
+                    pending_confirmations[person_id] = {
+                        'id': id,
+                        'frames': [],
+                        'body_boxes': [],
+                        'name': name,
+                        'type': ptype,
+                        'similarities': [],
+                        'first_seen': frame_idx,
+                        'last_seen': frame_idx,
+                        'byte_track_id': matched_body_track['track_id'],
+                        'reid_features': matched_body_track['reid_features']
+                    }
+                    logger.info(f"🆕 NEW PENDING: {name} (ID: {person_id})")
+            
+                pending_confirmations[person_id]['frames'].append(frame_idx)
+                pending_confirmations[person_id]['body_boxes'].append(matched_body_track['body_box'])
+                pending_confirmations[person_id]['similarities'].append(best_similarity)
+                pending_confirmations[person_id]['last_seen'] = frame_idx
+            
+                max_frames_to_keep = CONFIRMATION_FRAMES_REQUIRED + 2
+                if len(pending_confirmations[person_id]['frames']) > max_frames_to_keep:
+                    pending_confirmations[person_id]['frames'].pop(0)
+                    pending_confirmations[person_id]['body_boxes'].pop(0)
+                    pending_confirmations[person_id]['similarities'].pop(0)
+            
+                confirmation_data = pending_confirmations[person_id]
+                consecutive_frames = len(confirmation_data['frames'])
+                avg_similarity = sum(confirmation_data['similarities']) / len(confirmation_data['similarities'])
+            
+                logger.info(f"🔄 PENDING PROGRESS: {name} - Frames: {consecutive_frames}, Avg Similarity: {avg_similarity:.3f}")
+            
+                # PRESERVED: Fast confirmation for instant locking
+                if (consecutive_frames >= max(3, CONFIRMATION_FRAMES_REQUIRED - 2) and
+                    avg_similarity >= CONFIRMATION_SIMILARITY_THRESHOLD - 0.05):
+                
+                    # LOCK with ReID features
+                    locked_tracks[person_id] = {
+                        'id': id, 
+                        'name': name,
+                        'type': ptype,
+                        'body_box': matched_body_track['body_box'],
+                        'last_seen': frame_idx,
+                        'reid_features': matched_body_track['reid_features'],
+                        'lock_start': frame_idx,
+                        'missed_detections': 0,
+                        'byte_track_id': matched_body_track['track_id']
+                    }
+                
+                    locked_track_obj = {
+                        'id': person_id,
+                        'name': name,
+                        'type': ptype,
+                        'is_locked': True,
+                        'body_box': matched_body_track['body_box'],
+                        'last_seen': frame_idx,
+                        'confidence': 1.0,
+                        'tracking_duration': 0,
+                        'lock_start': frame_idx,
+                        'byte_track_id': matched_body_track['track_id']
+                    }
+                    new_tracks.append(locked_track_obj)
+                
+                    mark_attendance(name, person_id, ptype)
+                    del pending_confirmations[person_id]
+                    logger.info(f"🔒 LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
+                else:
+                    temp_track = {
+                        'id': person_id,
+                        'box': (x1, y1, x2, y2),
+                        'body_box': matched_body_track['body_box'],
+                        'confidence': confidence,
+                        'last_seen': frame_idx,
+                        'is_locked': False,
+                        'name': name,
+                        'is_pending': True,
+                        'byte_track_id': matched_body_track['track_id']
+                    }
+                    new_tracks.append(temp_track)
+            else:
+                # No body match or already locked
+                if person_id not in locked_tracks:
+                    logger.info(f"⚠️ {name} recognized but no body match")
+                new_tracks.append({
+                    'id': person_id,
+                    'box': (x1, y1, x2, y2),
+                    'confidence': confidence,
+                    'last_seen': frame_idx,
+                    'is_locked': False,
+                    'name': name
+                })
+    # Confidence decay for unlocked tracks
+    for tr in new_tracks[:]:
+        if not tr.get('is_locked'):
+            tr['confidence'] = max(0.1, tr.get('confidence', 0.5) * 0.85)
+            if tr['confidence'] < 0.2 and frame_idx - tr.get('last_seen', 0) > 10:
+                new_tracks.remove(tr)
+    # Update global tracks
+    tracks[:] = new_tracks
+    # Cleanup old unknown tracks
+    current_tracks = [
+        tr for tr in tracks
+        if not (tr.get('name') == "Unknown" and frame_idx - tr.get('last_seen', 0) > 30)
+    ]
+    tracks[:] = current_tracks
+    logger.info(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
+
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
     Update trackers with body-only tracking for LOCKED tracks.
-    ✅ FIXED: HTTPS API calls with proper error handling
+    ✅ FIXED: Better manual status protection and HTTPS API calls with proper error handling
     """
     global tracks, locked_tracks, pending_confirmations, current_fps
     global detectionStopped, student_presence_tracker, current_session_id
@@ -1724,7 +2579,69 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             student_id = lock_info.get('id')
             student_name = lock_info.get('name', person_id)
             
-            # 🎯 FIXED HTTPS API CALL with proper data format
+            # 🎯 FIXED: BETTER Manual Status Detection BEFORE calling student_left API
+            is_manual_status = False
+            try:
+                import requests
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                
+                # First check if student has manual status
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT status, session_id, remarks FROM attendance 
+                    WHERE student_id = %s AND session_id = %s
+                    ORDER BY timestamp DESC LIMIT 1
+                """, (student_id, current_session_id))
+                
+                attendance_record = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                
+                if attendance_record:
+                    current_status = attendance_record['status']
+                    current_session = attendance_record.get('session_id')
+                    remarks = attendance_record.get('remarks', '')
+                    
+                    # 🎯 BETTER MANUAL STATUS DETECTION - More specific
+                    manual_excuse_sessions = ['manual_excuse']  # Only for excused students
+                    manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
+                    manual_statuses = ['excused']  # Only truly manual statuses
+                    
+                    # 🚫 REMOVED: 'manual_add' from manual sessions (this is for temp students)
+                    # 🚫 REMOVED: Broad keyword matching that was too aggressive
+                    
+                    is_manual_status = (
+                        # Only specific manual session types (not manual_add)
+                        current_session in manual_excuse_sessions or
+                        current_session in manual_status_sessions or
+                        # Only specific manual statuses
+                        current_status in manual_statuses or
+                        # Only specific manual remarks (not temp_id)
+                        'Manually marked' in remarks or
+                        'Manual status' in remarks
+                    )
+                    
+                    if is_manual_status:
+                        logger.info(f"🔒 SKIPPING MISSING: {student_name} has manual status '{current_status}'")
+                        # Don't call student_left API for manual status students
+                        # Just update presence tracker and continue
+                        if student_id in student_presence_tracker:
+                            student_presence_tracker[student_id]['present'] = False
+                            student_presence_tracker[student_id]['last_seen'] = current_time
+                        
+                        locked_tracks.pop(person_id, None)
+                        locked_track_reid_features.pop(person_id, None)
+                        logger.info(f"🔓 IMMEDIATE UNLOCK (MANUAL STATUS): {person_id}")
+                        continue  # Skip the API call entirely
+                    else:
+                        logger.info(f"🔄 AUTO STATUS: {student_name} can be marked as missing")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Error checking manual status: {e}")
+            
+            # 🎯 Only call student_left API if NOT manual status
             try:
                 import requests
                 import time
@@ -1794,7 +2711,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         logger.info(f"🔓 IMMEDIATE UNLOCK: {person_id}")
     
     # 🎯 SIMPLE MISSING DETECTION - Backup check every 30 frames
-    if frame_idx % 30 == 0 and current_session_id:
+    if frame_idx % 15 == 0 and current_session_id:
         for student_id, track_info in list(student_presence_tracker.items()):
             if track_info.get('present'):
                 has_active_body = student_id in locked_tracks_with_bodies
@@ -1804,10 +2721,52 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     if last_body_seen:
                         time_since_body_seen = (current_time - last_body_seen).total_seconds()
                         
-                        if time_since_body_seen > 5:  # Reduced to 5 seconds for backup
+                        if time_since_body_seen > 3:  # Reduced to 5 seconds for backup
                             track_info['present'] = False
                             track_info['last_seen'] = current_time
                             
+                            # 🎯 ADDED: BETTER Manual Status Detection before marking as missing
+                            try:
+                                conn = get_db_connection()
+                                cursor = conn.cursor(dictionary=True)
+                                cursor.execute("""
+                                    SELECT status, session_id, remarks FROM attendance 
+                                    WHERE student_id = %s AND session_id = %s
+                                    ORDER BY timestamp DESC LIMIT 1
+                                """, (student_id, current_session_id))
+                                
+                                attendance_record = cursor.fetchone()
+                                cursor.close()
+                                conn.close()
+                                
+                                if attendance_record:
+                                    current_status = attendance_record['status']
+                                    current_session = attendance_record.get('session_id')
+                                    remarks = attendance_record.get('remarks', '')
+                                    
+                                    # 🎯 BETTER MANUAL STATUS DETECTION
+                                    manual_excuse_sessions = ['manual_excuse']  # Only for excused students
+                                    manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
+                                    manual_statuses = ['excused']  # Only truly manual statuses
+                                    
+                                    is_manual_status = (
+                                        current_session in manual_excuse_sessions or
+                                        current_session in manual_status_sessions or
+                                        current_status in manual_statuses or
+                                        'Manually marked' in remarks or
+                                        'Manual status' in remarks
+                                    )
+                                    
+                                    if is_manual_status:
+                                        logger.info(f"🔒 SKIPPING MISSING: {track_info['name']} has manual status '{current_status}'")
+                                        continue  # Skip API call for manual status students
+                                    else:
+                                        logger.info(f"🔄 AUTO STATUS: {track_info['name']} can be marked as missing")
+                                
+                            except Exception as e:
+                                logger.warning(f"⚠️ Error checking manual status: {e}")
+                            
+                            # Only call API if not manual status
                             try:
                                 import requests
                                 import urllib3
@@ -1943,11 +2902,62 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             student_id = lock_info.get('id')
             student_name = lock_info.get('name', person_id)
             
+            # 🎯 FIXED: BETTER Manual Status Detection BEFORE calling student_left API
+            is_manual_status = False
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT status, session_id, remarks FROM attendance 
+                    WHERE student_id = %s AND session_id = %s
+                    ORDER BY timestamp DESC LIMIT 1
+                """, (student_id, current_session_id))
+                
+                attendance_record = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                
+                if attendance_record:
+                    current_status = attendance_record['status']
+                    current_session = attendance_record.get('session_id')
+                    remarks = attendance_record.get('remarks', '')
+                    
+                    # 🎯 BETTER MANUAL STATUS DETECTION
+                    manual_excuse_sessions = ['manual_excuse']  # Only for excused students
+                    manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
+                    manual_statuses = ['excused']  # Only truly manual statuses
+                    
+                    is_manual_status = (
+                        current_session in manual_excuse_sessions or
+                        current_session in manual_status_sessions or
+                        current_status in manual_statuses or
+                        'Manually marked' in remarks or
+                        'Manual status' in remarks
+                    )
+                    
+                    if is_manual_status:
+                        logger.info(f"🔒 SKIPPING MISSING: {student_name} has manual status '{current_status}'")
+                        # Don't call student_left API for manual status students
+                        # Just update presence tracker and continue
+                        if student_id in student_presence_tracker:
+                            student_presence_tracker[student_id]['present'] = False
+                            student_presence_tracker[student_id]['last_seen'] = datetime.now()
+                        
+                        locked_tracks.pop(person_id, None)
+                        locked_track_reid_features.pop(person_id, None)
+                        logger.info(f"🔓 Unlocked track for {person_id} (MANUAL STATUS)")
+                        continue  # Skip the API call entirely
+                    else:
+                        logger.info(f"🔄 AUTO STATUS: {student_name} can be marked as missing")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Error checking manual status: {e}")
+            
             if student_id in student_presence_tracker:
                 student_presence_tracker[student_id]['present'] = False
                 student_presence_tracker[student_id]['last_seen'] = datetime.now()
             
-            # 🎯 SIMPLE: Call API to mark as missing WITH RETRY LOGIC
+            # 🎯 SIMPLE: Call API to mark as missing WITH RETRY LOGIC (only if not manual status)
             try:
                 import requests
                 import time
@@ -1994,10 +3004,8 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         locked_track_reid_features.pop(person_id, None)
         logger.info(f"🔓 Unlocked track for {person_id}")
     
-    # Maintain tracks list
     current_tracks = []
     
-    # Add locked tracks
     for person_id, lock_info in locked_tracks.items():
         lock_start = lock_info.get('lock_start', frame_idx)
         frames_tracked = frame_idx - lock_start
@@ -2210,580 +3218,63 @@ def update_trackers_with_body(rgb, frame, frame_idx):
 
     logger.info(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
 
-def cleanup_locked_tracks(current_frame, lock_timeout_frames):
-    global locked_tracks
-    
-    to_remove = []
-    for id, lock_info in locked_tracks.items():
-        if current_frame - lock_info['last_seen'] > lock_timeout_frames * 2:
-            to_remove.append(id)
-            logger.info(f"Cleaning up locked track for {id}")
-    
-    for id in to_remove:
-        del locked_tracks[id]
 
-
-def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.7, is_locked_track=False):  # Increased tolerance
-    global KNOWN_FACE_ENCODINGS_ARRAY
-    try:
-        distance = estimate_distance(face_width_pixels)
-
-        # INCREASED MAX RECOGNITION DISTANCE
-        if distance > MAX_RECOGNITION_DISTANCE * 1.5:  # 50% more range
-            logger.info(f"Face too far for recognition: {distance:.1f}m")
-            return "Unknown", None, float('inf'), distance, 0.0, None
-
-        # IMPROVED IMAGE ENHANCEMENT for better recognition at distance
-        if len(face_image.shape) == 3:
-            # More aggressive enhancement for distant faces
-            gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-            gray = cv2.equalizeHist(gray)
-            # Apply CLAHE for better contrast
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            gray = clahe.apply(gray)
-            gray = cv2.bilateralFilter(gray, 9, 75, 75)
-            enhanced = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-        else:
-            enhanced = face_image
-
-        start_time = time.time()
-        faces = face_analysis.get(enhanced)
-        logger.info(f"Face analysis inference time: {time.time() - start_time:.4f} seconds")
-        if not faces:
-            return "Unknown", None, float('inf'), distance, 0.0, None
-
-        face_embedding = faces[0].embedding
-
-        # 👇 OPTIMIZATION: Vectorized Cosine Similarity Calculation
-        if KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
-            # 1. Calculate dot products (numerator)
-            dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
-            
-            # 2. Calculate norms (denominator parts)
-            norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
-            norm_b = np.linalg.norm(face_embedding)
-            
-            # 3. Calculate similarities (division)
-            denominator = (norm_a * norm_b)
-            similarities = np.divide(dot_products, denominator, 
-                                     out=np.zeros_like(dot_products), where=denominator!=0)
-        else:
-            similarities = np.array([])
-        # 👆 END OF OPTIMIZATION
-
-        if similarities.size > 0:
-            best_match_index = int(np.argmax(similarities))
-            best_similarity = float(similarities[best_match_index])
-
-            # LOWER THRESHOLD for recognition, especially for redetection
-            recognition_threshold = 0.85 if is_locked_track else 0.80  # Reduced thresholds
-            confidence = best_similarity
-
-            if is_locked_track or confidence >= recognition_threshold:
-                name = known_face_names[best_match_index]
-                id = known_face_ids[best_match_index]
-                role_type = known_face_types[best_match_index]
-
-                if role_type == 'faculty':
-                    name = f"Faculty: {name}"
-
-                return (
-                    name,
-                    id,
-                    1 - confidence,
-                    distance,
-                    confidence,
-                    role_type
-                )
-
-        return "Unknown", None, float('inf'), distance, 0.0, None
-
-    except Exception as e:
-        logger.error(f"Error in enhanced_recognize_face: {e}")
-        return "Unknown", None, float('inf'), None, 0.0, None
-
-
-def detect_liveness_cctv(face_image, liveness_threshold):
-    try:
-        gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-        fm = cv2.Laplacian(gray, cv2.CV_64F).var()
-        adjusted_threshold = liveness_threshold * 0.8
-        if fm < adjusted_threshold:
-            logger.warning(f"Liveness detection failed: variance {fm} < threshold {adjusted_threshold}")
-            return False
-        logger.info(f"Liveness detection passed: variance {fm}")
-        return True
-    except Exception as e:
-        logger.error(f"Liveness detection error: {e}")
-        return True
-
-
-def estimate_distance(face_width_pixels):
-    if face_width_pixels < 20:
-        return float('inf')
-    estimated_distance = (FACE_SIZE_FOR_DISTANCE * 2) / face_width_pixels
-    return estimated_distance
-
-
-def recognize_face_with_anti_spoofing(face_image, tolerance=0.6, liveness_threshold=100):
-    if not detect_liveness_cctv(face_image, liveness_threshold):
-        return "Unknown", None, float('inf'), False, 0.0
-    face_width = face_image.shape[1]
-    name, student_id, distance, est_distance, confidence, role_type = enhanced_recognize_face(face_image, face_width, tolerance)
-    return name, student_id, distance, est_distance, True, confidence
-
-
-# Add this helper function at the top of detect.py
-def calculate_late_status(attendance_time, session_start, threshold_minutes):
-    """Calculate if student is late based on threshold"""
-    try:
-        att_time = datetime.strptime(attendance_time, "%Y-%m-%d %H:%M:%S")
-        time_diff = (att_time - session_start).total_seconds() / 60
+@app.route('/video_feed')
+def video_feed():
+    """Stream video feed - OPTIMIZED SMOOTH WITH DETECTION"""
+    def generate():
+        global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
+        frame_idx = 0
+        last_processing_time = time.time()
+        processing_interval = 0.1  # Process detection every 100ms (~10 FPS detection)
         
-        if time_diff <= threshold_minutes:
-            return 'present'
-        else:
-            return 'late'
-    except:
-        return 'present'
-
-def refresh_with_detections(frame, rgb, frame_idx):
-    """
-    FIXED: Locked tracks use BODY tracking only, no face boxes
-    FIXED: Overlapping prevention and faster track removal
-    """
-    global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
-    global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
-    
-    if detectionStopped:
-        return
-    
-    # Skip every other frame if FPS is too low
-    if current_fps < 10 and frame_idx % 2 == 0:
-        return
-    
-    h, w = frame.shape[:2]
-
-    # Dynamic detection frequency
-    if len(tracks) > MAX_TRACKS:
-        locked_track_count = len(locked_tracks)
-        unlocked_tracks = [tr for tr in tracks if tr.get('id') not in locked_tracks]
-        unlocked_tracks.sort(key=lambda x: x.get('confidence', 0), reverse=True)
-        unlocked_tracks = unlocked_tracks[:MAX_UNLOCKED_TRACKS]
-        tracks[:] = unlocked_tracks
-        logger.info(f"Track cleanup: {locked_track_count} locked + {len(unlocked_tracks)} unlocked")
-
-    # Cleanup stale pending confirmations
-    cleanup_pending_confirmations(frame_idx, timeout_frames=15)
-
-    # Step 1: Face detection
-    try:
-        faces = face_analysis.get(rgb)
-    except Exception as e:
-        logger.error(f"Face detection failed: {e}")
-        return
-
-    # Filter out locked faces with STRICTER overlap detection
-    locked_body_boxes = []
-    for person_id, lock_info in locked_tracks.items():
-        body_box = lock_info.get('body_box')
-        if body_box:
-            bx1, by1, bx2, by2 = body_box
-            expand_margin = 8  # Reduced from 15 to 8 pixels
-            expanded_body_box = (
-                max(0, bx1 - expand_margin),
-                max(0, by1 - expand_margin),
-                min(w, bx2 + expand_margin),
-                min(h, by2 + expand_margin)
-            )
-            locked_body_boxes.append((person_id, expanded_body_box, lock_info.get('name', person_id)))
-
-    # Check if locked students who were missing are now detected
-    for person_id, lock_info in locked_tracks.items():
-        if (lock_info.get('type') == 'student' and 
-            person_id in student_presence_tracker and
-            not student_presence_tracker[person_id].get('present', True)):
+        while not stop_flag:
+            frame_start = time.time()
             
-            for face in faces:
-                try:
-                    x1, y1, x2, y2 = face.bbox.astype(int)
-                    face_center_x = (x1 + x2) // 2
-                    face_center_y = (y1 + y2) // 2
-                    
-                    body_box = lock_info.get('body_box')
-                    if body_box:
-                        bx1, by1, bx2, by2 = body_box
-                        if (bx1 <= face_center_x <= bx2 and by1 <= face_center_y <= by2):
-                            logger.info(f"Missing locked student detected: {lock_info.get('name')}")
-                            mark_attendance(lock_info.get('name'), person_id, lock_info.get('type', 'student'))
-                            break
-                except Exception as e:
-                    continue
-
-    # Add face size validation to prevent small faces from stealing tracks
-    dets = []
-    for idx, face in enumerate(faces):
-        face_idx = idx 
-        face_obj = face
-
-        try:
-            x1, y1, x2, y2 = face.bbox.astype(int)
-            conf = face.det_score
-            
-            if x2 > x1 and y2 > y1:
-                is_within_bounds = (x1 >= -30 and y1 >= -30 and x2 <= w + 30 and y2 <= h + 30)
-
-                if is_within_bounds:
-                    box_width = x2 - x1
-                    box_height = y2 - y1
-                    
-                    if box_width >= 30 and box_height >= 30:  
-                        
-                        is_locked_face = False
-                        face_center_x = (x1 + x2) // 2
-                        face_center_y = (y1 + y2) // 2
-                        
-                        for locked_person_id, locked_body_box, locked_name in locked_body_boxes:
-                            bx1, by1, bx2, by2 = locked_body_box
-                            
-                            if (bx1 <= face_center_x <= bx2 and by1 <= face_center_y <= by2):
-                                body_height = by2 - by1
-                                body_width = bx2 - bx1
-                                face_relative_y = face_center_y - by1
-                                face_relative_x = face_center_x - bx1
-                                
-                                face_area = box_width * box_height
-                                body_area = body_width * body_height
-                                
-                                if (face_relative_y < body_height * 0.4 and
-                                    face_relative_x > body_width * 0.15 and 
-                                    face_relative_x < body_width * 0.85 and
-                                    face_area > body_area * 0.015 and
-                                    face_area < body_area * 0.2):
-                                    is_locked_face = True
-                                    break
-                        
-                        if not is_locked_face:
-                            dets.append((x1, y1, x2, y2, conf, face_idx, face_obj))
-        
-        except Exception as e:
-            logger.error(f"Error processing face detection (idx: {face_idx}): {e}")
-            continue
-
-    logger.info(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces")
-
-    # Step 2: Get body detections
-    body_detections = detect_bodies(frame)
-    
-    # Step 3: Match and update existing unlocked tracks with FASTER cleanup
-    new_tracks = []
-    used_detections = set()
-    used_body_indices = set()
-
-    # Update existing unlocked tracks FIRST
-    for tr in tracks:
-        if tr.get('id') in locked_tracks:
-            new_tracks.append(tr)
-            continue
-        
-        frames_since_seen = frame_idx - tr.get('last_seen', 0)
-        if frames_since_seen > 20:
-            continue
-        
-        best_detection = None
-        best_iou = 0.4
-        best_idx = -1
-
-        tr_box = tr.get('box')
-        if tr_box:
-            for idx_det, (x1, y1, x2, y2, conf, face_idx_val, face_obj) in enumerate(dets):
-                if idx_det in used_detections:
-                    continue
-                overlap_iou = iou((x1, y1, x2, y2), tr_box)
-                if overlap_iou > best_iou:
-                    best_iou = overlap_iou
-                    best_detection = (x1, y1, x2, y2, conf, face_idx_val, face_obj)
-                    best_idx = idx_det
-
-            if best_detection:
-                used_detections.add(best_idx)
-                x1, y1, x2, y2, conf, face_idx_val, face_obj = best_detection
-                tr['box'] = (x1, y1, x2, y2)
-                tr['last_seen'] = frame_idx
-                new_tracks.append(tr)
-            else:
-                if frames_since_seen < 8:
-                    new_tracks.append(tr)
-
-    # Step 4: Process NEW face detections
-    for idx_det, (x1, y1, x2, y2, conf, face_idx_val, face_obj) in enumerate(dets):
-        if idx_det in used_detections:
-            continue
-
-        # Check overlap with existing tracks
-        overlaps_existing = False
-        for existing_tr in new_tracks:
-            if iou((x1, y1, x2, y2), existing_tr.get('box', (0, 0, 0, 0))) > 0.3:
-                overlaps_existing = True
-                break
-
-        if overlaps_existing:
-            continue
-
-        # Step 5: Face Recognition
-        name = "Unknown"
-        person_id = None
-        ptype = None
-        confidence = conf
-        face_embedding = None
-
-        if conf >= 0.15 and KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
             try:
-                face_embedding = face_obj.embedding
+                # 🎯 OPTIMIZED FRAME ACCESS
+                if latest_frame is None:
+                    time.sleep(0.01)
+                    continue
                 
-                # Cosine similarity
-                dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
-                norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
-                norm_b = np.linalg.norm(face_embedding)
-                denominator = norm_a * norm_b
-                similarities = np.divide(dot_products, denominator,
-                                         out=np.zeros_like(dot_products, dtype=float),
-                                         where=denominator != 0)
-
-                if similarities.size > 0:
-                    best_match_index = int(np.argmax(similarities))
-                    best_similarity = float(similarities[best_match_index])
-
-                    if best_similarity >= 0.55:
-                        name = known_face_names[best_match_index]
-                        person_id = known_face_ids[best_match_index]
-                        ptype = known_face_types[best_match_index]
-                        confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
-                        
-                        if ptype == 'faculty':
-                            name = f"Faculty: {name}"
-                        
-                        logger.info(f"RECOGNITION MATCH: {name} ({person_id}) - Similarity: {best_similarity:.3f}")
-                    else:
-                        # No match — capture unknown face during scan
-                        if is_face_scan_active() and face_embedding is not None:
-                            face_crop = frame[y1:y2, x1:x2]
-                            if face_crop.size > 0:
-                                # 🆕 ADD session_id parameter
-                                add_unknown_face(face_crop, face_embedding, session_id=get_current_session_id())
-                                logger.info("UNKNOWN FACE CAPTURED - No matches found")
+                frame = latest_frame.copy()
+                current_time = time.time()
+                
+                # 🎯 ADAPTIVE PROCESSING: Time-based instead of frame-based
+                should_process_detection = (current_time - last_processing_time) >= processing_interval
+                
+                if should_process_detection:
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    
+                    # 🎯 OPTIMIZED DETECTION PIPELINE
+                    refresh_with_detections(frame, rgb, frame_idx)
+                    update_trackers_with_body(rgb, frame, frame_idx)
+                    
+                    last_processing_time = current_time
+                    frame_idx += 1
+                
+                # 🎯 OPTIMIZED ENCODING
+                ret, buffer = cv2.imencode('.jpg', frame, [
+                    cv2.IMWRITE_JPEG_QUALITY, 75,  # Balanced quality/speed
+                    cv2.IMWRITE_JPEG_OPTIMIZE, 1
+                ])
+                frame_bytes = buffer.tobytes()
+                
+                yield (b'--frame\r\n'
+                      b'Content-Type: image/jpeg\r\n\r\n' + 
+                      frame_bytes + b'\r\n')
+                
+                # 🎯 PRECISE TIMING CONTROL
+                processing_time = time.time() - frame_start
+                target_frame_time = 0.033  # ~30 FPS
+                sleep_time = max(0.001, target_frame_time - processing_time)
+                time.sleep(sleep_time)
+                
             except Exception as e:
-                logger.error(f"Error in recognition: {e}")
-
-        # If still unknown after recognition attempt
-        if person_id is None:
-            unique_id = f"U-{frame_idx}-{x1}"
-            # Capture unknown face during scan
-            if is_face_scan_active() and face_embedding is not None:
-                face_crop = frame[y1:y2, x1:x2]
-                if face_crop.size > 0:
-                    # 🆕 ADD session_id parameter
-                    add_unknown_face(face_crop, face_embedding, session_id=get_current_session_id())
-                    logger.info("UNKNOWN FACE CAPTURED - No recognition attempted")
-
-            # Step 6: Match face to body
-            matched_body_idx, match_score = match_face_to_body(
-                (x1, y1, x2, y2),
-                body_detections,
-                iou_threshold=BODY_MATCH_IOU_THRESHOLD
-            )
-            
-            if matched_body_idx is not None and matched_body_idx not in used_body_indices:
-                body_box = tuple(body_detections[matched_body_idx]['box'])
-                used_body_indices.add(matched_body_idx)
-                
-                logger.debug(f"Matched face to body (score: {match_score:.2f})")
-                
-                # Step 7: CONFIRMATION QUEUE (only for recognized people)
-                if person_id and person_id not in locked_tracks:
-                    if person_id not in pending_confirmations:
-                        pending_confirmations[person_id] = {
-                            'frames': [],
-                            'body_boxes': [],
-                            'name': name,
-                            'type': ptype,
-                            'similarities': [],
-                            'first_seen': frame_idx,
-                            'last_seen': frame_idx
-                        }
-                    
-                    # Add this frame's data
-                    pending_confirmations[person_id]['frames'].append(frame_idx)
-                    pending_confirmations[person_id]['body_boxes'].append(body_box)
-                    pending_confirmations[person_id]['similarities'].append(best_similarity)
-                    pending_confirmations[person_id]['last_seen'] = frame_idx
-                    
-                    # Keep only recent frames
-                    max_frames_to_keep = CONFIRMATION_FRAMES_REQUIRED + 2
-                    if len(pending_confirmations[person_id]['frames']) > max_frames_to_keep:
-                        pending_confirmations[person_id]['frames'].pop(0)
-                        pending_confirmations[person_id]['body_boxes'].pop(0)
-                        pending_confirmations[person_id]['similarities'].pop(0)
-                    
-                    # Check confirmation
-                    confirmation_data = pending_confirmations[person_id]
-                    consecutive_frames = len(confirmation_data['frames'])
-                    avg_similarity = sum(confirmation_data['similarities']) / len(confirmation_data['similarities'])
-                    
-                    if (consecutive_frames >= CONFIRMATION_FRAMES_REQUIRED and
-                        avg_similarity >= CONFIRMATION_SIMILARITY_THRESHOLD):
-                        
-                        best_body_box = confirmation_data['body_boxes'][-1]
-                        reid_features = extract_reid_features(frame, best_body_box)
-                        
-                        # Lock track — BODY ONLY
-                        locked_tracks[person_id] = {
-                            'name': name,
-                            'type': ptype,
-                            'body_box': best_body_box,
-                            'last_seen': frame_idx,
-                            'reid_features': reid_features,
-                            'lock_start': frame_idx,
-                            'missed_detections': 0
-                        }
-                        
-                        locked_track_obj = {
-                            'id': person_id,
-                            'name': name,
-                            'type': ptype,
-                            'is_locked': True,
-                            'body_box': best_body_box,
-                            'last_seen': frame_idx,
-                            'confidence': 1.0,
-                            'tracking_duration': 0,
-                            'lock_start': frame_idx
-                        }
-                        new_tracks.append(locked_track_obj)
-                        
-                        mark_attendance(name, person_id, ptype)
-                        del pending_confirmations[person_id]
-                        logger.info(f"LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
-                    else:
-                        # Still pending
-                        temp_track = {
-                            'id': person_id,
-                            'box': (x1, y1, x2, y2),
-                            'body_box': body_box,
-                            'confidence': confidence,
-                            'last_seen': frame_idx,
-                            'is_locked': False,
-                            'name': name,
-                            'is_pending': True
-                        }
-                        new_tracks.append(temp_track)
-                else:
-                    # Recognized but no body match
-                    new_tracks.append({
-                        'id': person_id,
-                        'box': (x1, y1, x2, y2),
-                        'confidence': confidence,
-                        'last_seen': frame_idx,
-                        'is_locked': False,
-                        'name': name
-                    })
-            else:
-                # No body match — create unknown track
-                new_tracks.append({
-                    'id': unique_id,
-                    'box': (x1, y1, x2, y2),
-                    'confidence': max(0.3, conf),
-                    'last_seen': frame_idx,
-                    'is_locked': False,
-                    'name': "Unknown",
-                    'type': 'unknown',
-                    'start_frame': frame_idx
-                })
-        else:
-            # Known person with body match — proceed to confirmation
-            matched_body_idx, match_score = match_face_to_body(
-                (x1, y1, x2, y2),
-                body_detections,
-                iou_threshold=BODY_MATCH_IOU_THRESHOLD
-            )
-            
-            if matched_body_idx is not None and matched_body_idx not in used_body_indices:
-                body_box = tuple(body_detections[matched_body_idx]['box'])
-                used_body_indices.add(matched_body_idx)
-                
-                if person_id not in locked_tracks:
-                    # Same confirmation logic as above (duplicated for clarity)
-                    if person_id not in pending_confirmations:
-                        pending_confirmations[person_id] = {
-                            'frames': [], 'body_boxes': [], 'name': name, 'type': ptype,
-                            'similarities': [], 'first_seen': frame_idx, 'last_seen': frame_idx
-                        }
-                    
-                    pending_confirmations[person_id]['frames'].append(frame_idx)
-                    pending_confirmations[person_id]['body_boxes'].append(body_box)
-                    pending_confirmations[person_id]['similarities'].append(best_similarity)
-                    pending_confirmations[person_id]['last_seen'] = frame_idx
-                    
-                    max_frames_to_keep = CONFIRMATION_FRAMES_REQUIRED + 2
-                    if len(pending_confirmations[person_id]['frames']) > max_frames_to_keep:
-                        pending_confirmations[person_id]['frames'].pop(0)
-                        pending_confirmations[person_id]['body_boxes'].pop(0)
-                        pending_confirmations[person_id]['similarities'].pop(0)
-                    
-                    confirmation_data = pending_confirmations[person_id]
-                    consecutive_frames = len(confirmation_data['frames'])
-                    avg_similarity = sum(confirmation_data['similarities']) / len(confirmation_data['similarities'])
-                    
-                    if (consecutive_frames >= CONFIRMATION_FRAMES_REQUIRED and
-                        avg_similarity >= CONFIRMATION_SIMILARITY_THRESHOLD):
-                        best_body_box = confirmation_data['body_boxes'][-1]
-                        reid_features = extract_reid_features(frame, best_body_box)
-                        
-                        locked_tracks[person_id] = {
-                            'name': name, 'type': ptype, 'body_box': best_body_box,
-                            'last_seen': frame_idx, 'reid_features': reid_features,
-                            'lock_start': frame_idx, 'missed_detections': 0
-                        }
-                        
-                        locked_track_obj = {
-                            'id': person_id, 'name': name, 'type': ptype, 'is_locked': True,
-                            'body_box': best_body_box, 'last_seen': frame_idx,
-                            'confidence': 1.0, 'tracking_duration': 0, 'lock_start': frame_idx
-                        }
-                        new_tracks.append(locked_track_obj)
-                        mark_attendance(name, person_id, ptype)
-                        del pending_confirmations[person_id]
-                        logger.info(f"LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
-                    else:
-                        temp_track = {
-                            'id': person_id, 'box': (x1, y1, x2, y2), 'body_box': body_box,
-                            'confidence': confidence, 'last_seen': frame_idx,
-                            'is_locked': False, 'name': name, 'is_pending': True
-                        }
-                        new_tracks.append(temp_track)
-            else:
-                new_tracks.append({
-                    'id': person_id, 'box': (x1, y1, x2, y2), 'confidence': confidence,
-                    'last_seen': frame_idx, 'is_locked': False, 'name': name
-                })
-
-    # Confidence decay for unlocked tracks
-    for tr in new_tracks[:]:
-        if not tr.get('is_locked'):
-            tr['confidence'] = max(0.1, tr.get('confidence', 0.5) * 0.85)
-            if tr['confidence'] < 0.2 and frame_idx - tr.get('last_seen', 0) > 10:
-                new_tracks.remove(tr)
-
-    # Update global tracks
-    tracks[:] = new_tracks
+                logger.error(f"Video feed error: {e}")
+                time.sleep(0.01)
     
-    # Cleanup old unknown tracks
-    current_tracks = [
-        tr for tr in tracks
-        if not (tr.get('name') == "Unknown" and frame_idx - tr.get('last_seen', 0) > 30)
-    ]
-    tracks[:] = current_tracks
-    
-    logger.info(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 def get_current_session_id():
     """Get the current active session ID for face capture"""
@@ -5764,7 +6255,7 @@ def summary_page():
 @app.route('/api/summary_data')
 @login_required
 def get_summary_data():
-    """Get complete summary data for the latest session - INCLUDING TEMPORARY STUDENTS"""
+    """Get complete summary data for the latest session - FIXED: No duplicates"""
     try:
         user_id = session.get('user_id')
         
@@ -5798,90 +6289,81 @@ def get_summary_data():
                     'message': 'No completed sessions found'
                 }), 404
             
-            # ✅ FIXED: Use created_at for start time, ended_at for end time
-            started_at = session_data['created_at']  # Use created_at instead of started_at
+            session_id = session_data['session_id']
+            started_at = session_data['created_at']
             ended_at = session_data['ended_at']
             
-            print(f"🔍 DEBUG Time Data:")
+            print(f"🔍 DEBUG Session: {session_id}")
             print(f"   - Created At: {started_at}")
-            print(f"   - Started At: {session_data['started_at']}")
             print(f"   - Ended At: {ended_at}")
-            print(f"🔍 DEBUG Subject Data:")
-            print(f"   - Subject Code: {session_data.get('subject_code')}")
-            print(f"   - Subject Name: {session_data.get('subject_name')}")
-            print(f"   - Room: {session_data.get('room')}")
             
-            # Get duration from stored duration_time
+            # Get duration
             duration_time = session_data.get('duration_time', '00:00:00')
             duration_seconds = 0
             if duration_time and isinstance(duration_time, str):
                 try:
                     hours, minutes, seconds = map(int, duration_time.split(':'))
                     duration_seconds = hours * 3600 + minutes * 60 + seconds
-                    print(f"🔍 DEBUG Parsed duration from string: {duration_time} -> {duration_seconds} seconds")
                 except:
-                    # Fallback calculation using created_at and ended_at
                     if started_at and ended_at:
                         duration_seconds = int((ended_at - started_at).total_seconds())
-                        print(f"🔍 DEBUG Fallback duration calculation: {duration_seconds} seconds")
             else:
-                # Calculate from created_at and ended_at
                 if started_at and ended_at:
                     duration_seconds = int((ended_at - started_at).total_seconds())
-                    print(f"🔍 DEBUG Duration from created/ended: {duration_seconds} seconds")
             
-            print(f"🔍 DEBUG Final duration_seconds for frontend: {duration_seconds}")
-            
-            # ✅ GET SUBJECT INFORMATION FROM SESSION DATA INSTEAD OF SEPARATE QUERY
             subject_code = session_data.get('subject_code', 'IT99')
             subject_name = session_data.get('subject_name', 'AMBUTT UY')
             room = session_data.get('room', 'Unknown Room')
             
-            print(f"🔍 DEBUG Using subject from session: {subject_code} - {subject_name} - {room}")
-            
-            # ✅ FIXED: GET ALL ATTENDANCE RECORDS INCLUDING SUBJECT INFORMATION
+            # 🎯 CRITICAL FIX: Get ONLY LATEST attendance record per student to avoid duplicates
             cursor.execute("""
-                SELECT 
-                    a.student_id,
-                    a.name as student_name,
-                    a.status,
-                    a.timestamp,
-                    a.session_id,
-                    a.subject_code,  -- ✅ GET SUBJECT INFO FROM ATTENDANCE
-                    a.subject_name,  -- ✅ GET SUBJECT INFO FROM ATTENDANCE
-                    a.room,          -- ✅ GET ROOM INFO FROM ATTENDANCE
-                    s.photo_path,
-                    CASE 
-                        WHEN a.session_id = 'manual_add' OR a.session_id IS NULL THEN TRUE 
-                        ELSE FALSE 
-                    END as is_temporary
-                FROM attendance a
-                LEFT JOIN students s ON a.student_id = s.student_id
-                WHERE (a.session_id = %s OR a.session_id = 'manual_add' OR a.session_id IS NULL)
-                AND a.person_type = 'student'
-                AND DATE(a.timestamp) = DATE(%s)
-                ORDER BY a.status, a.name
-            """, (session_data['session_id'], ended_at))
-            all_attendance_records = cursor.fetchall()
+                WITH LatestAttendance AS (
+                    SELECT 
+                        a.student_id,
+                        a.name as student_name,
+                        a.status,
+                        a.timestamp,
+                        a.session_id,
+                        a.subject_code,
+                        a.subject_name,
+                        a.room,
+                        s.photo_path,
+                        CASE 
+                            WHEN a.session_id = 'manual_add' OR a.session_id IS NULL THEN TRUE 
+                            ELSE FALSE 
+                        END as is_temporary,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY a.student_id 
+                            ORDER BY a.timestamp DESC
+                        ) as rn
+                    FROM attendance a
+                    LEFT JOIN students s ON a.student_id = s.student_id
+                    WHERE (a.session_id = %s OR a.session_id = 'manual_add' OR a.session_id IS NULL)
+                    AND a.person_type = 'student'
+                    AND DATE(a.timestamp) = DATE(%s)
+                )
+                SELECT * FROM LatestAttendance WHERE rn = 1
+                ORDER BY status, student_name
+            """, (session_id, ended_at))
             
-            print(f"🔍 DEBUG Found {len(all_attendance_records)} attendance records (including temporary and NULL session_id)")
+            unique_attendance_records = cursor.fetchall()
             
-            # Debug: Print all found records with subject info
-            for i, record in enumerate(all_attendance_records):
-                print(f"🔍 DEBUG Record {i}: {record['student_id']} - {record['student_name']} - {record['status']} - Subject: {record['subject_code']} - {record['subject_name']}")
+            print(f"🔍 DEBUG Found {len(unique_attendance_records)} UNIQUE attendance records (after duplicate removal)")
+            
+            # Debug: Print unique records
+            for i, record in enumerate(unique_attendance_records):
+                print(f"🔍 DEBUG Unique Record {i}: {record['student_id']} - {record['student_name']} - {record['status']}")
             
             # Create complete student list
             complete_student_list = []
             
-            # Add all attendance records (both regular and temporary)
-            for record in all_attendance_records:
-                # Handle photo path for temporary students
+            # Add all UNIQUE attendance records
+            for record in unique_attendance_records:
+                # Handle photo path
                 photo_path = record['photo_path']
                 if record['is_temporary']:
-                    # For temporary students, try to extract ID from name or use default
                     student_id = record['student_id']
                     if not student_id and 'ID:' in record['student_name']:
-                        # Extract ID from name like "Rhodmin Lou Berioso (ID: 2022-091324)"
                         try:
                             student_id = record['student_name'].split('ID:')[-1].split(')')[0].strip()
                         except:
@@ -5889,7 +6371,6 @@ def get_summary_data():
                     
                     photo_path = f"/static/images/student_photos/{student_id}.jpg" if student_id and student_id != 'temp' else '/static/images/default-avatar.jpg'
                 else:
-                    # For regular students, use their photo or default
                     photo_path = record['photo_path'] or f"/static/images/student_photos/{record['student_id']}.jpg"
                 
                 complete_student_list.append({
@@ -5899,9 +6380,9 @@ def get_summary_data():
                     'timestamp': record['timestamp'],
                     'photo': photo_path or '/static/images/default-avatar.jpg',
                     'is_temporary': record['is_temporary'],
-                    'subject_code': record['subject_code'] or subject_code,  # ✅ ADD SUBJECT INFO
-                    'subject_name': record['subject_name'] or subject_name,  # ✅ ADD SUBJECT INFO
-                    'room': record['room'] or room  # ✅ ADD ROOM INFO
+                    'subject_code': record['subject_code'] or subject_code,
+                    'subject_name': record['subject_name'] or subject_name,
+                    'room': record['room'] or room
                 })
             
             # Get regular students in section for absent count
@@ -5913,7 +6394,7 @@ def get_summary_data():
             all_section_students = cursor.fetchall()
             
             # Add absent students (only regular students who don't have any attendance record)
-            attended_regular_student_ids = [r['student_id'] for r in all_attendance_records if r['student_id'] and not r['is_temporary']]
+            attended_regular_student_ids = [r['student_id'] for r in unique_attendance_records if r['student_id'] and not r['is_temporary']]
             
             print(f"🔍 DEBUG Regular students in section: {len(all_section_students)}")
             print(f"🔍 DEBUG Attended regular student IDs: {attended_regular_student_ids}")
@@ -5930,16 +6411,16 @@ def get_summary_data():
                         'timestamp': ended_at,
                         'photo': student['photo_path'] or f"/static/images/student_photos/{student_id}.jpg",
                         'is_temporary': False,
-                        'subject_code': subject_code,  # ✅ ADD SUBJECT INFO FOR ABSENT STUDENTS
-                        'subject_name': subject_name,  # ✅ ADD SUBJECT INFO FOR ABSENT STUDENTS
-                        'room': room  # ✅ ADD ROOM INFO FOR ABSENT STUDENTS
+                        'subject_code': subject_code,
+                        'subject_name': subject_name,
+                        'room': room
                     })
                     absent_count_added += 1
-                    print(f"🔍 DEBUG Added absent student: {student_id} - {student['first_name']} {student['last_name']}")
+                    print(f"🔍 DEBUG Added absent student: {student_id}")
             
             print(f"🔍 DEBUG Added {absent_count_added} absent students")
             
-            # Calculate counts
+            # Calculate counts from FINAL list
             present_count = len([s for s in complete_student_list if s['status'] == 'present'])
             late_count = len([s for s in complete_student_list if s['status'] == 'late'])
             absent_count = len([s for s in complete_student_list if s['status'] == 'absent'])
@@ -5948,8 +6429,8 @@ def get_summary_data():
             
             # Count temporary students for debugging
             temp_count = len([s for s in complete_student_list if s.get('is_temporary')])
-            print(f"🔍 DEBUG Student breakdown: {temp_count} temporary, {total_students - temp_count} regular")
-            print(f"🔍 DEBUG Status breakdown: Present: {present_count}, Late: {late_count}, Absent: {absent_count}, Excused: {excused_count}")
+            print(f"🔍 DEBUG FINAL Student breakdown: {temp_count} temporary, {total_students - temp_count} regular")
+            print(f"🔍 DEBUG FINAL Status breakdown: Present: {present_count}, Late: {late_count}, Absent: {absent_count}, Excused: {excused_count}")
             
             # Format course display
             class_name = session_data['class_name']
@@ -5975,14 +6456,13 @@ def get_summary_data():
             
             course_section_display = f"{program_display}-{section_display}"
             
-            # ✅ FIXED: Use created_at for start time, ended_at for end time
             summary_data = {
                 'success': True,
                 'session': {
-                    'session_id': session_data['session_id'],
-                    'class_name': session_data['class_name'],
-                    'started_at': started_at.strftime('%Y-%m-%d %I:%M%p') if started_at else '',  # Use created_at
-                    'ended_at': ended_at.strftime('%Y-%m-%d %I:%M%p') if ended_at else '',  # Use ended_at
+                    'session_id': session_id,
+                    'class_name': class_name,
+                    'started_at': started_at.strftime('%Y-%m-%d %I:%M%p') if started_at else '',
+                    'ended_at': ended_at.strftime('%Y-%m-%d %I:%M%p') if ended_at else '',
                     'duration_seconds': duration_seconds,
                     'late_threshold_minutes': session_data.get('late_threshold_minutes', 20) or 20,
                     'total_students': total_students,
@@ -5990,9 +6470,9 @@ def get_summary_data():
                     'late_count': late_count,
                     'absent_count': absent_count,
                     'excused_count': excused_count,
-                    'subject_code': subject_code,  # ✅ ADD SUBJECT INFO TO SESSION
-                    'subject_name': subject_name,  # ✅ ADD SUBJECT INFO TO SESSION
-                    'room': room  # ✅ ADD ROOM INFO TO SESSION
+                    'subject_code': subject_code,
+                    'subject_name': subject_name,
+                    'room': room
                 },
                 'user': {
                     'name': f"{user['first_name']} {user['last_name']}",
@@ -6001,21 +6481,15 @@ def get_summary_data():
                     'photo_path': user['photo_path'] or '/static/images/default-avatar.jpg'
                 },
                 'subject': {
-                    'code': subject_code,  # ✅ USE FROM SESSION DATA
-                    'name': subject_name,  # ✅ USE FROM SESSION DATA
-                    'room': room  # ✅ ADD ROOM INFO
+                    'code': subject_code,
+                    'name': subject_name,
+                    'room': room
                 },
                 'course_section': course_section_display,
                 'attendance': complete_student_list
             }
             
-            print(f"✅ DEBUG Summary with correct times and subject info:")
-            print(f"   - Start: {summary_data['session']['started_at']} (from created_at)")
-            print(f"   - End: {summary_data['session']['ended_at']} (from ended_at)")
-            print(f"   - Duration: {duration_seconds} seconds")
-            print(f"   - Total students: {total_students}")
-            print(f"   - Subject: {subject_code} - {subject_name}")
-            print(f"   - Room: {room}")
+            print(f"✅ FINAL SUMMARY: {total_students} total students, {present_count} present, {late_count} late, {absent_count} absent, {excused_count} excused")
             
             return jsonify(summary_data)
             
@@ -6068,7 +6542,7 @@ def update_attendance():
 @app.route('/api/export_csv')
 @login_required
 def export_csv():
-    """Export attendance data as CSV - COMPLETE FIXED VERSION"""
+    """Export attendance data as CSV - TODAY'S SESSION ONLY (REGULAR + TEMPORARY + ABSENT)"""
     session_id = request.args.get('session_id')
     
     if not session_id:
@@ -6076,9 +6550,9 @@ def export_csv():
     
     try:
         with get_db_cursor() as cursor:
-            # ✅ FIXED: GET SESSION DATA WITH SUBJECT INFORMATION
+            # ✅ GET CURRENT SESSION DATA
             cursor.execute("""
-                SELECT class_name, started_at, ended_at, subject_code, subject_name, room 
+                SELECT class_name, started_at, ended_at, subject_code, subject_name, room, section_id
                 FROM attendance_sessions 
                 WHERE session_id = %s
             """, (session_id,))
@@ -6091,99 +6565,155 @@ def export_csv():
             subject_code = session_data.get('subject_code', 'IT99')
             subject_name = session_data.get('subject_name', 'AMBUTT UY')
             room = session_data.get('room', 'Unknown Room')
+            section_id = session_data.get('section_id')
+            session_date = session_data['started_at'].date()
             
-            print(f"🔍 DEBUG Session Subject Info:")
-            print(f"   - Subject Code: {subject_code}")
-            print(f"   - Subject Name: {subject_name}")
+            print(f"🔍 DEBUG Current Session: {session_id}")
+            print(f"   - Subject: {subject_code} - {subject_name}")
             print(f"   - Room: {room}")
+            print(f"   - Section ID: {section_id}")
+            print(f"   - Session Date: {session_date}")
             
-            # ✅ FIXED: MANIPULATE PROGRAM NAME
+            # ✅ GET PROGRAM AND SECTION FROM SESSION
             program_display = "BSIT"  # Default
-            
             if 'Associate in Computer Technology' in class_name:
                 program_display = 'ACT'
             elif 'Information Technology' in class_name:
                 program_display = 'BSIT'
             elif 'Computer Science' in class_name:
                 program_display = 'BSCS'
-            elif 'Accountancy' in class_name or 'Accounting' in class_name:
-                program_display = 'BSA'
-            elif 'Education' in class_name:
-                program_display = 'BSE'
-            elif 'Engineering' in class_name:
-                program_display = 'BSE'
-            elif 'Architecture' in class_name:
-                program_display = 'BSARCH'
             
-            # ✅ FIXED: MANIPULATE SECTION (4th YearC -> 4C)
             section_display = "4C"  # Default
             if '4th Year' in class_name:
                 section_part = class_name.split('4th Year')[-1].strip()
                 if section_part:
-                    section_display = f"4{section_part[0]}"  # Get first character after "4th Year"
-            elif '2nd Year' in class_name:
-                section_part = class_name.split('2nd Year')[-1].strip()
-                if section_part:
-                    section_display = f"2{section_part[0]}"
+                    section_display = f"4{section_part[0]}"
             
             print(f"🔍 DEBUG Program: {program_display}, Section: {section_display}")
             
-            # ✅ FIXED: GET ALL STUDENTS INCLUDING ABSENT AND TEMPORARY WITH SUBJECT INFO
+            # ✅ FIXED: SINGLE QUERY TO PREVENT DUPLICATES
             cursor.execute("""
-                -- Get regular students with their attendance status (INCLUDING ABSENT)
-                SELECT 
-                    s.student_id,
-                    CONCAT(s.first_name, ' ', s.last_name) as student_name,
-                    %s as year_section,  -- Use manipulated section
-                    COALESCE(a.status, 'absent') as status,
-                    COALESCE(a.timestamp, %s) as attendance_timestamp,
-                    'No' as is_temporary,
-                    COALESCE(a.subject_code, %s) as subject_code,  -- ✅ GET SUBJECT INFO
-                    COALESCE(a.subject_name, %s) as subject_name,  -- ✅ GET SUBJECT INFO
-                    COALESCE(a.room, %s) as room                   -- ✅ GET ROOM INFO
-                FROM students s
-                LEFT JOIN attendance a ON s.student_id = a.student_id AND a.session_id = %s
-                WHERE s.year_section LIKE '%%4C%%'  -- Match students in this section
+                WITH all_students AS (
+                    -- Get ALL registered students in this class (including absent ones)
+                    SELECT 
+                        s.student_id,
+                        CONCAT(s.first_name, ' ', s.last_name) as student_name,
+                        %s as year_section,
+                        COALESCE(a.status, 'absent') as status,
+                        COALESCE(a.timestamp, %s) as attendance_timestamp,
+                        'No' as is_temporary,
+                        COALESCE(a.subject_code, %s) as subject_code,
+                        COALESCE(a.subject_name, %s) as subject_name,
+                        COALESCE(a.room, %s) as room,
+                        NULL as remarks,
+                        -- Priority: present students first, then absent
+                        CASE WHEN a.status = 'present' THEN 1 ELSE 2 END as priority
+                    FROM students s
+                    LEFT JOIN attendance a ON s.student_id = a.student_id AND a.session_id = %s
+                    WHERE s.year_section LIKE %s
+                    
+                    UNION
+                    
+                    -- Get temporary students from TODAY'S SESSION ONLY
+                    SELECT 
+                        CASE 
+                            WHEN a.remarks LIKE 'temp_id:%' THEN SUBSTRING(a.remarks, 9)
+                            WHEN a.name LIKE '%(ID: %' THEN 
+                                SUBSTRING(
+                                    a.name, 
+                                    LOCATE('(ID: ', a.name) + 5,
+                                    LOCATE(')', a.name, LOCATE('(ID: ', a.name)) - (LOCATE('(ID: ', a.name) + 5)
+                                )
+                            WHEN a.name LIKE '%ID: %' THEN 
+                                SUBSTRING(
+                                    a.name, 
+                                    LOCATE('ID: ', a.name) + 4,
+                                    LENGTH(a.name) - (LOCATE('ID: ', a.name) + 3)
+                                )
+                            ELSE CONCAT('TEMP-', LPAD(ROW_NUMBER() OVER (), 4, '0')) 
+                        END as student_id,
+                        CASE 
+                            WHEN a.name LIKE '%(ID: %' THEN 
+                                TRIM(SUBSTRING(a.name, 1, LOCATE('(ID: ', a.name) - 1))
+                            WHEN a.name LIKE '%ID: %' THEN 
+                                TRIM(SUBSTRING(a.name, 1, LOCATE('ID: ', a.name) - 1))
+                            ELSE a.name 
+                        END as student_name,
+                        %s as year_section,
+                        a.status,
+                        a.timestamp as attendance_timestamp,
+                        'Yes' as is_temporary,
+                        COALESCE(a.subject_code, %s) as subject_code,
+                        COALESCE(a.subject_name, %s) as subject_name,
+                        COALESCE(a.room, %s) as room,
+                        a.remarks as remarks,
+                        0 as priority  -- Temporary students have lowest priority
+                    FROM attendance a
+                    WHERE a.session_id = %s
+                    AND a.person_type = 'student'
+                    AND a.student_id IS NULL  -- ✅ ONLY TEMPORARY STUDENTS
+                )
                 
-                UNION ALL
-                
-                -- Get temporary students
-                SELECT 
-                    COALESCE(a.student_id, 'TEMP') as student_id,
-                    a.name as student_name,
-                    %s as year_section,  -- Use manipulated section
-                    a.status,
-                    a.timestamp as attendance_timestamp,
-                    'Yes' as is_temporary,
-                    COALESCE(a.subject_code, %s) as subject_code,  -- ✅ GET SUBJECT INFO
-                    COALESCE(a.subject_name, %s) as subject_name,  -- ✅ GET SUBJECT INFO
-                    COALESCE(a.room, %s) as room                   -- ✅ GET ROOM INFO
-                FROM attendance a
-                WHERE a.session_id = 'manual_add'
-                AND DATE(a.timestamp) = DATE(%s)
-                AND a.person_type = 'student'
-                
-                ORDER BY status, student_name
+                SELECT DISTINCT 
+                    student_id,
+                    student_name,
+                    year_section,
+                    status,
+                    attendance_timestamp,
+                    is_temporary,
+                    subject_code,
+                    subject_name,
+                    room,
+                    remarks
+                FROM (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY student_id 
+                            ORDER BY priority, attendance_timestamp DESC
+                        ) as rn
+                    FROM all_students
+                ) ranked
+                WHERE rn = 1  -- ✅ ONLY KEEP THE FIRST OCCURRENCE OF EACH STUDENT
+                ORDER BY is_temporary, status, student_name
             """, (
                 section_display, 
                 session_data['ended_at'], 
-                subject_code, subject_name, room,  # ✅ SUBJECT PARAMS FOR REGULAR STUDENTS
+                subject_code, subject_name, room,
                 session_id,
+                f'%{section_display}%',
+                
                 section_display,
-                subject_code, subject_name, room,  # ✅ SUBJECT PARAMS FOR TEMPORARY STUDENTS
-                session_data['ended_at']
+                subject_code, subject_name, room,
+                session_id
             ))
             
             records = cursor.fetchall()
             
             if not records:
-                return jsonify({'success': False, 'message': 'No student data found'}), 404
+                return jsonify({'success': False, 'message': 'No student data found for today\'s session'}), 404
             
-            print(f"🔍 DEBUG CSV Export: Found {len(records)} total students")
+            print(f"🔍 DEBUG CSV Export: Found {len(records)} total students in today's session")
             
-            # Debug: Print first few records with subject info
-            for i, record in enumerate(records[:3]):
-                print(f"🔍 DEBUG Record {i}: {record['student_id']} - {record['student_name']} - {record['status']} - Subject: {record['subject_code']} - {record['subject_name']}")
+            # Debug breakdown
+            regular_students = [r for r in records if r['is_temporary'] == 'No']
+            temp_students = [r for r in records if r['is_temporary'] == 'Yes']
+            present_students = [r for r in records if r['status'] == 'present']
+            absent_students = [r for r in records if r['status'] == 'absent']
+            
+            print(f"🔍 DEBUG Today's Session Breakdown:")
+            print(f"   - Regular students: {len(regular_students)}")
+            print(f"   - Temporary students: {len(temp_students)}")
+            print(f"   - Present students: {len(present_students)}")
+            print(f"   - Absent students: {len(absent_students)}")
+            
+            # Debug first few of each
+            print(f"🔍 DEBUG First 5 Regular Students:")
+            for i, record in enumerate(regular_students[:5]):
+                print(f"   - {record['student_id']}: {record['student_name']} - {record['status']}")
+            
+            print(f"🔍 DEBUG First 5 Temporary Students:")
+            for i, record in enumerate(temp_students[:5]):
+                print(f"   - {record['student_id']}: {record['student_name']} - {record['status']}")
             
             # Create CSV content
             import csv
@@ -6193,7 +6723,7 @@ def export_csv():
             output = io.StringIO()
             writer = csv.writer(output)
             
-            # ✅ FIXED: ADD ROOM COLUMN TO HEADERS
+            # Headers
             writer.writerow([
                 'Student ID', 
                 'Student Name', 
@@ -6201,39 +6731,45 @@ def export_csv():
                 'Time Recorded', 
                 'Subject Code', 
                 'Subject Name', 
-                'Room',  # ✅ ADD ROOM COLUMN
+                'Room',
                 'Program', 
                 'Section', 
                 'Temporary Student'
             ])
             
-            # Write data
+            # Write data for ALL students
             for record in records:
                 timestamp = record['attendance_timestamp']
-                time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')  # Default to session end time
                 
-                # For absent students, use session end time
+                # Handle timestamps
                 if record['status'] == 'absent':
                     time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')
                 elif timestamp:
-                    # For present/late/excused students, use their actual timestamp
                     if isinstance(timestamp, str):
                         try:
-                            timestamp = datetime.strptime(timestamp, '%Y-%m-%d %I:%M%p')
+                            timestamp = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
                             time_recorded = timestamp.strftime('%Y-%m-%d %I:%M:%S %p')
                         except:
                             time_recorded = timestamp
                     else:
                         time_recorded = timestamp.strftime('%Y-%m-%d %I:%M:%S %p')
+                else:
+                    time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')
+                
+                # Clean up student ID
+                student_id = record['student_id']
+                if record['is_temporary'] == 'Yes' and student_id.startswith('TEMP'):
+                    # Use a more consistent temporary ID
+                    student_id = f"TEMP-{hash(record['student_name']) % 10000:04d}"
                 
                 writer.writerow([
-                    record['student_id'],
+                    student_id,
                     record['student_name'],
                     record['status'].upper(),
                     time_recorded,
-                    record['subject_code'] or subject_code,  # ✅ USE RECORD SUBJECT OR FALLBACK
-                    record['subject_name'] or subject_name,  # ✅ USE RECORD SUBJECT OR FALLBACK
-                    record['room'] or room,  # ✅ USE RECORD ROOM OR FALLBACK
+                    record['subject_code'] or subject_code,
+                    record['subject_name'] or subject_name,
+                    record['room'] or room,
                     program_display,
                     section_display,
                     record['is_temporary']
@@ -6242,18 +6778,18 @@ def export_csv():
             csv_content = output.getvalue()
             output.close()
             
-            # ✅ FIXED: PROPER FILENAME FORMATTING AND HEADERS
-            # Remove spaces and special characters from subject name
+            # Create filename
             clean_subject_name = subject_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
-            
-            # Create filename: IT99_AMBUTT_UY_BSIT-4C_attendance_20251027_032654.csv
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{subject_code}_{clean_subject_name}_{program_display}-{section_display}_attendance_{timestamp}.csv"
             
-            print(f"🔍 DEBUG Final Filename: {filename}")
-            print(f"🔍 DEBUG CSV Content Preview: {len(csv_content)} characters")
+            print(f"✅ EXPORT SUCCESS: {len(records)} students from today's session")
+            print(f"   - Regular: {len(regular_students)}")
+            print(f"   - Temporary: {len(temp_students)}")
+            print(f"   - Present: {len(present_students)}")
+            print(f"   - Absent: {len(absent_students)}")
             
-            # Create response with proper headers to prevent caching
+            # Create response
             from flask import Response
             response = Response(
                 csv_content,
@@ -6522,45 +7058,6 @@ def index():
     else:
         return redirect('/AdminDB')
 
-@app.route('/video_feed')
-def video_feed():
-    """Stream video feed with detections - COMPLETE DRAWING"""
-    def generate():
-        global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
-        frame_idx = 0
-        
-        while not stop_flag:
-            try:
-                if latest_frame is None:
-                    time.sleep(0.033)
-                    continue
-                
-                frame = latest_frame.copy()
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
-                # Step 1: Face detection and recognition (no drawing)
-                refresh_with_detections(frame, rgb, frame_idx)
-                
-                # Step 2: Body tracking and drawing (draws everything once)
-                update_trackers_with_body(rgb, frame, frame_idx)
-
-                # Encode frame
-                ret, buffer = cv2.imencode('.jpg', frame)
-                frame_bytes = buffer.tobytes()
-                
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n'
-                       b'Content-Length: ' + str(len(frame_bytes)).encode() + b'\r\n\r\n'
-                       + frame_bytes + b'\r\n')
-                
-                frame_idx += 1
-                time.sleep(0.033)
-                
-            except Exception as e:
-                logger.error(f"Video feed error: {e}")
-                time.sleep(1)
-    
-    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
@@ -9840,8 +10337,9 @@ def initialize_session():
     """Initialize session with parameters from URL"""
     global session_start_time, current_session_id, session_threshold_seconds, session_total_duration_seconds
     global current_session_id
-    global detectionStopped, tracks, locked_tracks, pending_confirmations  # 🎯 ADD THESE
-    global student_presence_tracker, locked_track_reid_features  # 🎯 ADD THESE
+    global detectionStopped, tracks, locked_tracks, pending_confirmations  
+    global student_presence_tracker, locked_track_reid_features 
+    global student_status
 
     connection = None
     cursor = None
@@ -9855,9 +10353,11 @@ def initialize_session():
     pending_confirmations = {}
     student_presence_tracker = {}
     locked_track_reid_features = {}
+    student_status = {}
     
     logger.info("🟢 Detection flag RESET to False for new session")
     logger.info(f"🧹 Cleared: {len(tracks)} tracks, {len(locked_tracks)} locked tracks, {len(pending_confirmations)} pending")
+    logger.info(f"🧹 Cleared student_status: {len(student_status)} entries")
     
     try:
         # Get request data
@@ -9897,6 +10397,19 @@ def initialize_session():
             return jsonify({'success': False, 'message': 'Failed to connect to database'}), 500
         
         cursor = connection.cursor(dictionary=True)
+        
+        # 🎯 CRITICAL FIX: CLEAR PREVIOUS TEMPORARY STUDENTS FOR THIS SESSION
+        try:
+            cursor.execute("""
+                DELETE FROM temporary_students 
+                WHERE session_id = %s
+            """, (unique_session_id,))
+            
+            deleted_count = cursor.rowcount
+            logger.info(f"🧹 CLEARED {deleted_count} temporary students for new session: {unique_session_id}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not clear temporary students: {e}")
         
         # ✅ FIND SECTION_ID FROM YEAR_SECTIONS TABLE
         section_id = None
@@ -10221,7 +10734,7 @@ def debug_threshold():
 
 @app.route('/api/get_class_students', methods=['GET'])
 def get_class_students():
-    """Get students for the current class based on program, year_level, and section"""
+    """Get students for the current class including both regular and temporary students"""
     connection = None
     cursor = None
     try:
@@ -10235,37 +10748,33 @@ def get_class_students():
         program = request.args.get('program')
         year_level = request.args.get('year_level')
         section = request.args.get('section')
+        session_id = request.args.get('session_id')
         
-        print(f"DEBUG: Received parameters - program: '{program}', year_level: '{year_level}', section: '{section}'")
+        print(f"DEBUG: Received parameters - program: '{program}', year_level: '{year_level}', section: '{section}', session_id: '{session_id}'")
         
         if not all([program, year_level, section]):
             return jsonify({'success': False, 'message': 'Missing required parameters'}), 400
         
-        # FIXED: Map program names to match the 'course' column in students table
+        # Map program names
         program_map = {
-            'Information Technology': 'BSIT',  # Map to BSIT
-            'Computer Science': 'BSCS',        # Map to BSCS  
+            'Information Technology': 'BSIT',
+            'Computer Science': 'BSCS',        
             'Associate in Computer Technology': 'ACT',
-            'IT': 'BSIT',                      # Map IT to BSIT
-            'CS': 'BSCS',                      # Map CS to BSCS
+            'IT': 'BSIT',
+            'CS': 'BSCS',
             'ACT': 'ACT',
-            'BSIT': 'BSIT',                    # Direct mappings
+            'BSIT': 'BSIT',
             'BSCS': 'BSCS'
         }
         
-        # Use the mapping or fall back to the original value
         course_to_search = program_map.get(program, program)
-        
-        # Extract numeric year level
         year_level_num = ''.join(filter(str.isdigit, str(year_level))) if year_level else ''
-        
-        # Build the year_section format - based on your data it should be "4C"
         year_section_to_search = f"{year_level_num}{section}"
         
         print(f"DEBUG: Searching for course='{course_to_search}', year_section='{year_section_to_search}'")
         
-        # Query to get students
-        query = """
+        # ✅ STEP 1: Get REGULAR students from students table
+        regular_query = """
             SELECT student_id, first_name, last_name, middle_name, 
                    course, year_section, photo_path, status
             FROM students 
@@ -10273,15 +10782,47 @@ def get_class_students():
             ORDER BY last_name, first_name
         """
         
-        cursor.execute(query, (course_to_search, year_section_to_search))
-        students = cursor.fetchall()
+        cursor.execute(regular_query, (course_to_search, year_section_to_search))
+        regular_students = cursor.fetchall()
         
-        print(f"DEBUG: Found {len(students)} students")
+        # ✅ STEP 2: Get TEMPORARY students from temporary_students table
+        temporary_students = []
+        if session_id:
+            temp_query = """
+                SELECT 
+                    student_id,
+                    name,
+                    session_id,
+                    section_id,
+                    status,
+                    created_at
+                FROM temporary_students 
+                WHERE session_id = %s 
+                AND is_temporary = 1
+                ORDER BY created_at DESC
+            """
+            cursor.execute(temp_query, (session_id,))
+            temp_results = cursor.fetchall()
+            
+            for temp_student in temp_results:
+                temporary_students.append({
+                    'id': temp_student['student_id'],
+                    'name': temp_student['name'],
+                    'firstName': temp_student['name'].split(' ')[0],  # First word as first name
+                    'lastName': '',  # Temporary students don't have separate last names
+                    'photo_path': '/static/images/default-avatar.jpg',
+                    'status': temp_student['status'] or 'present',
+                    'type': 'temporary',  # ✅ IMPORTANT: Mark as temporary
+                    'created_at': temp_student['created_at'].strftime('%Y-%m-%d %H:%M:%S') if temp_student['created_at'] else None
+                })
         
-        # Format student data for frontend
+        print(f"DEBUG: Found {len(regular_students)} regular students and {len(temporary_students)} temporary students")
+        
+        # ✅ STEP 3: Combine both lists and format for frontend
         formatted_students = []
-        for student in students:
-            # Build full name with middle name if available
+        
+        # Add regular students first
+        for student in regular_students:
             full_name = f"{student['first_name']} {student['last_name']}"
             if student['middle_name']:
                 full_name = f"{student['first_name']} {student['middle_name']} {student['last_name']}"
@@ -10292,14 +10833,46 @@ def get_class_students():
                 'firstName': student['first_name'],
                 'lastName': student['last_name'],
                 'photo_path': student['photo_path'] or '/static/images/default-avatar.jpg',
-                'status': 'absent'  # Default status
+                'status': 'absent',  # Default status
+                'type': 'regular'
             })
+        
+        # Add temporary students
+        for temp_student in temporary_students:
+            formatted_students.append(temp_student)
+        
+        # ✅ STEP 4: Update statuses based on today's attendance
+        if session_id:
+            attendance_query = """
+                SELECT student_id, status, MAX(timestamp) as latest_timestamp
+                FROM attendance 
+                WHERE session_id = %s 
+                AND student_id IS NOT NULL
+                AND DATE(timestamp) = CURDATE()
+                GROUP BY student_id, status
+                ORDER BY latest_timestamp DESC
+            """
+            cursor.execute(attendance_query, (session_id,))
+            attendance_records = cursor.fetchall()
+            
+            # Create a mapping of student_id to latest status
+            status_map = {}
+            for record in attendance_records:
+                if record['student_id'] not in status_map:
+                    status_map[record['student_id']] = record['status']
+            
+            # Update regular students' statuses
+            for student in formatted_students:
+                if student['type'] == 'regular' and student['id'] in status_map:
+                    student['status'] = status_map[student['id']]
         
         return jsonify({
             'success': True, 
             'students': formatted_students,
             'total_count': len(formatted_students),
-            'detected_count': 0
+            'regular_count': len(regular_students),
+            'temporary_count': len(temporary_students),
+            'detected_count': len([s for s in formatted_students if s['status'] in ['present', 'late']])
         })
         
     except Exception as e:
@@ -10343,7 +10916,7 @@ student_status = {}  # In-memory dictionary to track student status
 
 @app.route('/api/get_student_status')
 def get_student_status():
-    """Get current status of all students - FIXED: Proper status display with missing periods"""
+    """Get current status of all students - FIXED: Consistent manual status protection and duplicate prevention"""
     global session_start_time, session_threshold_seconds, current_session_id, student_presence_tracker
     global locked_tracks
     
@@ -10408,78 +10981,125 @@ def get_student_status():
         
         students = cursor.fetchall()
         
-        today = datetime.now().strftime("%Y-%m-%d")
+        # ✅ CRITICAL FIX: Get temporary students from CURRENT SESSION only
         cursor.execute("""
-            SELECT name, timestamp, status, remarks 
+            SELECT name, timestamp, status, remarks, session_id
             FROM attendance 
             WHERE student_id IS NULL 
-            AND DATE(timestamp) = %s 
-            AND session_id = 'manual_add'
-        """, (today,))
+            AND session_id = %s
+        """, (session_id,))
         
         temp_students = cursor.fetchall()
         
         student_list = []
         detected_count = 0
         
-        # 🎯 CRITICAL FIX: Check missing periods
-        missing_student_ids = []
+        # 🎯 CRITICAL FIX: Check missing periods - INITIALIZE as empty list
+        missing_student_ids = []  # Initialize as empty list to avoid None
         currently_present_ids = set()
         
         if session_id:
             try:
-                # Check database for missing periods
+                # Check database for CURRENTLY missing students (not returned yet)
                 cursor.execute("""
-                    SELECT student_id, missing_start FROM missing_periods 
+                    SELECT student_id FROM missing_periods 
                     WHERE session_id = %s AND returned = FALSE
                 """, (session_id,))
                 missing_records = cursor.fetchall()
-                missing_student_ids = [record['student_id'] for record in missing_records]
+                missing_student_ids = [record['student_id'] for record in missing_records] if missing_records else []
                 
-                logger.info(f"🔍 DB MISSING CHECK: Found {len(missing_student_ids)} in database")
+                logger.info(f"🔍 DB MISSING CHECK: Found {len(missing_student_ids)} CURRENTLY missing students: {missing_student_ids}")
                 
             except Exception as e:
                 logger.warning(f"⚠️ Error checking missing students: {e}")
+                missing_student_ids = []  # Ensure it's not None
         
         # Check real-time tracking data for currently present students
         try:
             if locked_tracks:
                 for person_id, lock_info in locked_tracks.items():
-                    if lock_info.get('type') == 'student':
+                    if lock_info and isinstance(lock_info, dict) and lock_info.get('type') == 'student':  # ✅ Added type check
                         student_id = lock_info.get('id')
-                        if student_id:
+                        if student_id and isinstance(student_id, str):  # ✅ Ensure student_id is string
                             currently_present_ids.add(student_id)
                 
-                logger.info(f"🔍 REAL-TIME CHECK: {len(currently_present_ids)} students currently tracked: {currently_present_ids}")
+                logger.info(f"🔍 REAL-TIME CHECK: {len(currently_present_ids)} students currently tracked: {list(currently_present_ids)}")
         except Exception as e:
             logger.warning(f"⚠️ Error checking locked_tracks: {e}")
+            currently_present_ids = set()  # Ensure it's not None
+        
+        # ✅ CRITICAL FIX: Convert to list for safe iteration and ensure they're not None
+        safe_missing_ids = list(missing_student_ids) if missing_student_ids is not None else []
+        safe_present_ids = list(currently_present_ids) if currently_present_ids is not None else []
+        
+        # 🎯 CRITICAL FIX: Track manual status students to prevent duplicates
+        manual_status_students = set()
         
         for student in students:
             student_id = student['student_id']
             student_name = f"{student['first_name']} {student['last_name']}"
             
-            # 🎯 CRITICAL FIX: Four-tier status determination
+            # 🎯 CRITICAL FIX: STATUS DETERMINATION WITH CONSISTENT MANUAL PROTECTION
             
-            # Priority 1: Real-time tracking shows student is currently present
-            if student_id in currently_present_ids:
-                current_status = 'present'
-                logger.info(f"✅ REAL-TIME PRESENT: {student_name} is currently being tracked")
+            # Priority 1: Check for MANUAL STATUS (excused, etc.) - HIGHEST PRIORITY
+            cursor.execute("""
+                SELECT status, session_id, remarks, timestamp FROM attendance 
+                WHERE student_id = %s AND session_id = %s
+                ORDER BY timestamp DESC LIMIT 1
+            """, (student_id, session_id))
             
-            # Priority 2: Student is currently missing
-            elif student_id in missing_student_ids:
+            attendance_record = cursor.fetchone()
+            
+            is_manual_status = False
+            current_status = None
+            
+            if attendance_record:
+                current_status = attendance_record['status']
+                current_session = attendance_record.get('session_id')
+                remarks = attendance_record.get('remarks') or ''
+                
+                # 🎯 CONSISTENT MANUAL STATUS DETECTION (SAME AS mark_attendance)
+                manual_excuse_sessions = ['manual_excuse']  # Only for excused students
+                manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
+                manual_statuses = ['excused']  # Only truly manual statuses
+                
+                is_manual_status = (
+                    # Only specific manual session types (not manual_add)
+                    current_session in manual_excuse_sessions or
+                    current_session in manual_status_sessions or
+                    # Only specific manual statuses
+                    current_status in manual_statuses or
+                    # Only specific manual remarks (not temp_id)
+                    'Manually marked' in remarks or
+                    'Manual status' in remarks or
+                    'Manually marked as excused' in remarks
+                )
+            
+            # Priority 1A: If manual status exists, use it and skip other checks
+            if is_manual_status:
+                logger.info(f"🔒 MANUAL STATUS PROTECTED: {student_name} -> {current_status}")
+                # 🎯 CRITICAL: Add to list with manual status and SKIP other logic
+                student_list.append({
+                    'id': student_id,
+                    'name': student_name,
+                    'status': current_status,  # Use the manual status
+                    'type': 'regular'
+                })
+                manual_status_students.add(student_id)  # Track manual status students
+                continue  # 🎯 SKIP ALL OTHER CHECKS FOR THIS STUDENT
+            
+            # Priority 2: Student is currently missing (only if NOT manual status)
+            elif student_id in safe_missing_ids:
                 current_status = 'missing'
                 logger.info(f"🎯 CURRENTLY MISSING: {student_name} ({student_id})")
             
-            # Priority 3: Check attendance records for original status
+            # Priority 3: Real-time tracking shows student is currently present (only if NOT manual/missing)
+            elif student_id in safe_present_ids:
+                current_status = 'present'
+                logger.info(f"✅ REAL-TIME PRESENT: {student_name} is currently being tracked")
+            
+            # Priority 4: Check attendance records for original status (fallback)
             else:
-                cursor.execute("""
-                    SELECT status, timestamp FROM attendance 
-                    WHERE student_id = %s AND session_id = %s
-                    ORDER BY timestamp DESC LIMIT 1
-                """, (student_id, session_id))
-                
-                attendance_record = cursor.fetchone()
-                
                 if attendance_record:
                     current_status = attendance_record['status']
                     
@@ -10504,6 +11124,11 @@ def get_student_status():
                 else:
                     current_status = 'absent'
             
+            # ✅ FIXED: Ensure current_status is never None
+            if current_status is None:
+                current_status = 'absent'
+                logger.warning(f"⚠️ Status was None for {student_name}, defaulting to 'absent'")
+            
             logger.debug(f"🔍 FINAL STATUS: {student_name} -> {current_status}")
             
             if current_status in ['present', 'late']:
@@ -10516,14 +11141,29 @@ def get_student_status():
                 'type': 'regular'
             })
         
-        # Process temporary students (unchanged)
+        # ✅ CRITICAL FIX: Process temporary students with SESSION FILTERING
         temp_counter = 1
         for temp_student in temp_students:
             temp_name = temp_student['name']
-            temp_remarks = temp_student.get('remarks', '')
+            temp_remarks = temp_student.get('remarks') or ''
             current_status = temp_student['status']
+            temp_session_id = temp_student.get('session_id')
             
-            if current_status == 'present' and session_start_time:
+            # ✅ FIXED: Only process temporary students from CURRENT session
+            if temp_session_id != session_id:
+                logger.debug(f"🔍 Skipping temporary student from different session: {temp_name} (session: {temp_session_id})")
+                continue
+            
+            # ✅ FIXED: Check for manual status in temporary students too
+            is_manual_temp = False
+            temp_remarks = temp_student.get('remarks') or ''
+            
+            if 'Manually marked' in temp_remarks or 'Manual status' in temp_remarks:
+                is_manual_temp = True
+                logger.info(f"🔒 MANUAL TEMPORARY STATUS: {temp_name} -> {current_status}")
+            
+            # Only apply late conversion for non-manual temporary students
+            if current_status == 'present' and session_start_time and not is_manual_temp:
                 arrival_time = temp_student['timestamp']
                 if isinstance(arrival_time, str):
                     arrival_time = datetime.strptime(arrival_time, "%Y-%m-%d %H:%M:%S")
@@ -10536,13 +11176,13 @@ def get_student_status():
                     cursor.execute("""
                         UPDATE attendance 
                         SET status = 'late' 
-                        WHERE name = %s AND DATE(timestamp) = %s AND timestamp = %s
-                    """, (temp_name, today, temp_student['timestamp']))
+                        WHERE name = %s AND session_id = %s AND timestamp = %s
+                    """, (temp_name, session_id, temp_student['timestamp']))
             
             temp_id = None
             display_name = temp_name
             
-            if temp_remarks and 'temp_id:' in temp_remarks:
+            if 'temp_id:' in temp_remarks:
                 temp_id = temp_remarks.split('temp_id:')[1].strip()
                 display_name = re.sub(r'\s*\(ID:\s*[^)]+\)', '', temp_name).strip()
             
@@ -10556,12 +11196,20 @@ def get_student_status():
                 temp_id = f"temp_{temp_counter}"
                 temp_counter += 1
             
-            student_list.append({
-                'id': temp_id,
-                'name': display_name,
-                'status': current_status,
-                'type': 'temporary'
-            })
+            # ✅ FIXED: Check for duplicate temporary students
+            existing_temp = next((s for s in student_list if s['id'] == temp_id and s['type'] == 'temporary'), None)
+            if existing_temp:
+                logger.warning(f"⚠️ DUPLICATE TEMPORARY STUDENT: {temp_id} - {display_name}")
+                # Update existing record instead of creating duplicate
+                existing_temp['status'] = current_status
+                existing_temp['name'] = display_name
+            else:
+                student_list.append({
+                    'id': temp_id,
+                    'name': display_name,
+                    'status': current_status,
+                    'type': 'temporary'
+                })
             
             if current_status in ['present', 'late']:
                 detected_count += 1
@@ -10575,7 +11223,7 @@ def get_student_status():
         for student in student_list:
             status_counts[student['status']] = status_counts.get(student['status'], 0) + 1
         
-        logger.info(f"📊 STATUS SUMMARY: {status_counts} | Real-time present: {len(currently_present_ids)}, DB missing: {len(missing_student_ids)}")
+        logger.info(f"📊 STATUS SUMMARY: {status_counts} | Real-time present: {len(safe_present_ids)}, DB missing: {len(safe_missing_ids)}, Manual protected: {len(manual_status_students)}")
         
         return jsonify({
             'success': True,
@@ -10586,12 +11234,15 @@ def get_student_status():
             'session_start_time': session_start_time.isoformat() if session_start_time else None,
             'current_session_id': current_session_id,
             'status_summary': status_counts,
-            'missing_count_in_db': len(missing_student_ids),
-            'real_time_present_count': len(currently_present_ids)
+            'missing_count_in_db': len(safe_missing_ids),
+            'real_time_present_count': len(safe_present_ids),
+            'manual_status_count': len(manual_status_students)
         })
         
     except Exception as e:
         logger.error(f"❌ Error getting student status: {e}")
+        import traceback
+        logger.error(f"❌ Stack trace: {traceback.format_exc()}")
         return jsonify({'success': False, 'message': str(e)})
     
 @app.route('/api/get_session_threshold')
@@ -10609,7 +11260,7 @@ def get_session_threshold():
     
 @app.route('/api/manage_student', methods=['POST'])
 def manage_student():
-    """Handle student management actions"""
+    """Handle student management actions - FIXED: Prevents duplicates and properly updates status"""
     global session_start_time, session_threshold_seconds, current_session_id
     
     try:
@@ -10678,12 +11329,38 @@ def manage_student():
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # ✅ FIXED: INSERT WITH SUBJECT INFORMATION
+            # ✅ CRITICAL FIX: Check if temporary student already exists in THIS session
             cursor.execute("""
-                INSERT INTO attendance 
-                (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (None, display_name, current_time, 'student', status, 'manual_add', remarks, subject_code, subject_name, room, section_id))
+                SELECT id, status FROM attendance 
+                WHERE student_id IS NULL 
+                AND session_id = %s
+                AND remarks = %s
+                LIMIT 1
+            """, (current_session_id, remarks))
+            
+            existing_temp_student = cursor.fetchone()
+            
+            if existing_temp_student:
+                # ✅ UPDATE existing temporary student instead of creating duplicate
+                cursor.execute("""
+                    UPDATE attendance 
+                    SET status = %s, timestamp = %s,
+                        subject_code = %s, subject_name = %s, room = %s, section_id = %s
+                    WHERE id = %s
+                """, (status, current_time, subject_code, subject_name, room, section_id, existing_temp_student[0]))
+                
+                logger.info(f"🔄 TEMPORARY STUDENT UPDATED: {student_name} ({student_id}) - {status}")
+            else:
+                # ✅ INSERT new temporary student
+                actual_session_id = current_session_id if current_session_id else 'manual_add'
+                
+                cursor.execute("""
+                    INSERT INTO attendance 
+                    (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (None, display_name, current_time, 'student', status, actual_session_id, remarks, subject_code, subject_name, room, section_id))
+                
+                logger.info(f"✅ TEMPORARY ATTENDANCE ADDED: {student_name} ({student_id}) - {status}")
             
             conn.commit()
             cursor.close()
@@ -10691,13 +11368,18 @@ def manage_student():
             
             student_status[student_id] = status
             
-            logger.info(f"✅ TEMPORARY ATTENDANCE ADDED: {student_name} ({student_id}) - {status} - Subject: {subject_code}")
             return jsonify({
                 'success': True, 
                 'title': 'Success',
                 'message': f'Temporary attendance added for {student_name}',
                 'student_name': student_name,
-                'student_id': student_id
+                'student_id': student_id,
+                'student_data': {
+                    'id': student_id,
+                    'name': student_name,
+                    'status': status,
+                    'type': 'temporary'
+                }
             })
             
         elif action == 'remove':
@@ -10735,26 +11417,13 @@ def manage_student():
                     'message': f'Student {student_name} has been removed from the class'
                 })
             else:
-                today = datetime.now().strftime("%Y-%m-%d")
-                cursor.execute("""
-                    SELECT name FROM attendance 
-                    WHERE student_id IS NULL 
-                    AND session_id = 'manual_add'
-                    AND DATE(timestamp) = %s
-                    AND (name LIKE %s OR remarks LIKE %s)
-                    LIMIT 1
-                """, (today, f"%{student_id}%", f"%temp_id:{student_id}%"))
-                
-                temp_student = cursor.fetchone()
-                temp_name = temp_student[0] if temp_student else "Unknown Student"
-                
+                # ✅ FIXED: Remove temporary student from CURRENT session only
                 cursor.execute("""
                     DELETE FROM attendance 
                     WHERE student_id IS NULL 
-                    AND session_id = 'manual_add'
-                    AND DATE(timestamp) = %s
+                    AND session_id = %s
                     AND (name LIKE %s OR remarks LIKE %s)
-                """, (today, f"%{student_id}%", f"%temp_id:{student_id}%"))
+                """, (current_session_id, f"%{student_id}%", f"%temp_id:{student_id}%"))
                 
                 deleted_count = cursor.rowcount
                 conn.commit()
@@ -10768,7 +11437,7 @@ def manage_student():
                 return jsonify({
                     'success': True, 
                     'title': 'Temporary Student Removed',
-                    'message': f'Temporary student {temp_name} has been removed'
+                    'message': f'Temporary student with ID {student_id} has been removed'
                 })
             
         elif action == 'transfer':
@@ -10834,7 +11503,6 @@ def manage_student():
             student_id = student_data.get('student_id')
             remarks = student_data.get('remarks', 'Excused')
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            today = datetime.now().strftime("%Y-%m-%d")
             
             # ✅ GET SESSION SUBJECT INFORMATION
             subject_code = 'Unknown Subject'
@@ -10879,17 +11547,17 @@ def manage_student():
                     # REGULAR STUDENT
                     student_name = f"{student['first_name']} {student['last_name']}"
                     
-                    # Check for existing attendance record today
+                    # ✅ CRITICAL FIX: Check for existing attendance record in CURRENT SESSION
                     cursor.execute("""
                         SELECT id, status FROM attendance 
-                        WHERE student_id = %s AND DATE(timestamp) = %s
+                        WHERE student_id = %s AND session_id = %s
                         ORDER BY timestamp DESC LIMIT 1
-                    """, (student_id, today))
+                    """, (student_id, current_session_id))
                     
                     existing_record = cursor.fetchone()
                     
                     if existing_record:
-                        # ✅ FIXED: UPDATE WITH SUBJECT INFORMATION
+                        # ✅ UPDATE existing record (PREVENTS DUPLICATE)
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = 'excused', remarks = %s, timestamp = %s,
@@ -10898,12 +11566,12 @@ def manage_student():
                         """, (remarks, current_time, subject_code, subject_name, room, section_id, existing_record['id']))
                         action_type = "updated"
                     else:
-                        # ✅ FIXED: INSERT WITH SUBJECT INFORMATION
+                        # ✅ INSERT new record if none exists
                         cursor.execute("""
                             INSERT INTO attendance 
                             (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (student_id, student_name, current_time, 'student', 'excused', 'manual_excuse', remarks, subject_code, subject_name, room, section_id))
+                        """, (student_id, student_name, current_time, 'student', 'excused', current_session_id, remarks, subject_code, subject_name, room, section_id))
                         action_type = "marked"
                     
                     conn.commit()
@@ -10913,7 +11581,7 @@ def manage_student():
                     # Update frontend status
                     student_status[student_id] = 'excused'
                     
-                    logger.info(f"📝 REGULAR STUDENT EXCUSED: {student_name} ({student_id}) - Subject: {subject_code}")
+                    logger.info(f"📝 REGULAR STUDENT EXCUSED: {student_name} ({student_id}) - {action_type}")
                     return jsonify({
                         'success': True, 
                         'title': 'Student Excused',
@@ -10922,42 +11590,25 @@ def manage_student():
                 
                 else:
                     # TEMPORARY STUDENT
-                    # Try exact match with temp_id
+                    # ✅ CRITICAL FIX: Check in CURRENT SESSION only
                     cursor.execute("""
-                        SELECT name FROM attendance 
+                        SELECT id, name FROM attendance 
                         WHERE student_id IS NULL 
-                        AND session_id = 'manual_add'
-                        AND DATE(timestamp) = %s
-                        AND remarks = %s
+                        AND session_id = %s
+                        AND (name LIKE %s OR remarks LIKE %s)
                         LIMIT 1
-                    """, (today, f"temp_id:{student_id}"))
+                    """, (current_session_id, f"%{student_id}%", f"%temp_id:{student_id}%"))
                     
                     temp_student = cursor.fetchone()
                     
-                    if not temp_student:
-                        # Try broader search
-                        cursor.execute("""
-                            SELECT name FROM attendance 
-                            WHERE student_id IS NULL 
-                            AND session_id = 'manual_add'
-                            AND DATE(timestamp) = %s
-                            AND (name LIKE %s OR remarks LIKE %s)
-                            LIMIT 1
-                        """, (today, f"%{student_id}%", f"%{student_id}%"))
-                        
-                        temp_student = cursor.fetchone()
-                    
                     if temp_student:
-                        # ✅ FIXED: UPDATE TEMPORARY STUDENT WITH SUBJECT INFORMATION
+                        # ✅ UPDATE existing temporary student (PREVENTS DUPLICATE)
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = 'excused', remarks = %s, timestamp = %s,
                                 subject_code = %s, subject_name = %s, room = %s, section_id = %s
-                            WHERE student_id IS NULL 
-                            AND session_id = 'manual_add'
-                            AND DATE(timestamp) = %s
-                            AND (name LIKE %s OR remarks LIKE %s)
-                        """, (remarks, current_time, subject_code, subject_name, room, section_id, today, f"%{student_id}%", f"%{student_id}%"))
+                            WHERE id = %s
+                        """, (remarks, current_time, subject_code, subject_name, room, section_id, temp_student['id']))
                         
                         conn.commit()
                         cursor.close()
@@ -10966,7 +11617,7 @@ def manage_student():
                         # Update frontend status
                         student_status[student_id] = 'excused'
                         
-                        logger.info(f"📝 TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id}) - Subject: {subject_code}")
+                        logger.info(f"📝 TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id})")
                         return jsonify({
                             'success': True, 
                             'title': 'Student Excused',
@@ -10997,19 +11648,18 @@ def manage_student():
         
         elif action == 'mark_present':
             student_id = student_data.get('student_id')
-            status = student_data.get('status', 'present')  # Can be 'present', 'late', or 'absent'
+            status = student_data.get('status', 'present')  # Can be 'present', 'late', 'absent', 'excused'
             remarks = student_data.get('remarks', 'Manually marked')
             
             # Validate status
-            if status not in ['present', 'late', 'absent']:
+            if status not in ['present', 'late', 'absent', 'excused']:
                 return jsonify({
                     'success': False, 
                     'title': 'Invalid Status',
-                    'message': 'Status must be present, late, or absent'
+                    'message': 'Status must be present, late, absent, or excused'
                 })
             
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            today = datetime.now().strftime("%Y-%m-%d")
             
             # ✅ GET SESSION SUBJECT INFORMATION
             subject_code = 'Unknown Subject'
@@ -11054,70 +11704,43 @@ def manage_student():
                     # REGULAR STUDENT
                     student_name = f"{student['first_name']} {student['last_name']}"
                     
-                    # Check for existing record today
+                    # ✅ CRITICAL FIX: Check for existing record in CURRENT SESSION
                     cursor.execute("""
                         SELECT id FROM attendance 
-                        WHERE student_id = %s AND DATE(timestamp) = %s
+                        WHERE student_id = %s AND session_id = %s
                         ORDER BY timestamp DESC LIMIT 1
-                    """, (student_id, today))
+                    """, (student_id, current_session_id))
                     
                     existing_record = cursor.fetchone()
                     
                     if existing_record:
-                        # ✅ FIXED: UPDATE WITH SUBJECT INFORMATION
+                        # ✅ UPDATE existing record (PREVENTS DUPLICATE)
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = %s, remarks = %s, timestamp = %s,
                                 subject_code = %s, subject_name = %s, room = %s, section_id = %s
                             WHERE id = %s
                         """, (status, remarks, current_time, subject_code, subject_name, room, section_id, existing_record['id']))
-                        action_type = "updated"
+                        conn.commit()
+                        cursor.close()
+                        conn.close()
+                        
+                        # Update frontend status
+                        student_status[student_id] = status
+                        
+                        logger.info(f"🔄 MANUAL STATUS UPDATED: {student_name} -> {status}")
+                        return jsonify({
+                            'success': True, 
+                            'title': 'Status Updated',
+                            'message': f'Student {student_name} status updated to {status}'
+                        })
                     else:
-                        # ✅ FIXED: INSERT WITH SUBJECT INFORMATION
+                        # ✅ INSERT new record if none exists in this session
                         cursor.execute("""
                             INSERT INTO attendance 
                             (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (student_id, student_name, current_time, 'student', status, 'manual_status', remarks, subject_code, subject_name, room, section_id))
-                        action_type = "marked"
-                    
-                    conn.commit()
-                    cursor.close()
-                    conn.close()
-                    
-                    # Update frontend status
-                    student_status[student_id] = status
-                    
-                    logger.info(f"🔄 MANUAL STATUS: {student_name} -> {status} - Subject: {subject_code}")
-                    return jsonify({
-                        'success': True, 
-                        'title': 'Status Updated',
-                        'message': f'Student {student_name} {action_type} as {status}'
-                    })
-                else:
-                    # TEMPORARY STUDENT
-                    cursor.execute("""
-                        SELECT name FROM attendance 
-                        WHERE student_id IS NULL 
-                        AND session_id = 'manual_add'
-                        AND DATE(timestamp) = %s
-                        AND (name LIKE %s OR remarks LIKE %s)
-                        LIMIT 1
-                    """, (today, f"%{student_id}%", f"%temp_id:{student_id}%"))
-                    
-                    temp_student = cursor.fetchone()
-                    
-                    if temp_student:
-                        # ✅ FIXED: UPDATE TEMPORARY STUDENT WITH SUBJECT INFORMATION
-                        cursor.execute("""
-                            UPDATE attendance 
-                            SET status = %s, remarks = %s, timestamp = %s,
-                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
-                            WHERE student_id IS NULL 
-                            AND session_id = 'manual_add'
-                            AND DATE(timestamp) = %s
-                            AND (name LIKE %s OR remarks LIKE %s)
-                        """, (status, remarks, current_time, subject_code, subject_name, room, section_id, today, f"%{student_id}%", f"%temp_id:{student_id}%"))
+                        """, (student_id, student_name, current_time, 'student', status, current_session_id, remarks, subject_code, subject_name, room, section_id))
                         
                         conn.commit()
                         cursor.close()
@@ -11125,19 +11748,54 @@ def manage_student():
                         
                         student_status[student_id] = status
                         
-                        logger.info(f"🔄 TEMPORARY STUDENT STATUS: {temp_student['name']} -> {status} - Subject: {subject_code}")
+                        logger.info(f"✅ MANUAL ATTENDANCE ADDED: {student_name} -> {status}")
+                        return jsonify({
+                            'success': True, 
+                            'title': 'Attendance Added',
+                            'message': f'Student {student_name} marked as {status}'
+                        })
+                else:
+                    # TEMPORARY STUDENT
+                    # ✅ CRITICAL FIX: Check in CURRENT SESSION only
+                    cursor.execute("""
+                        SELECT id, name FROM attendance 
+                        WHERE student_id IS NULL 
+                        AND session_id = %s
+                        AND (name LIKE %s OR remarks LIKE %s)
+                        LIMIT 1
+                    """, (current_session_id, f"%{student_id}%", f"%temp_id:{student_id}%"))
+                    
+                    temp_student = cursor.fetchone()
+                    
+                    if temp_student:
+                        # ✅ UPDATE existing temporary student (PREVENTS DUPLICATE)
+                        cursor.execute("""
+                            UPDATE attendance 
+                            SET status = %s, remarks = %s, timestamp = %s,
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
+                            WHERE id = %s
+                        """, (status, remarks, current_time, subject_code, subject_name, room, section_id, temp_student['id']))
+                        
+                        conn.commit()
+                        cursor.close()
+                        conn.close()
+                        
+                        student_status[student_id] = status
+                        
+                        logger.info(f"🔄 TEMPORARY STUDENT STATUS UPDATED: {temp_student['name']} -> {status}")
                         return jsonify({
                             'success': True, 
                             'title': 'Status Updated',
-                            'message': f'Temporary student {temp_student["name"]} marked as {status}'
+                            'message': f'Temporary student {temp_student["name"]} status updated to {status}'
                         })
                     else:
                         cursor.close()
                         conn.close()
+                        logger.warning(f"❌ NO ATTENDANCE RECORD: Temporary student ({student_id}) in session {current_session_id}")
                         return jsonify({
                             'success': False, 
-                            'title': 'Student Not Found',
-                            'message': 'Student not found in system'
+                            'title': 'No Attendance Record',
+                            'message': f'No attendance record found for temporary student with ID {student_id} in current session'
                         })
                         
             except Exception as e:
@@ -11474,6 +12132,7 @@ def adjust_session_time():
 def end_session():
     """
     API 3: Finalizes the session, saves summary statistics INCLUDING DURATION
+    FIXED: Prevents duplicate absent records and handles temporary students properly
     """
     print("🎯 DEBUG: /api/end_session endpoint HIT!")
     
@@ -11565,7 +12224,7 @@ def end_session():
 
             # 5. Get total enrolled students in this section
             print(f"🔍 DEBUG Getting total enrolled students for section: {section_id}")
-            cursor.execute("SELECT COUNT(*) as count FROM students WHERE section_id = %s", (section_id,))
+            cursor.execute("SELECT COUNT(*) as count FROM students WHERE section_id = %s AND status = 'active'", (section_id,))
             total_enrolled_result = cursor.fetchone()
             total_enrolled = total_enrolled_result['count'] if isinstance(total_enrolled_result, dict) else total_enrolled_result[0]
             print(f"🔍 DEBUG Total enrolled students: {total_enrolled}")
@@ -11577,7 +12236,8 @@ def end_session():
                     COUNT(*) as total_attended,
                     SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count,
                     SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_count,
-                    SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_count
+                    SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_count,
+                    SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_count
                 FROM attendance 
                 WHERE session_id = %s AND person_type = 'student'
             """, (session_id,))
@@ -11589,51 +12249,104 @@ def end_session():
                     present_count = attendance_stats['present_count'] or 0
                     late_count = attendance_stats['late_count'] or 0
                     excused_count = attendance_stats['excused_count'] or 0
+                    absent_count = attendance_stats['absent_count'] or 0
                     total_attended = attendance_stats['total_attended'] or 0
                 else:
                     present_count = attendance_stats[1] or 0
                     late_count = attendance_stats[2] or 0
                     excused_count = attendance_stats[3] or 0
+                    absent_count = attendance_stats[4] or 0
                     total_attended = attendance_stats[0] or 0
             else:
-                present_count = late_count = excused_count = total_attended = 0
+                present_count = late_count = excused_count = absent_count = total_attended = 0
 
-            print(f"🔍 DEBUG Current attendance - Present: {present_count}, Late: {late_count}, Excused: {excused_count}, Total Attended: {total_attended}")
+            print(f"🔍 DEBUG Current attendance - Present: {present_count}, Late: {late_count}, Excused: {excused_count}, Absent: {absent_count}, Total Attended: {total_attended}")
 
-            # 7. Calculate absent count
-            absent_count = max(0, total_enrolled - present_count - late_count - excused_count)
-            print(f"🔍 DEBUG Calculated absent count: {absent_count}")
+            # 7. ✅ CRITICAL FIX: Calculate absent count PROPERLY (considering temporary students)
+            # Total records should equal total enrolled + temporary students
+            # But absent count should only consider enrolled students who are actually absent
+            
+            # Get count of temporary students in this session
+            cursor.execute("""
+                SELECT COUNT(*) as temp_count 
+                FROM attendance 
+                WHERE session_id = %s 
+                AND person_type = 'student' 
+                AND student_id IS NULL
+            """, (session_id,))
+            temp_result = cursor.fetchone()
+            temp_student_count = temp_result['temp_count'] if isinstance(temp_result, dict) else temp_result[0]
+            
+            print(f"🔍 DEBUG Temporary students in session: {temp_student_count}")
+            
+            # ✅ CORRECT absent calculation: Only enrolled students who don't have attendance records
+            cursor.execute("""
+                SELECT COUNT(*) as actual_absent_count
+                FROM students s 
+                WHERE s.section_id = %s 
+                AND s.status = 'active'
+                AND s.student_id NOT IN (
+                    SELECT student_id 
+                    FROM attendance 
+                    WHERE session_id = %s 
+                    AND student_id IS NOT NULL
+                    AND status IN ('present', 'late', 'excused')
+                )
+            """, (section_id, session_id))
+            
+            absent_result = cursor.fetchone()
+            actual_absent_count = absent_result['actual_absent_count'] if isinstance(absent_result, dict) else absent_result[0]
+            
+            print(f"🔍 DEBUG Actual absent students (enrolled but not present/late/excused): {actual_absent_count}")
 
-            # 8. MARK ABSENT STUDENTS WITH SUBJECT INFORMATION
-            if absent_count > 0:
-                print(f"🔍 DEBUG Marking {absent_count} students as absent")
+            # 8. ✅ CRITICAL FIX: MARK ABSENT STUDENTS WITH PROPER DUPLICATE CHECK
+            if actual_absent_count > 0:
+                print(f"🔍 DEBUG Marking {actual_absent_count} students as absent")
                 try:
-                    # Get students who are NOT in attendance table for this session
+                    # Get students who are enrolled but NOT marked as present/late/excused in this session
                     cursor.execute("""
                         SELECT s.student_id, s.first_name, s.last_name 
                         FROM students s 
                         WHERE s.section_id = %s 
+                        AND s.status = 'active'
                         AND s.student_id NOT IN (
-                            SELECT student_id FROM attendance WHERE session_id = %s
+                            SELECT student_id 
+                            FROM attendance 
+                            WHERE session_id = %s 
+                            AND student_id IS NOT NULL
+                            AND status IN ('present', 'late', 'excused')
                         )
                     """, (section_id, session_id))
                     absent_students = cursor.fetchall()
                     
                     print(f"🔍 DEBUG Found {len(absent_students)} students to mark as absent")
                     
-                    # Insert absent records for each missing student WITH SUBJECT INFORMATION
+                    # ✅ CRITICAL FIX: Check for existing absent records before inserting
+                    absent_records_added = 0
                     for student in absent_students:
                         student_id = student['student_id'] if isinstance(student, dict) else student[0]
                         first_name = student['first_name'] if isinstance(student, dict) else student[1]
                         last_name = student['last_name'] if isinstance(student, dict) else student[2]
                         
+                        # ✅ CHECK if absent record already exists for this student in this session
                         cursor.execute("""
-                            INSERT INTO attendance 
-                            (student_id, person_type, name, timestamp, status, session_id, section_id, subject_code, subject_name, room)
-                            VALUES (%s, 'student', %s, NOW(), 'absent', %s, %s, %s, %s, %s)
-                        """, (student_id, f"{first_name} {last_name}", session_id, section_id, subject_code, subject_name, room))
+                            SELECT id FROM attendance 
+                            WHERE session_id = %s AND student_id = %s AND status = 'absent'
+                        """, (session_id, student_id))
+                        existing_absent = cursor.fetchone()
+                        
+                        if not existing_absent:
+                            # Only insert if no absent record exists
+                            cursor.execute("""
+                                INSERT INTO attendance 
+                                (student_id, person_type, name, timestamp, status, session_id, section_id, subject_code, subject_name, room)
+                                VALUES (%s, 'student', %s, NOW(), 'absent', %s, %s, %s, %s, %s)
+                            """, (student_id, f"{first_name} {last_name}", session_id, section_id, subject_code, subject_name, room))
+                            absent_records_added += 1
+                        else:
+                            print(f"🔍 DEBUG Absent record already exists for student {student_id}, skipping")
                     
-                    print(f"🔍 DEBUG Successfully inserted {len(absent_students)} absent records with subject info")
+                    print(f"🔍 DEBUG Successfully inserted {absent_records_added} new absent records (skipped {len(absent_students) - absent_records_added} duplicates)")
                     
                 except Exception as e:
                     print(f"❌ ERROR inserting absent records: {e}")
@@ -11661,15 +12374,17 @@ def end_session():
                     final_late = final_stats['late_count'] or 0
                     final_absent = final_stats['absent_count'] or 0
                     final_excused = final_stats['excused_count'] or 0
+                    final_total = final_stats['total_attended'] or 0
                 else:
                     final_present = final_stats[1] or 0
                     final_late = final_stats[2] or 0
                     final_absent = final_stats[3] or 0
                     final_excused = final_stats[4] or 0
+                    final_total = final_stats[0] or 0
             else:
-                final_present = final_late = final_absent = final_excused = 0
+                final_present = final_late = final_absent = final_excused = final_total = 0
 
-            print(f"🔍 DEBUG Final counts - Present: {final_present}, Late: {final_late}, Absent: {final_absent}, Excused: {final_excused}")
+            print(f"🔍 DEBUG Final counts - Present: {final_present}, Late: {final_late}, Absent: {final_absent}, Excused: {final_excused}, Total Records: {final_total}")
 
             # 10. Update attendance_sessions with FINAL data INCLUDING DURATION
             print(f"🔍 DEBUG Updating attendance_sessions table with duration")
@@ -11681,7 +12396,7 @@ def end_session():
                 WHERE session_id = %s;
             """
             cursor.execute(summary_sql, (
-                total_enrolled,
+                total_enrolled,  # Only count enrolled students (excludes temporary)
                 final_present,
                 final_absent,
                 final_late,
@@ -11701,7 +12416,8 @@ def end_session():
                 'absent': final_absent,
                 'late': final_late,
                 'excused': final_excused,
-                'duration': duration_time  # RETURN DURATION
+                'duration': duration_time,  # RETURN DURATION
+                'temporary_students': temp_student_count
             }
         }), 200
 
@@ -11886,100 +12602,207 @@ def initialize_session_timing(schedule_id):
     except Exception as e:
         logger.error(f"❌ Error initializing session timing: {e}")
 
-# ------------------------------------------------------------------
-# API Route 1: FETCH ABSENT STUDENTS (FIXED)
-# ------------------------------------------------------------------
-
 @app.route('/api/absent_students_for_enrollment', methods=['GET'])
 def get_absent_students():
     """
-    API 1: Fetches students in the section NOT yet marked PRESENT or LATE.
+    API 1: Fetches ALL students in the session's class who haven't been marked PRESENT or LATE in this session.
+    FIXED: Better query to find students by multiple criteria
     """
     session_id = request.args.get('session_id')
     section_id = request.args.get('section_id')
 
-    # 🎯 ADD DEBUG LOGGING
     print(f"🔍 DEBUG /api/absent_students_for_enrollment:")
     print(f"   session_id: {session_id}")
     print(f"   section_id: {section_id}")
 
-    # CRITICAL: Handle 'undefined' values from frontend
-    if not session_id or not section_id or session_id == 'undefined' or section_id == 'undefined':
-        print("❌ ERROR: Missing or invalid session_id/section_id")
+    if not session_id or session_id == 'undefined':
+        print("❌ ERROR: Missing session_id")
         return jsonify({
             'success': False, 
-            'message': 'Missing valid session_id or section_id.',
-            'debug_received': {
-                'session_id': session_id, 
-                'section_id': section_id
-            }
+            'message': 'Missing valid session_id.'
         }), 400
 
     try:
-        with get_db_cursor() as cursor:
-            # 1. Get IDs of students already marked PRESENT or LATE.
-            present_sql = """
-                SELECT student_id FROM session_attendance
-                WHERE session_id = %s AND status IN ('present', 'late');
-            """
-            cursor.execute(present_sql, (session_id,))
-            
-            fetched_results = cursor.fetchall()
-            print(f"🔍 DEBUG: Found {len(fetched_results)} present/late students")
-            
-            present_ids = []
-            if fetched_results:
-                if isinstance(fetched_results[0], dict):
-                    present_ids = [s['student_id'] for s in fetched_results]
-                else:
-                    present_ids = [s[0] for s in fetched_results]
-            
-            print(f"🔍 DEBUG: Present IDs: {present_ids}")
-            
-            # 2. Build the query to get all students in the section
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # 🎯 STEP 1: Get session details to find the class info
+        print("🔍 DEBUG: Fetching session details...")
+        cursor.execute("SELECT session_id, class_name, subject_name, section_id FROM attendance_sessions WHERE session_id = %s", (session_id,))
+        session_data = cursor.fetchone()
+        
+        if not session_data:
+            print(f"❌ ERROR: Session {session_id} not found")
+            return jsonify({
+                'success': False,
+                'message': f'Session {session_id} not found.'
+            }), 404
+        
+        print(f"🔍 DEBUG: Session found: {session_data}")
+        
+        # 🎯 STEP 2: Extract class info (e.g., "BSIT4C")
+        class_name = session_data.get('class_name', '')
+        print(f"🔍 DEBUG: Class name from session: '{class_name}'")
+        
+        if not class_name:
+            return jsonify({
+                'success': False,
+                'message': 'No class information found in session.'
+            }), 400
+        
+        # 🎯 STEP 3: Get students already marked present/late in THIS session
+        print("🔍 DEBUG: Finding students already detected in this session...")
+        present_sql = """
+            SELECT DISTINCT student_id 
+            FROM attendance 
+            WHERE session_id = %s AND status IN ('present', 'late')
+        """
+        cursor.execute(present_sql, (session_id,))
+        present_students = cursor.fetchall()
+        present_ids = [student['student_id'] for student in present_students] if present_students else []
+        
+        print(f"🔍 DEBUG: Already detected: {len(present_ids)} students")
+        
+        # 🎯 STEP 4: Try multiple approaches to find students
+        
+        # First, let's see what students actually exist in the database
+        print("🔍 DEBUG: Checking available students in database...")
+        cursor.execute("SELECT DISTINCT course, year_section, section_id FROM students WHERE status = 'active' LIMIT 10")
+        available_students = cursor.fetchall()
+        print(f"🔍 DEBUG: Available student patterns: {available_students}")
+        
+        # 🎯 STEP 5: Try to find students using multiple criteria
+        undetected_students = []
+        
+        # Method 1: Try using section_id from session
+        session_section_id = session_data.get('section_id')
+        if session_section_id:
+            print(f"🔍 DEBUG: Trying to find students by section_id: {session_section_id}")
             if present_ids:
-                # Use parameterized query to avoid SQL injection
                 placeholders = ', '.join(['%s'] * len(present_ids))
-                absent_sql = f"""
-                    SELECT student_id, first_name, last_name
-                    FROM students
-                    WHERE section_id = %s AND student_id NOT IN ({placeholders})
-                    ORDER BY last_name, first_name;
+                students_sql = f"""
+                    SELECT student_id, first_name, last_name, course, year_section
+                    FROM students 
+                    WHERE section_id = %s 
+                    AND status = 'active'
+                    AND student_id NOT IN ({placeholders})
+                    ORDER BY last_name, first_name
                 """
-                params = [section_id] + present_ids
+                cursor.execute(students_sql, [session_section_id] + present_ids)
             else:
-                absent_sql = """
-                    SELECT student_id, first_name, last_name
-                    FROM students
-                    WHERE section_id = %s
-                    ORDER BY last_name, first_name;
+                students_sql = """
+                    SELECT student_id, first_name, last_name, course, year_section
+                    FROM students 
+                    WHERE section_id = %s 
+                    AND status = 'active'
+                    ORDER BY last_name, first_name
                 """
-                params = [section_id]
+                cursor.execute(students_sql, [session_section_id])
             
-            print(f"🔍 DEBUG: Executing SQL with params: {params}")
-            cursor.execute(absent_sql, tuple(params))
-            absent_students = cursor.fetchall()
+            undetected_students = cursor.fetchall()
+            print(f"🔍 DEBUG: Found {len(undetected_students)} students by section_id")
+        
+        # Method 2: If no students found by section_id, try by class_name patterns
+        if not undetected_students and class_name:
+            print(f"🔍 DEBUG: Trying to find students by class_name patterns: {class_name}")
             
-            print(f"🔍 DEBUG: Found {len(absent_students)} absent students")
+            # Try different ways to match class_name
+            search_patterns = [
+                (class_name, class_name),  # Exact match
+                (class_name[:4], class_name[4:]),  # Split "BSIT4C" into "BSIT" and "4C"
+                (class_name, ""),  # Course only
+                ("", class_name),  # Year_section only
+            ]
             
-            # Convert to proper JSON format if needed
-            if absent_students and not isinstance(absent_students[0], dict):
-                # Convert tuples to dicts
-                absent_students = [
-                    {
-                        'student_id': s[0], 
-                        'first_name': s[1], 
-                        'last_name': s[2]
-                    }
-                    for s in absent_students
-                ]
+            for course_pattern, year_section_pattern in search_patterns:
+                if not undetected_students:
+                    where_conditions = []
+                    params = []
+                    
+                    if course_pattern:
+                        where_conditions.append("course = %s")
+                        params.append(course_pattern)
+                    
+                    if year_section_pattern:
+                        where_conditions.append("year_section = %s")
+                        params.append(year_section_pattern)
+                    
+                    if not where_conditions:
+                        continue
+                    
+                    where_clause = " AND ".join(where_conditions)
+                    
+                    if present_ids:
+                        placeholders = ', '.join(['%s'] * len(present_ids))
+                        students_sql = f"""
+                            SELECT student_id, first_name, last_name, course, year_section
+                            FROM students 
+                            WHERE {where_clause}
+                            AND status = 'active'
+                            AND student_id NOT IN ({placeholders})
+                            ORDER BY last_name, first_name
+                        """
+                        cursor.execute(students_sql, params + present_ids)
+                    else:
+                        students_sql = f"""
+                            SELECT student_id, first_name, last_name, course, year_section
+                            FROM students 
+                            WHERE {where_clause}
+                            AND status = 'active'
+                            ORDER BY last_name, first_name
+                        """
+                        cursor.execute(students_sql, params)
+                    
+                    undetected_students = cursor.fetchall()
+                    if undetected_students:
+                        print(f"✅ SUCCESS: Found {len(undetected_students)} students using course='{course_pattern}', year_section='{year_section_pattern}'")
+                        break
+        
+        # Method 3: Last resort - get ALL active students (for debugging)
+        if not undetected_students:
+            print("🔍 DEBUG: No students found with specific criteria, getting ALL active students for debugging...")
+            if present_ids:
+                placeholders = ', '.join(['%s'] * len(present_ids))
+                students_sql = f"""
+                    SELECT student_id, first_name, last_name, course, year_section
+                    FROM students 
+                    WHERE status = 'active'
+                    AND student_id NOT IN ({placeholders})
+                    ORDER BY last_name, first_name
+                """
+                cursor.execute(students_sql, present_ids)
+            else:
+                students_sql = """
+                    SELECT student_id, first_name, last_name, course, year_section
+                    FROM students 
+                    WHERE status = 'active'
+                    ORDER BY last_name, first_name
+                """
+                cursor.execute(students_sql)
             
-            print(f"✅ SUCCESS: Returning {len(absent_students)} absent students")
-            return jsonify(absent_students), 200
+            all_students = cursor.fetchall()
+            print(f"🔍 DEBUG: Total active students in database: {len(all_students)}")
+            print(f"🔍 DEBUG: All student patterns: {[(s['student_id'], s['course'], s['year_section']) for s in all_students]}")
+            
+            # For now, return all students so we can see what's available
+            undetected_students = all_students
+        
+        print(f"✅ FINAL RESULT: Found {len(undetected_students)} students for enrollment")
+        
+        # Log the results
+        for student in undetected_students:
+            print(f"   👤 {student['student_id']}: {student['first_name']} {student['last_name']} ({student['course']}{student['year_section']})")
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify(undetected_students), 200
 
     except Exception as e:
         print(f"❌ ERROR in /api/absent_students_for_enrollment: {str(e)}")
+        import traceback
         traceback.print_exc()
+        
         return jsonify({
             'success': False,
             'error': 'Internal Server Error',
@@ -11992,59 +12815,199 @@ def get_absent_students():
 
 @app.route('/api/enroll_unknown_face', methods=['POST'])
 def enroll_unknown_face():
+    """
+    ENROLL UNKNOWN FACE - FIXED: Stores multiple face encodings per student
+    """
     data = request.get_json()
     student_id = data.get('student_id')
     face_encoding = data.get('face_encoding')
-    unrecognized_face_id = data.get('unrecognized_face_id')  # This should be DATABASE ID
+    unrecognized_face_id = data.get('unrecognized_face_id')
     session_id = data.get('session_id')
 
+    print(f"🎯 ENROLLMENT STARTED:")
+    print(f"   Student: {student_id}")
+    print(f"   Face ID: {unrecognized_face_id}")
+    print(f"   Session: {session_id}")
+
     if not all([student_id, face_encoding, unrecognized_face_id, session_id]):
-        return jsonify({'success': False, 'message': 'Missing required fields.'}), 400
+        return jsonify({
+            'success': False, 
+            'message': 'Missing required fields.'
+        }), 400
     
     try:
-        with get_db_cursor() as cursor:
-            # 2. Save New Encoding (Face Learning)
-            encoding_sql = """
-                INSERT INTO student_face_encodings (student_id, face_encoding, source)
-                VALUES (%s, %s, %s);
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # 1. VALIDATE STUDENT EXISTS
+        student_check_sql = "SELECT student_id, first_name, last_name FROM students WHERE student_id = %s"
+        cursor.execute(student_check_sql, (student_id,))
+        student_data = cursor.fetchone()
+        
+        if not student_data:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': False, 
+                'message': f'Student {student_id} not found in database.'
+            }), 400
+
+        student_name = f"{student_data['first_name']} {student_data['last_name']}"
+
+        # 2. 🎯 STORE MULTIPLE FACE ENCODINGS (don't overwrite, just add new)
+        print("💾 Adding new face encoding to student_face_encodings table...")
+        encoding_sql = """
+            INSERT INTO student_face_encodings (student_id, face_encoding, source, created_at)
+            VALUES (%s, %s, %s, NOW())
+        """
+        cursor.execute(encoding_sql, (student_id, json.dumps(face_encoding), 'manual_enrollment'))
+        encoding_id = cursor.lastrowid
+        print(f"✅ New face encoding saved to encodings table with ID: {encoding_id}")
+
+        # 3. Check if student already has attendance record for this session
+        print("🔍 Checking existing attendance record...")
+        check_attendance_sql = """
+            SELECT id, status FROM attendance 
+            WHERE student_id = %s AND session_id = %s
+        """
+        cursor.execute(check_attendance_sql, (student_id, session_id))
+        existing_attendance = cursor.fetchone()
+        
+        if existing_attendance:
+            # Update existing record instead of creating duplicate
+            print(f"📝 Updating existing attendance record (was: {existing_attendance['status']})...")
+            update_attendance_sql = """
+                UPDATE attendance 
+                SET status = 'present', timestamp = NOW(), name = %s
+                WHERE id = %s
             """
-            # NOTE: Ensure 'face_encoding' is serialized (e.g., to JSON string) if your DB field requires it.
-            cursor.execute(encoding_sql, (student_id, face_encoding, 'manual_enrollment'))
-
-            # Optional: Update the main students table with this encoding (best/latest)
-            student_update_sql = "UPDATE students SET face_encoding = %s, updated_at = NOW() WHERE student_id = %s;"
-            cursor.execute(student_update_sql, (face_encoding, student_id))
-
-            # 3. Update Attendance (Mark as Present)
+            cursor.execute(update_attendance_sql, (student_name, existing_attendance['id']))
+            print(f"✅ Updated existing attendance from '{existing_attendance['status']}' to 'present'")
+        else:
+            # Create new attendance record
+            print("📝 Creating new attendance record...")
             attendance_sql = """
-                INSERT INTO session_attendance (session_id, student_id, status, time_recorded)
-                VALUES (%s, %s, 'present', NOW())
-                ON DUPLICATE KEY UPDATE status = 'present', time_recorded = NOW();
+                INSERT INTO attendance 
+                (student_id, session_id, status, timestamp, name)
+                VALUES (%s, %s, 'present', NOW(), %s)
             """
-            cursor.execute(attendance_sql, (session_id, student_id))
+            cursor.execute(attendance_sql, (student_id, session_id, student_name))
+            print("✅ New attendance marked as present")
 
-            # 4. Update Unrecognized Face (Cleanup)
-            unrecognized_sql = """
-                UPDATE unrecognized_faces
-                SET final_status = 'enrolled', notes = %s
-                WHERE id = %s AND session_id = %s;  # ✅ Now matches database records
+        # 4. Handle unrecognized face cleanup
+        print("🗑️ Cleaning up unrecognized face...")
+        
+        if unrecognized_face_id.startswith('db_'):
+            # Database face - update status
+            db_id = unrecognized_face_id.replace('db_', '')
+            print(f"   Updating database face {db_id}...")
+            
+            update_sql = """
+                UPDATE unrecognized_faces 
+                SET final_status = 'enrolled', 
+                    notes = %s,
+                    updated_at = NOW()
+                WHERE id = %s
             """
-            notes = f'Manually enrolled by instructor as {student_id}'
-            cursor.execute(unrecognized_sql, (notes, unrecognized_face_id, session_id))
+            notes = f'Enrolled as student {student_id} ({student_name})'
+            cursor.execute(update_sql, (notes, db_id))
+            print(f"✅ Database face {db_id} marked as enrolled")
+            
+        else:
+            # Memory-only face - save to database for record keeping
+            print(f"   Memory face {unrecognized_face_id} - saving to database...")
+            insert_sql = """
+                INSERT INTO unrecognized_faces 
+                (session_id, face_encoding, final_status, notes, created_at)
+                VALUES (%s, %s, 'enrolled', %s, NOW())
+            """
+            notes = f'Enrolled as student {student_id} ({student_name}) - was memory-only face'
+            cursor.execute(insert_sql, (session_id, json.dumps(face_encoding), notes))
+            print(f"✅ Memory face saved to database as enrolled")
 
-            remove_unknown_face(unrecognized_face_id)
+        # 5. Remove from memory
+        print("🧹 Removing from memory...")
+        remove_success = remove_unknown_face(unrecognized_face_id)
+        print(f"   Memory removal: {'Success' if remove_success else 'Failed'}")
 
+        # 6. 🎯 UPDATE GLOBAL KNOWN FACES ARRAY WITH ALL ENCODINGS
+        print("🔄 Updating known faces cache with ALL encodings...")
+        try:
+            global KNOWN_FACE_ENCODINGS_ARRAY, known_face_names, known_face_ids, known_face_types
+            
+            # Reload ALL face encodings from database
+            known_face_encodings = []
+            known_face_names = []
+            known_face_ids = []
+            known_face_types = []
+            
+            sql = """
+                SELECT sfe.student_id, sfe.face_encoding, s.first_name, s.last_name
+                FROM student_face_encodings sfe
+                JOIN students s ON sfe.student_id = s.student_id
+                WHERE sfe.face_encoding IS NOT NULL
+            """
+            cursor.execute(sql)
+            results = cursor.fetchall()
+            
+            for row in results:
+                try:
+                    student_id_db = row['student_id']
+                    encoding_json = row['face_encoding']
+                    
+                    if encoding_json:
+                        encoding_list = json.loads(encoding_json)
+                        known_face_encodings.append(np.array(encoding_list))
+                        known_face_names.append(student_id_db)
+                        known_face_ids.append(student_id_db)
+                        known_face_types.append('student')
+                        
+                except Exception as e:
+                    print(f"⚠️ Error loading face encoding for {student_id_db}: {e}")
+                    continue
+            
+            if known_face_encodings:
+                KNOWN_FACE_ENCODINGS_ARRAY = np.array(known_face_encodings)
+                print(f"✅ Updated known faces cache: {len(known_face_encodings)} encodings from database")
+            else:
+                KNOWN_FACE_ENCODINGS_ARRAY = np.array([])
+                print("⚠️ No known faces in cache")
+                
+        except Exception as cache_error:
+            print(f"⚠️ Error updating face cache: {cache_error}")
 
-        return jsonify({'success': True, 'message': 'Enrollment successful! Student marked as Present.'}), 200
+        # 7. Commit all changes
+        conn.commit()
+        print("💫 All database changes committed")
+
+        # Close connection
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True, 
+            'message': f'Student {student_name} enrolled successfully! New face encoding added.'
+        }), 200
 
     except Exception as e:
-        print(f"Error enrolling unknown face: {e}")
+        print(f"❌ ERROR in enrollment: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        # Ensure connection is closed even on error
+        try:
+            if 'cursor' in locals():
+                cursor.close()
+            if 'conn' in locals():
+                conn.close()
+        except:
+            pass
+            
         return jsonify({
             'success': False,
-            'error': 'Internal Server Error',
-            'message': f'A server error occurred during enrollment: {str(e)}'
+            'message': f'Enrollment failed: {str(e)}'
         }), 500
-
+        
 # ------------------------------------------------------------------
 # API Route 3: END SESSION
 # ------------------------------------------------------------------
@@ -12088,16 +13051,18 @@ def debug_session():
 
 @app.route('/api/stop_detection', methods=['POST'])
 def stop_detection():
-    global detectionStopped
+    global detectionStopped, FRAME_BUFFER
     detectionStopped = True
-    print("🔴 Detection stopped via API - skipSelected called")
+    FRAME_BUFFER = []  # 🎯 CLEAR THE BUFFER
+    print("🔴 Detection stopped via API - buffer cleared")
     return jsonify({'success': True, 'message': 'Detection stopped'})
 
 @app.route('/api/resume_detection', methods=['POST'])
 def resume_detection():
-    global detectionStopped
+    global detectionStopped, FRAME_BUFFER
     detectionStopped = False
-    print("🟢 Detection resumed via API")
+    FRAME_BUFFER = []  # 🎯 CLEAR THE BUFFER
+    print("🟢 Detection resumed via API - buffer cleared")
     return jsonify({'success': True, 'message': 'Detection resumed'})
 
 # ------------------------------------------------------------------
@@ -12116,6 +13081,9 @@ def get_unrecognized_faces():
     try:
         # 🛑 Clean up BEFORE processing
         cleanup_unrecognized_faces()
+        
+        # 🆕 CRITICAL FIX: Load faces from database first
+        load_faces_from_database()
         
         # Initialize if not exists or invalid type
         if not isinstance(UNKNOWN_FACES_FOR_ENROLLMENT, dict):
@@ -12217,8 +13185,88 @@ def get_unrecognized_faces():
         traceback.print_exc()
         # Return empty list but with 200 status to prevent frontend crashes
         return jsonify([]), 200
+
+def load_faces_from_database():
+    """
+    Load unrecognized faces from database into memory
+    """
+    global UNKNOWN_FACES_FOR_ENROLLMENT
     
-# 🛑 HELPER FUNCTION TO CLEAN UP THE GLOBAL VARIABLE
+    try:
+        session_id = get_current_session_id()
+        if not session_id:
+            print("❌ No active session ID for loading faces")
+            return
+        
+        with get_db_cursor() as cursor:
+            sql = """
+                SELECT id, face_image, face_encoding, image_path, created_at 
+                FROM unrecognized_faces 
+                WHERE session_id = %s AND final_status = 'pending'
+                ORDER BY created_at DESC
+            """
+            cursor.execute(sql, (session_id,))
+            results = cursor.fetchall()
+            
+            print(f"🔍 Loading {len(results)} faces from database")
+            
+            for row in results:
+                try:
+                    db_id = row['id'] if isinstance(row, dict) else row[0]
+                    face_image_bytes = row['face_image'] if isinstance(row, dict) else row[1]
+                    face_encoding_json = row['face_encoding'] if isinstance(row, dict) else row[2]
+                    image_path = row['image_path'] if isinstance(row, dict) else row[3]
+                    created_at = row['created_at'] if isinstance(row, dict) else row[4]
+                    
+                    # Skip if already in memory
+                    memory_face_id = f"db_{db_id}"
+                    if memory_face_id in UNKNOWN_FACES_FOR_ENROLLMENT:
+                        continue
+                    
+                    # Convert bytes back to numpy image
+                    face_crop_img = None
+                    if face_image_bytes:
+                        try:
+                            nparr = np.frombuffer(face_image_bytes, np.uint8)
+                            face_crop_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                            if face_crop_img is None:
+                                # Try to load from image_path if byte decoding fails
+                                if image_path and os.path.exists(image_path):
+                                    face_crop_img = cv2.imread(image_path)
+                        except Exception as img_error:
+                            print(f"⚠️ Error decoding face image for db_id {db_id}: {img_error}")
+                            continue
+                    
+                    # Convert JSON back to numpy array
+                    face_encoding = None
+                    if face_encoding_json:
+                        try:
+                            encoding_list = json.loads(face_encoding_json)
+                            face_encoding = np.array(encoding_list)
+                        except Exception as encoding_error:
+                            print(f"⚠️ Error decoding face encoding for db_id {db_id}: {encoding_error}")
+                            continue
+                    
+                    if face_crop_img is not None and face_encoding is not None:
+                        UNKNOWN_FACES_FOR_ENROLLMENT[memory_face_id] = {
+                            'face_crop': face_crop_img,
+                            'face_encoding': face_encoding,
+                            'timestamp': created_at,
+                            'cooldown_until': created_at + timedelta(seconds=30),
+                            'track_id': None,
+                            'times_seen': 1,
+                            'db_id': db_id,
+                            'image_path': image_path
+                        }
+                        print(f"📥 LOADED from DB: Face db_{db_id}")
+                        
+                except Exception as e:
+                    print(f"❌ ERROR loading face from DB: {e}")
+                    continue
+                    
+    except Exception as e:
+        print(f"❌ ERROR loading faces from database: {e}")
+
 def cleanup_unrecognized_faces():
     """
     Enhanced cleanup with aggressive duplicate removal
@@ -12287,9 +13335,12 @@ def cleanup_unrecognized_faces():
 
 def is_similar_to_unrecognized_face(new_encoding, current_time):
     """
-    STRICT similarity check - if similar face exists AND in cooldown, BLOCK it
+    Check for similar faces (different people) with cooldown
     """
     global UNKNOWN_FACES_FOR_ENROLLMENT
+    
+    # 🎯 Use a reasonable threshold for similar faces (different people)
+    SIMILARITY_THRESHOLD = 0.4  # Normal threshold for similar faces
     
     for unique_id, face_data in UNKNOWN_FACES_FOR_ENROLLMENT.items():
         existing_encoding = face_data.get('face_encoding')
@@ -12298,52 +13349,30 @@ def is_similar_to_unrecognized_face(new_encoding, current_time):
         if existing_encoding is None:
             continue
 
-        # Check if this is the same face
+        # Check if this is a similar face
         distance = calculate_face_distance(existing_encoding, new_encoding)
         
-        # If very similar (same person)
-        if distance < FACE_SIMILARITY_THRESHOLD:
-            # 🛑 STRICT: If cooldown is active, BLOCK this face completely
+        # If similar (but not exact duplicate) and in cooldown, block it
+        if distance < SIMILARITY_THRESHOLD:
+            # 🛑 If cooldown is active, BLOCK this similar face
             if cooldown_until and cooldown_until > current_time:
                 remaining = (cooldown_until - current_time).total_seconds()
-                print(f"🚫 BLOCKED: Face {unique_id} in cooldown ({remaining:.0f}s left)")
+                print(f"🚫 BLOCKED: Similar face {unique_id} in cooldown ({remaining:.0f}s left)")
                 return True, unique_id
             else:
-                # Cooldown expired - update the existing face with NEW 30-second cooldown
-                print(f"🔄 UPDATING: Face {unique_id} cooldown expired, resetting to 30s")
+                # Cooldown expired - update the existing face
+                print(f"🔄 UPDATING: Similar face {unique_id} cooldown expired")
                 face_data.update({
-                    'face_crop': face_data.get('face_crop'),
                     'timestamp': current_time,
-                    'cooldown_until': current_time + timedelta(seconds=30),  # RESET to 30 seconds
+                    'cooldown_until': current_time + timedelta(seconds=30),
                     'times_seen': face_data.get('times_seen', 0) + 1
                 })
                 return True, unique_id
 
     return False, None
 
-def remove_unknown_face(face_id):
-    """
-    Remove a face from the system (when enrolled or skipped)
-    """
-    global UNKNOWN_FACES_FOR_ENROLLMENT, ACTIVE_FACE_TRACKS
-    
-    if face_id in UNKNOWN_FACES_FOR_ENROLLMENT:
-        # Also remove any active track associated with this face
-        face_data = UNKNOWN_FACES_FOR_ENROLLMENT[face_id]
-        track_id = face_data.get('track_id')
-        
-        if track_id and track_id in ACTIVE_FACE_TRACKS:
-            del ACTIVE_FACE_TRACKS[track_id]
-        
-        del UNKNOWN_FACES_FOR_ENROLLMENT[face_id]
-        print(f"🗑️ REMOVED: Face {face_id} from system")
-        return True
-    
-    print(f"⚠️ Face {face_id} not found in system")
-    return False
-
 def calculate_face_distance(encoding1, encoding2):
-    """Calculate face distance with proper error handling"""
+    """Calculate face distance with proper error handling and normalization"""
     try:
         enc1 = np.array(encoding1)
         enc2 = np.array(encoding2)
@@ -12352,7 +13381,14 @@ def calculate_face_distance(encoding1, encoding2):
         if len(enc1) != len(enc2):
             return 1.0
             
-        return np.linalg.norm(enc1 - enc2)
+        # Normalize encodings for better distance calculation
+        enc1_norm = enc1 / np.linalg.norm(enc1)
+        enc2_norm = enc2 / np.linalg.norm(enc2)
+        
+        # Calculate cosine distance (better for face recognition)
+        distance = np.arccos(np.clip(np.dot(enc1_norm, enc2_norm), -1.0, 1.0)) / np.pi
+        
+        return distance
     except Exception as e:
         print(f"⚠️ Error calculating face distance: {e}")
         return 1.0
@@ -12370,10 +13406,9 @@ def get_encoding_signature(face_encoding):
     except Exception:
         return str(face_encoding)
 
-
 def add_unknown_face(face_crop, face_encoding, track_id=None):
     """
-    Enhanced function to add unknown faces with STRICT 30-second cooldown per face
+    Enhanced function to add unknown faces with STRICT duplicate prevention
     """
     global UNKNOWN_FACES_FOR_ENROLLMENT, ACTIVE_FACE_TRACKS
     
@@ -12385,39 +13420,115 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
         logger.error("❌ Cannot save face: No active session ID")
         return False
     
-    # 1. STRICT CHECK: Is this face already in our system AND still in cooldown?
-    is_duplicate, existing_face_id = is_similar_to_unrecognized_face(face_encoding, current_time)
-    if is_duplicate:
-        print(f"⏳ COOLDOWN ACTIVE: Face {existing_face_id} won't appear again for 30 seconds")
+    # 🎯 CRITICAL FIX 1: Check if this exact face encoding already exists in memory
+    existing_face_id = find_existing_face_by_encoding(face_encoding)
+    if existing_face_id:
+        print(f"🎯 EXACT DUPLICATE FOUND: Face {existing_face_id} already exists - skipping")
+        
+        # Update the existing face's timestamp and cooldown
+        if existing_face_id in UNKNOWN_FACES_FOR_ENROLLMENT:
+            UNKNOWN_FACES_FOR_ENROLLMENT[existing_face_id].update({
+                'timestamp': current_time,
+                'cooldown_until': current_time + timedelta(seconds=30),
+                'times_seen': UNKNOWN_FACES_FOR_ENROLLMENT[existing_face_id].get('times_seen', 0) + 1
+            })
+            print(f"🔄 UPDATED: Existing face {existing_face_id} timestamp and cooldown")
+        
         return False
     
-    # 2. Generate unique ID based on face encoding
+    # 🎯 CRITICAL FIX 2: Check if similar face exists AND still in cooldown
+    is_similar, similar_face_id = is_similar_to_unrecognized_face(face_encoding, current_time)
+    if is_similar:
+        print(f"⏳ SIMILAR FACE IN COOLDOWN: Face {similar_face_id} - skipping duplicate")
+        return False
+    
+    # 🎯 Generate unique ID based on face encoding (consistent for same face)
     face_id = generate_face_id(face_encoding)
     
-    # 3. 🆕 CRITICAL: SAVE TO DATABASE TABLE
+    # 🎯 CRITICAL FIX 3: Check if this face_id already exists (shouldn't happen but safety check)
+    if face_id in UNKNOWN_FACES_FOR_ENROLLMENT:
+        print(f"🎯 FACE ID COLLISION: {face_id} already exists - updating")
+        UNKNOWN_FACES_FOR_ENROLLMENT[face_id].update({
+            'face_crop': face_crop,  # Update with latest crop
+            'timestamp': current_time,
+            'cooldown_until': current_time + timedelta(seconds=30),
+            'times_seen': UNKNOWN_FACES_FOR_ENROLLMENT[face_id].get('times_seen', 0) + 1,
+            'track_id': track_id
+        })
+        return True
+    
+    # 🆕 SAVE IMAGE TO FILE SYSTEM
+    image_path = save_face_image_to_file(face_crop, session_id, track_id)
+    if not image_path:
+        logger.error("❌ Failed to save face image to file")
+        return False
+    
+    # 🆕 SAVE TO DATABASE
     db_face_id = None
     try:
         with get_db_cursor() as cursor:
-            # Convert face crop to bytes for database
-            success, buffer = cv2.imencode('.jpg', face_crop)
-            if success:
-                face_image_bytes = buffer.tobytes()
-                
-                sql = """
-                    INSERT INTO unrecognized_faces 
-                    (session_id, face_image, final_status, created_at)
-                    VALUES (%s, %s, 'pending', %s)
-                """
-                cursor.execute(sql, (session_id, face_image_bytes, current_time))
-                db_face_id = cursor.lastrowid  # Get the database ID
-                
-                logger.info(f"💾 SAVED: Face to database with ID: {db_face_id} for session: {session_id}")
-                
+            # Convert face crop to bytes for database (optional)
+            face_image_bytes = None
+            try:
+                success, buffer = cv2.imencode('.jpg', face_crop)
+                if success:
+                    face_image_bytes = buffer.tobytes()
+            except Exception as img_error:
+                logger.warning(f"⚠️ Could not encode face image to bytes: {img_error}")
+            
+            sql = """
+                INSERT INTO unrecognized_faces 
+                (session_id, section_id, face_encoding, image_path, face_image, 
+                 detection_confidence, bounding_box, final_status, notes, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            section_id = get_current_section_id() or "default"
+            encoding_json = json.dumps(face_encoding.tolist()) if hasattr(face_encoding, 'tolist') else json.dumps(face_encoding)
+            detection_confidence = 0.8
+            bounding_box_json = json.dumps({"track_id": track_id}) if track_id else None
+            notes = f"Auto-detected - Track: {track_id}" if track_id else "Auto-detected"
+            
+            cursor.execute(sql, (
+                session_id, 
+                section_id, 
+                encoding_json, 
+                image_path, 
+                face_image_bytes,
+                detection_confidence,
+                bounding_box_json,
+                'pending',
+                notes,
+                current_time
+            ))
+            
+            db_face_id = cursor.lastrowid
+            logger.info(f"💾 SAVED: Face to database with ID: {db_face_id}")
+            
     except Exception as e:
         logger.error(f"❌ DATABASE ERROR: Failed to save face: {e}")
-        return False
+        # Try fallback insert
+        try:
+            with get_db_cursor() as cursor:
+                sql = """
+                    INSERT INTO unrecognized_faces 
+                    (session_id, section_id, face_encoding, image_path, final_status)
+                    VALUES (%s, %s, %s, %s, %s)
+                """
+                cursor.execute(sql, (
+                    session_id, 
+                    "default", 
+                    encoding_json, 
+                    image_path, 
+                    'pending'
+                ))
+                db_face_id = cursor.lastrowid
+                logger.info(f"💾 SAVED (fallback): Face to database with ID: {db_face_id}")
+        except Exception as fallback_error:
+            logger.error(f"❌ DATABASE FALLBACK ALSO FAILED: {fallback_error}")
+            return False
     
-    # 4. Save to memory (your existing logic)
+    # Save to memory
     UNKNOWN_FACES_FOR_ENROLLMENT[face_id] = {
         'face_crop': face_crop,
         'face_encoding': face_encoding,
@@ -12425,18 +13536,91 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
         'cooldown_until': current_time + timedelta(seconds=30),
         'track_id': track_id,
         'times_seen': 1,
-        'db_id': db_face_id  # 🆕 Store database reference
+        'db_id': db_face_id,
+        'image_path': image_path
     }
     
     logger.info(f"➕ ADDED: New unknown face {face_id} - Database ID: {db_face_id}")
     return True
 
+def find_existing_face_by_encoding(new_encoding):
+    """
+    STRICT check for EXACT same face encoding (not just similar)
+    Returns existing face_id if exact match found, None otherwise
+    """
+    global UNKNOWN_FACES_FOR_ENROLLMENT
+    
+    # 🎯 VERY STRICT threshold for exact duplicates
+    EXACT_DUPLICATE_THRESHOLD = 0.01  # Almost exact match
+    
+    for existing_id, face_data in UNKNOWN_FACES_FOR_ENROLLMENT.items():
+        existing_encoding = face_data.get('face_encoding')
+        
+        if existing_encoding is None:
+            continue
+            
+        # Calculate distance between encodings
+        distance = calculate_face_distance(existing_encoding, new_encoding)
+        
+        # If distance is very small, it's the exact same face
+        if distance < EXACT_DUPLICATE_THRESHOLD:
+            print(f"🎯 EXACT DUPLICATE DETECTED: distance={distance:.6f} (threshold: {EXACT_DUPLICATE_THRESHOLD})")
+            return existing_id
+    
+    return None
+    
+    # Create a stable string representation of the encoding
+    encoding_str = ''.join([f"{x:.8f}" for x in encoding_list])
+    face_hash = hashlib.md5(encoding_str.encode()).hexdigest()[:12]
+    return f"face-{face_hash}"
+
+def save_face_image_to_file(face_crop, session_id, track_id=None):
+    """
+    Save face crop to file system and return the path
+    """
+    try:
+        # Create directory if not exists
+        os.makedirs('unknown_faces', exist_ok=True)
+        
+        # Generate filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        track_suffix = f"_{track_id}" if track_id else ""
+        filename = f"unknown_face_{session_id}_{timestamp}{track_suffix}.jpg"
+        filepath = os.path.join('unknown_faces', filename)
+        
+        # Save image
+        success = cv2.imwrite(filepath, face_crop)
+        if success:
+            return filepath
+        else:
+            logger.error(f"❌ Failed to save face image to: {filepath}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Error saving face image to file: {e}")
+        return None
+
+def get_current_section_id():
+    """
+    Get current section ID - you need to implement this based on your application
+    """
+    # TODO: Implement based on your application logic
+    # This could be from a global variable, configuration, or database
+    return "default_section"  # Replace with actual implementation
+
+
 def generate_face_id(face_encoding):
-    """Generate consistent face ID based on encoding, not timestamp"""
-    # Use first 10 elements of encoding to generate ID
-    encoding_str = ''.join([f"{x:.4f}" for x in face_encoding[:10]])
-    face_hash = hash(encoding_str) % 10000
-    return f"face-{abs(face_hash)}"
+    """Generate consistent face ID based on encoding - same encoding = same ID"""
+    # Use the entire encoding to generate a consistent hash
+    if hasattr(face_encoding, 'tolist'):
+        encoding_list = face_encoding.tolist()
+    else:
+        encoding_list = list(face_encoding)
+    
+    # Create a stable string representation of the encoding
+    encoding_str = ''.join([f"{x:.8f}" for x in encoding_list])
+    face_hash = hashlib.md5(encoding_str.encode()).hexdigest()[:12]
+    return f"face-{face_hash}"
 
 def background_cleanup():
     """Run cleanup in background every minute"""
@@ -12447,10 +13631,6 @@ def background_cleanup():
         except Exception as e:
             print(f"Background cleanup error: {e}")
         time.sleep(60)  # 1 minute
-
-# Start background cleanup thread (add this at the bottom)
-cleanup_thread = threading.Thread(target=background_cleanup, daemon=True)
-cleanup_thread.start()
 
 @app.route('/api/remove_unknown_face', methods=['POST'])
 def remove_unknown_face_api():
@@ -12466,8 +13646,11 @@ def remove_unknown_face_api():
         return jsonify({'success': False, 'message': 'Missing face_id'}), 400
     
     try:
-        remove_unknown_face(face_id)
-        return jsonify({'success': True, 'message': 'Face removed from system'}), 200
+        success = remove_unknown_face(face_id)
+        if success:
+            return jsonify({'success': True, 'message': 'Face removed from system'}), 200
+        else:
+            return jsonify({'success': False, 'message': 'Face not found'}), 404
     except Exception as e:
         print(f"❌ Error removing face: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -12493,15 +13676,20 @@ def remove_unknown_face(face_id):
     print(f"⚠️ Face {face_id} not found in system")
     return False
 
+# Start background cleanup thread (add this at the bottom)
+cleanup_thread = threading.Thread(target=background_cleanup, daemon=True)
+cleanup_thread.start()
+
 @app.route('/api/student_left', methods=['POST'])
 def student_left():
-    """Record when a student leaves the classroom - FIXED: Update status to missing but preserve original status"""
+    """Record when a student leaves the classroom - FIXED: Prevents duplicate records"""
     try:
         data = request.get_json()
         student_id = data.get('student_id')
         session_id = data.get('session_id')
         
         if not student_id or not session_id:
+            logger.error(f"❌ MISSING PARAMS: student_id={student_id}, session_id={session_id}")
             return jsonify({'success': False, 'message': 'Missing student_id or session_id'}), 400
         
         conn = get_db_connection()
@@ -12512,7 +13700,49 @@ def student_left():
         student = cursor.fetchone()
         student_name = f"{student['first_name']} {student['last_name']}" if student else f"Student {student_id}"
         
-        # 🎯 CRITICAL FIX: Check if there's an active missing period
+        # 🎯 CRITICAL FIX: BETTER Manual Status Detection
+        cursor.execute("""
+            SELECT id, status, session_id, remarks FROM attendance 
+            WHERE student_id = %s AND session_id = %s
+            ORDER BY timestamp DESC LIMIT 1
+        """, (student_id, session_id))
+        
+        current_attendance = cursor.fetchone()
+        
+        if current_attendance:
+            current_status = current_attendance['status']
+            current_session = current_attendance.get('session_id')
+            # ✅ FIXED: Handle None remarks safely
+            remarks = current_attendance.get('remarks') or ''  # Convert None to empty string
+            
+            # 🎯 BETTER MANUAL STATUS DETECTION - More specific
+            manual_excuse_sessions = ['manual_excuse']  # Only for excused students
+            manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
+            manual_statuses = ['excused']  # Only truly manual statuses
+            
+            is_manual_status = (
+                # Only specific manual session types (not manual_add)
+                current_session in manual_excuse_sessions or
+                current_session in manual_status_sessions or
+                # Only specific manual statuses
+                current_status in manual_statuses or
+                # Only specific manual remarks (not temp_id) - Now safe because remarks is always string
+                'Manually marked' in remarks or
+                'Manual status' in remarks
+            )
+            
+            if is_manual_status:
+                logger.info(f"🔒 PRESERVING MANUAL STATUS: {student_name} has manual status '{current_status}' - NOT marking as missing")
+                cursor.close()
+                conn.close()
+                return jsonify({
+                    'success': False, 
+                    'message': f'Manual status preserved: {student_name} remains {current_status}'
+                }), 400
+            else:
+                logger.info(f"🔄 AUTO STATUS: {student_name} has status '{current_status}' - CAN mark as missing")
+        
+        # 🎯 Check if there's an active missing period
         cursor.execute("""
             SELECT id FROM missing_periods 
             WHERE student_id = %s AND session_id = %s AND returned = FALSE
@@ -12527,13 +13757,6 @@ def student_left():
             return jsonify({'success': False, 'message': 'Student already marked as missing'}), 400
         
         # 🎯 FIXED: Get the CURRENT status before updating to missing
-        cursor.execute("""
-            SELECT status FROM attendance 
-            WHERE student_id = %s AND session_id = %s
-            ORDER BY timestamp DESC LIMIT 1
-        """, (student_id, session_id))
-        
-        current_attendance = cursor.fetchone()
         original_status = current_attendance['status'] if current_attendance else None
         
         # 🎯 FIXED: Start new missing period AND record original status
@@ -12542,19 +13765,22 @@ def student_left():
             VALUES (%s, %s, NOW(), FALSE, %s)
         """, (student_id, session_id, original_status))
         
-        # 🎯 FIXED: Update attendance status to 'missing'
-        cursor.execute("""
-            UPDATE attendance 
-            SET status = 'missing', timestamp = NOW()
-            WHERE student_id = %s AND session_id = %s
-        """, (student_id, session_id))
-        
-        # If no record was updated, create a new one
-        if cursor.rowcount == 0:
+        # 🎯 CRITICAL FIX: UPDATE existing attendance record instead of creating new one
+        if current_attendance:
+            # UPDATE existing record
+            cursor.execute("""
+                UPDATE attendance 
+                SET status = 'missing', timestamp = NOW()
+                WHERE id = %s
+            """, (current_attendance['id']))
+            logger.info(f"🔄 UPDATED existing attendance record to 'missing' for {student_name}")
+        else:
+            # Only INSERT if no record exists
             cursor.execute("""
                 INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id)
                 VALUES (%s, %s, NOW(), 'student', 'missing', %s)
             """, (student_id, student_name, session_id))
+            logger.info(f"📝 CREATED new 'missing' attendance record for {student_name}")
         
         conn.commit()
         cursor.close()
@@ -12569,11 +13795,13 @@ def student_left():
         
     except Exception as e:
         logger.error(f"❌ Error in student_left: {e}")
+        import traceback
+        logger.error(f"❌ Stack trace: {traceback.format_exc()}")
         return jsonify({'success': False, 'message': str(e)}), 500
-    
+
 @app.route('/api/student_returned', methods=['POST'])
 def student_returned():
-    """Record when a student returns - FIXED: Use original_status to restore correct status"""
+    """Record when a student returns - FIXED: Prevents duplicate records"""
     try:
         data = request.get_json()
         student_id = data.get('student_id')
@@ -12623,17 +13851,31 @@ def student_returned():
             WHERE id = %s
         """, (missing_end, duration_seconds, missing_period['id']))
         
-        # 🎯 FIXED: RESTORE ORIGINAL STATUS in attendance table
-        if original_status and original_status != 'missing':
+        # 🎯 CRITICAL FIX: Check for existing attendance record BEFORE updating
+        cursor.execute("""
+            SELECT id, status FROM attendance 
+            WHERE student_id = %s AND session_id = %s
+            ORDER BY timestamp DESC LIMIT 1
+        """, (student_id, session_id))
+        
+        existing_attendance = cursor.fetchone()
+        
+        if existing_attendance:
+            # 🎯 UPDATE existing record (PREVENTS DUPLICATE)
             cursor.execute("""
                 UPDATE attendance 
                 SET status = %s, timestamp = NOW()
-                WHERE student_id = %s AND session_id = %s
-            """, (original_status, student_id, session_id))
-            
-            logger.info(f"🔄 RESTORED STATUS: {student_name} -> {original_status}")
+                WHERE id = %s
+            """, (original_status, existing_attendance['id']))
+            logger.info(f"🔄 UPDATED existing attendance record: {student_name} -> {original_status}")
         else:
-            logger.warning(f"⚠️ No valid original_status found for {student_name}")
+            # 🎯 Only INSERT if no record exists
+            cursor.execute("""
+                INSERT INTO attendance 
+                (student_id, name, timestamp, person_type, status, session_id)
+                VALUES (%s, %s, NOW(), 'student', %s, %s)
+            """, (student_id, student_name, original_status, session_id))
+            logger.info(f"📝 CREATED new attendance record: {student_name} -> {original_status}")
         
         conn.commit()
         cursor.close()

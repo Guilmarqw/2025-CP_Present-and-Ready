@@ -475,36 +475,36 @@
     </div>
 </div>
 
-    <!-- 2. Enroll Student Modal -->
-    <div class="modal" id="enrollStudentModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Enroll Unrecognized Face</h3>
-                <button class="close-modal" onclick="closeModal('enrollStudentModal')">
-                    <span class="material-icons">close</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <p>Select the student corresponding to the face image for enrollment:</p>
-                <img id="faceToEnrollImage" src="" alt="Face to Enroll" style="width: 100px; height: 100px; object-fit: cover; margin-bottom: 1rem; border-radius: 8px;">
-                <input type="hidden" id="faceToEnrollID" value="">
-                <input type="hidden" id="faceToEnrollEncoding" value="">
+ <!-- 2. Enroll Student Modal -->
+<div class="modal" id="enrollStudentModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Enroll Unrecognized Face</h3>
+            <button class="close-modal" onclick="closeModal('enrollStudentModal')">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p>Select the student corresponding to the face image for enrollment:</p>
+            <img id="faceToEnrollImage" src="" alt="Face to Enroll" style="width: 100px; height: 100px; object-fit: cover; margin-bottom: 1rem; border-radius: 8px;">
+            <input type="hidden" id="faceToEnrollID" value="">
+            <input type="hidden" id="faceToEnrollEncoding" value="">
 
-                <label for="studentSelect" class="block font-semibold mb-2 mt-4">Student (BSIT4C Absent List):</label>
-                <select id="studentSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="" disabled selected>Select a student</option>
-                </select>
-
-            </div>
-            <div class="modal-footer">
-                <button class="btn-cancel" onclick="closeModal('enrollStudentModal')">Cancel</button>
-                <button class="btn-submit" onclick="confirmEnrollment()">
-                    <span class="material-icons">save</span>
-                    Confirm Enrollment & Mark Present
-                </button>
-            </div>
+            <label for="studentSelect" class="block font-semibold mb-2 mt-4">Student (BSIT4C Absent List):</label>
+            <select id="studentSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="" disabled selected>Select a student</option>
+            </select>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeModal('enrollStudentModal')">Cancel</button>
+            <button class="btn-submit" onclick="confirmEnrollment()">
+                <span class="material-icons">save</span>
+                Confirm Enrollment & Mark Present
+            </button>
         </div>
     </div>
+</div>
+
 
 <div id="minimizedView" class="minimized-view" style="display: none;">
     <div class="minimized-header">
@@ -530,6 +530,8 @@ window.onerror = function (message, source, lineno, colno, error) {
 };
 
 // State
+let ENROLLMENT_MODAL_OPEN = false;
+let COOLDOWN_TIMER = null;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let startTime = new Date();
@@ -599,16 +601,14 @@ window.addEventListener('load', () => {
         if (data.success) {
             console.log('✅ Session initialized:', data.data);
             
-            // 🎯 CRITICAL FIX: Ensure detection is enabled after session init
-            isSessionEnding = false;
-            isDetectionStopped = false;
-            resumePythonDetection(); // 🎯 EXPLICITLY RESUME DETECTION
-            console.log('🟢 Detection EXPLICITLY ENABLED for new session');
+            // 🎯 CRITICAL FIX: Store the session IDs in the GLOBAL variables
+            currentSessionId = data.data.session_id; // This is the unique ID like "26_abc12345_1234567890"
+            currentSectionId = data.data.section_id;
             
-            // Store session data in window._sessionData
+            // Also store in window._sessionData for backward compatibility
             window._sessionData = {
-                session_id: data.data.session_id,
-                section_id: data.data.section_id,
+                session_id: currentSessionId,
+                section_id: currentSectionId,
                 duration: data.data.duration || 3600,
                 threshold: data.data.threshold || 900,
                 program: data.data.program,
@@ -617,21 +617,30 @@ window.addEventListener('load', () => {
             };
             
             console.log('🔍 DEBUG: Available keys in data.data:', Object.keys(data.data));
-            console.log('🔍 DEBUG: session_id value:', data.data.session_id);
-            console.log('🔍 DEBUG: section_id value:', data.data.section_id);
+            console.log('🔍 DEBUG: currentSessionId value:', currentSessionId);
+            console.log('🔍 DEBUG: currentSectionId value:', currentSectionId);
             
             // Validate that we actually got the IDs
-            if (!window._sessionData.session_id) {
+            if (!currentSessionId) {
                 console.warn('⚠️ session_id not found in response, using schedule_id as fallback');
-                window._sessionData.session_id = sessionData.schedule_id;
+                currentSessionId = sessionData.schedule_id;
             }
             
-            if (!window._sessionData.section_id) {
+            if (!currentSectionId) {
                 console.warn('⚠️ section_id not found in response, using section as fallback');
-                window._sessionData.section_id = sessionData.section;
+                currentSectionId = sessionData.section;
             }
             
-            console.log(`🎯 Global Session Data set:`, window._sessionData);
+            console.log(`🎯 Global Session IDs set:`, {
+                currentSessionId,
+                currentSectionId
+            });
+            
+            // 🎯 CRITICAL FIX: Ensure detection is enabled after session init
+            isSessionEnding = false;
+            isDetectionStopped = false;
+            resumePythonDetection(); // 🎯 EXPLICITLY RESUME DETECTION
+            console.log('🟢 Detection EXPLICITLY ENABLED for new session');
             
             updateSessionUI(data.data);
             
@@ -642,45 +651,57 @@ window.addEventListener('load', () => {
             
             // Start auto-refresh
             updateStudentCount();
-            setInterval(updateStudentCount, 2000);
+            setInterval(updateStudentCount, 3000);
             
             console.log('🚀 Starting FRESH new session with detection ENABLED');
             
         } else {
             console.error('❌ Session initialization failed:', data.message);
-            // Ensure detection is enabled even on fallback
-            resumePythonDetection();
             
-            // Use URL parameters as fallback
+            // 🎯 FIXED: Use fallback values for the global variables
+            currentSessionId = sessionData.schedule_id;
+            currentSectionId = sessionData.section;
+            
+            // Also store in window._sessionData
             window._sessionData = {
-                session_id: sessionData.schedule_id,
-                section_id: sessionData.section,
+                session_id: currentSessionId,
+                section_id: currentSectionId,
                 duration: sessionData.duration,
                 threshold: sessionData.threshold,
                 program: sessionData.program,
                 year_level: sessionData.year_level,
                 section: sessionData.section
             };
-            console.log('🔄 Using URL parameters as fallback');
+            
+            console.log('🔄 Using URL parameters as fallback for global variables');
+            
+            // Ensure detection is enabled even on fallback
+            resumePythonDetection();
             loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
         }
     })
     .catch(err => {
         console.error('❌ Error initializing session:', err);
-        // Ensure detection is enabled even on error
-        resumePythonDetection();
         
-        // Use URL parameters as fallback
+        // 🎯 FIXED: Use fallback values for the global variables
+        currentSessionId = sessionData.schedule_id;
+        currentSectionId = sessionData.section;
+        
+        // Also store in window._sessionData
         window._sessionData = {
-            session_id: sessionData.schedule_id,
-            section_id: sessionData.section,
+            session_id: currentSessionId,
+            section_id: currentSectionId,
             duration: sessionData.duration,
             threshold: sessionData.threshold,
             program: sessionData.program,
             year_level: sessionData.year_level,
             section: sessionData.section
         };
-        console.log('🔄 Using URL parameters due to error');
+        
+        console.log('🔄 Using URL parameters due to error for global variables');
+        
+        // Ensure detection is enabled even on error
+        resumePythonDetection();
         loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
     });
     
@@ -1432,6 +1453,11 @@ async function resumePythonDetection() {
         isDetectionStopped = false;
         isSessionEnding = false;
         
+        console.log('🟢 Resuming Python detection...');
+        
+        // 🎯 Add a small delay to let backend clear buffers
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
         const response = await fetch('/api/resume_detection', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
@@ -1661,6 +1687,55 @@ async function confirmEndSession() {
     }
 }
 
+// ✅ ADD THIS FUNCTION: Update student statuses without replacing the list
+function updateStudentStatuses(students) {
+    console.log('🔄 updateStudentStatuses called with:', students.length, 'students');
+    
+    const studentRows = document.querySelectorAll('.student-row');
+    console.log('🔍 Found', studentRows.length, 'student rows in DOM');
+    
+    // Create a map of student IDs to their latest status
+    const statusMap = {};
+    students.forEach(student => {
+        statusMap[student.id] = student.status;
+        console.log(`📊 Student ${student.id}: ${student.status}`);
+    });
+    
+    // Update each student row's status
+    let updatedCount = 0;
+    studentRows.forEach(row => {
+        const studentId = row.getAttribute('data-student-id');
+        const currentStatus = statusMap[studentId];
+        
+        console.log(`🔍 Checking row for ${studentId}: DOM status = ${row.querySelector('.status')?.textContent}, API status = ${currentStatus}`);
+        
+        if (currentStatus) {
+            const statusElement = row.querySelector('.status');
+            if (statusElement) {
+                const currentDisplayStatus = statusElement.textContent.toLowerCase();
+                const statusClass = getStatusClass(currentStatus);
+                const statusText = getStatusText(currentStatus);
+                
+                // Only update if status actually changed
+                if (currentDisplayStatus !== currentStatus) {
+                    statusElement.className = `status ${statusClass}`;
+                    statusElement.textContent = statusText;
+                    updatedCount++;
+                    console.log(`🔄 Status updated: ${studentId} -> ${statusText}`);
+                } else {
+                    console.log(`⏭️ Status unchanged: ${studentId} = ${currentStatus}`);
+                }
+            } else {
+                console.error(`❌ No status element found for ${studentId}`);
+            }
+        } else {
+            console.warn(`⚠️ No status found in API data for ${studentId}`);
+        }
+    });
+    
+    console.log(`✅ Updated ${updatedCount} student statuses`);
+}
+
 // Add this to your browser console
 async function debugSession() {
     try {
@@ -1748,6 +1823,16 @@ function closeModal(modalId) {
         const modal = document.getElementById(modalId);
         if (modal) {
             modal.style.display = 'none';
+            
+            // 🎯 RESUME DETECTION when unrecognized faces or enrollment modals are closed
+            if (modalId === 'unrecognizedFacesModal' || modalId === 'enrollStudentModal') {
+                console.log(`🎯 ${modalId} closed - resuming detection`);
+                
+                // 🎯 Add a small delay to ensure modal is fully closed
+                setTimeout(() => {
+                    resumePythonDetection();
+                }, 100);
+            }
             
             // Trigger custom event when modal closes
             const event = new CustomEvent('modalClosed', { 
@@ -1915,7 +2000,7 @@ function updateStudentList(students) {
                 statusClass = 'excused';
                 statusText = 'Excused';
                 break;
-            case 'missing':  // 🆕 ADD MISSING STATUS
+            case 'missing':
                 statusClass = 'missing';
                 statusText = 'Missing';
                 break;
@@ -1924,20 +2009,26 @@ function updateStudentList(students) {
                 statusText = 'Absent';
         }
         
-        // Handle avatar source
+        // ✅ FIX: Handle both regular and temporary students
         let avatarSrc = '/static/images/default-avatar.jpg';
+        let displayName = student.name;
+        let displayId = student.id;
+        
         if (student.type === 'regular') {
             avatarSrc = `/static/images/student_photos/${student.id}.jpg`;
+        } else if (student.type === 'temporary') {
+            // Temporary students might have different name format
+            displayName = student.name.replace(/ \(ID: \d+\)/, ''); // Clean up name if needed
         }
         
         return `
             <div class="student-row" data-student-id="${student.id}">
                 <div class="student-info">
-                    <img src="${avatarSrc}" alt="${student.name}" 
+                    <img src="${avatarSrc}" alt="${displayName}" 
                          class="avatar" onerror="this.src='/static/images/default-avatar.jpg'">
                     <div>
-                        <div class="student-name">${student.name}</div>
-                        <div class="student-id">ID: ${student.id}</div>
+                        <div class="student-name">${displayName}</div>
+                        <div class="student-id">ID: ${displayId}</div>
                     </div>
                 </div>
                 <span class="status ${statusClass}">${statusText}</span>
@@ -1948,6 +2039,68 @@ function updateStudentList(students) {
     // Re-apply search filter after updating the list
     if (currentSearch) {
         filterStudents(currentSearch);
+    }
+}
+
+// ✅ ADD THIS FUNCTION: Add temporary student to frontend list
+function addTemporaryStudentToFrontend(studentData) {
+    const studentList = document.getElementById('studentList');
+    
+    if (!studentList) {
+        console.error('Student list element not found');
+        return;
+    }
+
+    const status = studentData.status || 'present';
+    const statusClass = getStatusClass(status);
+    const statusText = getStatusText(status);
+    
+    const studentRow = document.createElement('div');
+    studentRow.className = 'student-row';
+    studentRow.setAttribute('data-student-id', studentData.id);
+    
+    studentRow.innerHTML = `
+        <div class="student-info">
+            <img src="/static/images/default-avatar.jpg" alt="${studentData.name}" 
+                 class="avatar" onerror="this.src='/static/images/default-avatar.jpg'">
+            <div>
+                <div class="student-name">${studentData.name}</div>
+                <div class="student-id">ID: ${studentData.id}</div>
+            </div>
+        </div>
+        <span class="status ${statusClass}">${statusText}</span>
+    `;
+    
+    // Add to the beginning of the list
+    studentList.insertBefore(studentRow, studentList.firstChild);
+    
+    // Update counters
+    updateStudentCount();
+    
+    console.log(`✅ Added temporary student to frontend: ${studentData.name}`);
+}
+
+// ✅ Helper function to get CSS class for status
+function getStatusClass(status) {
+    switch (status) {
+        case 'present': return 'present';
+        case 'late': return 'late';
+        case 'absent': return 'absent';
+        case 'excused': return 'excused';
+        case 'missing': return 'missing';  // ✅ MAKE SURE THIS EXISTS
+        default: return 'absent';
+    }
+}
+
+// ✅ Helper function to get status text
+function getStatusText(status) {
+    switch (status) {
+        case 'present': return 'Present';
+        case 'late': return 'Late';
+        case 'absent': return 'Absent';
+        case 'excused': return 'Excused';
+        case 'missing': return 'Missing';  // ✅ MAKE SURE THIS EXISTS
+        default: return 'Absent';
     }
 }
 
@@ -1992,14 +2145,13 @@ function updateStudentCount() {
     const program = urlParams.get('program');
     const yearLevel = urlParams.get('year_level');
     const section = urlParams.get('section');
-    const threshold = urlParams.get('threshold'); // ✅ ADD THIS
+    const threshold = urlParams.get('threshold');
     
     if (!program || !yearLevel || !section) {
         console.warn('Missing class parameters for status update');
         return;
     }
     
-    // ✅ ADD THRESHOLD PARAMETER TO THE URL
     fetch(`/api/get_student_status?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&threshold=${threshold}`)
         .then(res => {
             if (!res.ok) {
@@ -2024,15 +2176,14 @@ function updateStudentCount() {
                 
                 console.log(`🔄 Student Status - Present: ${presentStudents.length}, Late: ${lateStudents.length}, Missing: ${missingStudents.length}, Absent: ${absentStudents.length}, Excused: ${excusedStudents.length}, Total: ${data.total_count}`);
                 
-                // Update student list
-                updateStudentList(data.students || []);
+                // ✅ FIX: Update student statuses without replacing the entire list
+                updateStudentStatuses(data.students || []);
                 
-                console.log('🔄 Student status updated:', data.students);
+                console.log('🔄 Student statuses updated (list preserved)');
             }
         })
         .catch(err => {
             console.error('Error updating student status:', err);
-            // Set default values on error
             const detectedElement = document.getElementById('detected-count');
             const totalElement = document.getElementById('total-count');
             if (detectedElement) detectedElement.textContent = '0';
@@ -2180,7 +2331,15 @@ async function manageStudent(action, student_data) {
         
         if (data.success) {
             showModal(data.title || 'Success', data.message, 'success');
-            await updateStudentCount(); // Refresh the student list
+            
+            // ✅ FIX: Handle temporary student addition specifically
+            if (action === 'add_temporary' && data.student_data) {
+                // Add the temporary student to the frontend list immediately
+                addTemporaryStudentToFrontend(data.student_data);
+            } else {
+                // For other actions, refresh the entire list
+                await updateStudentCount();
+            }
             
             // Safely close modals and clear fields
             if (action === 'add_temporary') {
@@ -2475,61 +2634,59 @@ if (!currentSessionId || !currentSectionId) {
     console.warn('⚠️ Using fallback IDs:', fallback);
 }
 
-// Function to update the status of selected faces (Mark as Present)
-    function markSelectedAs(status) {
-        console.log(`markSelectedAs called with: ${status}`);
-        try {
-            const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
-            
-            if (selected.length === 0) {
-                showAlertModal('warning', 'Please select at least one face.', 'Selection Required');
-                return;
-            }
-
-            // We only process the FIRST selected face for manual enrollment 
-            const firstSelectedCheckbox = selected[0];
-            const card = firstSelectedCheckbox.closest('.face-card');
-            
-            if (card && status === 'present') {
-                const faceId = card.getAttribute('data-face-id');
-                // NOTE: Encoding fragments are mocked here, in a real app this would be the full data
-                const tempEncoding = card.getAttribute('data-temp-encoding'); 
-                const faceImgSrc = card.querySelector('img').src;
-
-                // Open the enrollment modal for this face
-                openEnrollmentModal(faceId, tempEncoding, faceImgSrc);
-            } else {
-                // If the flow changes to support 'late' or 'absent' marks later
-                selected.forEach(checkbox => {
-                    const card = checkbox.closest('.face-card');
-                    if (card) {
-                        card.setAttribute('data-status', status);
-                        // For a simple demo, we remove the card if processed, 
-                        // as 'present' goes through enrollment modal instead
-                        card.remove(); 
-                    }
-                });
-                
-                // Uncheck all after action
-                const selAll = document.getElementById('selectAll');
-                if (selAll) {
-                    selAll.checked = false;
-                    toggleSelectAll(selAll);
-                }
-
-                // Check if all faces are handled
-                if (!checkUnrecognizedFaces()) {
-                    closeModal('unrecognizedFacesModal');
-                    showEndSessionConfirmation();
-                } else {
-                    showAlertModal('info', `Selected faces marked as ${status}. Please handle the remaining ${document.querySelectorAll('.unrecognized-faces .face-card').length} faces.`, 'Next Step');
-                }
-            }
-        } catch (err) {
-            console.error(`Error in markSelectedAs (${status}):`, err);
-            showAlertModal('error', `Error processing selected faces.`, 'Processing Error');
+function markSelectedAs(status) {
+    console.log(`markSelectedAs called with: ${status}`);
+    try {
+        const selected = document.querySelectorAll('.unrecognized-faces input[type="checkbox"]:checked');
+        
+        if (selected.length === 0) {
+            showAlertModal('warning', 'Please select at least one face.', 'Selection Required');
+            return;
         }
+
+        // 🎯 Stop detection BEFORE processing
+        console.log('🛑 PAUSING detection for face enrollment');
+        stopPythonDetection();
+
+        // We only process the FIRST selected face for manual enrollment 
+        const firstSelectedCheckbox = selected[0];
+        const card = firstSelectedCheckbox.closest('.face-card');
+        
+        if (card && status === 'present') {
+            const faceId = card.getAttribute('data-face-id');
+            const tempEncoding = card.getAttribute('data-temp-encoding'); 
+            const faceImgSrc = card.querySelector('img').src;
+
+            // Open the enrollment modal for this face
+            openEnrollmentModal(faceId, tempEncoding, faceImgSrc);
+        } else {
+            // For other statuses, resume detection after processing
+            selected.forEach(checkbox => {
+                const card = checkbox.closest('.face-card');
+                if (card) {
+                    card.setAttribute('data-status', status);
+                    card.remove(); 
+                }
+            });
+            
+            // Uncheck all after action
+            const selAll = document.getElementById('selectAll');
+            if (selAll) {
+                selAll.checked = false;
+                toggleSelectAll(selAll);
+            }
+
+            // Resume detection
+            resumePythonDetection();
+        }
+    } catch (err) {
+        console.error(`Error in markSelectedAs (${status}):`, err);
+        showAlertModal('error', `Error processing selected faces.`, 'Processing Error');
+        
+        // Ensure detection resumes even on error
+        resumePythonDetection();
     }
+}
 
 function skipSelected() {
     console.log('skipSelected called');
@@ -2582,7 +2739,7 @@ async function enrollSelectedFace() {
     const studentId = studentSelect.value;
     const faceId = document.getElementById('faceToEnrollID').value;
     const faceEncoding = document.getElementById('faceToEnrollEncoding').value;
-    const sessionId = currentSessionId;
+    const sessionId = currentSessionId; // 🎯 Use global variable
 
     console.log('🔍 DEBUG: Enrollment data:', {
         studentId, faceId, sessionId, 
@@ -2600,7 +2757,7 @@ async function enrollSelectedFace() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 student_id: studentId,
-                unrecognized_face_id: faceId,  // This should be DATABASE ID
+                unrecognized_face_id: faceId,
                 face_encoding: faceEncoding,
                 session_id: sessionId
             })
@@ -2623,49 +2780,76 @@ async function enrollSelectedFace() {
     }
 }
 
-
 async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
+    console.log('🛑 PAUSING detection for enrollment modal');
+    
+    // 🎯 Stop detection BEFORE opening modal
+    stopPythonDetection();
+    
     const studentSelect = document.getElementById('studentSelect');
     studentSelect.innerHTML = '<option value="">Loading students...</option>';
     
-    // 🎯 DEBUG: Log what we're sending
-    console.log(`🔍 DEBUG: Fetching absent students with session_id=${currentSessionId}, section_id=${currentSectionId}`);
+    console.log(`🔍 DEBUG: Fetching students with currentSessionId=${currentSessionId}`);
     
-    if (!currentSessionId || !currentSectionId) {
-        console.error('❌ CRITICAL: Missing session_id or section_id');
+    if (!currentSessionId) {
+        console.error('❌ CRITICAL: Missing currentSessionId');
         showAlertModal('error', 'Session not properly initialized. Please refresh the page.', 'Session Error');
         return;
     }
     
     try {
-        const res = await fetch(`/api/absent_students_for_enrollment?session_id=${currentSessionId}&section_id=${currentSectionId}`);
+        const params = new URLSearchParams({
+            session_id: currentSessionId
+        });
+        
+        if (currentSectionId) {
+            params.append('section_id', currentSectionId);
+        }
+        
+        const url = `/api/absent_students_for_enrollment?${params.toString()}`;
+        console.log(`🔍 DEBUG: Calling API: ${url}`);
+        
+        const res = await fetch(url);
         console.log(`🔍 DEBUG: API Response status: ${res.status}`);
         
-        if (!res.ok) throw new Error('API failed to return absent students.');
+        if (!res.ok) {
+            throw new Error(`API returned ${res.status}`);
+        }
         
         const students = await res.json();
         console.log(`🔍 DEBUG: Received ${students.length} students`);
 
-        studentSelect.innerHTML = '<option value="" disabled selected>Select a student</option>';
-        students.forEach(student => {
-            const option = document.createElement('option');
-            option.value = student.student_id;
-            option.textContent = `${student.last_name}, ${student.first_name} (${student.student_id})`;
-            studentSelect.appendChild(option);
-        });
+        studentSelect.innerHTML = '<option value="" disabled selected>Select a student to enroll</option>';
         
-        // 2. Set face data (Encoding is now a stringified JSON array)
+        if (students.length === 0) {
+            studentSelect.innerHTML = '<option value="" disabled>No students found in this class</option>';
+            console.log('ℹ️ INFO: No students found for this class');
+        } else {
+            students.forEach(student => {
+                const option = document.createElement('option');
+                option.value = student.student_id;
+                option.textContent = `${student.last_name}, ${student.first_name} (${student.student_id})`;
+                studentSelect.appendChild(option);
+            });
+            console.log(`✅ Loaded ${students.length} students for enrollment`);
+        }
+        
+        // Set face data
         document.getElementById('faceToEnrollImage').src = faceImgSrc;
         document.getElementById('faceToEnrollID').value = faceId;
         document.getElementById('faceToEnrollEncoding').value = tempEncoding; 
         
+        // 🎯 Close unrecognized modal and open enrollment modal
         closeModal('unrecognizedFacesModal');
         openModal('enrollStudentModal');
         
     } catch (error) {
-        console.error('Error fetching students for enrollment:', error);
-        showAlertModal('error', 'Could not load student list. Please check session/section IDs.', 'Load Error');
+        console.error('Error fetching students:', error);
+        showAlertModal('error', `Could not load student list: ${error.message}`, 'Load Error');
         studentSelect.innerHTML = '<option value="">Error loading students</option>';
+        
+        // 🎯 Resume detection on error
+        resumePythonDetection();
     }
 }
 
@@ -2689,7 +2873,7 @@ async function confirmEnrollment() {
                 student_id: studentId,
                 face_encoding: JSON.parse(faceEncoding), 
                 unrecognized_face_id: faceId,
-                session_id: currentSessionId
+                session_id: currentSessionId // 🎯 Use global variable
             }),
         });
 
