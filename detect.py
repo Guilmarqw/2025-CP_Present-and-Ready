@@ -51,11 +51,10 @@ from typing import List, Dict, Any, Tuple
 # Flask streaming & API
 # =========================
 app = Flask(__name__)
-app.secret_key = 'face-attendance-system-secret-key-2025'  # Add this line
+app.secret_key = 'face-attendance-system-secret-key-2025'  
 app.template_folder = 'templates'
 app.static_folder = 'static'
 CORS(app)
-# Add these Flask routes for authentication
 
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback-secret-key-change-in-production')
 
@@ -63,8 +62,6 @@ app.secret_key = os.environ.get('SECRET_KEY', 'fallback-secret-key-change-in-pro
 # OPTIMIZED CONFIG FOR FIXED CODE
 # =========================
 
-# --- MOCK DEPENDENCIES ---
-# In a real environment, replace these mock objects with actual library calls (e.g., insightface/deepface for analysis, actual CV2 for image ops).
 try:
     import cv2
 except ImportError:
@@ -107,14 +104,13 @@ if torch.cuda.is_available():
 face_scan_start_time = None
 
 student_presence_tracker = {}  # Tracks when students are present/missing
-current_session_id = None  # Make sure this is set
+current_session_id = None  
 
 # Initialize FaceAnalysis with SCRFD
 face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
-face_analysis.prepare(ctx_id=0, det_size=(320, 320))  # Adjust det_size for your resolution
+face_analysis.prepare(ctx_id=0, det_size=(320, 320))  
 
 FRAME_BUFFER = []
-# Add these global variables at the top with your other globals
 ACTIVE_FACE_TRACKS = {}
 FACE_COOLDOWN_PERIOD = 30  # seconds
 thread_safe_lock = threading.RLock()
@@ -126,15 +122,14 @@ frame_timestamps = []
 skip_frame_counter = 0
 
 session_start_time = None
-session_total_duration_seconds = 3600  # Default 60 minutes
-session_threshold_seconds = 900        # Default 15 minutes
+session_total_duration_seconds = 3600 
+session_threshold_seconds = 900       
 
 pending_confirmations = {}  # {person_id: {'frames': [], 'body_boxes': [], 'name': str, 'type': str}}
 locked_track_reid_features = {}
 student_status = {}  # {student_id: 'absent' | 'present' | 'late'}
 current_session_students = []  # List of student IDs for current class
 
-# ✅ OPTIMIZED: Confirmation parameters for fast & accurate recognition
 CONFIRMATION_FRAMES_REQUIRED = 2  # 2 consecutive frames = ~0.067 seconds
 CONFIRMATION_SIMILARITY_THRESHOLD = 0.50  # Balanced threshold (not too strict, not too loose)
 BODY_MATCH_IOU_THRESHOLD = 0.03  # Low threshold for better body matching
@@ -147,11 +142,9 @@ WEIGHTS_PATH = "yolov8n-face.pt"
 STREAM_WIDTH, STREAM_HEIGHT = 1920, 1080
 pose_embeddings = {}
 
-# Add this near your other global variables
 ATTENDANCE_CSV_FILE = "attendance_log.csv"
 attendance_save_interval = 300  # 5 minutes
 
-# Add these global variables near the top with other globals
 camera_available = False
 use_dummy_feed = False
 dummy_frame = None
@@ -177,7 +170,6 @@ MAX_EMPTY_GRABS = 150
 MAX_RECOGNITION_DISTANCE = 10
 FACE_SIZE_FOR_DISTANCE = 90
 
-# ✅ OPTIMIZED: Locking configuration
 LOCK_TIMEOUT_FRAMES = 120  # 3 seconds at 30 FPS (was 60)
 LOCK_MISS_THRESHOLD = 15  # 0.5 seconds before removing lock (faster cleanup)
 PENDING_CONFIRMATION_TIMEOUT = 10  # Frames before cleaning up stale confirmations
@@ -344,13 +336,11 @@ try:
     available_providers = ort.get_available_providers()
     logger.info(f"Available ONNX Runtime providers: {available_providers}")
 
-    # ✅ SIMPLIFIED CUDA SETUP - Remove problematic options
     providers = []
     
     # Check if CUDA is available
     if 'CUDAExecutionProvider' in available_providers:
         providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        # 🎯 SIMPLIFIED: Remove problematic 'memory_pattern' option
         provider_options = [
             {
                 'device_id': 0,
@@ -414,7 +404,7 @@ except Exception as e:
             
             logger.info(f"✅ Fallback successful with model: {model_name}")
             fallback_success = True
-            INSIGHTFACE_MODEL = model_name  # Update the model name
+            INSIGHTFACE_MODEL = model_name  
             break
             
         except Exception as fallback_error:
@@ -1102,7 +1092,6 @@ def open_stream(rtsp_url=None):
                     
             logger.info(f"Connecting to RTSP: {rtsp_url}")
             
-            # 🎯 OPTIMIZED CAMERA SETTINGS
             cap = cv2.VideoCapture(rtsp_url)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)  
             cap.set(cv2.CAP_PROP_FPS, 30)
@@ -1145,7 +1134,6 @@ def grabber():
         grab_start = time.time()
         
         if use_dummy_feed:
-            # 🎯 SMOOTH DUMMY FEED
             latest_frame = create_dummy_frame()
             time.sleep(0.033)  # Consistent timing
             continue
@@ -1221,7 +1209,6 @@ def mark_attendance(name, id, type, session_id=None):
     global session_start_time, current_session_id, session_threshold_seconds, session_total_duration_seconds
     global student_presence_tracker, student_status
     
-    # ✅ Load threshold from database if not set
     if not session_threshold_seconds and current_session_id:
         try:
             conn = get_db_connection()
@@ -1343,13 +1330,10 @@ def mark_attendance(name, id, type, session_id=None):
     except Exception as e:
         logger.error(f"Error checking existing status: {e}")
     
-    # 🎯 CRITICAL: If manual status exists, UPDATE TIMESTAMP ONLY and RETURN IMMEDIATELY
     if is_manual_status and original_status:
-        # Update presence tracker but don't change status
         if type == 'student':
             student_status[id] = original_status
         
-        # Update CSV with preserved status
         try:
             csv_file = "attendance_log.csv"
             file_exists = os.path.isfile(csv_file)
@@ -1364,13 +1348,11 @@ def mark_attendance(name, id, type, session_id=None):
         except Exception as e:
             logger.error(f"Failed to save attendance to CSV: {e}")
         
-        # Update database timestamp only (preserve manual status)
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
             
             if existing_record_id:
-                # Only update timestamp, keep status as is
                 cursor.execute("""
                     UPDATE attendance 
                     SET timestamp = %s
@@ -1869,7 +1851,6 @@ def recognize_face_with_anti_spoofing(face_image, tolerance=0.6, liveness_thresh
     return name, student_id, distance, est_distance, True, confidence
 
 
-# Add this helper function at the top of detect.py
 def calculate_late_status(attendance_time, session_start, threshold_minutes):
     """Calculate if student is late based on threshold"""
     try:
@@ -1943,12 +1924,10 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     class_id=np.array([0] * len(detections_array))
                 )
             
-                # Update ByteTrack
                 tracks_byte = byte_tracker.update_with_detections(
                     detections=supervision_detections
                 )
             
-                # 🆕 FIXED: ByteTrack returns sv.Detections object, not list of tracks
                 if tracks_byte is not None and hasattr(tracks_byte, 'xyxy'):
                     # ByteTrack returns a Detections object with tracker_id attribute
                     xyxy = tracks_byte.xyxy
@@ -2046,7 +2025,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             break
                 except Exception as e:
                     continue
-    # Add face size validation
     dets = []
     face_embeddings = []
     for idx, face in enumerate(faces):
@@ -2174,14 +2152,12 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 matched_body = body_tracks[best_match_idx]
                 used_body_tracks.add(best_match_idx)
             
-                # Update locked track with new position
                 lock_info['body_box'] = matched_body['body_box']
                 lock_info['last_seen'] = frame_idx
                 lock_info['missed_detections'] = 0
                 
-                # Update ReID features with high retention for stability
                 if matched_body['reid_features'] is not None:
-                    alpha = 0.92  # 🆕 Very high retention for maximum stability
+                    alpha = 0.92  #  Very high retention for maximum stability
                     lock_info['reid_features'] = (
                         alpha * last_reid_features +
                         (1 - alpha) * matched_body['reid_features']
@@ -2192,7 +2168,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 # No match - preserve last position and count miss
                 lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
                 logger.debug(f"❌ No ReID match for {lock_info.get('name', person_id)} - Preserving last detection")
-    # Add locked tracks to new_tracks
     for person_id, lock_info in locked_tracks.items():
         lock_start = lock_info.get('lock_start', frame_idx)
         tracking_seconds = (frame_idx - lock_start) // 30
@@ -2209,7 +2184,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
             'lock_start': lock_start
         }
         new_tracks.append(locked_track_obj)
-    # Update existing unlocked tracks
     for tr in tracks:
         if tr.get('id') in locked_tracks:
             continue
@@ -2469,7 +2443,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
             tr['confidence'] = max(0.1, tr.get('confidence', 0.5) * 0.85)
             if tr['confidence'] < 0.2 and frame_idx - tr.get('last_seen', 0) > 10:
                 new_tracks.remove(tr)
-    # Update global tracks
     tracks[:] = new_tracks
     # Cleanup old unknown tracks
     current_tracks = [
@@ -2549,12 +2522,10 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     body_found_in_current_frame = True
                     matched_body_indices.add(idx)
                     
-                    # Update track immediately
                     lock_info['body_box'] = tuple(body_box)
                     lock_info['last_seen'] = frame_idx
                     lock_info['missed_detections'] = 0
                     
-                    # Update presence tracker
                     if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
                         student_presence_tracker[lock_info['id']]['last_body_seen'] = current_time
                         student_presence_tracker[lock_info['id']]['last_seen'] = current_time
@@ -2701,7 +2672,6 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             except Exception as e:
                 logger.error(f"❌ Fatal error calling student_left API: {e}")
             
-            # Update presence tracker if exists
             if student_id in student_presence_tracker:
                 student_presence_tracker[student_id]['present'] = False
                 student_presence_tracker[student_id]['last_seen'] = current_time
@@ -2710,7 +2680,6 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         locked_track_reid_features.pop(person_id, None)
         logger.info(f"🔓 IMMEDIATE UNLOCK: {person_id}")
     
-    # 🎯 SIMPLE MISSING DETECTION - Backup check every 30 frames
     if frame_idx % 15 == 0 and current_session_id:
         for student_id, track_info in list(student_presence_tracker.items()):
             if track_info.get('present'):
@@ -3025,7 +2994,6 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         }
         current_tracks.append(locked_track)
     
-    # Update UNLOCKED tracks
     for tr in list(tracks):
         if tr.get('id') in locked_tracks:
             continue
@@ -3074,7 +3042,6 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 tr['tracking_duration'] = duration_seconds
                 current_tracks.append(tr)
     
-    # Update global tracks
     tracks[:] = current_tracks
     
     # Cleanup old unknown tracks
@@ -3434,7 +3401,6 @@ def optimize_memory():
         torch.cuda.synchronize()
         logger.debug("🧹 GPU memory optimized")
 
-# Add the custom JSON encoder here
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         try:
@@ -3730,7 +3696,6 @@ def verify_reset_otp():
             (email,)
         )
         
-        # Update password in appropriate table
         password_hash = hash_password(new_password)
         
         # Try updating in admins table first
@@ -3909,7 +3874,7 @@ def get_faculty_enhanced():
                 'department': f['department'],
                 'designation': f['designation'],
                 'email': f['email'],
-                'photo': f['photo_path'] if f['photo_path'] else f"https://ui-avatars.com/api/?name={f['first_name']}+{f['last_name']}&background=random",  # FIXED: Same as students!
+                'photo': f['photo_path'] if f['photo_path'] else f"https://ui-avatars.com/api/?name={f['first_name']}+{f['last_name']}&background=random",  
                 'status': f['status'],
                 'role': f['role'],
                 'createdAt': f['created_at'].isoformat() if f['created_at'] else None,
@@ -4205,7 +4170,6 @@ def update_attendance_status():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Update the most recent attendance record for this student
         cursor.execute(
             "UPDATE attendance SET status = %s, remarks = %s WHERE student_id = %s AND DATE(timestamp) = CURDATE() ORDER BY timestamp DESC LIMIT 1",
             (status, remarks, student_id)
@@ -4605,7 +4569,6 @@ def get_faculty_distribution():
         logger.error(f"Error fetching faculty distribution: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-# Add this decorator function before the routes
 def logout_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -4768,7 +4731,6 @@ def generate_dynamic_invite():
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # Your schema: id, token, invite_type, created_by, max_uses, current_uses, notes, expires_at, used, created_at
             cursor.execute(
                 """INSERT INTO invites 
                    (token, invite_type, max_uses, current_uses, expires_at, used) 
@@ -4853,7 +4815,6 @@ def update_student():
             conn.close()
             return jsonify({'success': False, 'message': 'Student not found'})
         
-        # Update student with all fields
         cursor.execute(
             """UPDATE students 
                SET first_name = %s, last_name = %s, middle_name = %s, 
@@ -4940,7 +4901,6 @@ def update_faculty():
             conn.close()
             return jsonify({'success': False, 'message': 'Faculty Member not found'})
         
-        # Update faculty with all fields
         cursor.execute(
             """UPDATE faculty 
                SET first_name = %s, last_name = %s, middle_name = %s, 
@@ -5007,7 +4967,7 @@ def send_otp():
         return jsonify({'success': False, 'message': 'Invalid WMSU email address'})
     
     otp_code = generate_otp()
-    expires_at = datetime.now() + timedelta(minutes=10)  # Use datetime.now() and timedelta directly
+    expires_at = datetime.now() + timedelta(minutes=10)  
     
     try:
         conn = get_db_connection()
@@ -5061,7 +5021,7 @@ def verify_otp():
         
         stored_otp, expires_at = result
         
-        if datetime.now() > expires_at:  # Fixed: Use datetime.now() instead of datetime.datetime.now()
+        if datetime.now() > expires_at: 
             logger.warning(f"OTP expired for email: {email}")
             return jsonify({'success': False, 'message': 'OTP has expired'})
         
@@ -5428,7 +5388,6 @@ def register_student():
         cursor.close()
         conn.close()
         
-        # Update invite token uses (ONLY ONCE, AFTER student is registered)
         if invite_token:
             try:
                 conn_invite = get_db_connection()
@@ -5584,7 +5543,6 @@ def register_faculty():
         cursor.close()
         conn.close()
 
-        # Update invite token uses (ONLY ONCE, AFTER faculty is registered)
         if invite_token:
             try:
                 conn_invite = get_db_connection()
@@ -5688,7 +5646,6 @@ def get_current_user():
         
         print(f"DEBUG - Session token: {session_token}")
         
-        # FIXED QUERY: Better debugging and case handling
         query = """
             SELECT 
                 us.user_id, 
@@ -5744,7 +5701,6 @@ def get_current_user():
         session.clear()
         return None
 
-# Add an API endpoint to check camera status
 @app.route('/api/camera_status', methods=['GET'])
 def camera_status():
     return jsonify({
@@ -5754,7 +5710,6 @@ def camera_status():
         'locked_tracks': len(locked_tracks) if camera_available else 0
     })
 
-# Add an API endpoint to retry camera connection
 @app.route('/api/reconnect_camera', methods=['POST'])
 def reconnect_camera():
     try:
@@ -6181,7 +6136,6 @@ def sidebar_page():
     print(f"DEBUG - User role: {user.get('role')}")
     print(f"DEBUG - User type: {user.get('user_type')}")
     
-    # FIX: Pass the role exactly as it comes from the database
     user_role = user.get('role', '')
     user_type = user.get('user_type', '')
     
@@ -6357,7 +6311,6 @@ def get_summary_data():
             # Create complete student list
             complete_student_list = []
             
-            # Add all UNIQUE attendance records
             for record in unique_attendance_records:
                 # Handle photo path
                 photo_path = record['photo_path']
@@ -6393,7 +6346,6 @@ def get_summary_data():
             """)
             all_section_students = cursor.fetchall()
             
-            # Add absent students (only regular students who don't have any attendance record)
             attended_regular_student_ids = [r['student_id'] for r in unique_attendance_records if r['student_id'] and not r['is_temporary']]
             
             print(f"🔍 DEBUG Regular students in section: {len(all_section_students)}")
@@ -6522,7 +6474,6 @@ def update_attendance():
                     WHERE session_id = %s AND student_id = %s
                 """, (update['status'], session_id, update['student_id']))
             
-            # Update session counts
             cursor.execute("""
                 UPDATE attendance_sessions 
                 SET 
@@ -7018,7 +6969,7 @@ def settings_page():
     return render_template('settings.html', **user_data)
 
 @app.route('/StudentLP')
-@student_login_required  # ADDED: Use the decorator
+@student_login_required  
 def student_lp_page():
     user_data = get_template_user_data()  # Use your existing function
     return render_template('StudentLP.html', **user_data)
@@ -7247,7 +7198,6 @@ def role_required(allowed_roles):
         return decorated_function
     return decorator
 
-# Add this function to pass user data to templates
 def get_template_user_data():
     """Get user data for template rendering"""
     user = get_current_user()
@@ -7411,7 +7361,6 @@ def update_semester():
         
         academic_year_id = result[0]
         
-        # Update semester
         cursor.execute(
             "UPDATE semesters SET status = %s WHERE academic_year_id = %s AND semester_number = %s",
             (status, academic_year_id, semester_number)
@@ -7778,7 +7727,6 @@ def update_subject():
             conn.close()
             return jsonify({'success': False, 'message': 'Subject code already exists in this section'})
         
-        # Update the subject
         cursor.execute(
             """UPDATE subjects 
                SET subject_code = %s, subject_name = %s, class_type = %s, units = %s, updated_at = NOW()
@@ -10154,7 +10102,6 @@ def get_sections_with_semester():
         
         semester_id = result['semester_id']
         
-        # Get sections for this specific semester - FIXED QUERY
         cursor.execute("""
             SELECT 
                 ys.section_id,
@@ -10276,7 +10223,6 @@ def get_session_info():
         if schedule['first_name'] and schedule['last_name']:
             faculty_name = f"{schedule['first_name']} {schedule['last_name']}"
         
-        # Fix photo path
         faculty_photo = '/static/images/placeholder.jpg'
         if schedule['photo_path']:
             faculty_photo = schedule['photo_path']
@@ -10818,10 +10764,8 @@ def get_class_students():
         
         print(f"DEBUG: Found {len(regular_students)} regular students and {len(temporary_students)} temporary students")
         
-        # ✅ STEP 3: Combine both lists and format for frontend
         formatted_students = []
         
-        # Add regular students first
         for student in regular_students:
             full_name = f"{student['first_name']} {student['last_name']}"
             if student['middle_name']:
@@ -10837,7 +10781,6 @@ def get_class_students():
                 'type': 'regular'
             })
         
-        # Add temporary students
         for temp_student in temporary_students:
             formatted_students.append(temp_student)
         
@@ -10861,7 +10804,6 @@ def get_class_students():
                 if record['student_id'] not in status_map:
                     status_map[record['student_id']] = record['status']
             
-            # Update regular students' statuses
             for student in formatted_students:
                 if student['type'] == 'regular' and student['id'] in status_map:
                     student['status'] = status_map[student['id']]
@@ -11028,18 +10970,15 @@ def get_student_status():
             logger.warning(f"⚠️ Error checking locked_tracks: {e}")
             currently_present_ids = set()  # Ensure it's not None
         
-        # ✅ CRITICAL FIX: Convert to list for safe iteration and ensure they're not None
         safe_missing_ids = list(missing_student_ids) if missing_student_ids is not None else []
         safe_present_ids = list(currently_present_ids) if currently_present_ids is not None else []
         
-        # 🎯 CRITICAL FIX: Track manual status students to prevent duplicates
         manual_status_students = set()
         
         for student in students:
             student_id = student['student_id']
             student_name = f"{student['first_name']} {student['last_name']}"
             
-            # 🎯 CRITICAL FIX: STATUS DETERMINATION WITH CONSISTENT MANUAL PROTECTION
             
             # Priority 1: Check for MANUAL STATUS (excused, etc.) - HIGHEST PRIORITY
             cursor.execute("""
@@ -11058,7 +10997,6 @@ def get_student_status():
                 current_session = attendance_record.get('session_id')
                 remarks = attendance_record.get('remarks') or ''
                 
-                # 🎯 CONSISTENT MANUAL STATUS DETECTION (SAME AS mark_attendance)
                 manual_excuse_sessions = ['manual_excuse']  # Only for excused students
                 manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
                 manual_statuses = ['excused']  # Only truly manual statuses
@@ -11078,7 +11016,6 @@ def get_student_status():
             # Priority 1A: If manual status exists, use it and skip other checks
             if is_manual_status:
                 logger.info(f"🔒 MANUAL STATUS PROTECTED: {student_name} -> {current_status}")
-                # 🎯 CRITICAL: Add to list with manual status and SKIP other logic
                 student_list.append({
                     'id': student_id,
                     'name': student_name,
@@ -11086,7 +11023,7 @@ def get_student_status():
                     'type': 'regular'
                 })
                 manual_status_students.add(student_id)  # Track manual status students
-                continue  # 🎯 SKIP ALL OTHER CHECKS FOR THIS STUDENT
+                continue  
             
             # Priority 2: Student is currently missing (only if NOT manual status)
             elif student_id in safe_missing_ids:
@@ -11114,7 +11051,6 @@ def get_student_status():
                         
                         if time_diff_seconds > threshold_seconds:
                             current_status = 'late'
-                            # Update if needed
                             cursor.execute("""
                                 UPDATE attendance 
                                 SET status = 'late' 
@@ -11124,7 +11060,6 @@ def get_student_status():
                 else:
                     current_status = 'absent'
             
-            # ✅ FIXED: Ensure current_status is never None
             if current_status is None:
                 current_status = 'absent'
                 logger.warning(f"⚠️ Status was None for {student_name}, defaulting to 'absent'")
@@ -11141,7 +11076,6 @@ def get_student_status():
                 'type': 'regular'
             })
         
-        # ✅ CRITICAL FIX: Process temporary students with SESSION FILTERING
         temp_counter = 1
         for temp_student in temp_students:
             temp_name = temp_student['name']
@@ -11149,12 +11083,10 @@ def get_student_status():
             current_status = temp_student['status']
             temp_session_id = temp_student.get('session_id')
             
-            # ✅ FIXED: Only process temporary students from CURRENT session
             if temp_session_id != session_id:
                 logger.debug(f"🔍 Skipping temporary student from different session: {temp_name} (session: {temp_session_id})")
                 continue
             
-            # ✅ FIXED: Check for manual status in temporary students too
             is_manual_temp = False
             temp_remarks = temp_student.get('remarks') or ''
             
@@ -11196,11 +11128,9 @@ def get_student_status():
                 temp_id = f"temp_{temp_counter}"
                 temp_counter += 1
             
-            # ✅ FIXED: Check for duplicate temporary students
             existing_temp = next((s for s in student_list if s['id'] == temp_id and s['type'] == 'temporary'), None)
             if existing_temp:
                 logger.warning(f"⚠️ DUPLICATE TEMPORARY STUDENT: {temp_id} - {display_name}")
-                # Update existing record instead of creating duplicate
                 existing_temp['status'] = current_status
                 existing_temp['name'] = display_name
             else:
@@ -11283,7 +11213,6 @@ def manage_student():
             display_name = f"{student_name} (ID: {student_id})"
             remarks = f"temp_id:{student_id}"
             
-            # ✅ FIXED: Use global threshold for temporary students
             status = 'present'
             if session_start_time:
                 current_time_dt = datetime.now()
@@ -11417,7 +11346,6 @@ def manage_student():
                     'message': f'Student {student_name} has been removed from the class'
                 })
             else:
-                # ✅ FIXED: Remove temporary student from CURRENT session only
                 cursor.execute("""
                     DELETE FROM attendance 
                     WHERE student_id IS NULL 
@@ -11566,7 +11494,6 @@ def manage_student():
                         """, (remarks, current_time, subject_code, subject_name, room, section_id, existing_record['id']))
                         action_type = "updated"
                     else:
-                        # ✅ INSERT new record if none exists
                         cursor.execute("""
                             INSERT INTO attendance 
                             (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
@@ -11578,7 +11505,6 @@ def manage_student():
                     cursor.close()
                     conn.close()
                     
-                    # Update frontend status
                     student_status[student_id] = 'excused'
                     
                     logger.info(f"📝 REGULAR STUDENT EXCUSED: {student_name} ({student_id}) - {action_type}")
@@ -11589,8 +11515,6 @@ def manage_student():
                     })
                 
                 else:
-                    # TEMPORARY STUDENT
-                    # ✅ CRITICAL FIX: Check in CURRENT SESSION only
                     cursor.execute("""
                         SELECT id, name FROM attendance 
                         WHERE student_id IS NULL 
@@ -11602,7 +11526,6 @@ def manage_student():
                     temp_student = cursor.fetchone()
                     
                     if temp_student:
-                        # ✅ UPDATE existing temporary student (PREVENTS DUPLICATE)
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = 'excused', remarks = %s, timestamp = %s,
@@ -11614,7 +11537,6 @@ def manage_student():
                         cursor.close()
                         conn.close()
                         
-                        # Update frontend status
                         student_status[student_id] = 'excused'
                         
                         logger.info(f"📝 TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id})")
@@ -11725,7 +11647,6 @@ def manage_student():
                         cursor.close()
                         conn.close()
                         
-                        # Update frontend status
                         student_status[student_id] = status
                         
                         logger.info(f"🔄 MANUAL STATUS UPDATED: {student_name} -> {status}")
@@ -11995,7 +11916,6 @@ def get_session_start_time():
     global session_start_time
     return session_start_time
 
-# Add this function to set session start time (if needed separately)
 def set_session_start_time():
     """Set the session start time when class begins"""
     global session_start_time
@@ -12008,7 +11928,7 @@ def adjust_session_time():
     global session_total_duration_seconds, session_threshold_seconds
     
     data = request.get_json()
-    schedule_id = data.get('schedule_id') # Used as session_id and user_id
+    schedule_id = data.get('schedule_id') 
     adj_type = data.get('adjustment_type')
     adj_minutes = data.get('adjustment_minutes', 0)
     elapsed_minutes = data.get('elapsed_minutes', 0)
@@ -12035,7 +11955,6 @@ def adjust_session_time():
         if not live_session:
              return jsonify({'success': False, 'message': 'Active session not found.'}), 404
 
-        # 🎯 FIXED: Use seconds if available, otherwise convert
         if live_session.get('session_duration_seconds_total'):
             current_duration_seconds = live_session['session_duration_seconds_total']
             current_threshold_seconds = live_session['threshold_seconds_total']
@@ -12102,7 +12021,6 @@ def adjust_session_time():
         
         connection.commit()
 
-        # 🎯 CRITICAL: Update global variables
         if adj_type == 'duration':
             session_total_duration_seconds = new_duration_seconds
         elif adj_type == 'threshold':
@@ -12472,7 +12390,6 @@ def get_session_settings():
         """, (schedule_id,))
         default_config = cursor.fetchone()
         
-        # 🎯 FIXED: Use seconds if available, otherwise convert minutes to seconds
         if live_settings:
             # Prefer seconds values if they exist in database
             if live_settings.get('session_duration_seconds_total'):
@@ -12537,7 +12454,6 @@ def update_video_quality():
         connection = get_db_connection()
         cursor = connection.cursor()
 
-        # Update or Insert (UPSERT) video_quality in session_settings
         cursor.execute("""
         INSERT INTO session_settings (user_id, video_quality)
         VALUES (%s, %s)
@@ -12874,7 +12790,6 @@ def enroll_unknown_face():
         existing_attendance = cursor.fetchone()
         
         if existing_attendance:
-            # Update existing record instead of creating duplicate
             print(f"📝 Updating existing attendance record (was: {existing_attendance['status']})...")
             update_attendance_sql = """
                 UPDATE attendance 
@@ -13066,7 +12981,7 @@ def resume_detection():
     return jsonify({'success': True, 'message': 'Detection resumed'})
 
 # ------------------------------------------------------------------
-# API Route 4: GET UNRECOGNIZED FACES (Fixed Version)
+# API Route 4: GET UNRECOGNIZED FACES 
 # ------------------------------------------------------------------
 
 @app.route('/api/unrecognized_faces', methods=['GET'])
@@ -13414,18 +13329,15 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
     
     current_time = datetime.now()
     
-    # 🆕 GET SESSION ID FOR DATABASE SAVING
     session_id = get_current_session_id()
     if session_id is None:
         logger.error("❌ Cannot save face: No active session ID")
         return False
     
-    # 🎯 CRITICAL FIX 1: Check if this exact face encoding already exists in memory
     existing_face_id = find_existing_face_by_encoding(face_encoding)
     if existing_face_id:
         print(f"🎯 EXACT DUPLICATE FOUND: Face {existing_face_id} already exists - skipping")
         
-        # Update the existing face's timestamp and cooldown
         if existing_face_id in UNKNOWN_FACES_FOR_ENROLLMENT:
             UNKNOWN_FACES_FOR_ENROLLMENT[existing_face_id].update({
                 'timestamp': current_time,
@@ -13436,20 +13348,17 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
         
         return False
     
-    # 🎯 CRITICAL FIX 2: Check if similar face exists AND still in cooldown
     is_similar, similar_face_id = is_similar_to_unrecognized_face(face_encoding, current_time)
     if is_similar:
         print(f"⏳ SIMILAR FACE IN COOLDOWN: Face {similar_face_id} - skipping duplicate")
         return False
     
-    # 🎯 Generate unique ID based on face encoding (consistent for same face)
     face_id = generate_face_id(face_encoding)
     
-    # 🎯 CRITICAL FIX 3: Check if this face_id already exists (shouldn't happen but safety check)
     if face_id in UNKNOWN_FACES_FOR_ENROLLMENT:
         print(f"🎯 FACE ID COLLISION: {face_id} already exists - updating")
         UNKNOWN_FACES_FOR_ENROLLMENT[face_id].update({
-            'face_crop': face_crop,  # Update with latest crop
+            'face_crop': face_crop,  
             'timestamp': current_time,
             'cooldown_until': current_time + timedelta(seconds=30),
             'times_seen': UNKNOWN_FACES_FOR_ENROLLMENT[face_id].get('times_seen', 0) + 1,
@@ -13457,13 +13366,11 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
         })
         return True
     
-    # 🆕 SAVE IMAGE TO FILE SYSTEM
     image_path = save_face_image_to_file(face_crop, session_id, track_id)
     if not image_path:
         logger.error("❌ Failed to save face image to file")
         return False
     
-    # 🆕 SAVE TO DATABASE
     db_face_id = None
     try:
         with get_db_cursor() as cursor:
@@ -13700,7 +13607,6 @@ def student_left():
         student = cursor.fetchone()
         student_name = f"{student['first_name']} {student['last_name']}" if student else f"Student {student_id}"
         
-        # 🎯 CRITICAL FIX: BETTER Manual Status Detection
         cursor.execute("""
             SELECT id, status, session_id, remarks FROM attendance 
             WHERE student_id = %s AND session_id = %s
@@ -13715,7 +13621,6 @@ def student_left():
             # ✅ FIXED: Handle None remarks safely
             remarks = current_attendance.get('remarks') or ''  # Convert None to empty string
             
-            # 🎯 BETTER MANUAL STATUS DETECTION - More specific
             manual_excuse_sessions = ['manual_excuse']  # Only for excused students
             manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
             manual_statuses = ['excused']  # Only truly manual statuses
@@ -13742,7 +13647,7 @@ def student_left():
             else:
                 logger.info(f"🔄 AUTO STATUS: {student_name} has status '{current_status}' - CAN mark as missing")
         
-        # 🎯 Check if there's an active missing period
+       
         cursor.execute("""
             SELECT id FROM missing_periods 
             WHERE student_id = %s AND session_id = %s AND returned = FALSE
@@ -13756,18 +13661,15 @@ def student_left():
             conn.close()
             return jsonify({'success': False, 'message': 'Student already marked as missing'}), 400
         
-        # 🎯 FIXED: Get the CURRENT status before updating to missing
+ 
         original_status = current_attendance['status'] if current_attendance else None
         
-        # 🎯 FIXED: Start new missing period AND record original status
         cursor.execute("""
             INSERT INTO missing_periods (student_id, session_id, missing_start, returned, original_status)
             VALUES (%s, %s, NOW(), FALSE, %s)
         """, (student_id, session_id, original_status))
         
-        # 🎯 CRITICAL FIX: UPDATE existing attendance record instead of creating new one
         if current_attendance:
-            # UPDATE existing record
             cursor.execute("""
                 UPDATE attendance 
                 SET status = 'missing', timestamp = NOW()
@@ -13775,7 +13677,6 @@ def student_left():
             """, (current_attendance['id']))
             logger.info(f"🔄 UPDATED existing attendance record to 'missing' for {student_name}")
         else:
-            # Only INSERT if no record exists
             cursor.execute("""
                 INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id)
                 VALUES (%s, %s, NOW(), 'student', 'missing', %s)
@@ -13823,7 +13724,7 @@ def student_returned():
         student = cursor.fetchone()
         student_name = f"{student['first_name']} {student['last_name']}" if student else f"Student {student_id}"
         
-        # 🎯 FIXED: Get the missing period WITH original_status
+
         cursor.execute("""
             SELECT id, missing_start, original_status FROM missing_periods 
             WHERE student_id = %s AND session_id = %s AND returned = FALSE
@@ -14037,7 +13938,7 @@ if __name__ == "__main__":
     attendance_save_thread.start()
     
     try:
-        # 🎯 FIXED SSL CONFIGURATION
+      
         ssl_context = None
         cert_file = 'cert.pem'
         key_file = 'key.pem'
@@ -14052,11 +13953,11 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.254.102",  # 🎯 FIXED: Use your specific IP
+            host="10.66.169.66", 
             port=5000,
             debug=False,
             threaded=True,
-            ssl_context=ssl_context  # 🎯 FIXED: Only use SSL if certificates exist
+            ssl_context=ssl_context  
         )
     
     except OSError as e:
