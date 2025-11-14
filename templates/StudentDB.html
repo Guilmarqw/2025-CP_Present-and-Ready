@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/StudentDB.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='StudentDB.css') }}">
+    
 </head>
 <body>
     <!-- Sidebar -->
@@ -21,12 +22,11 @@
                 <input type="text" placeholder="Search students...">
             </div>
         </div>
-        
+
         <div class="student-content">
             <h3>Student Management</h3>
-            
+
             <div class="filters">
-                
                 <div class="filter-group">
                     <label for="course">Course</label>
                     <select id="course">
@@ -36,31 +36,23 @@
                         <option value="bsis">ACT</option>
                     </select>
                 </div>
-                
+
                 <div class="filter-group">
-                    <label for="section">Year &Section</label>
+                    <label for="section">Year & Section</label>
                     <select id="section">
                         <option value="">Select Section</option>
-                        <option value="1a">1A</option>
-                        <option value="1b">1B</option>
-                        <option value="1c">1C</option>
-                        <option value="2a">2A</option>
-                        <option value="2b">2B</option>
-                        <option value="2c">2C</option>
-                        <option value="3a">3A</option>
-                        <option value="3b">3B</option>
-                        <option value="3c">3C</option>
-                        <option value="4a">4A</option>
-                        <option value="4b">4B</option>
-                        <option value="4c">4C</option>
+                        <option value="1a">1A</option><option value="1b">1B</option><option value="1c">1C</option>
+                        <option value="2a">2A</option><option value="2b">2B</option><option value="2c">2C</option>
+                        <option value="3a">3A</option><option value="3b">3B</option><option value="3c">3C</option>
+                        <option value="4a">4A</option><option value="4b">4B</option><option value="4c">4C</option>
                     </select>
                 </div>
-                
+
                 <button class="invite-btn" id="inviteBtn">
                     <i class="fas fa-user-plus"></i> Invite Student
                 </button>
             </div>
-            
+
             <table class="students-table">
                 <thead>
                     <tr>
@@ -126,7 +118,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title">Add New Student</h2>
-                <span class="close">&times;</span>
+                <span class="close">×</span>
             </div>
             <div class="modal-body">
                 <form id="addStudentForm">
@@ -166,160 +158,143 @@
         </div>
     </div>
 
-<!-- Edit Student Modal -->
-<div id="editStudentModal" class="modal">
-    <div class="modal-content" style="max-width: 600px;">
-        <div class="modal-header">
-            <h2 class="modal-title">Edit Student</h2>
-            <span class="close">&times;</span>
-        </div>
-        <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
-            <form id="editStudentForm">
-                <input type="hidden" id="editStudentId">
-                
-                <div class="form-row">
-                    <div class="form-group" style="flex: 1;">
-                        <label for="editFirstName">First Name *</label>
-                        <input type="text" id="editFirstName" placeholder="Enter first name" required>
+    <!-- Edit Student Modal -->
+    <div id="editStudentModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Edit Student</h2>
+                <span class="close">×</span>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                <form id="editStudentForm">
+                    <input type="hidden" id="editStudentId">
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 1;">
+                            <label for="editFirstName">First Name *</label>
+                            <input type="text" id="editFirstName" placeholder="Enter first name" required>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label for="editMiddleName">Middle Name</label>
+                            <input type="text" id="editMiddleName" placeholder="Enter middle name">
+                        </div>
                     </div>
-                    <div class="form-group" style="flex: 1;">
-                        <label for="editMiddleName">Middle Name</label>
-                        <input type="text" id="editMiddleName" placeholder="Enter middle name">
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 1;">
+                            <label for="editLastName">Last Name *</label>
+                            <input type="text" id="editLastName" placeholder="Enter last name" required>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label for="editStudentIdNumber">ID Number *</label>
+                            <input type="text" id="editStudentIdNumber" placeholder="Enter ID number" required>
+                        </div>
                     </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group" style="flex: 1;">
-                        <label for="editLastName">Last Name *</label>
-                        <input type="text" id="editLastName" placeholder="Enter last name" required>
+                    <div class="form-group">
+                        <label for="editEmail">Email *</label>
+                        <input type="email" id="editEmail" placeholder="Enter email" required>
                     </div>
-                    <div class="form-group" style="flex: 1;">
-                        <label for="editStudentIdNumber">ID Number *</label>
-                        <input type="text" id="editStudentIdNumber" placeholder="Enter ID number" required>
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 1;">
+                            <label for="editCourse">Course *</label>
+                            <select id="editCourse" required>
+                                <option value="">Select Course</option>
+                                <option value="BSCS">BSCS</option>
+                                <option value="BSIT">BSIT</option>
+                                <option value="ACT">ACT</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label for="editSection">Year & Section *</label>
+                            <select id="editSection" required>
+                                <option value="">Select Section</option>
+                                <option value="1A">1A</option><option value="1B">1B</option><option value="1C">1C</option>
+                                <option value="2A">2A</option><option value="2B">2B</option><option value="2C">2C</option>
+                                <option value="3A">3A</option><option value="3B">3B</option><option value="3C">3C</option>
+                                <option value="4A">4A</option><option value="4B">4B</option><option value="4C">4C</option>
+                            </select>
+                        </div>
                     </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="editEmail">Email *</label>
-                    <input type="email" id="editEmail" placeholder="Enter email" required>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group" style="flex: 1;">
-                        <label for="editCourse">Course *</label>
-                        <select id="editCourse" required>
-                            <option value="">Select Course</option>
-                            <option value="BSCS">BSCS</option>
-                            <option value="BSIT">BSIT</option>
-                            <option value="ACT">ACT</option>
+                    <div class="form-group">
+                        <label for="editStatus">Status</label>
+                        <select id="editStatus">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
                         </select>
                     </div>
-                    <div class="form-group" style="flex: 1;">
-                        <label for="editSection">Year & Section *</label>
-                        <select id="editSection" required>
-                            <option value="">Select Section</option>
-                            <option value="1A">1A</option>
-                            <option value="1B">1B</option>
-                            <option value="1C">1C</option>
-                            <option value="2A">2A</option>
-                            <option value="2B">2B</option>
-                            <option value="2C">2C</option>
-                            <option value="3A">3A</option>
-                            <option value="3B">3B</option>
-                            <option value="3C">3C</option>
-                            <option value="4A">4A</option>
-                            <option value="4B">4B</option>
-                            <option value="4C">4C</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="editStatus">Status</label>
-                    <select id="editStatus">
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </select>
-                </div>
-            </form>
-        </div>
-        <div class="modal-footer">
-            <button class="modal-btn btn-cancel">Cancel</button>
-            <button class="modal-btn btn-submit" id="submitEditStudent">Save Changes</button>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Cancel</button>
+                <button class="modal-btn btn-submit" id="submitEditStudent">Save Changes</button>
+            </div>
         </div>
     </div>
-</div>
 
-<!-- View Student Modal -->
-<div id="viewStudentModal" class="modal">
-    <div class="modal-content" style="max-width: 600px;">
-        <div class="modal-header">
-            <h2 class="modal-title">Student Details</h2>
-            <span class="close">&times;</span>
-        </div>
-        <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
-            <div class="student-details">
-                <div class="detail-header">
-                    <img id="viewPhoto" src="" class="student-photo-large" alt="Student Photo">
-                    <div class="detail-title">
-                        <h3 id="viewFullName"></h3>
-                        <span class="detail-badge" id="viewStatusBadge"></span>
+    <!-- View Student Modal (with Attendance Record) -->
+    <div id="viewStudentModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Student Details</h2>
+                <span class="close">×</span>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                <div class="student-details">
+                    <div class="detail-header">
+                        <img id="viewPhoto" src="" class="student-photo-large" alt="Student Photo">
+                        <div class="detail-title">
+                            <h3 id="viewFullName"></h3>
+                            <span class="detail-badge" id="viewStatusBadge"></span>
+                        </div>
                     </div>
-                </div>
-                
-                <div class="detail-section">
-                    <h4>Personal Information</h4>
-                    <div class="detail-row">
-                        <span class="detail-label">First Name:</span>
-                        <span class="detail-value" id="viewFirstName"></span>
+
+                    <div class="detail-section">
+                        <h4>Personal Information</h4>
+                        <div class="detail-row"><span class="detail-label">First Name:</span><span class="detail-value" id="viewFirstName"></span></div>
+                        <div class="detail-row"><span class="detail-label">Middle Name:</span><span class="detail-value" id="viewMiddleName"></span></div>
+                        <div class="detail-row"><span class="detail-label">Last Name:</span><span class="detail-value" id="viewLastName"></span></div>
+                        <div class="detail-row"><span class="detail-label">ID Number:</span><span class="detail-value" id="viewIdNumber"></span></div>
+                        <div class="detail-row"><span class="detail-label">Email:</span><span class="detail-value" id="viewEmail"></span></div>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Middle Name:</span>
-                        <span class="detail-value" id="viewMiddleName"></span>
+
+                    <div class="detail-section">
+                        <h4>Academic Information</h4>
+                        <div class="detail-row"><span class="detail-label">Course:</span><span class="detail-value" id="viewCourse"></span></div>
+                        <div class="detail-row"><span class="detail-label">Year & Section:</span><span class="detail-value" id="viewSection"></span></div>
+                        <div class="detail-row"><span class="detail-label">Status:</span><span class="detail-value" id="viewStatus"></span></div>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Last Name:</span>
-                        <span class="detail-value" id="viewLastName"></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">ID Number:</span>
-                        <span class="detail-value" id="viewIdNumber"></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Email:</span>
-                        <span class="detail-value" id="viewEmail"></span>
-                    </div>
-                </div>
-                
-                <div class="detail-section">
-                    <h4>Academic Information</h4>
-                    <div class="detail-row">
-                        <span class="detail-label">Course:</span>
-                        <span class="detail-value" id="viewCourse"></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Year & Section:</span>
-                        <span class="detail-value" id="viewSection"></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Status:</span>
-                        <span class="detail-value" id="viewStatus"></span>
+
+                    <!-- NEW: Attendance Record -->
+                    <div class="detail-section">
+                        <h4>Attendance Record</h4>
+                        <div class="attendance-table-wrapper">
+                            <table class="attendance-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th style="text-align:center;">Status</th>
+                                        <th>Subject</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="attendanceBody">
+                                    <!-- Filled by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <p id="noAttendance" class="no-attendance" style="display:none;">No attendance records found.</p>
                     </div>
                 </div>
             </div>
-        </div>
-        <div class="modal-footer">
-            <button class="modal-btn btn-cancel">Close</button>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Close</button>
+            </div>
         </div>
     </div>
-</div>
 
     <!-- Delete Confirmation Modal -->
     <div id="deleteStudentModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title">Delete Student</h2>
-                <span class="close">&times;</span>
+                <span class="close">×</span>
             </div>
             <div class="modal-body">
                 <p>Are you sure you want to delete <strong id="deleteStudentName"></strong>? This action cannot be undone.</p>
@@ -332,881 +307,501 @@
     </div>
 
     <!-- Alert Modal -->
-<div id="alertModal" class="alert-modal" style="z-index: 10000;">
-    <div class="alert-content" style="position: relative; z-index: 10001;">
-        <div class="alert-icon" id="alertIcon">
-            <i class="fas fa-check-circle success-icon"></i>
+    <div id="alertModal" class="alert-modal" style="z-index: 10000;">
+        <div class="alert-content" style="position: relative; z-index: 10001;">
+            <div class="alert-icon" id="alertIcon">
+                <i class="fas fa-check-circle success-icon"></i>
+            </div>
+            <p class="alert-message" id="alertMessage"></p>
+            <button class="alert-btn" id="alertButton">OK</button>
         </div>
-        <p class="alert-message" id="alertMessage"></p>
-        <button class="alert-btn" id="alertButton">OK</button>
     </div>
-</div>
 
-    <!-- Enhanced Invite Student Modal -->
-<div id="inviteLinkModal" class="modal">
-    <div class="modal-content" style="max-width: 600px;">
-        <div class="modal-header">
-            <h2 class="modal-title">Invite Student</h2>
-            <span class="close">&times;</span>
-        </div>
-        <div class="modal-body">
-            <!-- Time Duration Settings -->
-            <div class="form-group">
-                <label>Link Expiration Time</label>
-                <div class="duration-controls">
-                    <div class="duration-item">
-                        <label for="studentDurationDays">Days</label>
-                        <input type="number" id="studentDurationDays" min="0" max="30" value="0">
-                    </div>
-                    <div class="duration-item">
-                        <label for="studentDurationHours">Hours</label>
-                        <input type="number" id="studentDurationHours" min="0" max="23" value="24">
-                    </div>
-                    <div class="duration-item">
-                        <label for="studentDurationMinutes">Minutes</label>
-                        <input type="number" id="studentDurationMinutes" min="0" max="59" value="0">
-                    </div>
-                </div>
-                <div class="duration-preview">
-                    <span id="studentDurationPreview">Link will expire in: 24 hours</span>
-                </div>
+    <!-- Invite Student Modal -->
+    <div id="inviteLinkModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Invite Student</h2>
+                <span class="close">×</span>
             </div>
-
-            <!-- Quick Duration Buttons -->
-            <div class="form-group">
-                <label>Quick Select</label>
-                <div class="quick-duration-buttons">
-                    <button type="button" class="quick-btn" data-minutes="30">30 min</button>
-                    <button type="button" class="quick-btn" data-minutes="60">1 hour</button>
-                    <button type="button" class="quick-btn" data-minutes="360">6 hours</button>
-                    <button type="button" class="quick-btn" data-minutes="720">12 hours</button>
-                    <button type="button" class="quick-btn active" data-minutes="1440">24 hours</button>
-                    <button type="button" class="quick-btn" data-minutes="4320">3 days</button>
-                    <button type="button" class="quick-btn" data-minutes="10080">1 week</button>
-                </div>
-            </div>
-
-            <!-- Generated Link Display -->
-            <div id="studentGeneratedLinkSection" style="display: none;">
+            <div class="modal-body">
                 <div class="form-group">
-                    <label>Generated Student Invite Link</label>
-                    <div class="invite-link-container">
-                        <input type="text" id="studentGeneratedInviteLink" readonly>
-                        <button class="copy-btn" onclick="copyStudentGeneratedLink()">
-                            <i class="fas fa-copy"></i>
-                            Copy
-                        </button>
+                    <label>Link Expiration Time</label>
+                    <div class="duration-controls">
+                        <div class="duration-item">
+                            <label for="studentDurationDays">Days</label>
+                            <input type="number" id="studentDurationDays" min="0" max="30" value="0">
+                        </div>
+                        <div class="duration-item">
+                            <label for="studentDurationHours">Hours</label>
+                            <input type="number" id="studentDurationHours" min="0" max="23" value="24">
+                        </div>
+                        <div class="duration-item">
+                            <label for="studentDurationMinutes">Minutes</label>
+                            <input type="number" id="studentDurationMinutes" min="0" max="59" value="0">
+                        </div>
                     </div>
-                    <div class="link-info">
-                        <p><strong>Expires:</strong> <span id="studentLinkExpiration"></span></p>
-                        <p><strong>Type:</strong> Student Registration</p>
+                    <div class="duration-preview">
+                        <span id="studentDurationPreview">Link will expire in: 24 hours</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Quick Select</label>
+                    <div class="quick-duration-buttons">
+                        <button type="button" class="quick-btn" data-minutes="30">30 min</button>
+                        <button type="button" class="quick-btn" data-minutes="60">1 hour</button>
+                        <button type="button" class="quick-btn" data-minutes="360">6 hours</button>
+                        <button type="button" class="quick-btn" data-minutes="720">12 hours</button>
+                        <button type="button" class="quick-btn active" data-minutes="1440">24 hours</button>
+                        <button type="button" class="quick-btn" data-minutes="4320">3 days</button>
+                        <button type="button" class="quick-btn" data-minutes="10080">1 week</button>
+                    </div>
+                </div>
+
+                <div id="studentGeneratedLinkSection" style="display: none;">
+                    <div class="form-group">
+                        <label>Generated Student Invite Link</label>
+                        <div class="invite-link-container">
+                            <input type="text" id="studentGeneratedInviteLink" readonly>
+                            <button class="copy-btn" onclick="copyStudentGeneratedLink()">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                        </div>
+                        <div class="link-info">
+                            <p><strong>Expires:</strong> <span id="studentLinkExpiration"></span></p>
+                            <p><strong>Type:</strong> Student Registration</p>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="copy-status" id="studentCopyStatus"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Cancel</button>
+                <button class="modal-btn btn-submit" id="generate-student-link-btn">
+                    <i class="fas fa-link"></i> Generate Student Link
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Student Invites Modal -->
+    <div id="activeStudentInvitesModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Active Student Invite Links</h2>
+                <span class="close">×</span>
+            </div>
+            <div class="modal-body">
+                <div class="invites-container">
+                    <div id="activeStudentInvitesList">
+                        <!-- Populated by JS -->
                     </div>
                 </div>
             </div>
-
-            <p class="copy-status" id="studentCopyStatus"></p>
-        </div>
-        <div class="modal-footer">
-            <button class="modal-btn btn-cancel">Cancel</button>
-            <button class="modal-btn btn-submit" id="generate-student-link-btn">
-                <i class="fas fa-link"></i> Generate Student Link
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Active Student Invites Modal -->
-<div id="activeStudentInvitesModal" class="modal">
-    <div class="modal-content" style="max-width: 800px;">
-        <div class="modal-header">
-            <h2 class="modal-title">Active Student Invite Links</h2>
-            <span class="close">&times;</span>
-        </div>
-        <div class="modal-body">
-            <div class="invites-container">
-                <div id="activeStudentInvitesList">
-                    <!-- Will be populated by JavaScript -->
-                </div>
+            <div class="modal-footer">
+                <button class="modal-btn btn-cancel">Close</button>
+                <button class="modal-btn btn-refresh" onclick="loadActiveStudentInvites()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
             </div>
         </div>
-        <div class="modal-footer">
-            <button class="modal-btn btn-cancel">Close</button>
-            <button class="modal-btn btn-refresh" onclick="loadActiveStudentInvites()">
-                <i class="fas fa-sync-alt"></i> Refresh
-            </button>
-        </div>
     </div>
-</div>
 
     <script>
-// Global variables for data management
-let currentPage = 1;
-let studentsPerPage = 20;
-let allStudents = [];
-let totalStudents = 0;
 
-// Student data management
-async function loadStudentsFromDatabase() {
-    try {
-        showLoadingState('Loading students...');
-        
-        const params = new URLSearchParams({
-            page: currentPage,
-            limit: studentsPerPage,
-            status: 'active'
-        });
-        
-        const courseFilter = document.getElementById('course')?.value;
-        const sectionFilter = document.getElementById('section')?.value;
-        const searchTerm = document.querySelector('.search-box input')?.value;
-        
-        if (courseFilter) params.append('course', courseFilter);
-        if (sectionFilter) params.append('year_section', sectionFilter);
-        if (searchTerm) params.append('search', searchTerm);
-        
-        const response = await fetch(`/api/get_students_enhanced?${params}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            allStudents = data.students;
-            totalStudents = data.pagination.total;
-            displayStudents(data.students);
-            updatePagination(data.pagination);
-            updateStudentStats(data.pagination.total);
-        } else {
-            showAlert('Failed to load students: ' + data.message, false);
-        }
-    } catch (error) {
-        console.error('Error loading students:', error);
-        showAlert('Error loading students from database', false);
-    } finally {
-        hideLoadingState();
-    }
-}
+        let currentPage = 1;
+        let studentsPerPage = 20;
+        let allStudents = [];
+        let totalStudents = 0;
 
-function displayStudents(students) {
-    const tbody = document.querySelector('.students-table tbody');
-    if (!tbody) return;
-    
-    tbody.innerHTML = '';
-    
-    if (students.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" style="text-align: center; padding: 20px;">
-                    <i class="fas fa-users"></i><br>
-                    No students found
-                </td>
-            </tr>
-        `;
-        return;
-    }
-    
-    students.forEach(student => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td><img src="${student.photo}" class="student-photo" alt="Student Photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random'"></td>
-            <td>${student.name}</td>
-            <td>${student.idNumber}</td>
-            <td>${student.course} ${student.yearSection}</td>
-            <td class="action-buttons">
-                <button class="action-btn edit-btn" data-id="${student.id}"><i class="fas fa-edit"></i></button>
-                <button class="action-btn view-btn" data-id="${student.id}"><i class="fas fa-eye"></i></button>
-                <button class="action-btn delete-btn" data-id="${student.id}"><i class="fas fa-trash"></i></button>
-            </td>
-        `;
-        tbody.appendChild(row);
-        addEventListenersToRow(row);
-    });
-}
 
-function updatePagination(pagination) {
-    const paginationContainer = document.getElementById('studentPagination') || createPaginationContainer();
-    
-    if (pagination.pages <= 1) {
-        paginationContainer.style.display = 'none';
-        return;
-    }
-    
-    paginationContainer.style.display = 'flex';
-    
-    let paginationHTML = '';
-    
-    if (pagination.page > 1) {
-        paginationHTML += `<button class="page-btn" onclick="changePage(${pagination.page - 1})"><i class="fas fa-chevron-left"></i></button>`;
-    }
-    
-    const startPage = Math.max(1, pagination.page - 2);
-    const endPage = Math.min(pagination.pages, pagination.page + 2);
-    
-    for (let i = startPage; i <= endPage; i++) {
-        paginationHTML += `<button class="page-btn ${i === pagination.page ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
-    }
-    
-    if (pagination.page < pagination.pages) {
-        paginationHTML += `<button class="page-btn" onclick="changePage(${pagination.page + 1})"><i class="fas fa-chevron-right"></i></button>`;
-    }
-    
-    paginationContainer.innerHTML = paginationHTML;
-}
-
-function createPaginationContainer() {
-    const container = document.createElement('div');
-    container.id = 'studentPagination';
-    container.className = 'pagination-container';
-    container.style.cssText = `
-        display: flex;
-        justify-content: center;
-        gap: 5px;
-        margin-top: 20px;
-        align-items: center;
-    `;
-    
-    const style = document.createElement('style');
-    style.textContent = `
-        .pagination-container .page-btn {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            background: white;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-        .pagination-container .page-btn:hover {
-            background: #f8f9fa;
-            border-color: #007bff;
-        }
-        .pagination-container .page-btn.active {
-            background: #007bff;
-            color: white;
-            border-color: #007bff;
-        }
-    `;
-    if (!document.querySelector('#pagination-styles')) {
-        style.id = 'pagination-styles';
-        document.head.appendChild(style);
-    }
-    
-    document.querySelector('.student-content').appendChild(container);
-    return container;
-}
-
-function changePage(page) {
-    currentPage = page;
-    loadStudentsFromDatabase();
-}
-
-function updateStudentStats(total) {
-    const header = document.querySelector('.header h2');
-    if (header) header.textContent = `List of Students (${total})`;
-}
-
-function showLoadingState(message) {
-    const tbody = document.querySelector('.students-table tbody');
-    if (tbody) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" style="text-align: center; padding: 20px;">
-                    <i class="fas fa-spinner fa-spin"></i><br>
-                    ${message}
-                </td>
-            </tr>
-        `;
-    }
-}
-
-function hideLoadingState() {
-    // Loading state is replaced by actual data or empty state
-}
-
-// DOM Elements
-const inviteBtn = document.getElementById('inviteBtn');
-const inviteLinkModal = document.getElementById('inviteLinkModal');
-const editStudentModal = document.getElementById('editStudentModal');
-const viewStudentModal = document.getElementById('viewStudentModal');
-const deleteStudentModal = document.getElementById('deleteStudentModal');
-const alertModal = document.getElementById('alertModal');
-const closeButtons = document.querySelectorAll('.close');
-const cancelButtons = document.querySelectorAll('.btn-cancel');
-const submitEditStudent = document.getElementById('submitEditStudent');
-const confirmDelete = document.getElementById('confirmDelete');
-const alertButton = document.getElementById('alertButton');
-const alertMessage = document.getElementById('alertMessage');
-const alertIcon = document.getElementById('alertIcon');
-
-// Modal functions
-function openModal(modal) {
-    if (modal) modal.style.display = "block";
-}
-
-function closeModal(modal) {
-    if (modal) modal.style.display = "none";
-}
-
-// Show alert function
-function showAlert(message, isSuccess = true) {
-    if (alertMessage && alertIcon) {
-        alertMessage.textContent = message;
-        alertIcon.innerHTML = isSuccess
-            ? '<i class="fas fa-check-circle success-icon"></i>'
-            : '<i class="fas fa-exclamation-circle error-icon"></i>';
-        openModal(alertModal);
-    }
-}
-
-// Add event listeners to a table row - FIXED VERSION
-function addEventListenersToRow(row) {
-    const editBtn = row.querySelector('.edit-btn');
-    const viewBtn = row.querySelector('.view-btn');
-    const deleteBtn = row.querySelector('.delete-btn');
-    
-    editBtn?.addEventListener('click', function() {
-        const studentId = this.getAttribute('data-id');
-        const student = allStudents.find(s => s.id === studentId);
-
-        if (student) {
-            populateEditForm(student);
-            openModal(editStudentModal);
-        }
-    });
-    
-    viewBtn?.addEventListener('click', function() {
-        const studentId = this.getAttribute('data-id');
-        const student = allStudents.find(s => s.id === studentId);
-
-        if (student) {
-            populateViewModal(student);
-            openModal(viewStudentModal);
-        }
-    });
-    
-    deleteBtn?.addEventListener('click', function() {
-        const studentId = this.getAttribute('data-id');
-        const student = allStudents.find(s => s.id === studentId);
-
-        if (student) {
-            const deleteStudentName = document.getElementById('deleteStudentName');
-            if (deleteStudentName && confirmDelete) {
-                deleteStudentName.textContent = student.name;
-                confirmDelete.setAttribute('data-id', student.id);
-                openModal(deleteStudentModal);
-            }
-        }
-    });
-}
-
-// Event Listeners
-if (inviteBtn) inviteBtn.addEventListener('click', () => openModal(inviteLinkModal));
-
-closeButtons.forEach(button => {
-    button.addEventListener('click', function() {
-        const modal = this.closest('.modal');
-        closeModal(modal);
-    });
-});
-
-cancelButtons.forEach(button => {
-    button.addEventListener('click', function() {
-        const modal = this.closest('.modal');
-        closeModal(modal);
-    });
-});
-
-if (alertButton) {
-    alertButton.addEventListener('click', () => closeModal(alertModal));
-}
-
-window.addEventListener('click', function(event) {
-    if (event.target.classList.contains('modal')) {
-        closeModal(event.target);
-    }
-});
-
-// Edit student functionality - FIXED VERSION
-if (submitEditStudent) {
-    submitEditStudent.addEventListener('click', async function() {
-        const studentId = document.getElementById('editStudentId')?.value;
-        const firstName = document.getElementById('editFirstName')?.value;
-        const middleName = document.getElementById('editMiddleName')?.value;
-        const lastName = document.getElementById('editLastName')?.value;
-        const idNumber = document.getElementById('editStudentIdNumber')?.value;
-        const email = document.getElementById('editEmail')?.value;
-        const course = document.getElementById('editCourse')?.value;
-        const yearSection = document.getElementById('editSection')?.value;
-        const status = document.getElementById('editStatus')?.value;
-        
-        if (!firstName || !lastName || !idNumber || !email || !course || !yearSection) {
-            showAlert('Please fill all required fields', false);
-            return;
-        }
-        
-        try {
-            const response = await fetch('/api/update_student', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    student_id: studentId,
-                    first_name: firstName,
-                    last_name: lastName,
-                    middle_name: middleName || '',
-                    course: course,
-                    year_section: yearSection,
-                    email: email,
-                    status: status
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                showAlert(`Student ${firstName} ${lastName} updated successfully!`);
-                closeModal(editStudentModal);
-                loadStudentsFromDatabase();
-            } else {
-                showAlert(data.message || 'Failed to update student', false);
-            }
-        } catch (error) {
-            console.error('Error updating student:', error);
-            showAlert('Error updating student: ' + error.message, false);
-        }
-    });
-}
-
-// Delete student functionality
-if (confirmDelete) {
-    confirmDelete.addEventListener('click', async function() {
-        const studentId = this.getAttribute('data-id');
-        
-        try {
-            const response = await fetch('/api/delete_student', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ student_id: studentId })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                showAlert('Student deleted successfully!');
-                closeModal(deleteStudentModal);
-                loadStudentsFromDatabase();
-            } else {
-                showAlert(data.message || 'Failed to delete student', false);
-            }
-        } catch (error) {
-            console.error('Error deleting student:', error);
-            showAlert('Error deleting student', false);
-        }
-    });
-}
-
-// Search functionality
-const searchInput = document.querySelector('.search-box input');
-let searchTimeout;
-if (searchInput) {
-    searchInput.addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-            currentPage = 1;
-            loadStudentsFromDatabase();
-        }, 500);
-    });
-}
-
-// Filter functionality
-const filterInputs = document.querySelectorAll('.filter-group select');
-filterInputs.forEach(filter => {
-    filter.addEventListener('change', function() {
-        currentPage = 1;
-        loadStudentsFromDatabase();
-    });
-});
-
-// Populate view modal with student data - FIXED VERSION
-function populateViewModal(student) {
-    // Set photo
-    const photoElement = document.getElementById('viewPhoto');
-    photoElement.src = student.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`;
-    photoElement.alt = student.name;
-    
-    // Set names
-    document.getElementById('viewFullName').textContent = student.name;
-    document.getElementById('viewFirstName').textContent = student.firstName || 'N/A';
-    document.getElementById('viewMiddleName').textContent = student.middleName || 'N/A';
-    document.getElementById('viewLastName').textContent = student.lastName || 'N/A';
-    
-    // Set other details
-    document.getElementById('viewIdNumber').textContent = student.idNumber || 'N/A';
-    document.getElementById('viewEmail').textContent = student.email || 'N/A';
-    document.getElementById('viewCourse').textContent = student.course || 'N/A';
-    document.getElementById('viewSection').textContent = student.yearSection || 'N/A';
-    document.getElementById('viewStatus').textContent = student.status || 'N/A';
-    
-    // Set status badge
-    const statusBadge = document.getElementById('viewStatusBadge');
-    statusBadge.textContent = student.status === 'active' ? 'Active' : 'Inactive';
-    statusBadge.className = `detail-badge ${student.status === 'active' ? 'active' : 'inactive'}`;
-}
-
-// Populate edit form with student data - FIXED VERSION
-function populateEditForm(student) {
-    console.log('Populating edit form with student:', student);
-    
-    // Parse the name into components
-    let firstName = '';
-    let middleName = '';
-    let lastName = '';
-    
-    if (student.name) {
-        const nameParts = student.name.split(' ');
-        if (nameParts.length === 1) {
-            firstName = nameParts[0];
-        } else if (nameParts.length === 2) {
-            firstName = nameParts[0];
-            lastName = nameParts[1];
-        } else if (nameParts.length >= 3) {
-            firstName = nameParts[0];
-            lastName = nameParts[nameParts.length - 1];
-            middleName = nameParts.slice(1, nameParts.length - 1).join(' ');
-        }
-    }
-    
-    document.getElementById('editStudentId').value = student.id;
-    document.getElementById('editFirstName').value = firstName;
-    document.getElementById('editMiddleName').value = middleName;
-    document.getElementById('editLastName').value = lastName;
-    document.getElementById('editStudentIdNumber').value = student.idNumber || '';
-    document.getElementById('editEmail').value = student.email || '';
-    document.getElementById('editCourse').value = student.course || '';
-    document.getElementById('editSection').value = student.yearSection || '';
-    document.getElementById('editStatus').value = student.status || 'active';
-}
-
-// Student invite functionality
-function initializeStudentInviteModal() {
-    const generateBtn = document.getElementById('generate-student-link-btn');
-    const durationInputs = document.querySelectorAll('#studentDurationDays, #studentDurationHours, #studentDurationMinutes');
-    const quickBtns = document.querySelectorAll('.quick-btn');
-
-    if (!generateBtn) {
-        console.error('Element with ID "generate-student-link-btn" not found');
-        return;
-    }
-
-    generateBtn.addEventListener('click', generateStudentDynamicInvite);
-
-    durationInputs.forEach(input => {
-        input.addEventListener('input', updateStudentDurationPreview);
-    });
-
-    quickBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            quickBtns.forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            const minutes = parseInt(this.dataset.minutes);
-            setStudentDurationFromMinutes(minutes);
-        });
-    });
-}
-
-function updateStudentDurationPreview() {
-    const days = parseInt(document.getElementById('studentDurationDays')?.value) || 0;
-    const hours = parseInt(document.getElementById('studentDurationHours')?.value) || 0;
-    const minutes = parseInt(document.getElementById('studentDurationMinutes')?.value) || 0;
-    
-    const totalMinutes = days * 1440 + hours * 60 + minutes;
-    const previewElement = document.getElementById('studentDurationPreview');
-    
-    if (!previewElement) return;
-    
-    if (totalMinutes === 0) {
-        previewElement.textContent = 'Please set a valid duration';
-        return;
-    }
-    
-    let preview = 'Link will expire in: ';
-    if (days > 0) preview += `${days} day${days > 1 ? 's' : ''} `;
-    if (hours > 0) preview += `${hours} hour${hours > 1 ? 's' : ''} `;
-    if (minutes > 0) preview += `${minutes} minute${minutes > 1 ? 's' : ''}`;
-    
-    previewElement.textContent = preview;
-}
-
-function setStudentDurationFromMinutes(totalMinutes) {
-    const days = Math.floor(totalMinutes / 1440);
-    const hours = Math.floor((totalMinutes % 1440) / 60);
-    const minutes = totalMinutes % 60;
-    
-    const daysInput = document.getElementById('studentDurationDays');
-    const hoursInput = document.getElementById('studentDurationHours');
-    const minutesInput = document.getElementById('studentDurationMinutes');
-    
-    if (daysInput) daysInput.value = days;
-    if (hoursInput) hoursInput.value = hours;
-    if (minutesInput) minutesInput.value = minutes;
-    
-    updateStudentDurationPreview();
-}
-
-function generateStudentDynamicInvite() {
-    const days = parseInt(document.getElementById('studentDurationDays')?.value) || 0;
-    const hours = parseInt(document.getElementById('studentDurationHours')?.value) || 0;
-    const minutes = parseInt(document.getElementById('studentDurationMinutes')?.value) || 0;
-    
-    const totalMinutes = days * 1440 + hours * 60 + minutes;
-    
-    if (totalMinutes === 0) {
-        showAlert('Please set a valid duration', false);
-        return;
-    }
-    
-    if (totalMinutes > 43200) {
-        showAlert('Maximum duration is 30 days', false);
-        return;
-    }
-    
-    const generateBtn = document.getElementById('generate-student-link-btn');
-    if (generateBtn) {
-        generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
-        generateBtn.disabled = true;
-    }
-    
-    fetch('/api/generate_dynamic_invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'student', days, hours, minutes })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            const linkInput = document.getElementById('studentGeneratedInviteLink');
-            const expirationSpan = document.getElementById('studentLinkExpiration');
-            const linkSection = document.getElementById('studentGeneratedLinkSection');
-            
-            if (linkInput && expirationSpan && linkSection) {
-                const inviteLink = `${window.location.origin}/studentreg?token=${data.token}`;
-                linkInput.value = inviteLink;
-                expirationSpan.textContent = new Date(data.expires_at).toLocaleString();
-                linkSection.style.display = 'block';
-                
-                const copyBtn = document.getElementById('studentCopyLink');
-                if (copyBtn) {
-                    copyBtn.addEventListener('click', () => {
-                        navigator.clipboard.writeText(inviteLink);
-                        showAlert('Student link copied to clipboard!', true);
-                    });
-                }
-                
-                showAlert('Student invite link generated successfully!', true);
-            } else {
-                showAlert('Error: Output elements not found', false);
-            }
-        } else {
-            showAlert(data.message || 'Failed to generate student invite link', false);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showAlert('Error generating student invite link', false);
-    })
-    .finally(() => {
-        if (generateBtn) {
-            generateBtn.innerHTML = '<i class="fas fa-link"></i> Generate Student Link';
-            generateBtn.disabled = false;
-        }
-    });
-}
-
-function copyStudentGeneratedLink() {
-    const linkInput = document.getElementById('studentGeneratedInviteLink');
-    if (!linkInput) return;
-    
-    linkInput.select();
-    document.execCommand('copy');
-    
-    const copyStatus = document.getElementById('studentCopyStatus');
-    if (copyStatus) {
-        copyStatus.textContent = 'Student link copied to clipboard!';
-        copyStatus.style.color = 'green';
-        setTimeout(() => copyStatus.textContent = '', 3000);
-    }
-}
-
-function openActiveStudentInvitesModal() {
-    const modal = document.getElementById('activeStudentInvitesModal');
-    if (modal) {
-        openModal(modal);
-        loadActiveStudentInvites();
-    }
-}
-
-function loadActiveStudentInvites() {
-    fetch('/api/get_active_invites')
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            const studentInvites = data.invites.filter(invite => invite.type === 'student');
-            displayActiveStudentInvites(studentInvites);
-        } else {
-            showAlert('Failed to load active student invites', false);
-        }
-    })
-    .catch(error => {
-        console.error('Error loading student invites:', error);
-        showAlert('Error loading active student invites', false);
-    });
-}
-
-function displayActiveStudentInvites(invites) {
-    const container = document.getElementById('activeStudentInvitesList');
-    if (!container) return;
-    
-    if (invites.length === 0) {
-        container.innerHTML = '<p>No active student invites found.</p>';
-        return;
-    }
-    
-    container.innerHTML = invites.map(invite => `
-        <div class="invite-item">
-            <div class="invite-item-header">
-                <span class="invite-type-badge">STUDENT</span>
-                <span class="time-remaining ${isExpiringSoon(invite.time_remaining) ? 'expiring' : ''}">${invite.time_remaining} remaining</span>
-            </div>
-            <div class="invite-link-display">
-                <input type="text" value="${invite.link}" readonly>
-                <button class="btn-copy-small" onclick="copyStudentInviteLink('${invite.link}')">
-                    <i class="fas fa-copy"></i>
-                </button>
-            </div>
-            <div style="font-size: 12px; color: #666; margin: 4px 0;">
-                <div>Created: ${new Date(invite.created_at).toLocaleString()}</div>
-                <div>Expires: ${new Date(invite.expires_at).toLocaleString()}</div>
-                <div>Uses: ${invite.uses}</div>
-            </div>
-            <div class="invite-actions">
-                <button class="btn-revoke" onclick="revokeStudentInvite('${invite.token}')">
-                    <i class="fas fa-ban"></i> Revoke
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
-
-function copyStudentInviteLink(link) {
-    navigator.clipboard.writeText(link).then(() => {
-        showAlert('Student link copied to clipboard!', true);
-    });
-}
-
-function revokeStudentInvite(token) {
-    if (!confirm('Are you sure you want to revoke this student invite?')) return;
-    
-    fetch('/api/revoke_invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('Student invite revoked successfully!', true);
-            loadActiveStudentInvites();
-        } else {
-            showAlert(data.message || 'Failed to revoke student invite', false);
-        }
-    })
-    .catch(error => {
-        console.error('Error revoking student invite:', error);
-        showAlert('Error revoking student invite', false);
-    });
-}
-
-function isExpiringSoon(timeRemaining) {
-    return timeRemaining.includes('m') && !timeRemaining.includes('h') && !timeRemaining.includes('d');
-}
-
- console.log('Starting sidebar fetch...');
-    
-    // Load sidebar with error handling
-    fetch('/sidebar')
-        .then(response => {
-            console.log('Fetch response status:', response.status);
-            console.log('Fetch response URL:', response.url);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.text();
-        })
-        .then(html => {
-            console.log('Sidebar HTML received, length:', html.length);
-            console.log('First 100 chars:', html.substring(0, 100));
-            
-            document.getElementById('sidebar-container').innerHTML = html;
-            
-            // Initialize dropdown functionality
-            document.querySelectorAll(".dropdown-btn").forEach(btn => {
-                btn.addEventListener("click", function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    // Close all other dropdowns first
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        if (content !== this.nextElementSibling) {
-                            content.style.display = 'none';
-                        }
-                    });
-
-                    // Toggle current dropdown
-                    const content = this.nextElementSibling;
-                    if (content) {
-                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
-                    }
+        async function loadStudentsFromDatabase() {
+            try {
+                showLoadingState('Loading students...');
+                const params = new URLSearchParams({
+                    page: currentPage,
+                    limit: studentsPerPage,
+                    status: 'active'
                 });
-            });
+                const courseFilter = document.getElementById('course')?.value;
+                const sectionFilter = document.getElementById('section')?.value;
+                const searchTerm = document.querySelector('.search-box input')?.value;
+                if (courseFilter) params.append('course', courseFilter);
+                if (sectionFilter) params.append('year_section', sectionFilter);
+                if (searchTerm) params.append('search', searchTerm);
 
-            // Close dropdowns when clicking outside
-            document.addEventListener('click', function(e) {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        content.style.display = 'none';
-                    });
-                }
-            });
+                const response = await fetch(`/api/get_students_enhanced?${params}`);
+                const data = await response.json();
 
-            // Handle active state
-            const currentPath = window.location.pathname;
-            document.querySelectorAll('.nav-items a').forEach(link => {
-                const linkPath = link.getAttribute('href');
-                if (currentPath.includes(linkPath) && linkPath !== '#') {
-                    link.classList.add('active');
-                    // If link is in dropdown, show parent dropdown
-                    const dropdown = link.closest('.dropdown-content');
-                    if (dropdown) {
-                        dropdown.style.display = 'block';
-                    }
+                if (data.success) {
+                    allStudents = data.students;
+                    totalStudents = data.pagination.total;
+                    displayStudents(data.students);
+                    updatePagination(data.pagination);
+                    updateStudentStats(data.pagination.total);
+                } else {
+                    showAlert('Failed to load students: ' + data.message, false);
                 }
+            } catch (error) {
+                console.error('Error loading students:', error);
+                showAlert('Error loading students from database', false);
+            } finally {
+                hideLoadingState();
+            }
+        }
+
+        function displayStudents(students) {
+            const tbody = document.querySelector('.students-table tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            if (students.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;"><i class="fas fa-users"></i><br>No students found</td></tr>`;
+                return;
+            }
+            students.forEach(student => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><img src="${student.photo}" class="student-photo" alt="Student Photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random'"></td>
+                    <td>${student.name}</td>
+                    <td>${student.idNumber}</td>
+                    <td>${student.course} ${student.yearSection}</td>
+                    <td class="action-buttons">
+                        <button class="action-btn edit-btn" data-id="${student.id}"><i class="fas fa-edit"></i></button>
+                        <button class="action-btn view-btn" data-id="${student.id}"><i class="fas fa-eye"></i></button>
+                        <button class="action-btn delete-btn" data-id="${student.id}"><i class="fas fa-trash"></i></button>
+                    </td>`;
+                tbody.appendChild(row);
+                addEventListenersToRow(row);
             });
-        })
-        .catch(error => {
-            console.error('Sidebar fetch failed:', error);
-            console.error('Error details:', error.message);
-            // Show error in sidebar container for debugging
-            document.getElementById('sidebar-container').innerHTML = `
-                <div style="color: red; padding: 20px;">
-                    <h3>Sidebar Error</h3>
-                    <p>Failed to load sidebar: ${error.message}</p>
-                    <p>Check console for details</p>
-                </div>
+        }
+
+        function updatePagination(pagination) {
+            const container = document.getElementById('studentPagination') || createPaginationContainer();
+            if (pagination.pages <= 1) { container.style.display = 'none'; return; }
+            container.style.display = 'flex';
+            let html = '';
+            if (pagination.page > 1) html += `<button class="page-btn" onclick="changePage(${pagination.page-1})"><i class="fas fa-chevron-left"></i></button>`;
+            const start = Math.max(1, pagination.page-2);
+            const end = Math.min(pagination.pages, pagination.page+2);
+            for (let i = start; i <= end; i++) html += `<button class="page-btn ${i===pagination.page?'active':''}" onclick="changePage(${i})">${i}</button>`;
+            if (pagination.page < pagination.pages) html += `<button class="page-btn" onclick="changePage(${pagination.page+1})"><i class="fas fa-chevron-right"></i></button>`;
+            container.innerHTML = html;
+        }
+        function createPaginationContainer() {
+            const div = document.createElement('div');
+            div.id = 'studentPagination';
+            div.className = 'pagination-container';
+            div.style.cssText = 'display:flex;justify-content:center;gap:5px;margin-top:20px;align-items:center;';
+            const style = document.createElement('style');
+            style.textContent = `
+                .pagination-container .page-btn{padding:8px 12px;border:1px solid #ddd;background:white;cursor:pointer;border-radius:4px;font-size:14px;transition:all .2s;}
+                .pagination-container .page-btn:hover{background:#f8f9fa;border-color:#007bff;}
+                .pagination-container .page-btn.active{background:#007bff;color:white;border-color:#007bff;}
             `;
+            if (!document.querySelector('#pagination-styles')) { style.id='pagination-styles'; document.head.appendChild(style); }
+            document.querySelector('.student-content').appendChild(div);
+            return div;
+        }
+        function changePage(page) { currentPage = page; loadStudentsFromDatabase(); }
+
+        function updateStudentStats(total) {
+            const header = document.querySelector('.header h2');
+            if (header) header.textContent = `List of Students (${total})`;
+        }
+
+        function showLoadingState(msg) {
+            const tbody = document.querySelector('.students-table tbody');
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i><br>${msg}</td></tr>`;
+        }
+        function hideLoadingState() { /* replaced by data */ }
+
+
+        const inviteBtn = document.getElementById('inviteBtn');
+        const inviteLinkModal = document.getElementById('inviteLinkModal');
+        const editStudentModal = document.getElementById('editStudentModal');
+        const viewStudentModal = document.getElementById('viewStudentModal');
+        const deleteStudentModal = document.getElementById('deleteStudentModal');
+        const alertModal = document.getElementById('alertModal');
+        const closeButtons = document.querySelectorAll('.close');
+        const cancelButtons = document.querySelectorAll('.btn-cancel');
+        const submitEditStudent = document.getElementById('submitEditStudent');
+        const confirmDelete = document.getElementById('confirmDelete');
+        const alertButton = document.getElementById('alertButton');
+        const alertMessage = document.getElementById('alertMessage');
+        const alertIcon = document.getElementById('alertIcon');
+
+        function openModal(m) { if (m) m.style.display = "block"; }
+        function closeModal(m) { if (m) m.style.display = "none"; }
+
+        function showAlert(message, isSuccess = true) {
+            if (alertMessage && alertIcon) {
+                alertMessage.textContent = message;
+                alertIcon.innerHTML = isSuccess ? '<i class="fas fa-check-circle success-icon"></i>' : '<i class="fas fa-exclamation-circle error-icon"></i>';
+                openModal(alertModal);
+            }
+        }
+
+
+        function addEventListenersToRow(row) {
+            const editBtn = row.querySelector('.edit-btn');
+            const viewBtn = row.querySelector('.view-btn');
+            const deleteBtn = row.querySelector('.delete-btn');
+
+            editBtn?.addEventListener('click', function () {
+                const id = this.getAttribute('data-id');
+                const student = allStudents.find(s => s.id === id);
+                if (student) { populateEditForm(student); openModal(editStudentModal); }
+            });
+
+            viewBtn?.addEventListener('click', function () {
+                const id = this.getAttribute('data-id');
+                const student = allStudents.find(s => s.id === id);
+                if (student) { populateViewModal(student); openModal(viewStudentModal); }
+            });
+
+            deleteBtn?.addEventListener('click', function () {
+                const id = this.getAttribute('data-id');
+                const student = allStudents.find(s => s.id === id);
+                if (student) {
+                    document.getElementById('deleteStudentName').textContent = student.name;
+                    confirmDelete.setAttribute('data-id', student.id);
+                    openModal(deleteStudentModal);
+                }
+            });
+        }
+
+     
+        if (submitEditStudent) {
+            submitEditStudent.addEventListener('click', async function () {
+                const id = document.getElementById('editStudentId')?.value;
+                const first = document.getElementById('editFirstName')?.value;
+                const middle = document.getElementById('editMiddleName')?.value;
+                const last = document.getElementById('editLastName')?.value;
+                const idNum = document.getElementById('editStudentIdNumber')?.value;
+                const email = document.getElementById('editEmail')?.value;
+                const course = document.getElementById('editCourse')?.value;
+                const section = document.getElementById('editSection')?.value;
+                const status = document.getElementById('editStatus')?.value;
+
+                if (!first || !last || !idNum || !email || !course || !section) {
+                    showAlert('Please fill all required fields', false);
+                    return;
+                }
+
+                try {
+                    const res = await fetch('/api/update_student', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            student_id: id,
+                            first_name: first,
+                            last_name: last,
+                            middle_name: middle || '',
+                            course, year_section: section, email, status
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showAlert(`Student ${first} ${last} updated successfully!`);
+                        closeModal(editStudentModal);
+                        loadStudentsFromDatabase();
+                    } else {
+                        showAlert(data.message || 'Failed to update student', false);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    showAlert('Error updating student', false);
+                }
+            });
+        }
+
+        
+        if (confirmDelete) {
+            confirmDelete.addEventListener('click', async function () {
+                const id = this.getAttribute('data-id');
+                try {
+                    const res = await fetch('/api/delete_student', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ student_id: id })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showAlert('Student deleted successfully!');
+                        closeModal(deleteStudentModal);
+                        loadStudentsFromDatabase();
+                    } else {
+                        showAlert(data.message || 'Failed to delete student', false);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    showAlert('Error deleting student', false);
+                }
+            });
+        }
+
+      
+        const searchInput = document.querySelector('.search-box input');
+        let searchTimeout;
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => { currentPage = 1; loadStudentsFromDatabase(); }, 500);
+            });
+        }
+        document.querySelectorAll('.filter-group select').forEach(f => {
+            f.addEventListener('change', () => { currentPage = 1; loadStudentsFromDatabase(); });
         });
 
-// Initialize everything
-document.addEventListener('DOMContentLoaded', function() {
-    initializeStudentInviteModal();
-    loadStudentsFromDatabase();
-});
+
+        function populateViewModal(student) {
+            const photo = document.getElementById('viewPhoto');
+            photo.src = student.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`;
+            photo.alt = student.name;
+
+            document.getElementById('viewFullName').textContent = student.name;
+            document.getElementById('viewFirstName').textContent = student.firstName || 'N/A';
+            document.getElementById('viewMiddleName').textContent = student.middleName || 'N/A';
+            document.getElementById('viewLastName').textContent = student.lastName || 'N/A';
+            document.getElementById('viewIdNumber').textContent = student.idNumber || 'N/A';
+            document.getElementById('viewEmail').textContent = student.email || 'N/A';
+            document.getElementById('viewCourse').textContent = student.course || 'N/A';
+            document.getElementById('viewSection').textContent = student.yearSection || 'N/A';
+            document.getElementById('viewStatus').textContent = student.status || 'N/A';
+
+            const badge = document.getElementById('viewStatusBadge');
+            badge.textContent = student.status === 'active' ? 'Active' : 'Inactive';
+            badge.className = `detail-badge ${student.status === 'active' ? 'active' : 'inactive'}`;
+
+            const tbody = document.getElementById('attendanceBody');
+            const noRec = document.getElementById('noAttendance');
+
+            const attendance = student.attendance || []; 
+
+            if (attendance.length === 0) {
+                tbody.innerHTML = '';
+                noRec.style.display = 'block';
+                return;
+            }
+            noRec.style.display = 'none';
+            tbody.innerHTML = attendance.map(r => `
+                <tr>
+                    <td>${r.date}</td>
+                    <td style="text-align:center;">
+                        <span class="attendance-status ${r.status.toLowerCase()}">${r.status}</span>
+                    </td>
+                    <td>${r.subject}</td>
+                </tr>
+            `).join('');
+        }
+
+
+        function populateEditForm(student) {
+            let first = '', middle = '', last = '';
+            if (student.name) {
+                const parts = student.name.split(' ');
+                if (parts.length === 1) first = parts[0];
+                else if (parts.length === 2) { first = parts[0]; last = parts[1]; }
+                else { first = parts[0]; last = parts[parts.length-1]; middle = parts.slice(1, parts.length-1).join(' '); }
+            }
+            document.getElementById('editStudentId').value = student.id;
+            document.getElementById('editFirstName').value = first;
+            document.getElementById('editMiddleName').value = middle;
+            document.getElementById('editLastName').value = last;
+            document.getElementById('editStudentIdNumber').value = student.idNumber || '';
+            document.getElementById('editEmail').value = student.email || '';
+            document.getElementById('editCourse').value = student.course || '';
+            document.getElementById('editSection').value = student.yearSection || '';
+            document.getElementById('editStatus').value = student.status || 'active';
+        }
+
+        function initializeStudentInviteModal() {
+            const genBtn = document.getElementById('generate-student-link-btn');
+            const inputs = document.querySelectorAll('#studentDurationDays, #studentDurationHours, #studentDurationMinutes');
+            const quick = document.querySelectorAll('.quick-btn');
+            if (!genBtn) return;
+            genBtn.addEventListener('click', generateStudentDynamicInvite);
+            inputs.forEach(i => i.addEventListener('input', updateStudentDurationPreview));
+            quick.forEach(b => b.addEventListener('click', function () {
+                quick.forEach(q => q.classList.remove('active'));
+                this.classList.add('active');
+                setStudentDurationFromMinutes(parseInt(this.dataset.minutes));
+            }));
+        }
+        function updateStudentDurationPreview() {
+            const d = parseInt(document.getElementById('studentDurationDays')?.value)||0;
+            const h = parseInt(document.getElementById('studentDurationHours')?.value)||0;
+            const m = parseInt(document.getElementById('studentDurationMinutes')?.value)||0;
+            const total = d*1440 + h*60 + m;
+            const el = document.getElementById('studentDurationPreview');
+            if (!el) return;
+            if (total===0) { el.textContent='Please set a valid duration'; return; }
+            let txt='Link will expire in: ';
+            if(d>0) txt+=`${d} day${d>1?'s':''} `;
+            if(h>0) txt+=`${h} hour${h>1?'s':''} `;
+            if(m>0) txt+=`${m} minute${m>1?'s':''}`;
+            el.textContent=txt;
+        }
+        function setStudentDurationFromMinutes(min) {
+            const d = Math.floor(min/1440);
+            const h = Math.floor((min%1440)/60);
+            const m = min%60;
+            document.getElementById('studentDurationDays').value=d;
+            document.getElementById('studentDurationHours').value=h;
+            document.getElementById('studentDurationMinutes').value=m;
+            updateStudentDurationPreview();
+        }
+        function generateStudentDynamicInvite() {
+            const d = parseInt(document.getElementById('studentDurationDays')?.value)||0;
+            const h = parseInt(document.getElementById('studentDurationHours')?.value)||0;
+            const m = parseInt(document.getElementById('studentDurationMinutes')?.value)||0;
+            const total = d*1440 + h*60 + m;
+            if (total===0) { showAlert('Please set a valid duration', false); return; }
+            if (total>43200) { showAlert('Maximum duration is 30 days', false); return; }
+            const btn = document.getElementById('generate-student-link-btn');
+            btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Generating...'; btn.disabled=true;
+            fetch('/api/generate_dynamic_invite', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({type:'student',days:d,hours:h,minutes:m})
+            }).then(r=>r.json()).then(data=>{
+                if(data.success){
+                    const link=document.getElementById('studentGeneratedInviteLink');
+                    const exp=document.getElementById('studentLinkExpiration');
+                    const sec=document.getElementById('studentGeneratedLinkSection');
+                    const full=`${window.location.origin}/studentreg?token=${data.token}`;
+                    link.value=full; exp.textContent=new Date(data.expires_at).toLocaleString(); sec.style.display='block';
+                    showAlert('Student invite link generated successfully!',true);
+                }else showAlert(data.message||'Failed to generate link',false);
+            }).catch(e=>{console.error(e);showAlert('Error generating link',false);})
+            .finally(()=>{btn.innerHTML='<i class="fas fa-link"></i> Generate Student Link'; btn.disabled=false;});
+        }
+        function copyStudentGeneratedLink() {
+            const inp=document.getElementById('studentGeneratedInviteLink');
+            if(!inp) return;
+            inp.select(); document.execCommand('copy');
+            const st=document.getElementById('studentCopyStatus');
+            if(st){ st.textContent='Link copied!'; st.style.color='green'; setTimeout(()=>{st.textContent='';},3000); }
+        }
+
+        fetch('/sidebar')
+            .then(r=>{ if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
+            .then(html=>{ document.getElementById('sidebar-container').innerHTML=html; })
+            .catch(e=>{ console.error(e); document.getElementById('sidebar-container').innerHTML=`<div style="color:red;padding:20px;"><h3>Sidebar Error</h3><p>${e.message}</p></div>`; });
+
+        if (inviteBtn) inviteBtn.addEventListener('click', () => openModal(inviteLinkModal));
+        closeButtons.forEach(b => b.addEventListener('click', () => closeModal(b.closest('.modal'))));
+        cancelButtons.forEach(b => b.addEventListener('click', () => closeModal(b.closest('.modal'))));
+        if (alertButton) alertButton.addEventListener('click', () => closeModal(alertModal));
+        window.addEventListener('click', e => { if (e.target.classList.contains('modal')) closeModal(e.target); });
+
+ 
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeStudentInviteModal();
+            loadStudentsFromDatabase();
+        });
     </script>
 </body>
 </html>

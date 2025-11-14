@@ -166,7 +166,46 @@
             object-fit: cover;
             border: 2px solid #e0e0e0;
         }
-
+   .attendance-table-wrapper {
+            max-height: 180px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+        .attendance-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .attendance-table th {
+            background: #f0f4f8;
+            padding: 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .attendance-table td {
+            padding: 8px;
+            font-size: 13px;
+            border-bottom: 1px solid #eee;
+        }
+        .attendance-status {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .attendance-status.present { background:#d4edda; color:#155724; }
+        .attendance-status.absent  { background:#f8d7da; color:#721c24; }
+        .attendance-status.late    { background:#fff3cd; color:#856404; }
+        .no-attendance {
+            margin-top: 8px;
+            color: #777;
+            font-style: italic;
+        }
         /* Modal Styles */
         .modal {
             display: none;
