@@ -13953,7 +13953,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="10.66.169.66", 
+            host="192.168.56.1", 
             port=5000,
             debug=False,
             threaded=True,

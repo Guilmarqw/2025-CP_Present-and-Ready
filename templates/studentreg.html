@@ -11,7 +11,31 @@
   <link rel="stylesheet" href="../static/password_strength.css">
 </head>
 <body>
+<div id="termsModal">
+  <div class="terms-content">
+    <div class="terms-header">Terms & Conditions</div>
+    <div class="terms-body">
+      <p><strong>1. Purpose</strong><br>
+      This system is for official registration of WMSU Faculty Members only. By proceeding, you confirm that you are a legitimate faculty member of Western Mindanao State University.</p>
 
+      <p><strong>2. Data Privacy</strong><br>
+      Your personal information, photo, and facial biometric data will be securely stored and used solely for identity verification and access control within the WMSU system. We do not share your data with third parties.</p>
+
+      <p><strong>3. Accuracy</strong><br>
+      You agree to provide accurate and truthful information. Any falsification may result in denial of access or disciplinary action.</p>
+
+      <p><strong>4. Facial Recognition</strong><br>
+      Your face will be scanned and encoded for secure login. This biometric data is encrypted and cannot be reverse-engineered into a photo.</p>
+
+      <p><strong>5. Consent</strong><br>
+      By clicking "Accept", you consent to the collection and processing of your biometric and personal data as described.</p>
+    </div>
+    <div class="terms-footer">
+      <button id="declineTerms">Decline</button>
+      <button id="acceptTerms">Accept</button>
+    </div>
+  </div>
+</div>
 <input type="hidden" name="invite_token" id="invite_token">
 
   <div class="container">
@@ -154,6 +178,28 @@
   <audio id="bellSound" src="static/Hotel bell ringing - Sounds effect.mp3" preload="auto"></audio>
 
 <script>
+      document.addEventListener("DOMContentLoaded", function () {
+    const termsModal = document.getElementById("termsModal");
+    const acceptBtn = document.getElementById("acceptTerms");
+    const declineBtn = document.getElementById("declineTerms");
+    const container = document.querySelector(".container");
+
+    termsModal.style.display = "flex";
+    document.body.classList.add("modal-open");
+
+    acceptBtn.onclick = function () {
+      termsModal.style.display = "none";
+      document.body.classList.remove("modal-open");
+      container.style.opacity = "1"; // Reveal form
+    };
+
+    declineBtn.onclick = function () {
+      alert("You must accept the Terms & Conditions to proceed.");
+    };
+  });
+
+  document.querySelector(".container").style.opacity = "0.3";
+  document.querySelector(".container").style.pointerEvents = "none";
 let currentPose = 'frontal';
 let faceEncoding = null;
 let faceEncodings = [];
