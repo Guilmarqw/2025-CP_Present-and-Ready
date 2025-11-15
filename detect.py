@@ -5141,10 +5141,10 @@ def encode_face():
         # IMPROVED pose detection with BETTER up/down thresholds
         pose_results = {
             'is_frontal': bool(abs(yaw) <= 20 and abs(pitch) <= 15),
-            'is_left': bool(yaw >= 6),
-            'is_right': bool(yaw <= -6),
-            'is_up': bool(pitch <= -4),   # LOWER threshold for up (more negative)
-            'is_down': bool(pitch >= 3),  # HIGHER threshold for down (more positive)
+            'is_left': bool(yaw >= 5),
+            'is_right': bool(yaw <= -5),
+            'is_up': bool(pitch <= -3),   # LOWER threshold for up (more negative)
+            'is_down': bool(pitch >= 2),  # HIGHER threshold for down (more positive)
             'is_mouth_open': bool(mar >= 0.08),
             'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.35)
         }
