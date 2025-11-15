@@ -71,67 +71,87 @@
     </div>
   </div>
 
-  <!-- Edit Profile Modal -->
- <div id="editModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2>Edit Profile</h2>
-      <span class="close" data-modal="editModal">×</span>
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Edit Profile</h2>
+            <span class="close" data-modal="editModal">×</span>
+        </div>
+        <form id="editForm">
+            <input type="hidden" id="current_section_id">
+
+            <div class="form-row">
+                <div class="form-group half">
+                    <label>First Name</label>
+                    <input type="text" id="editFirstName" />
+                </div>
+                <div class="form-group half">
+                    <label>Middle Name</label>
+                    <input type="text" id="editMiddleName" />
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group half">
+                    <label>Last Name</label>
+                    <input type="text" id="editLastName" />
+                </div>
+                <div class="form-group half">
+                    <label>Email</label>
+                    <input type="email" id="editEmail" />
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group half">
+                    <label>Course</label>
+                    <select id="editProgram">
+                        <option value="">Loading Courses...</option>
+                    </select>
+                </div>
+                <div class="form-group half">
+                    <label>Year Level</label>
+                    <select id="editYearLevel" >
+                        <option value="">Select Year</option>
+                        <option value="1">1st Year</option>
+                        <option value="2">2nd Year</option>
+                        <option value="3">3rd Year</option>
+                        <option value="4">4th Year</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>Section</label>
+                <select id="editSection">
+                    <option value="">Select Course & Year</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Student ID</label>
+                <input type="text" id="editStudentId" readonly style="background-color: #f8f9fa; color: #6c757d;" />
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-cancel" data-modal="editModal">Cancel</button>
+                <button type="submit" class="btn btn-save">Save Changes</button>
+            </div>
+        </form>
     </div>
-    <form id="editForm">
-      <!-- Row 1: Names -->
-      <div class="form-row">
-        <div class="form-group half">
-          <label>First Name</label>
-          <input type="text" value="Guilmar" required />
-        </div>
-        <div class="form-group half">
-          <label>Middle Name</label>
-          <input type="text" value="Acabo" />
-        </div>
-      </div>
-
-      <!-- Row 2: Last Name + Email -->
-      <div class="form-row">
-        <div class="form-group half">
-          <label>Last Name</label>
-          <input type="text" value="Quimba" required />
-        </div>
-        <div class="form-group half">
-          <label>Email</label>
-          <input type="email" value="guilmar12@example.com" required />
-        </div>
-      </div>
-
-      <!-- Row 3: Course + Year & Section -->
-      <div class="form-row">
-        <div class="form-group half">
-          <label>Course</label>
-          <select required>
-            <option value="BS Computer Science" selected>BS Computer Science</option>
-            <option value="BS Information Technology">BS Information Technology</option>
-            <option value="Associate in Computer Technology">Associate in Computer Technology</option>
-          </select>
-        </div>
-        <div class="form-group half">
-          <label>Year & Section</label>
-          <input type="text" value="BSCS 1A" required />
-        </div>
-      </div>
-
-      <!-- Row 4: Student ID (Read-only) -->
-      <div class="form-group">
-        <label>Student ID</label>
-        <input type="text" value="2022-00954" readonly style="background-color: #f8f9fa; color: #6c757d;" />
-      </div>
-
-      <div class="modal-footer">
-        <button type="button" class="btn btn-cancel" data-modal="editModal">Cancel</button>
-        <button type="submit" class="btn btn-save">Save Changes</button>
-      </div>
-    </form>
-  </div>
 </div>
+
+<div id="alertModal" class="modal">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div class="modal-body" style="padding: 30px;">
+                <div id="alertIcon" style="font-size: 48px; margin-bottom: 10px;">
+                    </div>
+                <h3 id="alertTitle" style="margin: 0 0 10px 0;"></h3>
+                <p id="alertMessage" style="margin: 0 0 20px 0;"></p>
+                <button class="btn btn-save" id="alertButton">OK</button>
+            </div>
+        </div>
+    </div>
 
   <!-- Change Password Modal -->
   <div id="changePassModal" class="modal">
@@ -162,22 +182,58 @@
   </div>
 
   <script>
+    // --- Get Alert Modal Elements (Add this) ---
+    const alertModal = document.getElementById('alertModal');
+    const alertTitle = document.getElementById('alertTitle');
+    const alertMessage = document.getElementById('alertMessage');
+    const alertIcon = document.getElementById('alertIcon');
+    const alertButton = document.getElementById('alertButton');
+
+    /**
+     * Shows the new custom alert modal
+     */
+    function showAlert(title, message, isSuccess = true) {
+        if (alertTitle && alertMessage && alertIcon) {
+            alertTitle.textContent = title;
+            alertMessage.textContent = message;
+            
+            if (isSuccess) {
+                alertIcon.innerHTML = ''; // Success icon
+                alertIcon.style.color = 'blue';
+            } else {
+                alertIcon.innerHTML = ''; // Error icon
+                alertIcon.style.color = 'blue';
+            }
+            openModal('alertModal'); // Reuse your existing openModal function
+        }
+    }
+
+    // Add listener for the new "OK" button
+    if (alertButton) {
+        alertButton.addEventListener('click', () => closeModal('alertModal'));
+    }
     // Modal Controls
     const editBtn = document.getElementById('editBtn');
     const changePassBtn = document.getElementById('changePassBtn');
     const modals = {
-      editModal: document.getElementById('editModal'),
-      changePassModal: document.getElementById('changePassModal')
-    };
+      editModal: document.getElementById('editModal'),
+      changePassModal: document.getElementById('changePassModal'),
+      alertModal: document.getElementById('alertModal') // <-- ADD THIS LINE
+    };
+    let userProfileData = {};
 
     // Open Modal
     editBtn.addEventListener('click', () => openModal('editModal'));
     changePassBtn.addEventListener('click', () => openModal('changePassModal'));
 
     function openModal(modalId) {
-      modals[modalId].style.display = 'block';
-      document.body.style.overflow = 'hidden'; // Prevent background scroll
-    }
+      if (modals[modalId]) { // <-- ADD THIS CHECK
+        modals[modalId].style.display = 'block';
+        document.body.style.overflow = 'hidden';
+      } else {
+          console.error(`Modal with ID "${modalId}" not found.`);
+      }
+    }
 
     // Close Modal
     document.querySelectorAll('.close, .btn-cancel').forEach(el => {
@@ -194,47 +250,333 @@
     });
 
     function closeModal(modalId) {
-      modals[modalId].style.display = 'none';
-      document.body.style.overflow = 'auto';
+      if (modals[modalId]) { // <-- ADD THIS CHECK
+        modals[modalId].style.display = 'none';
+        document.body.style.overflow = 'auto';
+      } else {
+          console.error(`Modal with ID "${modalId}" not found.`);
+      }
+    }
+
+    async function loadProgramsToDropdown(dropdownId) {
+        try {
+            const response = await fetch('/api/get_programs');
+            const data = await response.json();
+            const dropdown = document.getElementById(dropdownId);
+            dropdown.innerHTML = '<option value="">Select Course</option>'; // Clear
+            if (data.success && data.programs) {
+                data.programs.forEach(program => {
+                    const option = document.createElement('option');
+                    option.value = program.program_id;
+                    option.textContent = program.program_name;
+                    dropdown.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading programs:', error);
+        }
     }
 
-    // Form Submit Handlers (Prevent default + simulate save)
-    document.getElementById('editForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      alert('Profile updated successfully!');
-      closeModal('editModal');
+    async function fetchEditSections(selectedProgram, selectedYear, currentSectionId) {
+        const sectionDropdown = document.getElementById('editSection');
+        sectionDropdown.innerHTML = '<option value="">Loading...</option>';
+        sectionDropdown.disabled = true;
+
+        if (selectedProgram && selectedYear) {
+            try {
+                // This route is from your StudentDB page
+                const response = await fetch(`/api/get_sections?program_id=${selectedProgram}&year_level=${selectedYear}`);
+                const data = await response.json();
+                sectionDropdown.innerHTML = '<option value="">Select Section</option>';
+                if (data.success && data.sections) {
+                    data.sections.forEach(section => {
+                        const option = document.createElement('option');
+                        option.value = section.section_id;
+                        option.textContent = section.section_name;
+                        // Auto-select the student's current section
+                        if (section.section_id === currentSectionId) {
+                            option.selected = true;
+                        }
+                        sectionDropdown.appendChild(option);
+                    });
+                    sectionDropdown.disabled = false;
+                }
+            } catch (error) {
+                console.error('Error fetching sections:', error);
+            }
+        } else {
+            sectionDropdown.innerHTML = '<option value="">Select Course & Year</option>';
+        }
+    }
+
+function populateStaticProfile(profile) {
+            // Helper to set text content
+            const setText = (selector, text) => {
+                const el = document.querySelector(selector);
+                if (el) el.textContent = text || 'N/A';
+            };
+            
+            const fullName = `${profile.first_name || ''} ${profile.middle_name || ''} ${profile.last_name || ''}`;
+            setText('.fullname', fullName.trim());
+            
+            // Set all info-grid items
+            setText('.info-item:nth-child(1) div', profile.first_name);
+            setText('.info-item:nth-child(2) div', profile.middle_name);
+            setText('.info-item:nth-child(3) div', profile.last_name);
+
+            // --- THIS IS THE FIX ---
+            // Get the labels and values for the academic info
+            const courseLabel = document.querySelector('.info-item:nth-child(4) label');
+            const courseValue = document.querySelector('.info-item:nth-child(4) div');
+            const sectionLabel = document.querySelector('.info-item:nth-child(5) label');
+            const sectionValue = document.querySelector('.info-item:nth-child(5) div');
+            const idLabel = document.querySelector('.info-item:nth-child(6) label');
+            const idValue = document.querySelector('.info-item:nth-child(6) div');
+
+            if (profile.user_type === 'student') {
+                courseLabel.textContent = 'COURSE';
+                courseValue.textContent = profile.program_name || 'N/A';
+                sectionLabel.textContent = 'YEAR AND SECTION';
+                sectionValue.textContent = `${profile.year_level}-${profile.section_name}`;
+                idLabel.textContent = 'STUDENT ID';
+                idValue.textContent = profile.id; // profile.id is student_id
+            } else {
+                // For Admin or Faculty
+                courseLabel.textContent = 'DEPARTMENT';
+                courseValue.textContent = profile.department || 'N/A';
+                sectionLabel.textContent = 'ROLE';
+                sectionValue.textContent = profile.role || 'N/A';
+                idLabel.textContent = 'USER ID';
+                idValue.textContent = profile.id; // profile.id is admin_id or faculty_id
+            }
+            // --- END OF FIX ---
+            
+            const emailEl = document.querySelector('.info-item:nth-child(7) div a');
+            if (emailEl) {
+                emailEl.textContent = profile.email;
+                emailEl.href = `mailto:${profile.email}`;
+            }
+            
+            // (Set profile picture if you add it to the API)
+            // const img = document.querySelector('.profile-section img');
+            // if (img && profile.photo_path) img.src = profile.photo_path;
+        }
+
+async function populateEditForm(profile) {
+            // Set text fields
+            document.getElementById('editFirstName').value = profile.first_name || '';
+            document.getElementById('editMiddleName').value = profile.middle_name || '';
+            document.getElementById('editLastName').value = profile.last_name || '';
+            document.getElementById('editEmail').value = profile.email || '';
+            
+            // --- THIS IS THE FIX ---
+            // Handle the Student ID field
+            const studentIdField = document.getElementById('editStudentId').closest('.form-group');
+            if (profile.user_type === 'student') {
+                document.getElementById('editStudentId').value = profile.id || '';
+                studentIdField.style.display = 'block'; // Show Student ID field
+            } else {
+                studentIdField.style.display = 'none'; // Hide Student ID field for admin/faculty
+            }
+
+            // Get references to the dynamic dropdowns
+            const programRow = document.getElementById('editProgram').closest('.form-row');
+            const sectionRow = document.getElementById('editSection').closest('.form-group');
+            
+            if (profile.user_type === 'student') {
+                // Show and populate dropdowns for students
+                programRow.style.display = 'flex';
+                sectionRow.style.display = 'block';
+
+                document.getElementById('current_section_id').value = profile.section_id;
+                const programDropdown = document.getElementById('editProgram');
+                const yearDropdown = document.getElementById('editYearLevel');
+                
+                // 1. Load programs, then set the value
+                await loadProgramsToDropdown('editProgram');
+                programDropdown.value = profile.program_id;
+                
+                // 2. Set the year value
+                yearDropdown.value = profile.year_level;
+                
+                // 3. Fetch the sections for this program/year and auto-select
+                await fetchEditSections(profile.program_id, profile.year_level, profile.section_id);
+            } else {
+                // Hide dropdowns for admin/faculty
+                programRow.style.display = 'none';
+                sectionRow.style.display = 'none';
+            }
+            // --- END OF FIX ---
+        }
+
+    /**
+     * Main function to load all profile data on page load
+     */
+    async function loadMyProfile() {
+        try {
+            const response = await fetch('/api/get_my_profile');
+            const data = await response.json();
+            
+            if (data.success) {
+                userProfileData = data.profile; // Save for later
+                populateStaticProfile(userProfileData);
+            } else {
+                showAlert('Could not load profile: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error loading profile:', error);
+            showAlert('A network error occurred.');
+        }
+    }
+
+    // --- Event Listeners ---
+
+    // Page Load
+    document.addEventListener('DOMContentLoaded', loadMyProfile);
+
+    // Open Modals
+    document.getElementById('editBtn').addEventListener('click', () => {
+        populateEditForm(userProfileData); // Populate the form *before* opening
+        openModal('editModal');
+    });
+    document.getElementById('changePassBtn').addEventListener('click', () => openModal('changePassModal'));
+
+    // Close Modals
+    document.querySelectorAll('.close, .btn-cancel').forEach(el => {
+        el.addEventListener('click', () => {
+            const modalId = el.getAttribute('data-modal');
+            closeModal(modalId);
+        });
+    });
+    window.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal')) {
+            closeModal(e.target.id);
+        }
     });
 
-    document.getElementById('changePassForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const newPass = this.querySelectorAll('input[type="password"]')[1].value;
-      const confirmPass = this.querySelectorAll('input[type="password"]')[2].value;
-      if (newPass !== confirmPass) {
-        alert('New passwords do not match!');
-        return;
-      }
-      alert('Password changed successfully!');
-      closeModal('changePassModal');
+    // Dynamic Dropdowns in Edit Modal
+    const editProgram = document.getElementById('editProgram');
+    const editYearLevel = document.getElementById('editYearLevel');
+    
+    function updateEditSectionDropdown() {
+        const programId = editProgram.value;
+        const yearLevel = editYearLevel.value;
+        // Fetch new sections, but don't pre-select any (pass null)
+        fetchEditSections(programId, yearLevel, null);
+    }
+    
+    editProgram.addEventListener('change', updateEditSectionDropdown);
+    editYearLevel.addEventListener('change', updateEditSectionDropdown);
+
+    // Form Submit Handlers
+    document.getElementById('editForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = this.querySelector('.btn-save');
+        btn.textContent = 'Saving...';
+        btn.disabled = true;
+        
+        const formData = {
+            first_name: document.getElementById('editFirstName').value,
+            middle_name: document.getElementById('editMiddleName').value,
+            last_name: document.getElementById('editLastName').value,
+            email: document.getElementById('editEmail').value,
+            section_id: document.getElementById('editSection').value,
+        };
+        
+        try {
+            const response = await fetch('/api/update_my_profile', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(formData)
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                closeModal('editModal'); // Close the edit modal first
+                showAlert('Success', 'Profile updated successfully!');
+                loadMyProfile(); // Refresh the page data
+            } else {
+                showAlert('Error', data.message, false); // Show error modal
+            }
+        } catch (error) {
+            console.error('Error updating profile:', error);
+            showAlert('A network error occurred.');
+        } finally {
+            btn.textContent = 'Save Changes';
+            btn.disabled = false;
+        }
     });
 
-    // Existing dropdown script (unchanged)
+    document.getElementById('changePassForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = this.querySelector('.btn-save');
+        btn.textContent = 'Updating...';
+        btn.disabled = true;
+
+        const current_password = this.querySelectorAll('input[type="password"]')[0].value;
+        const new_password = this.querySelectorAll('input[type="password"]')[1].value;
+        const confirm_password = this.querySelectorAll('input[type="password"]')[2].value;
+
+        if (new_password !== confirm_password) {
+            showAlert('New passwords do not match!');
+            btn.textContent = 'Update Password';
+            btn.disabled = false;
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/change_my_password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ current_password, new_password })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                showAlert('Password changed successfully!');
+                closeModal('changePassModal');
+                this.reset(); // Clear the password fields
+            } else {
+                showAlert('Error: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error changing password:', error);
+            showAlert('A network error occurred.');
+        } finally {
+            btn.textContent = 'Update Password';
+            btn.disabled = false;
+        }
+    });
+
+    // Logout Button
+    const logoutBtn = document.querySelector('.logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            // Assuming your logout route is '/logout'
+            window.location.href = '/logout';
+        });
+    }
+
+    // Your existing dropdown script (for profile pic, if you have one)
     const dropdown = document.getElementById("dropdown");
     const profilePic = document.querySelector(".profile-pic");
 
-    function toggleDropdown() {
-      dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
-    }
+    if (profilePic) {
+        function toggleDropdown() {
+            dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
+        }
 
-    window.addEventListener("click", function(e) {
-      if (!profilePic.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.style.display = "none";
-      }
-    });
+        window.addEventListener("click", function(e) {
+            if (!profilePic.contains(e.target) && !dropdown.contains(e.gtarget)) {
+                dropdown.style.display = "none";
+            }
+        });
 
-    function showAccountSettings() {
-      dropdown.style.display = "none";
-      document.getElementById("account-settings").scrollIntoView({ behavior: "smooth" });
-    }
+        function showAccountSettings() {
+            dropdown.style.display = "none";
+            document.getElementById("account-settings").scrollIntoView({ behavior: "smooth" });
+        }
+  }
   </script>
 
 </body>

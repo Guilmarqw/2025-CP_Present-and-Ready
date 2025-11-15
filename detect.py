@@ -13939,8 +13939,219 @@ def calculate_missing_duration():
         logger.error(f"Error in calculate_missing_duration: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/get_my_profile', methods=['GET'])
+def get_my_profile():
+    """Fetches profile information for the currently logged-in user."""
+    
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    
+    if not user_id:
+        return jsonify({'success': False, 'message': 'Not authorized'}), 401
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        profile = None
+        
+        if user_type == 'student':
+            query = """
+                SELECT 
+                    s.student_id as id, s.first_name, s.middle_name, s.last_name, s.email,
+                    p.program_id, p.program_name,
+                    ys.year_level, ys.section_id, ys.section_name,
+                    'student' as user_type
+                FROM students s
+                LEFT JOIN year_sections ys ON s.section_id = ys.section_id
+                LEFT JOIN programs p ON ys.program_id = p.program_id
+                WHERE s.student_id = %s
+            """
+            cursor.execute(query, (user_id,))
+            profile = cursor.fetchone()
+            
+        elif user_type == 'faculty':
+            query = """
+                SELECT 
+                    faculty_id as id, first_name, middle_name, last_name, email,
+                    department, 'faculty' as user_type, role
+                FROM faculty
+                WHERE faculty_id = %s
+            """
+            cursor.execute(query, (user_id,))
+            profile = cursor.fetchone()
+
+        elif user_type == 'admin':
+            query = """
+                SELECT 
+                    admin_id as id, first_name, middle_name, last_name, email,
+                    'admin' as user_type, role
+                FROM admins
+                WHERE admin_id = %s
+            """
+            cursor.execute(query, (user_id,))
+            profile = cursor.fetchone()
+            
+        cursor.close()
+        conn.close()
+        
+        if not profile:
+            return jsonify({'success': False, 'message': 'Profile not found'}), 404
+            
+        return jsonify({'success': True, 'profile': profile})
+        
+    except Exception as e:
+        logger.error(f"Error fetching profile: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/update_my_profile', methods=['POST'])
+def update_my_profile():
+    """
+    Updates the logged-in user's profile information.
+    Handles 'student' differently from 'admin'/'faculty'.
+    """
+    
+    # Get user info from session
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    
+    if not user_id:
+        return jsonify({'success': False, 'message': 'Not authorized'}), 401
+        
+    try:
+        data = request.json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get common fields
+        first_name = data.get('first_name')
+        middle_name = data.get('middle_name')
+        last_name = data.get('last_name')
+        email = data.get('email')
+
+        if not all([first_name, last_name, email]):
+            return jsonify({'success': False, 'message': 'First name, last name, and email are required'}), 400
+
+        if user_type == 'student':
+            section_id = data.get('section_id')
+            if not section_id:
+                return jsonify({'success': False, 'message': 'Section is required for students'}), 400
+            
+            query = """
+                UPDATE students
+                SET first_name = %s, middle_name = %s, last_name = %s, email = %s, section_id = %s
+                WHERE student_id = %s
+            """
+            params = (first_name, middle_name or None, last_name, email, section_id, user_id)
+            table = 'students'
+
+        elif user_type == 'faculty':
+            query = """
+                UPDATE faculty
+                SET first_name = %s, middle_name = %s, last_name = %s, email = %s
+                WHERE faculty_id = %s
+            """
+            params = (first_name, middle_name or None, last_name, email, user_id)
+            table = 'faculty'
+
+        elif user_type == 'admin':
+            query = """
+                UPDATE admins
+                SET first_name = %s, middle_name = %s, last_name = %s, email = %s
+                WHERE admin_id = %s
+            """
+            params = (first_name, middle_name or None, last_name, email, user_id)
+            table = 'admins'
+        
+        else:
+            return jsonify({'success': False, 'message': 'Invalid user type'}), 400
+
+        cursor.execute(query, params)
+        conn.commit()
+        
+        # Update session with new name
+        session['first_name'] = first_name
+        session['last_name'] = last_name
+
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"User {user_id} ({user_type}) updated their profile.")
+        return jsonify({'success': True, 'message': 'Profile updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating profile: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/change_my_password', methods=['POST'])
+def change_my_password():
+    """Updates the logged-in user's password, checking the correct table."""
+    
+    # Get user info from session
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    
+    if not user_id:
+        return jsonify({'success': False, 'message': 'Not authorized'}), 401
+        
+    try:
+        data = request.json
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        
+        if not all([current_password, new_password]):
+            return jsonify({'success': False, 'message': 'All password fields are required'}), 400
+            
+        if len(new_password) < 8:
+             return jsonify({'success': False, 'message': 'Password must be at least 8 characters'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Determine which table to query
+        if user_type == 'student':
+            table, id_column = 'students', 'student_id'
+        elif user_type == 'faculty':
+            table, id_column = 'faculty', 'faculty_id'
+        elif user_type == 'admin':
+            table, id_column = 'admins', 'admin_id'
+        else:
+            return jsonify({'success': False, 'message': 'Invalid user type'}), 400
+
+        # 1. Get current password hash from the correct table
+        cursor.execute(f"SELECT password_hash FROM {table} WHERE {id_column} = %s", (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+
+        # 2. Check if the current password is correct (using YOUR function)
+        if not verify_password(current_password, user['password_hash']):
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Incorrect current password'}), 403
+            
+        # 3. Hash the new password and update the database
+        new_password_hash = hash_password(new_password)
+        
+        cursor.execute(
+            f"UPDATE {table} SET password_hash = %s WHERE {id_column} = %s",
+            (new_password_hash, user_id)
+        )
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"User {user_id} ({user_type}) changed their password.")
+        return jsonify({'success': True, 'message': 'Password updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error changing password: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 if __name__ == "__main__":
-    # Initialize global variables
     latest_frame = None
     stop_flag = False
     camera_available = False
