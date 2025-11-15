@@ -379,3 +379,14 @@
     transform: translate(-50%, -50%); /* End exactly at center */
   }
 }
+
+/* Add this to your settings.css file */
+
+#alertModal {
+  z-index: 1060; 
+}
+
+/* Make sure other modals are lower */
+.modal {
+  z-index: 1050; 
+}
