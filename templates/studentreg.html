@@ -172,28 +172,31 @@
   <audio id="bellSound" src="static/Hotel bell ringing - Sounds effect.mp3" preload="auto"></audio>
 
 <script>
-      document.addEventListener("DOMContentLoaded", function () {
+      const container = document.querySelector(".container");
+
+  document.addEventListener("DOMContentLoaded", function () {
     const termsModal = document.getElementById("termsModal");
     const acceptBtn = document.getElementById("acceptTerms");
     const declineBtn = document.getElementById("declineTerms");
-    const container = document.querySelector(".container");
 
+    // Initially hide the form
+    container.style.opacity = "0.3";
+    container.style.pointerEvents = "none";
     termsModal.style.display = "flex";
     document.body.classList.add("modal-open");
 
     acceptBtn.onclick = function () {
       termsModal.style.display = "none";
       document.body.classList.remove("modal-open");
-      container.style.opacity = "1"; // Reveal form
+      container.style.opacity = "1";
+      container.style.pointerEvents = "auto"; // ← IMPORTANT: Re-enable clicks!
     };
 
     declineBtn.onclick = function () {
       alert("You must accept the Terms & Conditions to proceed.");
     };
   });
-
-  document.querySelector(".container").style.opacity = "0.3";
-  document.querySelector(".container").style.pointerEvents = "none";
+  
 let currentPose = 'frontal';
 let faceEncoding = null;
 let faceEncodings = [];
