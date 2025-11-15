@@ -3721,61 +3721,75 @@ def verify_reset_otp():
 @app.route('/api/get_students_enhanced', methods=['GET'])
 def get_students_enhanced():
     try:
-        # Get query parameters for filtering
-        department = request.args.get('department', '')
-        course = request.args.get('course', '')
-        year_section = request.args.get('year_section', '')
+        program_id = request.args.get('program_id', '')
+        year_level = request.args.get('year_level', '')
+        section_id = request.args.get('section_id', '')
         status = request.args.get('status', 'active')
         search = request.args.get('search', '')
-        page = int(request.args.get('page', 1))
-        limit = int(request.args.get('limit', 50))
+        page = int(request.args.get('page', 1))     
+        limit = int(request.args.get('limit', 50))  
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Build dynamic query
-        where_conditions = ["status = %s"]
+        from_joins = """
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+        """
+        
+        where_conditions = ["s.status = %s"]
         params = [status]
         
-        if course:
-            where_conditions.append("course LIKE %s")
-            params.append(f"%{course}%")
+        if program_id:
+            where_conditions.append("p.program_id = %s") 
+            params.append(program_id)
+
+        if year_level:
+            where_conditions.append("ys.year_level = %s")
+            params.append(year_level)
             
-        if year_section:
-            where_conditions.append("year_section LIKE %s")
-            params.append(f"%{year_section}%")
+        if section_id:
+            where_conditions.append("s.section_id = %s") 
+            params.append(section_id)
             
         if search:
-            where_conditions.append("(first_name LIKE %s OR last_name LIKE %s OR student_id LIKE %s OR email LIKE %s)")
+            where_conditions.append("(s.first_name LIKE %s OR s.last_name LIKE %s OR s.student_id LIKE %s OR s.email LIKE %s)")
             search_param = f"%{search}%"
             params.extend([search_param, search_param, search_param, search_param])
         
-        where_clause = " AND ".join(where_conditions)
+        where_clause = " AND ".join(where_conditions) 
         offset = (page - 1) * limit
         
-        # Get total count
-        count_query = f"SELECT COUNT(*) as total FROM students WHERE {where_clause}"
+        count_query = f"SELECT COUNT(s.student_id) as total {from_joins} WHERE {where_clause}"
         cursor.execute(count_query, params)
         total_count = cursor.fetchone()['total']
         
-        # Get paginated results
         query = f"""
-            SELECT student_id, first_name, last_name, middle_name, course, year_section, 
-                   email, photo_path, status, created_at, updated_at
-            FROM students 
+            SELECT 
+                s.student_id, s.first_name, s.last_name, s.middle_name, 
+                s.email, s.photo_path, s.status, s.created_at, s.updated_at,
+                p.program_name AS course, 
+                p.program_id,
+                ys.section_name,
+                ys.year_level ,
+                s.section_id
+            {from_joins}
             WHERE {where_clause}
-            ORDER BY last_name, first_name
+            ORDER BY s.last_name, s.first_name
             LIMIT %s OFFSET %s
         """
-        params.extend([limit, offset])
+        
+        params.extend([limit, offset]) 
         cursor.execute(query, params)
         students = cursor.fetchall()
         cursor.close()
         conn.close()
         
-        # Format student data for frontend
         formatted_students = []
         for s in students:
+            year_section_display = f"{s['year_level']}-{s['section_name']}"
+
             formatted_students.append({
                 'id': s['student_id'],
                 'idNumber': s['student_id'],
@@ -3784,12 +3798,15 @@ def get_students_enhanced():
                 'middleName': s['middle_name'],
                 'name': f"{s['first_name']} {s['middle_name'] + ' ' if s['middle_name'] else ''}{s['last_name']}",
                 'course': s['course'],
-                'yearSection': s['year_section'],
+                'yearSection': year_section_display, 
                 'email': s['email'],
                 'photo': s['photo_path'] if s['photo_path'] else f"https://ui-avatars.com/api/?name={s['first_name']}+{s['last_name']}&background=random",
                 'status': s['status'],
                 'createdAt': s['created_at'].isoformat() if s['created_at'] else None,
-                'updatedAt': s['updated_at'].isoformat() if s['updated_at'] else None
+                'updatedAt': s['updated_at'].isoformat() if s['updated_at'] else None,
+                'program_id': s['program_id'],
+                'year_level': s['year_level'],
+                'section_id': s['section_id']
             })
         
         return jsonify({
@@ -4280,7 +4297,7 @@ def revoke_invite():
 
 @app.route('/api/get_enhanced_dashboard_stats', methods=['GET'])
 def get_enhanced_dashboard_stats():
-    """Get comprehensive dashboard statistics including course breakdowns"""
+    """Get comprehensive dashboard statistics including program breakdowns"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -4289,35 +4306,41 @@ def get_enhanced_dashboard_stats():
         cursor.execute("SELECT COUNT(*) as total_students FROM students WHERE status = 'active'")
         total_students = cursor.fetchone()['total_students']
         
-        # Get total faculty count  
+        # Get total faculty count
         cursor.execute("SELECT COUNT(*) as total_faculty FROM faculty WHERE status = 'active'")
         total_faculty = cursor.fetchone()['total_faculty']
         
-        # Get student count by course
+        # --- FIX 1: Get student count by PROGRAM (using JOIN) ---
         cursor.execute("""
-            SELECT course, COUNT(*) as count 
-            FROM students 
-            WHERE status = 'active' 
-            GROUP BY course 
+            SELECT 
+                p.program_id,
+                p.program_name,
+                COUNT(s.student_id) as count 
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE s.status = 'active'
+            GROUP BY p.program_id, p.program_name
             ORDER BY count DESC
         """)
-        course_stats = cursor.fetchall()
+        program_stats = cursor.fetchall()
         
-        # Get CS, IT, and ACT student counts specifically
+        # --- FIX 2: Calculate CS, IT, ACT counts from the NEW query ---
         cs_count = 0
         it_count = 0 
         act_count = 0
         
-        for course in course_stats:
-            course_name = course['course'].upper()
-            if 'COMPUTER SCIENCE' in course_name or 'CS' in course_name:
-                cs_count += course['count']
-            elif 'INFORMATION TECHNOLOGY' in course_name or 'IT' in course_name:
-                it_count += course['count']
-            elif 'ACT' in course_name or 'ASSOCIATE IN COMPUTER TECHNOLOGY' in course_name:
-                act_count += course['count']
+        for program in program_stats:
+            # We use the reliable program_id now
+            program_id = program['program_id'].upper() 
+            if program_id == 'CS':
+                cs_count += program['count']
+            elif program_id == 'IT':
+                it_count += program['count']
+            elif program_id == 'ACT':
+                act_count += program['count']
         
-        # Get faculty count by department
+        # Get faculty count by department (This query was already correct)
         cursor.execute("""
             SELECT department, COUNT(*) as count 
             FROM faculty 
@@ -4327,6 +4350,7 @@ def get_enhanced_dashboard_stats():
         """)
         department_stats = cursor.fetchall()
         
+        # --- (These queries were already correct) ---
         # Get recent attendance (today)
         cursor.execute("""
             SELECT COUNT(DISTINCT student_id) as present_today,
@@ -4361,12 +4385,15 @@ def get_enhanced_dashboard_stats():
         """)
         active_invites = cursor.fetchone()['active_invites']
         
-        # Get year/section distribution
+        # --- FIX 3: Get year/section distribution (using JOIN) ---
         cursor.execute("""
-            SELECT year_section, COUNT(*) as count 
-            FROM students 
-            WHERE status = 'active' 
-            GROUP BY year_section 
+            SELECT 
+                CONCAT(ys.year_level, '-', ys.section_name) AS year_section, 
+                COUNT(s.student_id) as count 
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            WHERE s.status = 'active' 
+            GROUP BY year_section
             ORDER BY year_section
         """)
         year_section_stats = cursor.fetchall()
@@ -4374,7 +4401,7 @@ def get_enhanced_dashboard_stats():
         cursor.close()
         conn.close()
         
-        # Format the response to match your HTML structure
+        # --- FIX 4: Format the response with new variable names ---
         response_data = {
             'success': True,
             'stats': {
@@ -4388,11 +4415,11 @@ def get_enhanced_dashboard_stats():
                 # Detailed breakdowns
                 'course_breakdown': [
                     {
-                        'course': course['course'],
-                        'count': course['count'],
-                        'percentage': round((course['count'] / total_students * 100), 1) if total_students > 0 else 0
+                        'course': program['program_name'], # Use program_name
+                        'count': program['count'],
+                        'percentage': round((program['count'] / total_students * 100), 1) if total_students > 0 else 0
                     }
-                    for course in course_stats
+                    for program in program_stats # Use the new program_stats
                 ],
                 
                 'department_breakdown': [
@@ -4413,7 +4440,7 @@ def get_enhanced_dashboard_stats():
                     for ys in year_section_stats
                 ],
                 
-                # Attendance stats
+                # Attendance stats (Unchanged)
                 'attendance': {
                     'present_today': attendance_today['present_today'] or 0,
                     'total_records_today': attendance_today['total_attendance_records_today'] or 0,
@@ -4421,18 +4448,18 @@ def get_enhanced_dashboard_stats():
                     'total_records_week': attendance_week['total_records_week'] or 0
                 },
                 
-                # Recent activity
+                # Recent activity (Unchanged)
                 'recent_activity': {
                     'students_registered_30days': recent_registrations['students_30days'] or 0,
                     'faculty_registered_30days': recent_registrations['faculty_30days'] or 0,
                     'active_invites': active_invites
                 },
                 
-                # Status summary
+                # Status summary (Updated)
                 'summary': {
                     'total_users': total_students + total_faculty,
                     'attendance_rate_today': round((attendance_today['present_today'] / total_students * 100), 1) if total_students > 0 else 0,
-                    'most_popular_course': course_stats[0]['course'] if course_stats else 'N/A',
+                    'most_popular_course': program_stats[0]['program_name'] if program_stats else 'N/A', # Use program_name
                     'largest_department': department_stats[0]['department'] if department_stats else 'N/A'
                 }
             }
@@ -4442,6 +4469,7 @@ def get_enhanced_dashboard_stats():
         
     except Exception as e:
         logger.error(f"Error fetching enhanced dashboard stats: {e}")
+        # Return a default structure so the frontend doesn't crash
         return jsonify({
             'success': False, 
             'message': str(e),
@@ -4450,7 +4478,13 @@ def get_enhanced_dashboard_stats():
                 'total_faculty': 0,
                 'cs_students': 0,
                 'it_students': 0,
-                'act_students': 0
+                'act_students': 0,
+                'course_breakdown': [],
+                'department_breakdown': [],
+                'year_section_breakdown': [],
+                'attendance': {'present_today': 0, 'total_records_today': 0, 'unique_students_week': 0, 'total_records_week': 0},
+                'recent_activity': {'students_registered_30days': 0, 'faculty_registered_30days': 0, 'active_invites': 0},
+                'summary': {'total_users': 0, 'attendance_rate_today': 0, 'most_popular_course': 'N/A', 'largest_department': 'N/A'}
             }
         })
 
@@ -4797,12 +4831,11 @@ def update_student():
         first_name = data.get('first_name')
         last_name = data.get('last_name')
         middle_name = data.get('middle_name', '')
-        course = data.get('course')
-        year_section = data.get('year_section')
+        section_id = data.get('section_id')
         email = data.get('email')
         status = data.get('status', 'active')
         
-        if not all([student_id, first_name, last_name, course, year_section, email]):
+        if not all([student_id, first_name, last_name, section_id, email]):
             return jsonify({'success': False, 'message': 'All required fields are missing'})
             
         conn = get_db_connection()
@@ -4818,10 +4851,10 @@ def update_student():
         cursor.execute(
             """UPDATE students 
                SET first_name = %s, last_name = %s, middle_name = %s, 
-                   course = %s, year_section = %s, email = %s, 
+                   section_id = %s, email = %s, 
                    status = %s, updated_at = NOW()
                WHERE student_id = %s""",
-            (first_name, last_name, middle_name, course, year_section, 
+            (first_name, last_name, middle_name, section_id, 
              email, status, student_id)
         )
         
@@ -5298,11 +5331,10 @@ def register_student():
         first_name = data.get('first_name', '').strip()
         last_name = data.get('last_name', '').strip()
         middle_name = data.get('middle_name', '').strip()
-        course = data.get('course', '').strip()
-        year_section = data.get('year_section', '').strip()
+        section_id = data.get('section_id', '').strip()
         password = data.get('password', '').strip()
         
-        if not all([email, student_id, first_name, last_name, course, year_section, password]):
+        if not all([email, student_id, first_name, last_name, section_id, password]):
             logger.warning("Missing required fields in register_student request")
             return jsonify({'success': False, 'message': 'All fields are required'})
         
@@ -5380,9 +5412,9 @@ def register_student():
         # Insert student with hashed password
         cursor.execute(
             """INSERT INTO students 
-            (student_id, first_name, last_name, middle_name, course, year_section, email, face_encoding, photo_path, password_hash) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (student_id, first_name, last_name, middle_name or None, course, year_section, email, encoding_str, photo_path, password_hash)
+            (student_id, first_name, last_name, middle_name, section_id, email, face_encoding, photo_path, password_hash) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (student_id, first_name, last_name, middle_name or None, section_id, email, encoding_str, photo_path, password_hash)
         )
         conn.commit()  # COMMIT THE STUDENT INSERT FIRST
         cursor.close()
@@ -13953,7 +13985,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.56.1", 
+            host="192.168.0.101", 
             port=5000,
             debug=False,
             threaded=True,

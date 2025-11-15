@@ -31,22 +31,29 @@
                     <label for="course">Course</label>
                     <select id="course">
                         <option value="">Select Course</option>
-                        <option value="bscs">BSCS</option>
-                        <option value="bsit">BSIT</option>
-                        <option value="bsis">ACT</option>
+                        <option value="CS">BSCS</option>
+                        <option value="IT">BSIT</option>
+                        <option value="ACT">ACT</option>
                     </select>
                 </div>
 
                 <div class="filter-group">
-                    <label for="section">Year & Section</label>
-                    <select id="section">
-                        <option value="">Select Section</option>
-                        <option value="1a">1A</option><option value="1b">1B</option><option value="1c">1C</option>
-                        <option value="2a">2A</option><option value="2b">2B</option><option value="2c">2C</option>
-                        <option value="3a">3A</option><option value="3b">3B</option><option value="3c">3C</option>
-                        <option value="4a">4A</option><option value="4b">4B</option><option value="4c">4C</option>
+                    <label for="year_level">Year Level</label>
+                    <select id="year_level">
+                        <option value="">All Years</option>
+                        <option value="1">1st Year</option>
+                        <option value="2">2nd Year</option>
+                        <option value="3">3rd Year</option>
+                        <option value="4">4th Year</option>
                     </select>
                 </div>
+                <div class="filter-group">
+                    <label for="section">Section</label>
+                    <select id="section">
+                        <option value="">Select Section</option>
+                        </select>
+                </div>
+            </div>
 
                 <button class="invite-btn" id="inviteBtn">
                     <i class="fas fa-user-plus"></i> Invite Student
@@ -159,7 +166,7 @@
     </div>
 
     <!-- Edit Student Modal -->
-    <div id="editStudentModal" class="modal">
+<div id="editStudentModal" class="modal">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h2 class="modal-title">Edit Student</h2>
@@ -192,27 +199,32 @@
                         <label for="editEmail">Email *</label>
                         <input type="email" id="editEmail" placeholder="Enter email" required>
                     </div>
+                    
                     <div class="form-row">
                         <div class="form-group" style="flex: 1;">
-                            <label for="editCourse">Course *</label>
-                            <select id="editCourse" required>
+                            <label for="editProgram">Course *</label>
+                            <select id="editProgram" required="">
                                 <option value="">Select Course</option>
-                                <option value="BSCS">BSCS</option>
-                                <option value="BSIT">BSIT</option>
-                                <option value="ACT">ACT</option>
-                            </select>
+                                </select>
                         </div>
                         <div class="form-group" style="flex: 1;">
-                            <label for="editSection">Year & Section *</label>
-                            <select id="editSection" required>
-                                <option value="">Select Section</option>
-                                <option value="1A">1A</option><option value="1B">1B</option><option value="1C">1C</option>
-                                <option value="2A">2A</option><option value="2B">2B</option><option value="2C">2C</option>
-                                <option value="3A">3A</option><option value="3B">3B</option><option value="3C">3C</option>
-                                <option value="4A">4A</option><option value="4B">4B</option><option value="4C">4C</option>
+                            <label for="editYearLevel">Year Level *</label>
+                            <select id="editYearLevel" required="">
+                                <option value="">Select Year</option>
+                                <option value="1">1st Year</option>
+                                <option value="2">2nd Year</option>
+                                <option value="3">3rd Year</option>
+                                <option value="4">4th Year</option>
                             </select>
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label for="editSection">Section *</label>
+                        <select id="editSection" required="">
+                            <option value="">Select Section</option>
+                            </select>
+                    </div>
+                    
                     <div class="form-group">
                         <label for="editStatus">Status</label>
                         <select id="editStatus">
@@ -220,12 +232,12 @@
                             <option value="inactive">Inactive</option>
                         </select>
                     </div>
-                </form>
-            </div>
-            <div class="modal-footer">
+                
+                </form> </div> <div class="modal-footer">
                 <button class="modal-btn btn-cancel">Cancel</button>
                 <button class="modal-btn btn-submit" id="submitEditStudent">Save Changes</button>
             </div>
+
         </div>
     </div>
 
@@ -417,7 +429,9 @@
         let totalStudents = 0;
 
 
-        async function loadStudentsFromDatabase() {
+// This is in StudentDB.html
+
+async function loadStudentsFromDatabase() {
             try {
                 showLoadingState('Loading students...');
                 const params = new URLSearchParams({
@@ -425,11 +439,17 @@
                     limit: studentsPerPage,
                     status: 'active'
                 });
+                
+                // Get values from all 3 filters
                 const courseFilter = document.getElementById('course')?.value;
+                const yearFilter = document.getElementById('year_level')?.value; 
                 const sectionFilter = document.getElementById('section')?.value;
                 const searchTerm = document.querySelector('.search-box input')?.value;
-                if (courseFilter) params.append('course', courseFilter);
-                if (sectionFilter) params.append('year_section', sectionFilter);
+
+                // Append correct parameter names
+                if (courseFilter) params.append('program_id', courseFilter);
+                if (yearFilter) params.append('year_level', yearFilter);
+                if (sectionFilter) params.append('section_id', sectionFilter);
                 if (searchTerm) params.append('search', searchTerm);
 
                 const response = await fetch(`/api/get_students_enhanced?${params}`);
@@ -452,7 +472,7 @@
             }
         }
 
-        function displayStudents(students) {
+function displayStudents(students) {
             const tbody = document.querySelector('.students-table tbody');
             if (!tbody) return;
             tbody.innerHTML = '';
@@ -543,8 +563,52 @@
             }
         }
 
+        const filterCourse = document.getElementById('course');
+        const filterYear = document.getElementById('year_level');
+        const filterSection = document.getElementById('section');
 
-        function addEventListenersToRow(row) {
+        async function fetchFilterSections() {
+            const programId = filterCourse.value;
+            const yearLevel = filterYear.value;
+
+            filterSection.innerHTML = '<option value="">Select Section</option>';
+            filterSection.disabled = true;
+
+            if (programId && yearLevel) {
+                filterSection.innerHTML = '<option value="">Loading...</option>';
+                try {
+                    const response = await fetch(`/api/get_sections?program_id=${programId}&year_level=${yearLevel}`);
+                    const data = await response.json();
+                    
+                    filterSection.innerHTML = '<option value="">All Sections</option>'; 
+                    if (data.success && data.sections) {
+                        if (data.sections.length === 0) {
+                            filterSection.innerHTML = '<option value="">No sections</option>';
+                            return;
+                        }
+                        data.sections.forEach(section => {
+                            const option = document.createElement('option');
+                            option.value = section.section_id;
+                            option.textContent = section.section_name;
+                            filterSection.appendChild(option);
+                        });
+                        filterSection.disabled = false;
+                    }
+                } catch (error) {
+                    console.error('Error fetching filter sections:', error);
+                    filterSection.innerHTML = '<option value="">Error</option>';
+                }
+            } else {
+                filterSection.innerHTML = '<option value="">Select Course & Year</option>';
+            }
+        }
+
+        if (filterCourse && filterYear) {
+            filterCourse.addEventListener('change', fetchFilterSections);
+            filterYear.addEventListener('change', fetchFilterSections);
+        }
+
+function addEventListenersToRow(row) {
             const editBtn = row.querySelector('.edit-btn');
             const viewBtn = row.querySelector('.view-btn');
             const deleteBtn = row.querySelector('.delete-btn');
@@ -552,13 +616,19 @@
             editBtn?.addEventListener('click', function () {
                 const id = this.getAttribute('data-id');
                 const student = allStudents.find(s => s.id === id);
-                if (student) { populateEditForm(student); openModal(editStudentModal); }
+                if (student) {
+                    populateEditForm(student);
+                    openModal(editStudentModal);
+                }
             });
 
             viewBtn?.addEventListener('click', function () {
                 const id = this.getAttribute('data-id');
                 const student = allStudents.find(s => s.id === id);
-                if (student) { populateViewModal(student); openModal(viewStudentModal); }
+                if (student) {
+                    populateViewModal(student);
+                    openModal(viewStudentModal);
+                }
             });
 
             deleteBtn?.addEventListener('click', function () {
@@ -573,19 +643,23 @@
         }
 
      
-        if (submitEditStudent) {
+if (submitEditStudent) {
             submitEditStudent.addEventListener('click', async function () {
-                const id = document.getElementById('editStudentId')?.value;
+                const id = document.getElementById('editStudentId')?.value; 
                 const first = document.getElementById('editFirstName')?.value;
                 const middle = document.getElementById('editMiddleName')?.value;
                 const last = document.getElementById('editLastName')?.value;
-                const idNum = document.getElementById('editStudentIdNumber')?.value;
+                const idNum = document.getElementById('editStudentIdNumber')?.value; 
                 const email = document.getElementById('editEmail')?.value;
-                const course = document.getElementById('editCourse')?.value;
-                const section = document.getElementById('editSection')?.value;
                 const status = document.getElementById('editStatus')?.value;
+                
+                // Get values from NEW dropdowns
+                const program = document.getElementById('editProgram')?.value;
+                const year = document.getElementById('editYearLevel')?.value;
+                const section = document.getElementById('editSection')?.value;
 
-                if (!first || !last || !idNum || !email || !course || !section) {
+                // Updated validation
+                if (!first || !last || !idNum || !email || !program || !year || !section) {
                     showAlert('Please fill all required fields', false);
                     return;
                 }
@@ -595,13 +669,18 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            student_id: id,
+                            original_student_id: id, 
+                            student_id: idNum,
                             first_name: first,
                             last_name: last,
                             middle_name: middle || '',
-                            course, year_section: section, email, status
+                            program_id: program,
+                            section_id: section,
+                            email: email,
+                            status: status
                         })
                     });
+                    
                     const data = await res.json();
                     if (data.success) {
                         showAlert(`Student ${first} ${last} updated successfully!`);
@@ -616,7 +695,6 @@
                 }
             });
         }
-
         
         if (confirmDelete) {
             confirmDelete.addEventListener('click', async function () {
@@ -656,7 +734,7 @@
         });
 
 
-        function populateViewModal(student) {
+function populateViewModal(student) {
             const photo = document.getElementById('viewPhoto');
             photo.src = student.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`;
             photo.alt = student.name;
@@ -675,11 +753,10 @@
             badge.textContent = student.status === 'active' ? 'Active' : 'Inactive';
             badge.className = `detail-badge ${student.status === 'active' ? 'active' : 'inactive'}`;
 
+            // (Your attendance log logic...)
             const tbody = document.getElementById('attendanceBody');
             const noRec = document.getElementById('noAttendance');
-
             const attendance = student.attendance || []; 
-
             if (attendance.length === 0) {
                 tbody.innerHTML = '';
                 noRec.style.display = 'block';
@@ -697,8 +774,71 @@
             `).join('');
         }
 
+        async function loadProgramsToDropdown(dropdownId) {
+            try {
+                const response = await fetch('/api/get_programs');
+                const data = await response.json();
+                if (data.success && data.programs) {
+                    const dropdown = document.getElementById(dropdownId);
+                    data.programs.forEach(program => {
+                        const option = document.createElement('option');
+                        option.value = program.program_id; // e.g., "CS"
+                        option.textContent = program.program_name; // e.g., "Computer Science"
+                        dropdown.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading programs:', error);
+            }
+        }
 
-        function populateEditForm(student) {
+        async function fetchEditSections(selectedProgram, selectedYear, currentSectionId) {
+            const sectionDropdown = document.getElementById('editSection');
+            sectionDropdown.innerHTML = '<option value="">Loading...</option>';
+            sectionDropdown.disabled = true;
+
+            if (selectedProgram && selectedYear) {
+                try {
+                    const response = await fetch(`/api/get_sections?program_id=${selectedProgram}&year_level=${selectedYear}`);
+                    const data = await response.json();
+                    
+                    sectionDropdown.innerHTML = '<option value="">Select Section</option>';
+                    if (data.success && data.sections) {
+                        if (data.sections.length === 0) {
+                            sectionDropdown.innerHTML = '<option value="">No sections found</option>';
+                            return;
+                        }
+                        data.sections.forEach(section => {
+                            const option = document.createElement('option');
+                            option.value = section.section_id;
+                            option.textContent = section.section_name;
+                            if (section.section_id === currentSectionId) {
+                                option.selected = true;
+                            }
+                            sectionDropdown.appendChild(option);
+                        });
+                        sectionDropdown.disabled = false;
+                    }
+                } catch (error) {
+                    console.error('Error fetching sections:', error);
+                    sectionDropdown.innerHTML = '<option value="">Error loading</option>';
+                }
+            } else {
+                sectionDropdown.innerHTML = '<option value="">Select Course & Year first</option>';
+            }
+        }
+
+/**
+         * Populates the Edit Student form (REPLACED)
+         */
+        async function populateEditForm(student) {
+            // Fill basic info
+            document.getElementById('editStudentId').value = student.id;
+            document.getElementById('editStudentIdNumber').value = student.idNumber || '';
+            document.getElementById('editEmail').value = student.email || '';
+            document.getElementById('editStatus').value = student.status || 'active';
+
+            // Split name (This uses the 'name' field from the student object)
             let first = '', middle = '', last = '';
             if (student.name) {
                 const parts = student.name.split(' ');
@@ -706,15 +846,24 @@
                 else if (parts.length === 2) { first = parts[0]; last = parts[1]; }
                 else { first = parts[0]; last = parts[parts.length-1]; middle = parts.slice(1, parts.length-1).join(' '); }
             }
-            document.getElementById('editStudentId').value = student.id;
             document.getElementById('editFirstName').value = first;
             document.getElementById('editMiddleName').value = middle;
             document.getElementById('editLastName').value = last;
-            document.getElementById('editStudentIdNumber').value = student.idNumber || '';
-            document.getElementById('editEmail').value = student.email || '';
-            document.getElementById('editCourse').value = student.course || '';
-            document.getElementById('editSection').value = student.yearSection || '';
-            document.getElementById('editStatus').value = student.status || 'active';
+            
+            // Dynamic Dropdown Logic
+            const programDropdown = document.getElementById('editProgram');
+            const yearDropdown = document.getElementById('editYearLevel');
+
+            // 1. Clear and load programs
+            programDropdown.innerHTML = '<option value="">Loading Courses...</option>';
+            await loadProgramsToDropdown('editProgram');
+
+            // 2. Set the saved values (from the backend fix)
+            programDropdown.value = student.program_id;
+            yearDropdown.value = student.year_level;
+
+            // 3. Fetch sections for the saved program/year
+            await fetchEditSections(student.program_id, student.year_level, student.section_id);
         }
 
         function initializeStudentInviteModal() {
@@ -797,7 +946,20 @@
         if (alertButton) alertButton.addEventListener('click', () => closeModal(alertModal));
         window.addEventListener('click', e => { if (e.target.classList.contains('modal')) closeModal(e.target); });
 
- 
+        const editProgram = document.getElementById('editProgram');
+        const editYearLevel = document.getElementById('editYearLevel');
+
+        if (editProgram && editYearLevel) {
+            function updateEditSectionDropdown() {
+                const programId = editProgram.value;
+                const yearLevel = editYearLevel.value;
+                fetchEditSections(programId, yearLevel, null);
+            }
+            
+            editProgram.addEventListener('change', updateEditSectionDropdown);
+            editYearLevel.add
+        }    
+
         document.addEventListener('DOMContentLoaded', () => {
             initializeStudentInviteModal();
             loadStudentsFromDatabase();
