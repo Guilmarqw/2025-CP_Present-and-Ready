@@ -5325,7 +5325,7 @@ def encode_face():
 def register_student():
     try:
         data = request.form
-        email = data.get('email', '').strip()
+        email = data.get('email', '').strip().lower()
         student_id = data.get('student_id', '').strip()
         invite_token = data.get('invite_token', '').strip()  
         first_name = data.get('first_name', '').strip()
@@ -5345,93 +5345,77 @@ def register_student():
         if len(password) < 8:
             return jsonify({'success': False, 'message': 'Password must be at least 8 characters long'})
         
-        # Hash password
         password_hash = hash_password(password)
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT student_id FROM students WHERE student_id = %s OR email = %s", 
-                      (student_id, email))
         
-        if cursor.fetchone():
+        cursor.execute("SELECT student_id, email FROM students WHERE student_id = %s OR email = %s", 
+                      (student_id, email))
+        existing = cursor.fetchone()
+        
+        if existing:
             cursor.close()
             conn.close()
-            logger.warning(f"Student ID {student_id} or email {email} already exists")
-            return jsonify({'success': False, 'message': 'Student ID or email already exists'})
+            if existing[0] == student_id:
+                logger.warning(f"Student ID {student_id} already exists")
+                return jsonify({'success': False, 'message': 'Student ID already exists'})
+            else:
+                logger.warning(f"Email {email} already registered")
+                return jsonify({'success': False, 'message': 'Email already registered'})
         
-        # Average embeddings from multiple poses
-        if len(pose_embeddings) >= 3:
-            avg_embedding = np.mean([np.array(pose_embeddings[p]) for p in POSE_SEQUENCE if p in pose_embeddings], axis=0)
-            encoding_str = "[" + ",".join(str(x) for x in avg_embedding) + "]"
-        else:
-            face_encoding_data = data.get('face_encoding', '')
-            try:
+        face_encoding_data = data.get('face_encoding', '')
+        encoding_str = None
+        
+        try:
+            if face_encoding_data:
                 face_encoding = json.loads(face_encoding_data)
-                if not isinstance(face_encoding, list) or len(face_encoding) != 512:
+                if isinstance(face_encoding, list) and len(face_encoding) == 512:
+                    encoding_str = "[" + ",".join(str(x) for x in face_encoding) + "]"
+                else:
                     raise ValueError("Invalid face encoding length")
-                encoding_str = "[" + ",".join(str(x) for x in face_encoding) + "]"
-            except Exception as e:
-                cursor.close()
-                conn.close()
-                logger.error(f"Invalid face encoding format: {e}")
-                return jsonify({'success': False, 'message': 'Invalid face encoding format'})
+            else:
+                raise ValueError("No face encoding provided")
+        except Exception as e:
+            cursor.close()
+            conn.close()
+            logger.error(f"Invalid face encoding format: {e}")
+            return jsonify({'success': False, 'message': 'Invalid face encoding. Please complete face scanning.'})
         
         photo_path = None
         if 'photo' in request.files:
             photo = request.files['photo']
-            filename = secure_filename(photo.filename)
-            if filename and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                os.makedirs('static/images/student_photos', exist_ok=True)
-                photo_path = f"static/images/student_photos/{student_id}.jpg"
-                photo.save(photo_path)
-                logger.info(f"Saved photo for {student_id} at {photo_path}")
-                
-                # Verify photo matches face scan
-                img = cv2.imread(photo_path)
-                if img is not None:
-                    faces = face_analysis.get(img)
-                    if faces:
-                        photo_embedding = faces[0].embedding
-                        scan_embedding = np.array(avg_embedding if len(pose_embeddings) >= 3 else face_encoding, dtype=np.float32)
-                        dot_product = np.dot(photo_embedding, scan_embedding)
-                        norm_photo = np.linalg.norm(photo_embedding)
-                        norm_scan = np.linalg.norm(scan_embedding)
-                        similarity = dot_product / (norm_photo * norm_scan)
-                        distance = 1 - similarity
-                        if distance > TOLERANCE:
-                            os.remove(photo_path)
-                            cursor.close()
-                            conn.close()
-                            return jsonify({'success': False, 'message': 'Uploaded photo does not match the face scan.'})
-                    else:
-                        os.remove(photo_path)
-                        cursor.close()
-                        conn.close()
-                        return jsonify({'success': False, 'message': 'No face detected in uploaded photo.'})
+            if photo and photo.filename:
+                filename = secure_filename(photo.filename)
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    os.makedirs('static/images/student_photos', exist_ok=True)
+                    photo_path = f"static/images/student_photos/{student_id}.jpg"
+                    
+                    try:
+                        photo.save(photo_path)
+                        logger.info(f"Saved photo for {student_id} at {photo_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to save photo: {e}")
+                        photo_path = None
         
-        # Insert student with hashed password
         cursor.execute(
             """INSERT INTO students 
             (student_id, first_name, last_name, middle_name, section_id, email, face_encoding, photo_path, password_hash) 
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (student_id, first_name, last_name, middle_name or None, section_id, email, encoding_str, photo_path, password_hash)
         )
-        conn.commit()  # COMMIT THE STUDENT INSERT FIRST
-        cursor.close()
-        conn.close()
+        conn.commit()
         
         if invite_token:
             try:
                 conn_invite = get_db_connection()
                 cursor_invite = conn_invite.cursor()
 
-                # Increment current_uses
                 cursor_invite.execute(
                     "UPDATE invites SET current_uses = current_uses + 1 WHERE token = %s",
                     (invite_token,)
                 )
 
-                # Check if max uses reached and mark as used
                 cursor_invite.execute(
                     "SELECT current_uses, max_uses FROM invites WHERE token = %s",
                     (invite_token,)
@@ -5453,16 +5437,20 @@ def register_student():
             except Exception as e:
                 logger.error(f"Failed to update invite uses: {e}")
         
-        # Reload known faces
-        load_known_faces_from_db()
-        pose_embeddings.clear()
+        cursor.close()
+        conn.close()
         
-        logger.info(f"Student registered: {student_id} ({first_name} {last_name})")
+        try:
+            load_known_faces_from_db()
+        except Exception as e:
+            logger.warning(f"Failed to reload known faces: {e}")
+        
+        logger.info(f"Student registered successfully: {student_id} ({first_name} {last_name})")
         return jsonify({'success': True, 'message': 'Student registered successfully'})
 
     except Exception as e:
-        logger.error(f"Registration error: {str(e)}")
-        return jsonify({'success': False, 'message': f'Registration error: {str(e)}'})
+        logger.error(f"Registration error: {str(e)}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Registration failed: {str(e)}'})
     
 
 @app.route('/api/register_faculty', methods=['POST'])
@@ -8858,9 +8846,8 @@ def unassign_faculty_from_schedule():
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/get_sections', methods=['GET'])
-@login_required
 def get_sections():
-    """Get sections based on program and year level"""
+    """Get sections based on program and year level - FIXED"""
     try:
         program_id = request.args.get('program_id')
         year_level = request.args.get('year_level')
@@ -8871,22 +8858,56 @@ def get_sections():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
+        # DEBUG: Check what semesters exist in the database
+        cursor.execute("SELECT * FROM semesters WHERE status = 'active'")
+        active_semesters = cursor.fetchall()
+        print(f"DEBUG: Active semesters: {active_semesters}")
+        
+        # DEBUG: Check what sections exist for this program/year
         cursor.execute("""
-            SELECT 
-                section_id,
-                section_name,
-                year_level,
-                program_id
-            FROM year_sections
+            SELECT * FROM year_sections 
             WHERE program_id = %s AND year_level = %s AND status = 'active'
-            ORDER BY section_name
         """, (program_id, year_level))
+        all_sections = cursor.fetchall()
+        print(f"DEBUG: All sections for {program_id} year {year_level}: {all_sections}")
+        
+        # If no active semesters found, get sections from ANY semester
+        if not active_semesters:
+            cursor.execute("""
+                SELECT 
+                    section_id,
+                    section_name,
+                    year_level,
+                    program_id
+                FROM year_sections
+                WHERE program_id = %s 
+                AND year_level = %s 
+                AND status = 'active'
+                ORDER BY section_name
+            """, (program_id, year_level))
+        else:
+            # Use the first active semester
+            active_semester_id = active_semesters[0]['semester_id']
+            cursor.execute("""
+                SELECT 
+                    section_id,
+                    section_name,
+                    year_level,
+                    program_id
+                FROM year_sections
+                WHERE program_id = %s 
+                AND year_level = %s 
+                AND semester_id = %s
+                AND status = 'active'
+                ORDER BY section_name
+            """, (program_id, year_level, active_semester_id))
         
         sections = cursor.fetchall()
         
         cursor.close()
         conn.close()
         
+        print(f"DEBUG: Returning {len(sections)} sections")
         return jsonify({'success': True, 'sections': sections})
         
     except Exception as e:
@@ -9233,9 +9254,8 @@ def initialize_default_data():
         return jsonify({'success': False, 'message': str(e)})    
 
 @app.route('/api/get_programs', methods=['GET'])
-@login_required
 def get_programs():
-    """Get all programs with their statistics per semester - fixed version"""
+    """Get all programs with their statistics per semester - PRESERVED & FIXED"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -9367,7 +9387,7 @@ def get_programs():
         return jsonify({
             'success': True, 
             'programs': programs,
-            'semesters': semesters,  # Return available semesters for frontend
+            'semesters': semesters,
             'total_count': len(programs)
         })
         
@@ -9375,7 +9395,7 @@ def get_programs():
         logger.error(f"Error fetching programs: {e}", exc_info=True)
         # Return empty array instead of failing completely
         return jsonify({
-            'success': True,  # Still return success so frontend doesn't break
+            'success': False,  # Changed to False on error
             'programs': [],
             'semesters': [],
             'message': f'Error loading programs: {str(e)}'
@@ -14151,6 +14171,45 @@ def change_my_password():
         logger.error(f"Error changing password: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/check_email', methods=['POST'])
+def check_email():
+    """Check if email is already registered"""
+    try:
+        data = request.get_json()
+        email = data.get('email', '').strip().lower()
+        
+        if not email:
+            return jsonify({'success': False, 'message': 'Email is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check in students table
+        cursor.execute("SELECT student_id FROM students WHERE email = %s AND status = 'active'", (email,))
+        student = cursor.fetchone()
+        
+        # Also check in faculty table if needed
+        cursor.execute("SELECT faculty_id FROM faculty WHERE email = %s AND status = 'active'", (email,))
+        faculty = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if student or faculty:
+            return jsonify({
+                'already_registered': True,
+                'message': 'This email is already registered in the system.'
+            })
+        else:
+            return jsonify({
+                'already_registered': False,
+                'message': 'Email is available for registration.'
+            })
+            
+    except Exception as e:
+        logger.error(f"Error checking email: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
 if __name__ == "__main__":
     latest_frame = None
     stop_flag = False
@@ -14196,7 +14255,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.56.1", 
+            host="192.168.0.101", 
             port=5000,
             debug=False,
             threaded=True,

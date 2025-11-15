@@ -259,36 +259,56 @@ function nextStep(step) {
         setTimeout(startFaceScan, 1000);
     }
     
-    if (step === 5) {
-        const firstName = document.getElementById("firstName")?.value || "";
-        const lastName = document.getElementById("lastName")?.value || "";
-        const middleName = document.getElementById("middleName")?.value || "";
-        const studentId = document.getElementById("studentId")?.value || "";
-        const course = document.getElementById("course");
-        const yearSection = document.getElementById("yearSection");
-        
-        if (document.getElementById("previewName")) {
-            document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`.trim();
-        }
-        if (document.getElementById("previewStudentId")) {
-            document.getElementById("previewStudentId").textContent = studentId;
-        }
-        if (course && document.getElementById("previewCourse")) {
-            document.getElementById("previewCourse").textContent = course.options[course.selectedIndex]?.text || "";
-        }
-        if (yearSection && document.getElementById("previewYearSection")) {
-            document.getElementById("previewYearSection").textContent = yearSection.options[yearSection.selectedIndex]?.text || "";
-        }
-        
-        if (uploadedPhoto && document.getElementById("idPhoto")) {
-            document.getElementById("idPhoto").innerHTML = `<img src="${uploadedPhoto}" alt="ID Photo">`;
-        }
+if (step === 5) {
+    const firstName = document.getElementById("firstName")?.value || "";
+    const lastName = document.getElementById("lastName")?.value || "";
+    const middleName = document.getElementById("middleName")?.value || "";
+    const studentId = document.getElementById("studentId")?.value || "";
+    const programSelect = document.getElementById("program");
+    const yearLevelSelect = document.getElementById("year_level");
+    const sectionSelect = document.getElementById("section_id");
+    
+    // Get the selected text values
+    const programName = programSelect ? programSelect.options[programSelect.selectedIndex]?.text : "";
+    const yearLevelName = yearLevelSelect ? yearLevelSelect.options[yearLevelSelect.selectedIndex]?.text : "";
+    const sectionName = sectionSelect ? sectionSelect.options[sectionSelect.selectedIndex]?.text : "";
+    
+    console.log("Preview data:", {
+        firstName, lastName, middleName, studentId,
+        programName, yearLevelName, sectionName,
+        hasUploadedPhoto: !!uploadedPhoto
+    });
+    
+    // Update the preview elements
+    if (document.getElementById("previewName")) {
+        document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`.trim();
     }
+    if (document.getElementById("previewStudentId")) {
+        document.getElementById("previewStudentId").textContent = studentId;
+    }
+    if (document.getElementById("previewCourse")) {
+        document.getElementById("previewCourse").textContent = programName || "Not selected";
+    }
+    if (document.getElementById("previewYearSection")) {
+        const yearSectionText = sectionName ? `${yearLevelName} - ${sectionName}` : yearLevelName;
+        document.getElementById("previewYearSection").textContent = yearSectionText || "Not selected";
+    }
+    
+    // Display the uploaded photo
+    if (uploadedPhoto && document.getElementById("idPhoto")) {
+        document.getElementById("idPhoto").innerHTML = `<img src="${uploadedPhoto}" alt="ID Photo" style="width: 100%; height: 100%; object-fit: cover;">`;
+        console.log("Photo set in preview");
+    } else {
+        console.log("No photo available for preview");
+        document.getElementById("idPhoto").innerHTML = '<span style="color: red;">No Photo</span>';
+    }
+}
+
 }
 
 function validateStep1() {
     const emailInput = document.getElementById("email");
-    const nextButton = event.target; // Get the button that was clicked
+    const nextButton = event.target;
     
     userEmail = emailInput?.value.trim() || "";
     
@@ -299,11 +319,12 @@ function validateStep1() {
     
     // Disable button and show loading state
     nextButton.disabled = true;
-    nextButton.textContent = "Sending OTP...";
+    nextButton.textContent = "Checking email...";
     nextButton.style.opacity = "0.6";
     nextButton.style.cursor = "not-allowed";
     
-    fetch('/api/send_otp', {
+    // First check if email is already registered
+    fetch('/api/check_email', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -312,20 +333,45 @@ function validateStep1() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            nextStep(2);
-            setTimeout(() => document.getElementById("otp1")?.focus(), 100);
-        } else {
-            showModal("Error", data.message || "Failed to send OTP.");
-            // Re-enable button on error
+        if (data.already_registered) {
+            showModal("Already Registered", "This email is already registered. Please use a different WMSU email or contact support if you need to reset your registration.");
+            // Re-enable button
             nextButton.disabled = false;
             nextButton.textContent = "Next";
             nextButton.style.opacity = "1";
             nextButton.style.cursor = "pointer";
+            return;
         }
+        
+        // If not registered, proceed to send OTP
+        return fetch('/api/send_otp', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email: userEmail })
+        });
+    })
+    .then(response => {
+        if (!response) return; // Skip if we already showed the registered message
+        
+        return response.json();
+    })
+    .then(data => {
+        if (data && data.success) {
+            nextStep(2);
+            setTimeout(() => document.getElementById("otp1")?.focus(), 100);
+        } else if (data) {
+            showModal("Error", data.message || "Failed to send OTP.");
+        }
+        // Re-enable button in all cases
+        nextButton.disabled = false;
+        nextButton.textContent = "Next";
+        nextButton.style.opacity = "1";
+        nextButton.style.cursor = "pointer";
     })
     .catch(error => {
-        showModal("Error", "Failed to send OTP. Please try again.");
+        showModal("Error", "Failed to check email. Please try again.");
         console.error("Error:", error);
         // Re-enable button on error
         nextButton.disabled = false;
@@ -480,17 +526,21 @@ function resendOTP() {
         }
     }
 
-    function previewUploadedImage(event) {
-        const file = event.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                uploadedPhoto = e.target.result;
-                document.getElementById("uploadPreview").innerHTML = `<img src="${uploadedPhoto}" alt="Uploaded Photo">`;
-            };
-            reader.readAsDataURL(file);
-        }
+function previewUploadedImage(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            uploadedPhoto = e.target.result;
+            document.getElementById("uploadPreview").innerHTML = `<img src="${uploadedPhoto}" alt="Uploaded Photo" style="width: 100%; height: 100%; object-fit: cover;">`;
+            console.log("Photo uploaded and stored:", uploadedPhoto ? "Yes" : "No");
+        };
+        reader.readAsDataURL(file);
+    } else {
+        uploadedPhoto = null;
+        console.log("No file selected");
     }
+}
 
 function validatePassword() {
     const password = document.getElementById("password").value;
@@ -568,12 +618,14 @@ function validateStep3() {
     const lastName = document.getElementById("lastName")?.value.trim() || "";
     const firstName = document.getElementById("firstName")?.value.trim() || "";
     const studentId = document.getElementById("studentId")?.value.trim() || "";
-    const programId = document.getElementById("program")?.value || "";
-    const sectionId = document.getElementById("section_id")?.value || "";
+    const program = document.getElementById("program")?.value || "";  
+    const yearLevel = document.getElementById("year_level")?.value || "";  
+    const sectionId = document.getElementById("section_id")?.value || "";  
     const password = document.getElementById("password").value;
     const confirmPassword = document.getElementById("confirmPassword").value;
 
-    if (!lastName || !firstName || !studentId || !course || !yearSection) {
+    // FIXED: Use the correct variable names
+    if (!lastName || !firstName || !studentId || !program || !yearLevel || !sectionId) {
         showModal("Warning", "Please fill out all required fields.");
         return;
     }
@@ -1011,64 +1063,22 @@ function updateScanProgress() {
 function registerStudent() {
     const formData = new FormData();
     
-    // Get all form elements
     const email = userEmail || "";
     const studentId = document.getElementById("studentId")?.value?.trim() || "";
     const firstName = document.getElementById("firstName")?.value?.trim() || "";
     const lastName = document.getElementById("lastName")?.value?.trim() || "";
     const middleName = document.getElementById("middleName")?.value?.trim() || "";
-    const course = document.getElementById("course")?.value || "";
-    const yearSection = document.getElementById("yearSection")?.value || "";
+    const sectionId = document.getElementById("section_id")?.value || "";
     const password = document.getElementById("password")?.value || "";
-    const confirmPassword = document.getElementById("confirmPassword")?.value || "";
     const photoInput = document.getElementById("photo");
     
-    // Debug logging to see what we have
-    console.log("Registration data:", {
-        email, studentId, firstName, lastName, middleName, course, yearSection,
-        passwordLength: password.length, confirmPasswordLength: confirmPassword.length,
-        faceEncodingLength: window.faceEncoding ? window.faceEncoding.length : 0,
-        hasPhoto: photoInput?.files?.length > 0
-    });
-    
-    // Validate required fields
-    if (!email) {
-        showModal("Warning", "Email is required.");
-        return;
-    }
-    
-    if (!studentId) {
-        showModal("Warning", "Student ID is required.");
-        return;
-    }
-    
-    if (!firstName) {
-        showModal("Warning", "First name is required.");
-        return;
-    }
-    
-    if (!lastName) {
-        showModal("Warning", "Last name is required.");
-        return;
-    }
-    
-    if (!course) {
-        showModal("Warning", "Course selection is required.");
-        return;
-    }
-    
-    if (!yearSection) {
-        showModal("Warning", "Year and section selection is required.");
+    if (!email || !studentId || !firstName || !lastName || !sectionId || !password) {
+        showModal("Warning", "Please fill out all required fields.");
         return;
     }
     
     if (!password || password.length < 8) {
         showModal("Warning", "Password must be at least 8 characters long.");
-        return;
-    }
-    
-    if (password !== confirmPassword) {
-        showModal("Warning", "Passwords do not match.");
         return;
     }
     
@@ -1088,7 +1098,6 @@ function registerStudent() {
     formData.append('last_name', lastName);
     formData.append('middle_name', middleName);
     formData.append('section_id', sectionId); 
-    formData.append('program_id', programId);
     formData.append('password', password);  
     formData.append('face_encoding', JSON.stringify(window.faceEncoding));
     formData.append('photo', photoInput.files[0]);
@@ -1137,71 +1146,88 @@ function registerStudent() {
         document.getElementById('invite_token').value = token;
     }
 
-    // Add token to form submission
-    document.getElementById('student-reg-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        formData.append('token', token);
-
-        try {
-            const response = await fetch('/api/register_student', {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-            if (data.success) {
-                alert('Registration successful!');
-                window.location.href = '/login';
-            } else {
-                alert(`Registration failed: ${data.message}`);
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Registration error');
-        }
-    });
-
 
 document.addEventListener("DOMContentLoaded", function () {
-
+    console.log("DOM loaded, fetching programs...");
+    
     const programDropdown = document.getElementById('program');
     const yearDropdown = document.getElementById('year_level');
     const sectionDropdown = document.getElementById('section_id');
 
-    fetch('/api/get_programs')
-        .then(response => response.json())
-        .then(data => {
-            if (data.success && data.programs) {
-                data.programs.forEach(program => {
-                    const option = document.createElement('option');
-                    option.value = program.program_id; 
-                    option.textContent = program.program_name; 
-                    programDropdown.appendChild(option);
-                });
-            } else {
-                console.error('Failed to load programs:', data.message);
-            }
-        })
-        .catch(error => console.error('Error fetching programs:', error));
+    // Fetch programs with better error handling
+    fetchPrograms();
+
+    function fetchPrograms() {
+        console.log("Starting to fetch programs...");
+        
+        // Show loading state
+        programDropdown.innerHTML = '<option value="" disabled selected>Loading programs...</option>';
+        programDropdown.disabled = true;
+
+        fetch('/api/get_programs')
+            .then(response => {
+                console.log("Response received:", response.status);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log("Program data received:", data);
+                
+                if (data.success && data.programs && data.programs.length > 0) {
+                    // Clear and populate dropdown
+                    programDropdown.innerHTML = '<option value="" disabled selected>Select your Course</option>';
+                    
+                    data.programs.forEach(program => {
+                        const option = document.createElement('option');
+                        option.value = program.program_id; 
+                        option.textContent = program.program_name; 
+                        programDropdown.appendChild(option);
+                    });
+                    
+                    programDropdown.disabled = false;
+                    console.log(`Loaded ${data.programs.length} programs`);
+                } else {
+                    // Handle empty or failed response
+                    programDropdown.innerHTML = '<option value="" disabled selected>No programs available</option>';
+                    console.error('No programs found or API returned failure:', data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching programs:', error);
+                programDropdown.innerHTML = '<option value="" disabled selected>Error loading programs</option>';
+            });
+    }
 
     function fetchSections() {
         const programId = programDropdown.value;
         const yearLevel = yearDropdown.value;
 
+        console.log("Fetching sections for:", { programId, yearLevel });
+
         resetDropdown(sectionDropdown, 'Select your Section');
         sectionDropdown.disabled = true;
 
         if (programId && yearLevel) {
-            resetDropdown(sectionDropdown, 'Loading...');
+            resetDropdown(sectionDropdown, 'Loading sections...');
             
             fetch(`/api/get_sections?program_id=${programId}&year_level=${yearLevel}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    console.log("Sections data received:", data);
+                    
                     if (data.success && data.sections) {
                         resetDropdown(sectionDropdown, 'Select your Section');
+                        
                         if (data.sections.length === 0) {
-                             resetDropdown(sectionDropdown, 'No sections found');
-                             return;
+                            resetDropdown(sectionDropdown, 'No sections found for this year');
+                            return;
                         }
 
                         data.sections.forEach(section => {
@@ -1211,20 +1237,18 @@ document.addEventListener("DOMContentLoaded", function () {
                             sectionDropdown.appendChild(option);
                         });
                         sectionDropdown.disabled = false;
+                        console.log(`Loaded ${data.sections.length} sections`);
                     } else {
-                         resetDropdown(sectionDropdown, 'Error loading sections');
+                        resetDropdown(sectionDropdown, 'Error loading sections');
                         console.error('Failed to load sections:', data.message);
                     }
                 })
                 .catch(error => {
-                    resetDropdown(sectionDropdown, 'Error loading sections');
                     console.error('Error fetching sections:', error);
+                    resetDropdown(sectionDropdown, 'Error loading sections');
                 });
         }
     }
-
-    programDropdown.addEventListener('change', fetchSections);
-    yearDropdown.addEventListener('change', fetchSections);
 
     function resetDropdown(dropdown, defaultText) {
         dropdown.innerHTML = ''; 
@@ -1236,7 +1260,10 @@ document.addEventListener("DOMContentLoaded", function () {
         dropdown.appendChild(defaultOption);
     }
 
-}); 
+    // Event listeners
+    programDropdown.addEventListener('change', fetchSections);
+    yearDropdown.addEventListener('change', fetchSections);
+});
 </script>
 </body>
 </html>
