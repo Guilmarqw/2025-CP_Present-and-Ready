@@ -11,6 +11,6 @@ ________________________________________________________________________________
 ___________________________________________________________________________________________________
 **Short Overview**
 
-This project aims to eliminate the traditional paper-based attendance system, designed to speed up the attendance process by 40% and deliver reliable attendance records with an accuracy of 95% using a real-time face recognition system with anti-spoofing protection and can detect 30 to 35 students per class session.
+This project aims to eliminate the traditional paper-based attendance system, designed to speed up the attendance process by 40% and deliver reliable attendance records with an accuracy of 85% using a real-time face recognition system with anti-spoofing protection and can detect 30 to 35 students per class session.
 
 
