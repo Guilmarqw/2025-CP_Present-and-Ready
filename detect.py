@@ -4099,7 +4099,7 @@ def bulk_update_faculty():
 
 @app.route('/api/export_data', methods=['POST'])
 def export_data():
-    """Export students or faculty data to CSV"""
+    """Export students or faculty data to CSV - FIXED: Using correct schema"""
     try:
         data = request.json
         data_type = data.get('type', 'students')  # 'students' or 'faculty'
@@ -4109,19 +4109,39 @@ def export_data():
         cursor = conn.cursor(dictionary=True)
         
         if data_type == 'students':
+            # ✅ CORRECTED: Join with year_sections and programs to get proper data
             query = """
-                SELECT student_id, first_name, last_name, middle_name, course, 
-                       year_section, email, status, created_at
-                FROM students
-                WHERE status = %s
-                ORDER BY last_name, first_name
+                SELECT 
+                    s.student_id, 
+                    s.first_name, 
+                    s.last_name, 
+                    s.middle_name, 
+                    p.program_name as course,
+                    CONCAT(ys.year_level, ys.section_name) as year_section,
+                    s.email, 
+                    s.status, 
+                    s.created_at
+                FROM students s
+                JOIN year_sections ys ON s.section_id = ys.section_id
+                JOIN programs p ON ys.program_id = p.program_id
+                WHERE s.status = %s
+                ORDER BY s.last_name, s.first_name
             """
             cursor.execute(query, [filters.get('status', 'active')])
             
         elif data_type == 'faculty':
             query = """
-                SELECT faculty_id, first_name, last_name, middle_name, department, 
-                       designation, email, role, status, created_at
+                SELECT 
+                    faculty_id, 
+                    first_name, 
+                    last_name, 
+                    middle_name, 
+                    department, 
+                    designation, 
+                    email, 
+                    role, 
+                    status, 
+                    created_at
                 FROM faculty
                 WHERE status = %s
                 ORDER BY last_name, first_name
@@ -4491,22 +4511,24 @@ def get_enhanced_dashboard_stats():
 
 @app.route('/api/get_course_distribution', methods=['GET'])
 def get_course_distribution():
-    """Get detailed course distribution for charts and analytics"""
+    """Get detailed course distribution for charts and analytics - FIXED: Using correct schema"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get course distribution with year sections
+        # Get course distribution with year sections using proper joins
         cursor.execute("""
             SELECT 
-                course,
-                year_section,
+                p.program_name as course,
+                CONCAT(ys.year_level, ys.section_name) as year_section,
                 COUNT(*) as student_count,
-                GROUP_CONCAT(CONCAT(first_name, ' ', last_name) SEPARATOR ', ') as student_names
-            FROM students 
-            WHERE status = 'active'
-            GROUP BY course, year_section
-            ORDER BY course, year_section
+                GROUP_CONCAT(CONCAT(s.first_name, ' ', s.last_name) SEPARATOR ', ') as student_names
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE s.status = 'active'
+            GROUP BY p.program_name, ys.year_level, ys.section_name
+            ORDER BY p.program_name, ys.year_level, ys.section_name
         """)
         
         detailed_distribution = cursor.fetchall()
@@ -4514,12 +4536,14 @@ def get_course_distribution():
         # Get summary by course only
         cursor.execute("""
             SELECT 
-                course,
+                p.program_name as course,
                 COUNT(*) as total_students,
-                COUNT(DISTINCT year_section) as sections_count
-            FROM students 
-            WHERE status = 'active'
-            GROUP BY course
+                COUNT(DISTINCT CONCAT(ys.year_level, ys.section_name)) as sections_count
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE s.status = 'active'
+            GROUP BY p.program_name
             ORDER BY total_students DESC
         """)
         
@@ -4625,7 +4649,23 @@ def get_other_students():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT student_id, first_name, last_name, course, year_section, photo_path FROM students")
+        
+        # ✅ CORRECTED: Join with year_sections and programs to get proper data
+        cursor.execute("""
+            SELECT 
+                s.student_id,
+                s.first_name, 
+                s.last_name, 
+                p.program_name as course,
+                CONCAT(ys.year_level, ys.section_name) as year_section,
+                s.photo_path
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE s.status = 'active'
+            ORDER BY p.program_name, ys.year_level, ys.section_name, s.last_name, s.first_name
+        """)
+        
         students = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -5782,7 +5822,7 @@ def student_login_required(f):
 
 @app.route('/api/student/attendance-data')
 def student_attendance_data():
-    """Get attendance data for the logged-in student"""
+    """Get attendance data for the logged-in student - FIXED: Using correct schema"""
     student_id = get_current_student_id()
     
     if not student_id:
@@ -5800,11 +5840,20 @@ def student_attendance_data():
         
         print(f"Fetching data for student: {student_id}")
         
-        # 1. Get student's basic info and section
+        # 1. Get student's basic info with proper joins
         cursor.execute("""
-            SELECT student_id, first_name, last_name, course, year_section, section_id
-            FROM students 
-            WHERE student_id = %s AND status = 'active'
+            SELECT 
+                s.student_id, 
+                s.first_name, 
+                s.last_name,
+                p.program_name,
+                ys.year_level, 
+                ys.section_name,
+                s.section_id
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE s.student_id = %s AND s.status = 'active'
         """, (student_id,))
         
         student_data = cursor.fetchone()
@@ -5812,6 +5861,12 @@ def student_attendance_data():
             return jsonify({'error': 'Student not found'}), 404
         
         print(f"Found student: {student_data}")
+        
+        # Extract student's section info for queries
+        student_section_id = student_data['section_id']
+        student_program = student_data['program_name']
+        student_year_level = student_data['year_level']
+        student_section_name = student_data['section_name']
         
         # 2. Get today's classes (based on schedule, not attendance)
         today = date.today()
@@ -5828,14 +5883,12 @@ def student_attendance_data():
                 cs.day_of_week
             FROM subjects s
             JOIN class_schedules cs ON s.subject_id = cs.subject_id
-            JOIN year_sections ys ON s.section_id = ys.section_id
-            WHERE ys.section_name = 'C' 
-            AND ys.year_level = 4
+            WHERE s.section_id = %s
             AND cs.day_of_week = %s
             AND s.status = 'active'
             AND cs.status = 'active'
             ORDER BY cs.start_time
-        """, (today_day,))
+        """, (student_section_id, today_day))
         
         today_schedule = cursor.fetchall()
         print(f"Today's schedule ({today_day}): {len(today_schedule)} classes")
@@ -5886,7 +5939,7 @@ def student_attendance_data():
         attendance_history = cursor.fetchall()
         print(f"Attendance history: {len(attendance_history)} records")
         
-        # 5. Get all subjects for BSIT 4C
+        # 5. Get all subjects for the student's section
         cursor.execute("""
             SELECT DISTINCT 
                 s.subject_code, 
@@ -5903,13 +5956,21 @@ def student_attendance_data():
             JOIN class_schedules cs ON s.subject_id = cs.subject_id
             JOIN year_sections ys ON s.section_id = ys.section_id
             JOIN programs p ON ys.program_id = p.program_id
-            WHERE ys.section_name = 'C' 
-            AND ys.year_level = 4
-            AND p.program_id = 'IT'
+            WHERE ys.section_id = %s
             AND s.status = 'active'
             AND cs.status = 'active'
-            ORDER BY cs.day_of_week, cs.start_time
-        """)
+            ORDER BY 
+                CASE cs.day_of_week 
+                    WHEN 'Monday' THEN 1
+                    WHEN 'Tuesday' THEN 2
+                    WHEN 'Wednesday' THEN 3
+                    WHEN 'Thursday' THEN 4
+                    WHEN 'Friday' THEN 5
+                    WHEN 'Saturday' THEN 6
+                    ELSE 7
+                END,
+                cs.start_time
+        """, (student_section_id,))
         
         semester_classes = cursor.fetchall()
         print(f"Semester classes found: {len(semester_classes)}")
@@ -6011,8 +6072,8 @@ def student_attendance_data():
         response_data = {
             'student': {
                 'name': f"{student_data['first_name']} {student_data['last_name']}",
-                'course': student_data['course'],
-                'section': student_data['year_section']
+                'course': student_data['program_name'],  # Use program_name instead of course
+                'section': f"{student_data['year_level']}{student_data['section_name']}"  # Combine year_level and section_name
             },
             'stats': {
                 'attendance_rate': round(attendance_rate, 2),
@@ -8602,51 +8663,47 @@ def get_faculty_schedules_for_timer():
                     logged_in_user = f"{user_data['first_name']} {user_data['middle_name']} {user_data['last_name']}"
 
         if user_type == 'admin':
-            # Admin can see all schedules
+            # Admin can see all subjects (using subject_id as schedule_id for frontend compatibility)
             cursor.execute("""
                 SELECT DISTINCT
-                    cs.schedule_id,
-                    cs.day_of_week,
-                    cs.class_type,
+                    s.subject_id as schedule_id,  -- Using subject_id as schedule_id for frontend
                     s.subject_code,
                     s.subject_name,
+                    s.class_type,
+                    s.units,
                     ys.year_level,
                     ys.section_name,
                     p.program_name,
-                    CONCAT(f.first_name, ' ', f.last_name) as instructor_name
-                FROM class_schedules cs
-                JOIN subjects s ON cs.subject_id = s.subject_id
-                JOIN year_sections ys ON cs.section_id = ys.section_id
+                    p.program_name as program  -- Duplicate for frontend compatibility
+                FROM subjects s
+                JOIN year_sections ys ON s.section_id = ys.section_id
                 JOIN programs p ON ys.program_id = p.program_id
-                LEFT JOIN faculty_schedules fs ON cs.schedule_id = fs.schedule_id
-                LEFT JOIN faculty f ON fs.faculty_id = f.faculty_id
-                WHERE cs.status = 'active'
+                WHERE s.status = 'active'
                 ORDER BY s.subject_code
             """)
         else:
-            # Faculty member sees only their schedules
+            # Faculty member sees only their assigned subjects
             cursor.execute("""
-                SELECT 
-                    cs.schedule_id,
-                    cs.day_of_week,
-                    cs.class_type,
+                SELECT DISTINCT
+                    s.subject_id as schedule_id,  -- Using subject_id as schedule_id for frontend
                     s.subject_code,
                     s.subject_name,
+                    s.class_type,
+                    s.units,
                     ys.year_level,
                     ys.section_name,
                     p.program_name,
-                    CONCAT(f.first_name, ' ', f.last_name) as instructor_name
+                    p.program_name as program  -- Duplicate for frontend compatibility
                 FROM faculty_schedules fs
                 JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
                 JOIN subjects s ON cs.subject_id = s.subject_id
-                JOIN year_sections ys ON cs.section_id = ys.section_id
+                JOIN year_sections ys ON s.section_id = ys.section_id
                 JOIN programs p ON ys.program_id = p.program_id
-                JOIN faculty f ON fs.faculty_id = f.faculty_id
-                WHERE fs.faculty_id = %s AND cs.status = 'active'
+                WHERE fs.faculty_id = %s AND s.status = 'active'
                 ORDER BY s.subject_code
             """, (user_id,))
         
-        schedules = cursor.fetchall()
+        schedules = cursor.fetchall()  # Changed variable name back to schedules
         cursor.close()
         conn.close()
         
@@ -8658,13 +8715,14 @@ def get_faculty_schedules_for_timer():
         
         return jsonify({
             'success': True,
-            'schedules': schedules,
+            'schedules': schedules,  # Changed back to 'schedules' for frontend compatibility
             'logged_in_user': logged_in_user
         })
         
     except Exception as e:
-        logger.error(f"Error getting faculty schedules for timer: {e}", exc_info=True)
+        logger.error(f"Error getting faculty subjects for timer: {e}", exc_info=True)
         return jsonify({'success': False, 'message': str(e)})
+
 
 @app.route('/api/get_faculty_schedule', methods=['GET'])
 @login_required
@@ -10732,7 +10790,7 @@ def debug_threshold():
 
 @app.route('/api/get_class_students', methods=['GET'])
 def get_class_students():
-    """Get students for the current class including both regular and temporary students"""
+    """Get students for the current class including both regular and temporary students - FIXED: Using correct schema"""
     connection = None
     cursor = None
     try:
@@ -10753,34 +10811,53 @@ def get_class_students():
         if not all([program, year_level, section]):
             return jsonify({'success': False, 'message': 'Missing required parameters'}), 400
         
-        # Map program names
+        # Map program names to program_ids
         program_map = {
-            'Information Technology': 'BSIT',
-            'Computer Science': 'BSCS',        
+            'Information Technology': 'IT',
+            'Computer Science': 'CS',        
             'Associate in Computer Technology': 'ACT',
-            'IT': 'BSIT',
-            'CS': 'BSCS',
+            'IT': 'IT',
+            'CS': 'CS',
             'ACT': 'ACT',
-            'BSIT': 'BSIT',
-            'BSCS': 'BSCS'
+            'BSIT': 'IT',
+            'BSCS': 'CS'
         }
         
-        course_to_search = program_map.get(program, program)
-        year_level_num = ''.join(filter(str.isdigit, str(year_level))) if year_level else ''
-        year_section_to_search = f"{year_level_num}{section}"
+        program_id_to_search = program_map.get(program, program)
         
-        print(f"DEBUG: Searching for course='{course_to_search}', year_section='{year_section_to_search}'")
+        # Convert year_level to integer and section to uppercase
+        try:
+            year_level_num = int(year_level) if year_level else None
+        except (ValueError, TypeError):
+            year_level_num = None
+            
+        section_to_search = section.upper() if section else None
         
-        # ✅ STEP 1: Get REGULAR students from students table
+        print(f"DEBUG: Searching for program_id='{program_id_to_search}', year_level={year_level_num}, section='{section_to_search}'")
+        
+        # ✅ STEP 1: Get REGULAR students from students table with proper joins
         regular_query = """
-            SELECT student_id, first_name, last_name, middle_name, 
-                   course, year_section, photo_path, status
-            FROM students 
-            WHERE course = %s AND year_section = %s AND status = 'active'
-            ORDER BY last_name, first_name
+            SELECT 
+                s.student_id, 
+                s.first_name, 
+                s.last_name, 
+                s.middle_name, 
+                s.photo_path, 
+                s.status,
+                p.program_name,
+                ys.year_level, 
+                ys.section_name
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE ys.program_id = %s 
+            AND ys.year_level = %s 
+            AND ys.section_name = %s 
+            AND s.status = 'active'
+            ORDER BY s.last_name, s.first_name
         """
         
-        cursor.execute(regular_query, (course_to_search, year_section_to_search))
+        cursor.execute(regular_query, (program_id_to_search, year_level_num, section_to_search))
         regular_students = cursor.fetchall()
         
         # ✅ STEP 2: Get TEMPORARY students from temporary_students table
@@ -10830,7 +10907,10 @@ def get_class_students():
                 'lastName': student['last_name'],
                 'photo_path': student['photo_path'] or '/static/images/default-avatar.jpg',
                 'status': 'absent',  # Default status
-                'type': 'regular'
+                'type': 'regular',
+                'program': student['program_name'],
+                'year_level': student['year_level'],
+                'section': student['section_name']
             })
         
         for temp_student in temporary_students:
@@ -10881,14 +10961,29 @@ def get_class_students():
 
 @app.route('/api/debug_students')
 def debug_students():
-    """Debug route to see all students and their course/year_section"""
+    """Debug route to see all students and their program/year_level/section"""
     connection = None
     cursor = None
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
         
-        cursor.execute("SELECT student_id, first_name, last_name, course, year_section FROM students")
+        # ✅ CORRECTED: Join with year_sections and programs to get proper data
+        cursor.execute("""
+            SELECT 
+                s.student_id, 
+                s.first_name, 
+                s.last_name, 
+                p.program_name,
+                ys.year_level, 
+                ys.section_name,
+                CONCAT(ys.year_level, ys.section_name) as display_section
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE s.status = 'active'
+            ORDER BY p.program_name, ys.year_level, ys.section_name
+        """)
         students = cursor.fetchall()
         
         return jsonify({'success': True, 'students': students})
@@ -10910,7 +11005,7 @@ student_status = {}  # In-memory dictionary to track student status
 
 @app.route('/api/get_student_status')
 def get_student_status():
-    """Get current status of all students - FIXED: Consistent manual status protection and duplicate prevention"""
+    """Get current status of all students - FIXED: Using correct schema with programs and year_sections"""
     global session_start_time, session_threshold_seconds, current_session_id, student_presence_tracker
     global locked_tracks
     
@@ -10950,30 +11045,53 @@ def get_student_status():
             logger.warning("⚠️ No threshold set, using default 900 seconds")
             threshold_seconds = 900
         
+        # Map program names to program_ids
         program_map = {
-            'Information Technology': 'BSIT',
-            'Computer Science': 'BSCS',
+            'Information Technology': 'IT',
+            'Computer Science': 'CS', 
             'Associate in Computer Technology': 'ACT',
-            'IT': 'BSIT',
-            'CS': 'BSCS',
+            'IT': 'IT',
+            'CS': 'CS',
             'ACT': 'ACT',
-            'BSIT': 'BSIT',
-            'BSCS': 'BSCS'
+            'BSIT': 'IT',
+            'BSCS': 'CS'
         }
-        course_to_search = program_map.get(program, program)
-        year_level_num = ''.join(filter(str.isdigit, str(year_level))) if year_level else ''
-        year_section_to_search = f"{year_level_num}{section}"
+        
+        program_id_to_search = program_map.get(program, program)
+        
+        # Convert year_level to integer and section to uppercase for matching
+        try:
+            year_level_num = int(year_level) if year_level else None
+        except (ValueError, TypeError):
+            year_level_num = None
+            
+        section_to_search = section.upper() if section else None
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
+        # ✅ CORRECTED QUERY: Join students with year_sections and programs
         cursor.execute("""
-            SELECT student_id, first_name, last_name, course, year_section
-            FROM students 
-            WHERE course = %s AND year_section = %s AND status = 'active'
-        """, (course_to_search, year_section_to_search))
+            SELECT 
+                s.student_id, 
+                s.first_name, 
+                s.last_name,
+                ys.program_id,
+                p.program_name,
+                ys.year_level, 
+                ys.section_name
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE ys.program_id = %s 
+            AND ys.year_level = %s 
+            AND ys.section_name = %s 
+            AND s.status = 'active'
+        """, (program_id_to_search, year_level_num, section_to_search))
         
         students = cursor.fetchall()
+        
+        logger.info(f"🔍 Found {len(students)} students for program: {program_id_to_search}, year: {year_level_num}, section: {section_to_search}")
         
         # ✅ CRITICAL FIX: Get temporary students from CURRENT SESSION only
         cursor.execute("""
@@ -11031,7 +11149,6 @@ def get_student_status():
             student_id = student['student_id']
             student_name = f"{student['first_name']} {student['last_name']}"
             
-            
             # Priority 1: Check for MANUAL STATUS (excused, etc.) - HIGHEST PRIORITY
             cursor.execute("""
                 SELECT status, session_id, remarks, timestamp FROM attendance 
@@ -11072,7 +11189,10 @@ def get_student_status():
                     'id': student_id,
                     'name': student_name,
                     'status': current_status,  # Use the manual status
-                    'type': 'regular'
+                    'type': 'regular',
+                    'program': student.get('program_name', program),
+                    'year_level': student.get('year_level', year_level_num),
+                    'section': student.get('section_name', section_to_search)
                 })
                 manual_status_students.add(student_id)  # Track manual status students
                 continue  
@@ -11125,7 +11245,10 @@ def get_student_status():
                 'id': student_id,
                 'name': student_name,
                 'status': current_status,
-                'type': 'regular'
+                'type': 'regular',
+                'program': student.get('program_name', program),
+                'year_level': student.get('year_level', year_level_num),
+                'section': student.get('section_name', section_to_search)
             })
         
         temp_counter = 1
@@ -11190,7 +11313,10 @@ def get_student_status():
                     'id': temp_id,
                     'name': display_name,
                     'status': current_status,
-                    'type': 'temporary'
+                    'type': 'temporary',
+                    'program': program,
+                    'year_level': year_level_num,
+                    'section': section_to_search
                 })
             
             if current_status in ['present', 'late']:
@@ -11242,7 +11368,7 @@ def get_session_threshold():
     
 @app.route('/api/manage_student', methods=['POST'])
 def manage_student():
-    """Handle student management actions - FIXED: Prevents duplicates and properly updates status"""
+    """Handle student management actions - FIXED: Using correct schema with programs and year_sections"""
     global session_start_time, session_threshold_seconds, current_session_id
     
     try:
@@ -11369,6 +11495,7 @@ def manage_student():
             conn = get_db_connection()
             cursor = conn.cursor()
             
+            # ✅ CORRECTED: Check students table with proper schema
             cursor.execute("""
                 SELECT first_name, last_name 
                 FROM students 
@@ -11431,21 +11558,30 @@ def manage_student():
                     'message': 'Please provide both student ID and new section'
                 })
             
+            # Parse new section format (e.g., "IT 4A", "CS 3B", "ACT 2C")
             match = re.match(r'(\w+)\s*(\d+)(\w+)', new_section)
             if not match:
                 return jsonify({
                     'success': False, 
                     'title': 'Invalid Format',
-                    'message': 'Please use format like "BSIT 4C" or "BSCS 3A"'
+                    'message': 'Please use format like "IT 4A" or "CS 3B"'
                 })
             
-            course = match.group(1)
-            year_section = f"{match.group(2)}{match.group(3)}"
+            program_id = match.group(1).upper()  # IT, CS, ACT
+            year_level = int(match.group(2))     # 1, 2, 3, 4
+            section_name = match.group(3).upper()  # A, B, C
             
             conn = get_db_connection()
-            cursor = conn.cursor()
+            cursor = conn.cursor(dictionary=True)
             
-            cursor.execute("SELECT first_name, last_name FROM students WHERE student_id = %s", (student_id,))
+            # ✅ CORRECTED: Get student info with proper schema
+            cursor.execute("""
+                SELECT s.first_name, s.last_name, ys.section_id
+                FROM students s
+                JOIN year_sections ys ON s.section_id = ys.section_id
+                WHERE s.student_id = %s
+            """, (student_id,))
+            
             student = cursor.fetchone()
             
             if not student:
@@ -11457,13 +11593,32 @@ def manage_student():
                     'message': f'Student with ID {student_id} was not found'
                 })
             
-            student_name = f"{student[0]} {student[1]}"
+            student_name = f"{student['first_name']} {student['last_name']}"
             
+            # Find the target section_id
+            cursor.execute("""
+                SELECT section_id FROM year_sections 
+                WHERE program_id = %s AND year_level = %s AND section_name = %s
+                LIMIT 1
+            """, (program_id, year_level, section_name))
+            
+            target_section = cursor.fetchone()
+            
+            if not target_section:
+                cursor.close()
+                conn.close()
+                return jsonify({
+                    'success': False, 
+                    'title': 'Section Not Found',
+                    'message': f'Section {program_id} {year_level}{section_name} was not found'
+                })
+            
+            # ✅ CORRECTED: Update student's section_id
             cursor.execute("""
                 UPDATE students 
-                SET course = %s, year_section = %s
+                SET section_id = %s
                 WHERE student_id = %s
-            """, (course, year_section, student_id))
+            """, (target_section['section_id'], student_id))
             
             conn.commit()
             cursor.close()
@@ -11472,11 +11627,11 @@ def manage_student():
             if student_id in student_status:
                 del student_status[student_id]
             
-            logger.info(f"🔄 STUDENT TRANSFERRED: {student_id} to {new_section}")
+            logger.info(f"🔄 STUDENT TRANSFERRED: {student_id} to {program_id} {year_level}{section_name}")
             return jsonify({
                 'success': True, 
                 'title': 'Transfer Successful',
-                'message': f'Student {student_name} has been transferred to {new_section}'
+                'message': f'Student {student_name} has been transferred to {program_id} {year_level}{section_name}'
             })
             
         elif action == 'excused':
@@ -11799,21 +11954,32 @@ def manage_student():
     
 @app.route('/api/get_all_students')
 def get_all_students():
-    """Get ALL students from the database"""
+    """Get ALL students from the database - FIXED: Using correct schema with joins"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
+        # ✅ CORRECTED: Join with year_sections and programs to get proper data
         cursor.execute("""
-            SELECT student_id as id, first_name, last_name, course, year_section, status
-            FROM students 
-            WHERE status = 'active'
-            ORDER BY course, year_section, last_name, first_name
+            SELECT 
+                s.student_id as id, 
+                s.first_name, 
+                s.last_name, 
+                p.program_name as course,
+                ys.year_level,
+                ys.section_name,
+                CONCAT(ys.year_level, ys.section_name) as year_section,
+                s.status
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE s.status = 'active'
+            ORDER BY p.program_name, ys.year_level, ys.section_name, s.last_name, s.first_name
         """)
         
         students = cursor.fetchall()
         
-        # Format student names
+        # Format student names and create display info
         formatted_students = []
         for student in students:
             formatted_students.append({
@@ -11821,6 +11987,8 @@ def get_all_students():
                 'name': f"{student['first_name']} {student['last_name']}",
                 'course': student['course'],
                 'year_section': student['year_section'],
+                'year_level': student['year_level'],
+                'section_name': student['section_name'],
                 'status': student['status']
             })
         
@@ -12574,7 +12742,7 @@ def initialize_session_timing(schedule_id):
 def get_absent_students():
     """
     API 1: Fetches ALL students in the session's class who haven't been marked PRESENT or LATE in this session.
-    FIXED: Better query to find students by multiple criteria
+    FIXED: Using correct schema with programs and year_sections
     """
     session_id = request.args.get('session_id')
     section_id = request.args.get('section_id')
@@ -12596,7 +12764,11 @@ def get_absent_students():
         
         # 🎯 STEP 1: Get session details to find the class info
         print("🔍 DEBUG: Fetching session details...")
-        cursor.execute("SELECT session_id, class_name, subject_name, section_id FROM attendance_sessions WHERE session_id = %s", (session_id,))
+        cursor.execute("""
+            SELECT session_id, class_name, subject_name, section_id 
+            FROM attendance_sessions 
+            WHERE session_id = %s
+        """, (session_id,))
         session_data = cursor.fetchone()
         
         if not session_data:
@@ -12608,15 +12780,20 @@ def get_absent_students():
         
         print(f"🔍 DEBUG: Session found: {session_data}")
         
-        # 🎯 STEP 2: Extract class info (e.g., "BSIT4C")
-        class_name = session_data.get('class_name', '')
-        print(f"🔍 DEBUG: Class name from session: '{class_name}'")
+        # 🎯 STEP 2: Get section details from year_sections
+        session_section_id = session_data.get('section_id')
+        section_info = None
         
-        if not class_name:
-            return jsonify({
-                'success': False,
-                'message': 'No class information found in session.'
-            }), 400
+        if session_section_id:
+            print(f"🔍 DEBUG: Fetching section details for section_id: {session_section_id}")
+            cursor.execute("""
+                SELECT ys.section_id, ys.program_id, ys.year_level, ys.section_name, p.program_name
+                FROM year_sections ys
+                JOIN programs p ON ys.program_id = p.program_id
+                WHERE ys.section_id = %s
+            """, (session_section_id,))
+            section_info = cursor.fetchone()
+            print(f"🔍 DEBUG: Section info: {section_info}")
         
         # 🎯 STEP 3: Get students already marked present/late in THIS session
         print("🔍 DEBUG: Finding students already detected in this session...")
@@ -12635,96 +12812,124 @@ def get_absent_students():
         
         # First, let's see what students actually exist in the database
         print("🔍 DEBUG: Checking available students in database...")
-        cursor.execute("SELECT DISTINCT course, year_section, section_id FROM students WHERE status = 'active' LIMIT 10")
+        cursor.execute("""
+            SELECT DISTINCT 
+                p.program_name, 
+                ys.year_level, 
+                ys.section_name,
+                ys.section_id
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
+            WHERE s.status = 'active' 
+            LIMIT 10
+        """)
         available_students = cursor.fetchall()
         print(f"🔍 DEBUG: Available student patterns: {available_students}")
         
         # 🎯 STEP 5: Try to find students using multiple criteria
         undetected_students = []
         
-        # Method 1: Try using section_id from session
-        session_section_id = session_data.get('section_id')
+        # Method 1: Try using section_id from session (BEST METHOD)
         if session_section_id:
             print(f"🔍 DEBUG: Trying to find students by section_id: {session_section_id}")
             if present_ids:
                 placeholders = ', '.join(['%s'] * len(present_ids))
                 students_sql = f"""
-                    SELECT student_id, first_name, last_name, course, year_section
-                    FROM students 
-                    WHERE section_id = %s 
-                    AND status = 'active'
-                    AND student_id NOT IN ({placeholders})
-                    ORDER BY last_name, first_name
+                    SELECT 
+                        s.student_id, 
+                        s.first_name, 
+                        s.last_name,
+                        p.program_name,
+                        ys.year_level, 
+                        ys.section_name,
+                        CONCAT(ys.year_level, ys.section_name) as display_section
+                    FROM students s
+                    JOIN year_sections ys ON s.section_id = ys.section_id
+                    JOIN programs p ON ys.program_id = p.program_id
+                    WHERE s.section_id = %s 
+                    AND s.status = 'active'
+                    AND s.student_id NOT IN ({placeholders})
+                    ORDER BY s.last_name, s.first_name
                 """
                 cursor.execute(students_sql, [session_section_id] + present_ids)
             else:
                 students_sql = """
-                    SELECT student_id, first_name, last_name, course, year_section
-                    FROM students 
-                    WHERE section_id = %s 
-                    AND status = 'active'
-                    ORDER BY last_name, first_name
+                    SELECT 
+                        s.student_id, 
+                        s.first_name, 
+                        s.last_name,
+                        p.program_name,
+                        ys.year_level, 
+                        ys.section_name,
+                        CONCAT(ys.year_level, ys.section_name) as display_section
+                    FROM students s
+                    JOIN year_sections ys ON s.section_id = ys.section_id
+                    JOIN programs p ON ys.program_id = p.program_id
+                    WHERE s.section_id = %s 
+                    AND s.status = 'active'
+                    ORDER BY s.last_name, s.first_name
                 """
                 cursor.execute(students_sql, [session_section_id])
             
             undetected_students = cursor.fetchall()
             print(f"🔍 DEBUG: Found {len(undetected_students)} students by section_id")
         
-        # Method 2: If no students found by section_id, try by class_name patterns
-        if not undetected_students and class_name:
-            print(f"🔍 DEBUG: Trying to find students by class_name patterns: {class_name}")
+        # Method 2: If no students found by section_id, try by program and year_level/section
+        if not undetected_students and section_info:
+            print(f"🔍 DEBUG: Trying to find students by program/year_level/section...")
+            program_id = section_info.get('program_id')
+            year_level = section_info.get('year_level')
+            section_name = section_info.get('section_name')
             
-            # Try different ways to match class_name
-            search_patterns = [
-                (class_name, class_name),  # Exact match
-                (class_name[:4], class_name[4:]),  # Split "BSIT4C" into "BSIT" and "4C"
-                (class_name, ""),  # Course only
-                ("", class_name),  # Year_section only
-            ]
-            
-            for course_pattern, year_section_pattern in search_patterns:
-                if not undetected_students:
-                    where_conditions = []
-                    params = []
-                    
-                    if course_pattern:
-                        where_conditions.append("course = %s")
-                        params.append(course_pattern)
-                    
-                    if year_section_pattern:
-                        where_conditions.append("year_section = %s")
-                        params.append(year_section_pattern)
-                    
-                    if not where_conditions:
-                        continue
-                    
-                    where_clause = " AND ".join(where_conditions)
-                    
-                    if present_ids:
-                        placeholders = ', '.join(['%s'] * len(present_ids))
-                        students_sql = f"""
-                            SELECT student_id, first_name, last_name, course, year_section
-                            FROM students 
-                            WHERE {where_clause}
-                            AND status = 'active'
-                            AND student_id NOT IN ({placeholders})
-                            ORDER BY last_name, first_name
-                        """
-                        cursor.execute(students_sql, params + present_ids)
-                    else:
-                        students_sql = f"""
-                            SELECT student_id, first_name, last_name, course, year_section
-                            FROM students 
-                            WHERE {where_clause}
-                            AND status = 'active'
-                            ORDER BY last_name, first_name
-                        """
-                        cursor.execute(students_sql, params)
-                    
-                    undetected_students = cursor.fetchall()
-                    if undetected_students:
-                        print(f"✅ SUCCESS: Found {len(undetected_students)} students using course='{course_pattern}', year_section='{year_section_pattern}'")
-                        break
+            if program_id and year_level and section_name:
+                print(f"🔍 DEBUG: Searching for program_id='{program_id}', year_level={year_level}, section_name='{section_name}'")
+                
+                if present_ids:
+                    placeholders = ', '.join(['%s'] * len(present_ids))
+                    students_sql = f"""
+                        SELECT 
+                            s.student_id, 
+                            s.first_name, 
+                            s.last_name,
+                            p.program_name,
+                            ys.year_level, 
+                            ys.section_name,
+                            CONCAT(ys.year_level, ys.section_name) as display_section
+                        FROM students s
+                        JOIN year_sections ys ON s.section_id = ys.section_id
+                        JOIN programs p ON ys.program_id = p.program_id
+                        WHERE ys.program_id = %s 
+                        AND ys.year_level = %s 
+                        AND ys.section_name = %s
+                        AND s.status = 'active'
+                        AND s.student_id NOT IN ({placeholders})
+                        ORDER BY s.last_name, s.first_name
+                    """
+                    cursor.execute(students_sql, [program_id, year_level, section_name] + present_ids)
+                else:
+                    students_sql = """
+                        SELECT 
+                            s.student_id, 
+                            s.first_name, 
+                            s.last_name,
+                            p.program_name,
+                            ys.year_level, 
+                            ys.section_name,
+                            CONCAT(ys.year_level, ys.section_name) as display_section
+                        FROM students s
+                        JOIN year_sections ys ON s.section_id = ys.section_id
+                        JOIN programs p ON ys.program_id = p.program_id
+                        WHERE ys.program_id = %s 
+                        AND ys.year_level = %s 
+                        AND ys.section_name = %s
+                        AND s.status = 'active'
+                        ORDER BY s.last_name, s.first_name
+                    """
+                    cursor.execute(students_sql, [program_id, year_level, section_name])
+                
+                undetected_students = cursor.fetchall()
+                print(f"🔍 DEBUG: Found {len(undetected_students)} students by program/year/section")
         
         # Method 3: Last resort - get ALL active students (for debugging)
         if not undetected_students:
@@ -12732,25 +12937,43 @@ def get_absent_students():
             if present_ids:
                 placeholders = ', '.join(['%s'] * len(present_ids))
                 students_sql = f"""
-                    SELECT student_id, first_name, last_name, course, year_section
-                    FROM students 
-                    WHERE status = 'active'
-                    AND student_id NOT IN ({placeholders})
-                    ORDER BY last_name, first_name
+                    SELECT 
+                        s.student_id, 
+                        s.first_name, 
+                        s.last_name,
+                        p.program_name,
+                        ys.year_level, 
+                        ys.section_name,
+                        CONCAT(ys.year_level, ys.section_name) as display_section
+                    FROM students s
+                    JOIN year_sections ys ON s.section_id = ys.section_id
+                    JOIN programs p ON ys.program_id = p.program_id
+                    WHERE s.status = 'active'
+                    AND s.student_id NOT IN ({placeholders})
+                    ORDER BY p.program_name, ys.year_level, ys.section_name, s.last_name, s.first_name
                 """
                 cursor.execute(students_sql, present_ids)
             else:
                 students_sql = """
-                    SELECT student_id, first_name, last_name, course, year_section
-                    FROM students 
-                    WHERE status = 'active'
-                    ORDER BY last_name, first_name
+                    SELECT 
+                        s.student_id, 
+                        s.first_name, 
+                        s.last_name,
+                        p.program_name,
+                        ys.year_level, 
+                        ys.section_name,
+                        CONCAT(ys.year_level, ys.section_name) as display_section
+                    FROM students s
+                    JOIN year_sections ys ON s.section_id = ys.section_id
+                    JOIN programs p ON ys.program_id = p.program_id
+                    WHERE s.status = 'active'
+                    ORDER BY p.program_name, ys.year_level, ys.section_name, s.last_name, s.first_name
                 """
                 cursor.execute(students_sql)
             
             all_students = cursor.fetchall()
             print(f"🔍 DEBUG: Total active students in database: {len(all_students)}")
-            print(f"🔍 DEBUG: All student patterns: {[(s['student_id'], s['course'], s['year_section']) for s in all_students]}")
+            print(f"🔍 DEBUG: All student patterns: {[(s['student_id'], s['program_name'], s['year_level'], s['section_name']) for s in all_students[:5]]}")
             
             # For now, return all students so we can see what's available
             undetected_students = all_students
@@ -12758,8 +12981,11 @@ def get_absent_students():
         print(f"✅ FINAL RESULT: Found {len(undetected_students)} students for enrollment")
         
         # Log the results
-        for student in undetected_students:
-            print(f"   👤 {student['student_id']}: {student['first_name']} {student['last_name']} ({student['course']}{student['year_section']})")
+        for student in undetected_students[:5]:  # Log first 5 only
+            print(f"   👤 {student['student_id']}: {student['first_name']} {student['last_name']} ({student['program_name']} {student['year_level']}{student['section_name']})")
+        
+        if len(undetected_students) > 5:
+            print(f"   ... and {len(undetected_students) - 5} more students")
         
         cursor.close()
         conn.close()
