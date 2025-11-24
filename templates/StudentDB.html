@@ -623,13 +623,14 @@ function addEventListenersToRow(row) {
             });
 
             viewBtn?.addEventListener('click', function () {
-                const id = this.getAttribute('data-id');
-                const student = allStudents.find(s => s.id === id);
-                if (student) {
-                    populateViewModal(student);
-                    openModal(viewStudentModal);
-                }
-            });
+    const id = this.getAttribute('data-id');
+    openViewStudentModal(id); // ✅ Call this directly
+});
+
+// Add this function if it doesn't exist
+function showNotification(message, type = 'success') {
+    showAlert(message, type === 'success');
+}
 
             deleteBtn?.addEventListener('click', function () {
                 const id = this.getAttribute('data-id');
@@ -644,57 +645,72 @@ function addEventListenersToRow(row) {
 
      
 if (submitEditStudent) {
-            submitEditStudent.addEventListener('click', async function () {
-                const id = document.getElementById('editStudentId')?.value; 
-                const first = document.getElementById('editFirstName')?.value;
-                const middle = document.getElementById('editMiddleName')?.value;
-                const last = document.getElementById('editLastName')?.value;
-                const idNum = document.getElementById('editStudentIdNumber')?.value; 
-                const email = document.getElementById('editEmail')?.value;
-                const status = document.getElementById('editStatus')?.value;
-                
-                // Get values from NEW dropdowns
-                const program = document.getElementById('editProgram')?.value;
-                const year = document.getElementById('editYearLevel')?.value;
-                const section = document.getElementById('editSection')?.value;
+    submitEditStudent.addEventListener('click', async function () {
+        const originalId = document.getElementById('editStudentId')?.value; 
+        const first = document.getElementById('editFirstName')?.value.trim();
+        const middle = document.getElementById('editMiddleName')?.value.trim();
+        const last = document.getElementById('editLastName')?.value.trim();
+        const newIdNum = document.getElementById('editStudentIdNumber')?.value.trim(); 
+        const email = document.getElementById('editEmail')?.value.trim();
+        const status = document.getElementById('editStatus')?.value;
+        
+        // Get values from dropdowns
+        const program = document.getElementById('editProgram')?.value;
+        const year = document.getElementById('editYearLevel')?.value;
+        const section = document.getElementById('editSection')?.value;
 
-                // Updated validation
-                if (!first || !last || !idNum || !email || !program || !year || !section) {
-                    showAlert('Please fill all required fields', false);
-                    return;
-                }
-
-                try {
-                    const res = await fetch('/api/update_student', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            original_student_id: id, 
-                            student_id: idNum,
-                            first_name: first,
-                            last_name: last,
-                            middle_name: middle || '',
-                            program_id: program,
-                            section_id: section,
-                            email: email,
-                            status: status
-                        })
-                    });
-                    
-                    const data = await res.json();
-                    if (data.success) {
-                        showAlert(`Student ${first} ${last} updated successfully!`);
-                        closeModal(editStudentModal);
-                        loadStudentsFromDatabase();
-                    } else {
-                        showAlert(data.message || 'Failed to update student', false);
-                    }
-                } catch (e) {
-                    console.error(e);
-                    showAlert('Error updating student', false);
-                }
-            });
+        // Validation
+        if (!first || !last || !newIdNum || !email || !section) {
+            showAlert('Please fill all required fields (marked with *)', false);
+            return;
         }
+
+        // Email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            showAlert('Please enter a valid email address', false);
+            return;
+        }
+
+        // Disable button to prevent double submission
+        submitEditStudent.disabled = true;
+        submitEditStudent.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+
+        try {
+            const res = await fetch('/api/update_student', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    original_student_id: originalId,
+                    student_id: newIdNum,
+                    first_name: first,
+                    last_name: last,
+                    middle_name: middle || '',
+                    section_id: section,  // Only send section_id, not program_id
+                    email: email,
+                    status: status
+                })
+            });
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                showAlert(`Student ${first} ${last} updated successfully!`, true);
+                closeModal(editStudentModal);
+                await loadStudentsFromDatabase();
+            } else {
+                showAlert(data.message || 'Failed to update student', false);
+            }
+        } catch (e) {
+            console.error('Update error:', e);
+            showAlert('Error updating student. Please try again.', false);
+        } finally {
+            // Re-enable button
+            submitEditStudent.disabled = false;
+            submitEditStudent.innerHTML = 'Save Changes';
+        }
+    });
+}
         
         if (confirmDelete) {
             confirmDelete.addEventListener('click', async function () {
@@ -733,46 +749,110 @@ if (submitEditStudent) {
             f.addEventListener('change', () => { currentPage = 1; loadStudentsFromDatabase(); });
         });
 
-
-function populateViewModal(student) {
-            const photo = document.getElementById('viewPhoto');
-            photo.src = student.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random`;
-            photo.alt = student.name;
-
-            document.getElementById('viewFullName').textContent = student.name;
-            document.getElementById('viewFirstName').textContent = student.firstName || 'N/A';
-            document.getElementById('viewMiddleName').textContent = student.middleName || 'N/A';
-            document.getElementById('viewLastName').textContent = student.lastName || 'N/A';
-            document.getElementById('viewIdNumber').textContent = student.idNumber || 'N/A';
-            document.getElementById('viewEmail').textContent = student.email || 'N/A';
-            document.getElementById('viewCourse').textContent = student.course || 'N/A';
-            document.getElementById('viewSection').textContent = student.yearSection || 'N/A';
-            document.getElementById('viewStatus').textContent = student.status || 'N/A';
-
-            const badge = document.getElementById('viewStatusBadge');
-            badge.textContent = student.status === 'active' ? 'Active' : 'Inactive';
-            badge.className = `detail-badge ${student.status === 'active' ? 'active' : 'inactive'}`;
-
-            // (Your attendance log logic...)
-            const tbody = document.getElementById('attendanceBody');
-            const noRec = document.getElementById('noAttendance');
-            const attendance = student.attendance || []; 
-            if (attendance.length === 0) {
-                tbody.innerHTML = '';
-                noRec.style.display = 'block';
-                return;
+function openViewStudentModal(studentId) {
+    const modal = document.getElementById('viewStudentModal');
+    
+    // Show loading state
+    const attendanceBody = document.getElementById('attendanceBody');
+    attendanceBody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i> Loading attendance...</td></tr>';
+    
+    // Fetch student details with attendance
+    fetch(`/api/student/${studentId}/details`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const student = data.student;
+                
+                // Populate personal information
+                document.getElementById('viewPhoto').src = student.photo_path || '/static/images/default-avatar.jpg';
+                document.getElementById('viewFullName').textContent = `${student.first_name} ${student.last_name}`;
+                document.getElementById('viewFirstName').textContent = student.first_name || 'N/A';
+                document.getElementById('viewMiddleName').textContent = student.middle_name || 'N/A';
+                document.getElementById('viewLastName').textContent = student.last_name || 'N/A';
+                document.getElementById('viewIdNumber').textContent = student.student_id || 'N/A';
+                document.getElementById('viewEmail').textContent = student.email || 'N/A';
+                
+                // Academic information
+                document.getElementById('viewCourse').textContent = student.course || 'N/A';
+                document.getElementById('viewSection').textContent = student.year_section || 'N/A';
+                document.getElementById('viewStatus').textContent = student.status || 'N/A';
+                
+                // Status badge
+                const statusBadge = document.getElementById('viewStatusBadge');
+                statusBadge.textContent = student.status || 'Active';
+                statusBadge.className = `detail-badge ${student.status === 'active' ? 'badge-success' : 'badge-warning'}`;
+                
+                // Populate attendance records
+                const attendanceRecords = data.attendance || [];
+                const noAttendanceMsg = document.getElementById('noAttendance');
+                
+                if (attendanceRecords.length > 0) {
+                    attendanceBody.innerHTML = '';
+                    noAttendanceMsg.style.display = 'none';
+                    
+                    attendanceRecords.forEach(record => {
+                        const row = document.createElement('tr');
+                        
+                        // Format date
+                        const date = new Date(record.timestamp);
+                        const formattedDate = date.toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric', 
+                            year: 'numeric' 
+                        });
+                        
+                        // Status badge class
+                        const statusClass = `status-${record.status.toLowerCase()}`;
+                        
+                        row.innerHTML = `
+                            <td>${formattedDate}</td>
+                            <td style="text-align:center;">
+                                <span class="attendance-status-badge ${statusClass}">
+                                    ${record.status.toUpperCase()}
+                                </span>
+                            </td>
+                            <td>${record.subject_code || 'N/A'} - ${record.subject_name || 'N/A'}</td>
+                        `;
+                        
+                        attendanceBody.appendChild(row);
+                    });
+                } else {
+                    attendanceBody.innerHTML = '';
+                    noAttendanceMsg.style.display = 'block';
+                }
+                
+                // Show modal
+                modal.style.display = 'block';
+            } else {
+                showAlert(data.message || 'Failed to load student details', false);
             }
-            noRec.style.display = 'none';
-            tbody.innerHTML = attendance.map(r => `
-                <tr>
-                    <td>${r.date}</td>
-                    <td style="text-align:center;">
-                        <span class="attendance-status ${r.status.toLowerCase()}">${r.status}</span>
-                    </td>
-                    <td>${r.subject}</td>
-                </tr>
-            `).join('');
-        }
+        })
+        .catch(error => {
+            console.error('Error fetching student details:', error);
+            showAlert('Error loading student details', false);
+        });
+}
+
+// Wrapper function called by the view button click handler
+function populateViewModal(student) {
+    // Just call the API-based function
+    openViewStudentModal(student.id);
+}
+
+// Close modal handlers
+document.querySelectorAll('#viewStudentModal .close, #viewStudentModal .btn-cancel').forEach(element => {
+    element.addEventListener('click', () => {
+        document.getElementById('viewStudentModal').style.display = 'none';
+    });
+});
+
+// Close on outside click
+window.addEventListener('click', (event) => {
+    const modal = document.getElementById('viewStudentModal');
+    if (event.target === modal) {
+        modal.style.display = 'none';
+    }
+});
 
         async function loadProgramsToDropdown(dropdownId) {
             try {
@@ -832,39 +912,45 @@ function populateViewModal(student) {
          * Populates the Edit Student form (REPLACED)
          */
         async function populateEditForm(student) {
-            // Fill basic info
-            document.getElementById('editStudentId').value = student.id;
-            document.getElementById('editStudentIdNumber').value = student.idNumber || '';
-            document.getElementById('editEmail').value = student.email || '';
-            document.getElementById('editStatus').value = student.status || 'active';
+    // Fill basic info
+    document.getElementById('editStudentId').value = student.id;
+    document.getElementById('editStudentIdNumber').value = student.idNumber || '';
+    document.getElementById('editEmail').value = student.email || '';
+    document.getElementById('editStatus').value = student.status || 'active';
 
-            // Split name (This uses the 'name' field from the student object)
-            let first = '', middle = '', last = '';
-            if (student.name) {
-                const parts = student.name.split(' ');
-                if (parts.length === 1) first = parts[0];
-                else if (parts.length === 2) { first = parts[0]; last = parts[1]; }
-                else { first = parts[0]; last = parts[parts.length-1]; middle = parts.slice(1, parts.length-1).join(' '); }
-            }
-            document.getElementById('editFirstName').value = first;
-            document.getElementById('editMiddleName').value = middle;
-            document.getElementById('editLastName').value = last;
-            
-            // Dynamic Dropdown Logic
-            const programDropdown = document.getElementById('editProgram');
-            const yearDropdown = document.getElementById('editYearLevel');
-
-            // 1. Clear and load programs
-            programDropdown.innerHTML = '<option value="">Loading Courses...</option>';
-            await loadProgramsToDropdown('editProgram');
-
-            // 2. Set the saved values (from the backend fix)
-            programDropdown.value = student.program_id;
-            yearDropdown.value = student.year_level;
-
-            // 3. Fetch sections for the saved program/year
-            await fetchEditSections(student.program_id, student.year_level, student.section_id);
+    // Split name
+    let first = '', middle = '', last = '';
+    if (student.name) {
+        const parts = student.name.split(' ');
+        if (parts.length === 1) {
+            first = parts[0];
+        } else if (parts.length === 2) {
+            first = parts[0]; 
+            last = parts[1];
+        } else {
+            first = parts[0]; 
+            last = parts[parts.length-1]; 
+            middle = parts.slice(1, parts.length-1).join(' ');
         }
+    }
+    document.getElementById('editFirstName').value = first;
+    document.getElementById('editMiddleName').value = middle;
+    document.getElementById('editLastName').value = last;
+    
+    // Load program dropdown
+    const programDropdown = document.getElementById('editProgram');
+    const yearDropdown = document.getElementById('editYearLevel');
+    
+    programDropdown.innerHTML = '<option value="">Loading Courses...</option>';
+    await loadProgramsToDropdown('editProgram');
+
+    // Set saved values
+    programDropdown.value = student.program_id;
+    yearDropdown.value = student.year_level;
+
+    // Fetch and populate sections
+    await fetchEditSections(student.program_id, student.year_level, student.section_id);
+}
 
         function initializeStudentInviteModal() {
             const genBtn = document.getElementById('generate-student-link-btn');

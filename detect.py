@@ -868,7 +868,6 @@ def enhance_lighting(bgr):
 def get_db_connection():
     """Proper database connection function"""
     try:
-        print("🔄 Establishing database connection...")
         conn = mysql.connector.connect(
             host='localhost',
             user='root',
@@ -877,10 +876,9 @@ def get_db_connection():
             charset='utf8mb4',
             autocommit=True
         )
-        print("✅ Database connection successful!")
         return conn
     except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+        logger.error(f"Database connection failed: {e}")
         return None
 
 @contextmanager
@@ -2348,7 +2346,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             if matched_body_track and person_id not in locked_tracks:
                 if person_id not in pending_confirmations:
                     pending_confirmations[person_id] = {
-                        'id': id,
+                        'id': person_id,
                         'frames': [],
                         'body_boxes': [],
                         'name': name,
@@ -2384,7 +2382,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 
                     # LOCK with ReID features
                     locked_tracks[person_id] = {
-                        'id': id, 
+                        'id': person_id,
                         'name': name,
                         'type': ptype,
                         'body_box': matched_body_track['body_box'],
@@ -2455,7 +2453,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
     Update trackers with body-only tracking for LOCKED tracks.
-    ✅ FIXED: Better manual status protection and HTTPS API calls with proper error handling
+    ✅ FIXED: JSON serialization issues and better error handling
     """
     global tracks, locked_tracks, pending_confirmations, current_fps
     global detectionStopped, student_presence_tracker, current_session_id
@@ -2470,6 +2468,16 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         real_fps = 5
 
     h, w = frame.shape[:2]
+    
+    # 🎯 CRITICAL FIX: Clean up student_presence_tracker from invalid entries at the start
+    invalid_entries = []
+    for student_id, track_info in list(student_presence_tracker.items()):
+        if not student_id or not isinstance(student_id, str) or not student_id.startswith(('20', '19', '21')):
+            invalid_entries.append(student_id)
+
+    for invalid_id in invalid_entries:
+        logger.warning(f"🚮 Removing invalid student_presence_tracker entry at start: {invalid_id}")
+        del student_presence_tracker[invalid_id]
     
     # Step 1: Detect bodies FIRST - this is critical
     body_detections = detect_bodies(frame)
@@ -2550,13 +2558,20 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             student_id = lock_info.get('id')
             student_name = lock_info.get('name', person_id)
             
+            # 🎯 FIXED: Validate student_id before proceeding
+            if not student_id or not isinstance(student_id, str) or not student_id.startswith(('20', '19', '21')):
+                logger.error(f"❌ INVALID STUDENT ID: {student_id} for {student_name} - skipping API call")
+                if student_id in student_presence_tracker:
+                    student_presence_tracker[student_id]['present'] = False
+                    student_presence_tracker[student_id]['last_seen'] = current_time
+                locked_tracks.pop(person_id, None)
+                locked_track_reid_features.pop(person_id, None)
+                logger.info(f"🔓 IMMEDIATE UNLOCK (INVALID ID): {person_id}")
+                continue
+            
             # 🎯 FIXED: BETTER Manual Status Detection BEFORE calling student_left API
             is_manual_status = False
             try:
-                import requests
-                import urllib3
-                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                
                 # First check if student has manual status
                 conn = get_db_connection()
                 cursor = conn.cursor(dictionary=True)
@@ -2573,15 +2588,16 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 if attendance_record:
                     current_status = attendance_record['status']
                     current_session = attendance_record.get('session_id')
-                    remarks = attendance_record.get('remarks', '')
+                    remarks = attendance_record.get('remarks') or ''  # Ensure string
+                    
+                    # 🎯 FIXED: Handle None values properly
+                    if current_session is None:
+                        current_session = ''
                     
                     # 🎯 BETTER MANUAL STATUS DETECTION - More specific
                     manual_excuse_sessions = ['manual_excuse']  # Only for excused students
                     manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
                     manual_statuses = ['excused']  # Only truly manual statuses
-                    
-                    # 🚫 REMOVED: 'manual_add' from manual sessions (this is for temp students)
-                    # 🚫 REMOVED: Broad keyword matching that was too aggressive
                     
                     is_manual_status = (
                         # Only specific manual session types (not manual_add)
@@ -2590,8 +2606,8 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         # Only specific manual statuses
                         current_status in manual_statuses or
                         # Only specific manual remarks (not temp_id)
-                        'Manually marked' in remarks or
-                        'Manual status' in remarks
+                        'Manually marked' in str(remarks) or  # FIXED: Convert to string
+                        'Manual status' in str(remarks)       # FIXED: Convert to string
                     )
                     
                     if is_manual_status:
@@ -2619,10 +2635,9 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 import urllib3
                 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                 
-                # 🎯 PROPER DATA FORMAT
                 api_data = {
-                    'student_id': student_id,
-                    'session_id': current_session_id
+                    'student_id': str(student_id), 
+                    'session_id': str(current_session_id)  
                 }
                 
                 # Try 3 times with better connection handling
@@ -2630,18 +2645,18 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 for attempt in range(3):
                     try:
                         response = requests.post(
-                            'https://192.168.0.100:5000/api/student_left',
-                            json=api_data,  # 🎯 FIXED: Use proper JSON data
-                            timeout=5,
+                            'https://192.168.0.101:5000/api/student_left', 
+                            json=api_data,  
+                            timeout=3,
                             headers={
                                 'Connection': 'close',
                                 'Content-Type': 'application/json'
                             },
-                            verify=False  # 🎯 CRITICAL: Disable SSL verification for self-signed cert
+                            verify=False
                         )
                         
                         if response.status_code == 200:
-                            logger.info(f"🎯 SUCCESS: student_left API called for {student_name}")
+                            logger.info(f"✅ SUCCESS: student_left API called for {student_name}")
                             success = True
                             break
                         elif response.status_code == 400:
@@ -2649,6 +2664,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                             try:
                                 error_data = response.json()
                                 logger.warning(f"⚠️ API returned {response.status_code}: {error_data.get('message', 'Unknown error')}")
+                                success = True  # Consider success if already marked
                             except:
                                 logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
                             break
@@ -2682,79 +2698,92 @@ def update_trackers_with_body(rgb, frame, frame_idx):
     
     if frame_idx % 15 == 0 and current_session_id:
         for student_id, track_info in list(student_presence_tracker.items()):
-            if track_info.get('present'):
-                has_active_body = student_id in locked_tracks_with_bodies
-                
-                if not has_active_body:
-                    last_body_seen = track_info.get('last_body_seen')
-                    if last_body_seen:
-                        time_since_body_seen = (current_time - last_body_seen).total_seconds()
-                        
-                        if time_since_body_seen > 3:  # Reduced to 5 seconds for backup
-                            track_info['present'] = False
-                            track_info['last_seen'] = current_time
+            # 🎯 CRITICAL FIX: Validate student_id is actually a string, not the built-in id function
+            if student_id and isinstance(student_id, str) and student_id.startswith(('20', '19', '21')):  # Adjust pattern based on your student ID format
+                if track_info.get('present'):
+                    # 🎯 FIXED: Check if this student has any active locked track
+                    has_active_body = False
+                    for locked_id, lock_info in locked_tracks.items():
+                        if lock_info.get('type') == 'student' and lock_info.get('id') == student_id:
+                            if locked_id in locked_tracks_with_bodies:
+                                has_active_body = True
+                                break
+                    
+                    if not has_active_body:
+                        last_body_seen = track_info.get('last_body_seen')
+                        if last_body_seen:
+                            time_since_body_seen = (current_time - last_body_seen).total_seconds()
                             
-                            # 🎯 ADDED: BETTER Manual Status Detection before marking as missing
-                            try:
-                                conn = get_db_connection()
-                                cursor = conn.cursor(dictionary=True)
-                                cursor.execute("""
-                                    SELECT status, session_id, remarks FROM attendance 
-                                    WHERE student_id = %s AND session_id = %s
-                                    ORDER BY timestamp DESC LIMIT 1
-                                """, (student_id, current_session_id))
+                            if time_since_body_seen > 3:  # Reduced to 3 seconds for backup
+                                track_info['present'] = False
+                                track_info['last_seen'] = current_time
                                 
-                                attendance_record = cursor.fetchone()
-                                cursor.close()
-                                conn.close()
-                                
-                                if attendance_record:
-                                    current_status = attendance_record['status']
-                                    current_session = attendance_record.get('session_id')
-                                    remarks = attendance_record.get('remarks', '')
+                                # 🎯 ADDED: BETTER Manual Status Detection before marking as missing
+                                try:
+                                    conn = get_db_connection()
+                                    cursor = conn.cursor(dictionary=True)
+                                    cursor.execute("""
+                                        SELECT status, session_id, remarks FROM attendance 
+                                        WHERE student_id = %s AND session_id = %s
+                                        ORDER BY timestamp DESC LIMIT 1
+                                    """, (student_id, current_session_id))
                                     
-                                    # 🎯 BETTER MANUAL STATUS DETECTION
-                                    manual_excuse_sessions = ['manual_excuse']  # Only for excused students
-                                    manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
-                                    manual_statuses = ['excused']  # Only truly manual statuses
+                                    attendance_record = cursor.fetchone()
+                                    cursor.close()
+                                    conn.close()
                                     
-                                    is_manual_status = (
-                                        current_session in manual_excuse_sessions or
-                                        current_session in manual_status_sessions or
-                                        current_status in manual_statuses or
-                                        'Manually marked' in remarks or
-                                        'Manual status' in remarks
-                                    )
+                                    if attendance_record:
+                                        current_status = attendance_record['status']
+                                        current_session = attendance_record.get('session_id')
+                                        remarks = attendance_record.get('remarks') or ''
+                                        
+                                        # 🎯 BETTER MANUAL STATUS DETECTION
+                                        manual_excuse_sessions = ['manual_excuse']  # Only for excused students
+                                        manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
+                                        manual_statuses = ['excused']  # Only truly manual statuses
+                                        
+                                        is_manual_status = (
+                                            current_session in manual_excuse_sessions or
+                                            current_session in manual_status_sessions or
+                                            current_status in manual_statuses or
+                                            'Manually marked' in str(remarks) or  # FIXED: Convert to string
+                                            'Manual status' in str(remarks)       # FIXED: Convert to string
+                                        )
+                                        
+                                        if is_manual_status:
+                                            logger.info(f"🔒 SKIPPING MISSING: {track_info['name']} has manual status '{current_status}'")
+                                            continue  # Skip API call for manual status students
+                                        else:
+                                            logger.info(f"🔄 AUTO STATUS: {track_info['name']} can be marked as missing")
                                     
-                                    if is_manual_status:
-                                        logger.info(f"🔒 SKIPPING MISSING: {track_info['name']} has manual status '{current_status}'")
-                                        continue  # Skip API call for manual status students
-                                    else:
-                                        logger.info(f"🔄 AUTO STATUS: {track_info['name']} can be marked as missing")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Error checking manual status: {e}")
                                 
-                            except Exception as e:
-                                logger.warning(f"⚠️ Error checking manual status: {e}")
-                            
-                            # Only call API if not manual status
-                            try:
-                                import requests
-                                import urllib3
-                                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                                
-                                api_data = {
-                                    'student_id': student_id,
-                                    'session_id': current_session_id
-                                }
-                                response = requests.post(
-                                    'https://192.168.0.100:5000/api/student_left', 
-                                    json=api_data,
-                                    timeout=2,
-                                    verify=False  # 🎯 ADDED: Disable SSL verification
-                                )
-                                if response.status_code == 200:
-                                    logger.info(f"📤 BACKUP MISSING: {track_info['name']}")
-                            except Exception as e:
-                                logger.warning(f"⚠️ API call failed: {e}")
+                                # Only call API if not manual status
+                                try:
+                                    import requests
+                                    import urllib3
+                                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                                    
+                                    # 🎯 FIXED: Proper data format with validation
+                                    if student_id and isinstance(student_id, str) and student_id.startswith(('20', '19', '21')):
+                                        api_data = {
+                                            'student_id': str(student_id),
+                                            'session_id': str(current_session_id)
+                                        }
+                                        response = requests.post(
+                                            'http://localhost:5000/api/student_left',  # FIXED: Use localhost
+                                            json=api_data,
+                                            timeout=2
+                                        )
+                                        if response.status_code == 200:
+                                            logger.info(f"📤 BACKUP MISSING: {track_info['name']}")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ API call failed: {e}")
+            else:
+                # 🎯 CLEANUP: Remove invalid entries from student_presence_tracker
+                logger.warning(f"🚮 Removing invalid student_presence_tracker entry: {student_id}")
+                del student_presence_tracker[student_id]
         
         # Cleanup old entries
         for student_id in list(student_presence_tracker.keys()):
@@ -2871,6 +2900,17 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             student_id = lock_info.get('id')
             student_name = lock_info.get('name', person_id)
             
+            # 🎯 FIXED: Validate student_id before proceeding
+            if not student_id or not isinstance(student_id, str) or not student_id.startswith(('20', '19', '21')):
+                logger.error(f"❌ INVALID STUDENT ID: {student_id} for {student_name} - skipping API call")
+                if student_id in student_presence_tracker:
+                    student_presence_tracker[student_id]['present'] = False
+                    student_presence_tracker[student_id]['last_seen'] = datetime.now()
+                locked_tracks.pop(person_id, None)
+                locked_track_reid_features.pop(person_id, None)
+                logger.info(f"🔓 Unlocked track for {person_id} (INVALID ID)")
+                continue
+            
             # 🎯 FIXED: BETTER Manual Status Detection BEFORE calling student_left API
             is_manual_status = False
             try:
@@ -2889,7 +2929,11 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 if attendance_record:
                     current_status = attendance_record['status']
                     current_session = attendance_record.get('session_id')
-                    remarks = attendance_record.get('remarks', '')
+                    remarks = attendance_record.get('remarks') or ''  # Ensure string
+                    
+                    # 🎯 FIXED: Handle None values properly
+                    if current_session is None:
+                        current_session = ''
                     
                     # 🎯 BETTER MANUAL STATUS DETECTION
                     manual_excuse_sessions = ['manual_excuse']  # Only for excused students
@@ -2900,8 +2944,8 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         current_session in manual_excuse_sessions or
                         current_session in manual_status_sessions or
                         current_status in manual_statuses or
-                        'Manually marked' in remarks or
-                        'Manual status' in remarks
+                        'Manually marked' in str(remarks) or  # FIXED: Convert to string
+                        'Manual status' in str(remarks)       # FIXED: Convert to string
                     )
                     
                     if is_manual_status:
@@ -2931,23 +2975,30 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 import requests
                 import time
                 
+                # 🎯 FIXED: Proper data format
+                api_data = {
+                    'student_id': str(student_id),  # FIXED: Ensure string
+                    'session_id': str(current_session_id)  # FIXED: Ensure string
+                }
+                
                 # Try 3 times with better connection handling
                 success = False
                 for attempt in range(3):
                     try:
                         response = requests.post(
-                            'https://192.168.0.100:5000/api/student_left',
-                            json={'student_id': student_id, 'session_id': current_session_id},
-                            timeout=5,
+                            'https://192.168.0.101:5000/api/student_left',  # FIXED: Use localhost
+                            json=api_data,  # FIXED: Use json parameter
+                            timeout=3,
                             headers={'Connection': 'close'}
                         )
                         
                         if response.status_code == 200:
-                            logger.info(f"📤 Student marked as MISSING: {student_name}")
+                            logger.info(f"✅ Student marked as MISSING: {student_name}")
                             success = True
                             break
                         elif response.status_code == 400:
-                            logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
+                            logger.warning(f"⚠️ API returned {response.status_code}: Student already marked as missing")
+                            success = True  # Consider success
                             break
                         else:
                             logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
@@ -4867,7 +4918,8 @@ def generate_dynamic_invite():
 def update_student():
     try:
         data = request.json
-        student_id = data.get('student_id')
+        original_student_id = data.get('original_student_id')  # Old ID
+        new_student_id = data.get('student_id')  # New ID (might be same)
         first_name = data.get('first_name')
         last_name = data.get('last_name')
         middle_name = data.get('middle_name', '')
@@ -4875,27 +4927,42 @@ def update_student():
         email = data.get('email')
         status = data.get('status', 'active')
         
-        if not all([student_id, first_name, last_name, section_id, email]):
+        # Validation
+        if not all([original_student_id, new_student_id, first_name, last_name, section_id, email]):
             return jsonify({'success': False, 'message': 'All required fields are missing'})
             
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         
-        # Check if student exists
-        cursor.execute("SELECT student_id FROM students WHERE student_id = %s", (student_id,))
+        # Check if original student exists
+        cursor.execute("SELECT student_id FROM students WHERE student_id = %s", (original_student_id,))
         if not cursor.fetchone():
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Student not found'})
         
+        # If student_id is being changed, check if new ID already exists
+        if original_student_id != new_student_id:
+            cursor.execute("SELECT student_id FROM students WHERE student_id = %s", (new_student_id,))
+            if cursor.fetchone():
+                cursor.close()
+                conn.close()
+                return jsonify({'success': False, 'message': f'Student ID {new_student_id} already exists'})
+        
+        # Update student record
         cursor.execute(
             """UPDATE students 
-               SET first_name = %s, last_name = %s, middle_name = %s, 
-                   section_id = %s, email = %s, 
-                   status = %s, updated_at = NOW()
+               SET student_id = %s,
+                   first_name = %s, 
+                   last_name = %s, 
+                   middle_name = %s, 
+                   section_id = %s, 
+                   email = %s, 
+                   status = %s, 
+                   updated_at = NOW()
                WHERE student_id = %s""",
-            (first_name, last_name, middle_name, section_id, 
-             email, status, student_id)
+            (new_student_id, first_name, last_name, middle_name, 
+             section_id, email, status, original_student_id)
         )
         
         conn.commit()
@@ -4903,12 +4970,21 @@ def update_student():
         conn.close()
         
         # Refresh known faces
-        load_known_faces_from_db()
+        try:
+            load_known_faces_from_db()
+        except:
+            pass
         
-        return jsonify({'success': True, 'message': 'Student updated successfully'})
+        return jsonify({
+            'success': True, 
+            'message': 'Student updated successfully',
+            'updated_student_id': new_student_id
+        })
         
     except Exception as e:
         logger.error(f"Error updating student: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'message': f'Database error: {str(e)}'})
 
 @app.route('/api/delete_student', methods=['POST'])
@@ -6290,7 +6366,7 @@ def summary_page():
 @app.route('/api/summary_data')
 @login_required
 def get_summary_data():
-    """Get complete summary data for the latest session - FIXED: No duplicates"""
+    """Get complete summary data for the latest session - FIXED: Handles empty status and missing students"""
     try:
         user_id = session.get('user_id')
         
@@ -6325,10 +6401,12 @@ def get_summary_data():
                 }), 404
             
             session_id = session_data['session_id']
+            section_id = session_data['section_id']
             started_at = session_data['created_at']
             ended_at = session_data['ended_at']
             
             print(f"🔍 DEBUG Session: {session_id}")
+            print(f"   - Section ID: {section_id}")
             print(f"   - Created At: {started_at}")
             print(f"   - Ended At: {ended_at}")
             
@@ -6350,13 +6428,16 @@ def get_summary_data():
             subject_name = session_data.get('subject_name', 'AMBUTT UY')
             room = session_data.get('room', 'Unknown Room')
             
-            # 🎯 CRITICAL FIX: Get ONLY LATEST attendance record per student to avoid duplicates
+            # 🎯 FIXED: Get attendance records and convert empty/missing status to 'absent'
             cursor.execute("""
                 WITH LatestAttendance AS (
                     SELECT 
                         a.student_id,
                         a.name as student_name,
-                        a.status,
+                        CASE 
+                            WHEN a.status IS NULL OR a.status = '' OR a.status = 'missing' THEN 'absent'
+                            ELSE a.status
+                        END as status,
                         a.timestamp,
                         a.session_id,
                         a.subject_code,
@@ -6364,7 +6445,8 @@ def get_summary_data():
                         a.room,
                         s.photo_path,
                         CASE 
-                            WHEN a.session_id = 'manual_add' OR a.session_id IS NULL THEN TRUE 
+                            WHEN a.student_id IS NULL OR a.student_id = '' THEN TRUE 
+                            WHEN NOT EXISTS (SELECT 1 FROM students WHERE student_id = a.student_id) THEN TRUE
                             ELSE FALSE 
                         END as is_temporary,
                         ROW_NUMBER() OVER (
@@ -6373,30 +6455,52 @@ def get_summary_data():
                         ) as rn
                     FROM attendance a
                     LEFT JOIN students s ON a.student_id = s.student_id
-                    WHERE (a.session_id = %s OR a.session_id = 'manual_add' OR a.session_id IS NULL)
+                    WHERE a.session_id = %s
                     AND a.person_type = 'student'
-                    AND DATE(a.timestamp) = DATE(%s)
                 )
                 SELECT * FROM LatestAttendance WHERE rn = 1
-                ORDER BY status, student_name
-            """, (session_id, ended_at))
+                ORDER BY 
+                    CASE 
+                        WHEN status = 'present' THEN 1
+                        WHEN status = 'late' THEN 2
+                        WHEN status = 'excused' THEN 3
+                        WHEN status = 'absent' THEN 4
+                        ELSE 5
+                    END,
+                    student_name
+            """, (session_id,))
             
             unique_attendance_records = cursor.fetchall()
             
-            print(f"🔍 DEBUG Found {len(unique_attendance_records)} UNIQUE attendance records (after duplicate removal)")
+            print(f"🔍 DEBUG Found {len(unique_attendance_records)} UNIQUE attendance records")
             
-            # Debug: Print unique records
-            for i, record in enumerate(unique_attendance_records):
-                print(f"🔍 DEBUG Unique Record {i}: {record['student_id']} - {record['student_name']} - {record['status']}")
+            # Get regular students from the actual section
+            cursor.execute("""
+                SELECT student_id, first_name, last_name, photo_path 
+                FROM students 
+                WHERE section_id = %s AND status = 'active'
+            """, (section_id,))
+            
+            all_section_students = cursor.fetchall()
+            
+            # Get list of students who have attendance records
+            attended_student_ids = set()
+            for r in unique_attendance_records:
+                if r['student_id'] and not r['is_temporary']:
+                    attended_student_ids.add(r['student_id'])
+            
+            print(f"🔍 DEBUG Regular students in section {section_id}: {len(all_section_students)}")
+            print(f"🔍 DEBUG Students with attendance records: {len(attended_student_ids)}")
             
             # Create complete student list
             complete_student_list = []
             
+            # Add all attendance records (includes converted absent from empty/missing status)
             for record in unique_attendance_records:
-                # Handle photo path
-                photo_path = record['photo_path']
+                student_id = record['student_id']
+                
+                # Handle temporary students (manually added)
                 if record['is_temporary']:
-                    student_id = record['student_id']
                     if not student_id and 'ID:' in record['student_name']:
                         try:
                             student_id = record['student_name'].split('ID:')[-1].split(')')[0].strip()
@@ -6405,12 +6509,12 @@ def get_summary_data():
                     
                     photo_path = f"/static/images/student_photos/{student_id}.jpg" if student_id and student_id != 'temp' else '/static/images/default-avatar.jpg'
                 else:
-                    photo_path = record['photo_path'] or f"/static/images/student_photos/{record['student_id']}.jpg"
+                    photo_path = record['photo_path'] or f"/static/images/student_photos/{student_id}.jpg"
                 
                 complete_student_list.append({
-                    'student_id': record['student_id'] or 'temp',
+                    'student_id': student_id or 'temp',
                     'name': record['student_name'],
-                    'status': record['status'],
+                    'status': record['status'],  # Already converted to 'absent' if it was empty/missing
                     'timestamp': record['timestamp'],
                     'photo': photo_path or '/static/images/default-avatar.jpg',
                     'is_temporary': record['is_temporary'],
@@ -6418,25 +6522,16 @@ def get_summary_data():
                     'subject_name': record['subject_name'] or subject_name,
                     'room': record['room'] or room
                 })
+                
+                print(f"🔍 DEBUG Added from records: {student_id} - Status: {record['status']}")
             
-            # Get regular students in section for absent count
-            cursor.execute("""
-                SELECT student_id, first_name, last_name, photo_path 
-                FROM students 
-                WHERE year_section LIKE '%4C%'
-            """)
-            all_section_students = cursor.fetchall()
-            
-            attended_regular_student_ids = [r['student_id'] for r in unique_attendance_records if r['student_id'] and not r['is_temporary']]
-            
-            print(f"🔍 DEBUG Regular students in section: {len(all_section_students)}")
-            print(f"🔍 DEBUG Attended regular student IDs: {attended_regular_student_ids}")
-            
+            # Add students who have NO attendance record at all (never detected)
             absent_count_added = 0
             for student in all_section_students:
                 student_id = student['student_id']
                 
-                if student_id not in attended_regular_student_ids:
+                # Only add if student has NO attendance record for this session
+                if student_id not in attended_student_ids:
                     complete_student_list.append({
                         'student_id': student_id,
                         'name': f"{student['first_name']} {student['last_name']}",
@@ -6449,9 +6544,9 @@ def get_summary_data():
                         'room': room
                     })
                     absent_count_added += 1
-                    print(f"🔍 DEBUG Added absent student: {student_id}")
+                    print(f"🔍 DEBUG Added never-detected student as absent: {student_id}")
             
-            print(f"🔍 DEBUG Added {absent_count_added} absent students")
+            print(f"🔍 DEBUG Added {absent_count_added} never-detected students as absent")
             
             # Calculate counts from FINAL list
             present_count = len([s for s in complete_student_list if s['status'] == 'present'])
@@ -6574,7 +6669,7 @@ def update_attendance():
 @app.route('/api/export_csv')
 @login_required
 def export_csv():
-    """Export attendance data as CSV - TODAY'S SESSION ONLY (REGULAR + TEMPORARY + ABSENT)"""
+    """Export attendance data as CSV - TODAY'S SESSION ONLY (REGULAR + TEMPORARY + ABSENT) - Alphabetically sorted"""
     session_id = request.args.get('session_id')
     
     if not session_id:
@@ -6620,73 +6715,85 @@ def export_csv():
                 section_part = class_name.split('4th Year')[-1].strip()
                 if section_part:
                     section_display = f"4{section_part[0]}"
+            elif '2nd Year' in class_name:
+                section_part = class_name.split('2nd Year')[-1].strip()
+                if section_part:
+                    section_display = f"2{section_part[0]}"
             
             print(f"🔍 DEBUG Program: {program_display}, Section: {section_display}")
             
-            # ✅ FIXED: SINGLE QUERY TO PREVENT DUPLICATES
+            # ✅ FIXED: HANDLE EMPTY STATUS AND GET ALL STUDENTS - SORTED ALPHABETICALLY
             cursor.execute("""
-                WITH all_students AS (
-                    -- Get ALL registered students in this class (including absent ones)
+                WITH attendance_records AS (
+                    -- Get attendance records with status cleanup
+                    SELECT 
+                        a.student_id,
+                        a.name as student_name,
+                        CASE 
+                            WHEN a.status IS NULL OR a.status = '' OR a.status = 'missing' THEN 'absent'
+                            ELSE a.status
+                        END as status,
+                        a.timestamp,
+                        a.subject_code,
+                        a.subject_name,
+                        a.room,
+                        a.remarks,
+                        CASE 
+                            WHEN a.student_id IS NULL OR a.student_id = '' THEN TRUE
+                            ELSE FALSE
+                        END as is_temporary
+                    FROM attendance a
+                    WHERE a.session_id = %s
+                    AND a.person_type = 'student'
+                ),
+                all_students AS (
+                    -- Regular students from section (with their attendance or marked absent)
                     SELECT 
                         s.student_id,
                         CONCAT(s.first_name, ' ', s.last_name) as student_name,
                         %s as year_section,
-                        COALESCE(a.status, 'absent') as status,
-                        COALESCE(a.timestamp, %s) as attendance_timestamp,
+                        COALESCE(ar.status, 'absent') as status,
+                        COALESCE(ar.timestamp, %s) as attendance_timestamp,
                         'No' as is_temporary,
-                        COALESCE(a.subject_code, %s) as subject_code,
-                        COALESCE(a.subject_name, %s) as subject_name,
-                        COALESCE(a.room, %s) as room,
-                        NULL as remarks,
-                        -- Priority: present students first, then absent
-                        CASE WHEN a.status = 'present' THEN 1 ELSE 2 END as priority
+                        COALESCE(ar.subject_code, %s) as subject_code,
+                        COALESCE(ar.subject_name, %s) as subject_name,
+                        COALESCE(ar.room, %s) as room,
+                        ar.remarks
                     FROM students s
-                    LEFT JOIN attendance a ON s.student_id = a.student_id AND a.session_id = %s
-                    WHERE s.year_section LIKE %s
+                    LEFT JOIN attendance_records ar ON s.student_id = ar.student_id AND ar.is_temporary = FALSE
+                    WHERE s.section_id = %s AND s.status = 'active'
                     
-                    UNION
+                    UNION ALL
                     
-                    -- Get temporary students from TODAY'S SESSION ONLY
+                    -- Temporary students (manually added)
                     SELECT 
                         CASE 
-                            WHEN a.remarks LIKE 'temp_id:%' THEN SUBSTRING(a.remarks, 9)
-                            WHEN a.name LIKE '%(ID: %' THEN 
-                                SUBSTRING(
-                                    a.name, 
-                                    LOCATE('(ID: ', a.name) + 5,
-                                    LOCATE(')', a.name, LOCATE('(ID: ', a.name)) - (LOCATE('(ID: ', a.name) + 5)
-                                )
-                            WHEN a.name LIKE '%ID: %' THEN 
-                                SUBSTRING(
-                                    a.name, 
-                                    LOCATE('ID: ', a.name) + 4,
-                                    LENGTH(a.name) - (LOCATE('ID: ', a.name) + 3)
-                                )
-                            ELSE CONCAT('TEMP-', LPAD(ROW_NUMBER() OVER (), 4, '0')) 
+                            WHEN ar.student_name LIKE '%(ID: %' THEN 
+                                TRIM(SUBSTRING(
+                                    ar.student_name, 
+                                    LOCATE('(ID: ', ar.student_name) + 5,
+                                    LOCATE(')', ar.student_name, LOCATE('(ID: ', ar.student_name)) - (LOCATE('(ID: ', ar.student_name) + 5)
+                                ))
+                            ELSE CONCAT('TEMP-', LPAD(ar.student_id, 4, '0'))
                         END as student_id,
                         CASE 
-                            WHEN a.name LIKE '%(ID: %' THEN 
-                                TRIM(SUBSTRING(a.name, 1, LOCATE('(ID: ', a.name) - 1))
-                            WHEN a.name LIKE '%ID: %' THEN 
-                                TRIM(SUBSTRING(a.name, 1, LOCATE('ID: ', a.name) - 1))
-                            ELSE a.name 
+                            WHEN ar.student_name LIKE '%(ID: %' THEN 
+                                TRIM(SUBSTRING(ar.student_name, 1, LOCATE('(ID: ', ar.student_name) - 1))
+                            ELSE ar.student_name 
                         END as student_name,
                         %s as year_section,
-                        a.status,
-                        a.timestamp as attendance_timestamp,
+                        ar.status,
+                        ar.timestamp as attendance_timestamp,
                         'Yes' as is_temporary,
-                        COALESCE(a.subject_code, %s) as subject_code,
-                        COALESCE(a.subject_name, %s) as subject_name,
-                        COALESCE(a.room, %s) as room,
-                        a.remarks as remarks,
-                        0 as priority  -- Temporary students have lowest priority
-                    FROM attendance a
-                    WHERE a.session_id = %s
-                    AND a.person_type = 'student'
-                    AND a.student_id IS NULL  -- ✅ ONLY TEMPORARY STUDENTS
+                        COALESCE(ar.subject_code, %s) as subject_code,
+                        COALESCE(ar.subject_name, %s) as subject_name,
+                        COALESCE(ar.room, %s) as room,
+                        ar.remarks
+                    FROM attendance_records ar
+                    WHERE ar.is_temporary = TRUE
                 )
                 
-                SELECT DISTINCT 
+                SELECT 
                     student_id,
                     student_name,
                     year_section,
@@ -6697,26 +6804,16 @@ def export_csv():
                     subject_name,
                     room,
                     remarks
-                FROM (
-                    SELECT *,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY student_id 
-                            ORDER BY priority, attendance_timestamp DESC
-                        ) as rn
-                    FROM all_students
-                ) ranked
-                WHERE rn = 1  -- ✅ ONLY KEEP THE FIRST OCCURRENCE OF EACH STUDENT
-                ORDER BY is_temporary, status, student_name
+                FROM all_students
+                ORDER BY student_name ASC
             """, (
-                section_display, 
-                session_data['ended_at'], 
-                subject_code, subject_name, room,
                 session_id,
-                f'%{section_display}%',
-                
                 section_display,
+                session_data['ended_at'],
                 subject_code, subject_name, room,
-                session_id
+                section_id,
+                section_display,
+                subject_code, subject_name, room
             ))
             
             records = cursor.fetchall()
@@ -6730,22 +6827,22 @@ def export_csv():
             regular_students = [r for r in records if r['is_temporary'] == 'No']
             temp_students = [r for r in records if r['is_temporary'] == 'Yes']
             present_students = [r for r in records if r['status'] == 'present']
+            late_students = [r for r in records if r['status'] == 'late']
             absent_students = [r for r in records if r['status'] == 'absent']
+            excused_students = [r for r in records if r['status'] == 'excused']
             
             print(f"🔍 DEBUG Today's Session Breakdown:")
             print(f"   - Regular students: {len(regular_students)}")
             print(f"   - Temporary students: {len(temp_students)}")
-            print(f"   - Present students: {len(present_students)}")
-            print(f"   - Absent students: {len(absent_students)}")
+            print(f"   - Present: {len(present_students)}")
+            print(f"   - Late: {len(late_students)}")
+            print(f"   - Absent: {len(absent_students)}")
+            print(f"   - Excused: {len(excused_students)}")
             
-            # Debug first few of each
-            print(f"🔍 DEBUG First 5 Regular Students:")
-            for i, record in enumerate(regular_students[:5]):
-                print(f"   - {record['student_id']}: {record['student_name']} - {record['status']}")
-            
-            print(f"🔍 DEBUG First 5 Temporary Students:")
-            for i, record in enumerate(temp_students[:5]):
-                print(f"   - {record['student_id']}: {record['student_name']} - {record['status']}")
+            # Debug first few students (alphabetically)
+            print(f"🔍 DEBUG First 10 Students (Alphabetical Order):")
+            for i, record in enumerate(records[:10]):
+                print(f"   {i+1}. {record['student_name']} ({record['student_id']}) - {record['status']}")
             
             # Create CSV content
             import csv
@@ -6769,12 +6866,12 @@ def export_csv():
                 'Temporary Student'
             ])
             
-            # Write data for ALL students
+            # Write data for ALL students (already sorted alphabetically by query)
             for record in records:
                 timestamp = record['attendance_timestamp']
                 
                 # Handle timestamps
-                if record['status'] == 'absent':
+                if record['status'] == 'absent' and not timestamp:
                     time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')
                 elif timestamp:
                     if isinstance(timestamp, str):
@@ -6788,10 +6885,9 @@ def export_csv():
                 else:
                     time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')
                 
-                # Clean up student ID
+                # Clean up student ID for temporary students
                 student_id = record['student_id']
-                if record['is_temporary'] == 'Yes' and student_id.startswith('TEMP'):
-                    # Use a more consistent temporary ID
+                if record['is_temporary'] == 'Yes' and (not student_id or student_id.startswith('TEMP')):
                     student_id = f"TEMP-{hash(record['student_name']) % 10000:04d}"
                 
                 writer.writerow([
@@ -6815,11 +6911,13 @@ def export_csv():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{subject_code}_{clean_subject_name}_{program_display}-{section_display}_attendance_{timestamp}.csv"
             
-            print(f"✅ EXPORT SUCCESS: {len(records)} students from today's session")
+            print(f"✅ EXPORT SUCCESS: {len(records)} students from today's session (A-Z sorted)")
             print(f"   - Regular: {len(regular_students)}")
             print(f"   - Temporary: {len(temp_students)}")
             print(f"   - Present: {len(present_students)}")
+            print(f"   - Late: {len(late_students)}")
             print(f"   - Absent: {len(absent_students)}")
+            print(f"   - Excused: {len(excused_students)}")
             
             # Create response
             from flask import Response
@@ -8904,73 +9002,79 @@ def unassign_faculty_from_schedule():
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/get_sections', methods=['GET'])
+@login_required
 def get_sections():
-    """Get sections based on program and year level - FIXED"""
+    """Get sections based on program and year level"""
     try:
         program_id = request.args.get('program_id')
         year_level = request.args.get('year_level')
         
         if not program_id or not year_level:
-            return jsonify({'success': False, 'message': 'Program ID and year level are required'})
+            return jsonify({
+                'success': False, 
+                'message': 'Program ID and year level are required'
+            })
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # DEBUG: Check what semesters exist in the database
-        cursor.execute("SELECT * FROM semesters WHERE status = 'active'")
-        active_semesters = cursor.fetchall()
-        print(f"DEBUG: Active semesters: {active_semesters}")
+        # Simple query: Get all active sections for program + year level
+        # Don't filter by semester - just get all available sections
+        query = """
+            SELECT 
+                ys.section_id,
+                ys.section_name,
+                ys.year_level,
+                ys.program_id,
+                ys.semester_id,
+                ys.academic_year_id,
+                COUNT(DISTINCT s.student_id) as student_count
+            FROM year_sections ys
+            LEFT JOIN students s ON ys.section_id = s.section_id AND s.status = 'active'
+            WHERE ys.program_id = %s 
+            AND ys.year_level = %s
+            AND ys.status = 'active'
+            GROUP BY ys.section_id, ys.section_name, ys.year_level, ys.program_id, ys.semester_id, ys.academic_year_id
+            ORDER BY ys.section_name
+        """
         
-        # DEBUG: Check what sections exist for this program/year
-        cursor.execute("""
-            SELECT * FROM year_sections 
-            WHERE program_id = %s AND year_level = %s AND status = 'active'
-        """, (program_id, year_level))
-        all_sections = cursor.fetchall()
-        print(f"DEBUG: All sections for {program_id} year {year_level}: {all_sections}")
-        
-        # If no active semesters found, get sections from ANY semester
-        if not active_semesters:
-            cursor.execute("""
-                SELECT 
-                    section_id,
-                    section_name,
-                    year_level,
-                    program_id
-                FROM year_sections
-                WHERE program_id = %s 
-                AND year_level = %s 
-                AND status = 'active'
-                ORDER BY section_name
-            """, (program_id, year_level))
-        else:
-            # Use the first active semester
-            active_semester_id = active_semesters[0]['semester_id']
-            cursor.execute("""
-                SELECT 
-                    section_id,
-                    section_name,
-                    year_level,
-                    program_id
-                FROM year_sections
-                WHERE program_id = %s 
-                AND year_level = %s 
-                AND semester_id = %s
-                AND status = 'active'
-                ORDER BY section_name
-            """, (program_id, year_level, active_semester_id))
-        
+        cursor.execute(query, (program_id, year_level))
         sections = cursor.fetchall()
+        
+        # Debug logging
+        print(f"🔍 DEBUG: Fetching sections for Program={program_id}, Year={year_level}")
+        print(f"🔍 DEBUG: Found {len(sections)} sections")
+        if sections:
+            for section in sections:
+                print(f"   - Section {section['section_name']} (ID: {section['section_id']}, Students: {section['student_count']})")
+        else:
+            print(f"   - No sections found!")
+            # Check if any sections exist for this program
+            cursor.execute("""
+                SELECT year_level, section_name 
+                FROM year_sections 
+                WHERE program_id = %s AND status = 'active'
+            """, (program_id,))
+            all_program_sections = cursor.fetchall()
+            print(f"   - Available sections for {program_id}: {all_program_sections}")
         
         cursor.close()
         conn.close()
         
-        print(f"DEBUG: Returning {len(sections)} sections")
-        return jsonify({'success': True, 'sections': sections})
+        return jsonify({
+            'success': True, 
+            'sections': sections,
+            'count': len(sections)
+        })
         
     except Exception as e:
-        logger.error(f"Error fetching sections: {e}")
-        return jsonify({'success': False, 'message': str(e)})
+        print(f"❌ ERROR in get_sections: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False, 
+            'message': f'Error: {str(e)}'
+        })
 
 @app.route('/api/get_faculty_with_schedules', methods=['GET'])
 @login_required
@@ -9190,7 +9294,7 @@ def get_year_sections():
         
         semester_id = result['semester_id']
         
-        # Get sections for this specific semester
+        # Get sections for this specific semester - FIXED QUERY
         query = """
             SELECT 
                 ys.section_id,
@@ -9198,17 +9302,17 @@ def get_year_sections():
                 ys.section_name,
                 ys.status,
                 COUNT(DISTINCT s.subject_id) as subject_count,
-                (SELECT COUNT(*) FROM students st 
-                 WHERE st.year_section = CONCAT(ys.year_level, '-', ys.section_name) 
-                 AND st.course LIKE CONCAT('%', p.program_name, '%')
+                (SELECT COUNT(*) 
+                 FROM students st 
+                 WHERE st.section_id = ys.section_id 
                  AND st.status = 'active') as student_count
             FROM year_sections ys
             JOIN programs p ON ys.program_id = p.program_id
             LEFT JOIN subjects s ON ys.section_id = s.section_id AND s.status = 'active'
             WHERE ys.program_id = %s 
-            AND ys.semester_id = %s  # This is the key filter
+            AND ys.semester_id = %s
             AND ys.status = 'active'
-            GROUP BY ys.section_id
+            GROUP BY ys.section_id, ys.year_level, ys.section_name, ys.status
             ORDER BY ys.year_level, ys.section_name
         """
         
@@ -10467,27 +10571,79 @@ def initialize_session():
         except Exception as e:
             logger.warning(f"⚠️ Could not clear temporary students: {e}")
         
-        # ✅ FIND SECTION_ID FROM YEAR_SECTIONS TABLE
+        # ✅ CORRECTED SECTION LOOKUP
         section_id = None
         year_level = data.get('year_level', '')
         section_name = data.get('section', '')
         program_id = data.get('program', '')
-        
+
         logger.info(f"🔍 Looking for section: Year={year_level}, Section={section_name}, Program={program_id}")
-        
+
         if year_level and section_name and program_id:
             try:
+                # 🎯 EXTRACT NUMERIC YEAR LEVEL (convert "4th Year" to 4)
+                year_level_clean = ''.join(filter(str.isdigit, year_level))
+                if year_level_clean:
+                    year_level_num = int(year_level_clean)
+                else:
+                    year_level_num = None
+                    logger.warning(f"⚠️ Could not extract numeric year level from: {year_level}")
+                
+                # 🎯 MAP PROGRAM NAME TO PROGRAM ID
+                program_map = {
+                    'Information Technology': 'IT',
+                    'Computer Science': 'CS',
+                    'Associate in Computer Technology': 'ACT',
+                    'IT': 'IT',
+                    'CS': 'CS', 
+                    'ACT': 'ACT'
+                }
+                program_id_to_search = program_map.get(program_id, program_id)
+                
+                # 🎯 CLEAN SECTION NAME
+                section_to_search = section_name.upper().strip()
+                
+                logger.info(f"🔍 Searching section with: Year={year_level_num}, Section={section_to_search}, Program={program_id_to_search}")
+                
+                # 🎯 USE THE CORRECT QUERY FROM YOUR DATABASE
                 cursor.execute("""
-                    SELECT section_id FROM year_sections 
-                    WHERE year_level = %s AND section_name = %s AND program_id = %s
-                    LIMIT 1
-                """, (year_level, section_name, program_id))
+                    SELECT 
+                        ys.section_id,
+                        ys.program_id,
+                        p.program_name,
+                        ys.year_level,
+                        ys.section_name,
+                        ys.semester_id,
+                        ys.academic_year_id,
+                        ys.status
+                    FROM year_sections ys
+                    JOIN programs p ON ys.program_id = p.program_id
+                    WHERE ys.program_id = %s AND ys.year_level = %s AND ys.section_name = %s
+                    ORDER BY ys.section_id
+                """, (program_id_to_search, year_level_num, section_to_search))
+                
                 section_result = cursor.fetchone()
                 if section_result:
                     section_id = section_result['section_id']
                     logger.info(f"✅ Found section_id: {section_id}")
+                    logger.info(f"📋 Section details: Program={section_result['program_name']}, Year={section_result['year_level']}, Section={section_result['section_name']}")
                 else:
-                    logger.warning(f"⚠️ No section found for Year={year_level}, Section={section_name}, Program={program_id}")
+                    logger.warning(f"⚠️ No section found for Program={program_id_to_search}, Year={year_level_num}, Section={section_to_search}")
+                    
+                    # 🎯 FALLBACK: Try to find any active section for this program
+                    cursor.execute("""
+                        SELECT section_id FROM year_sections 
+                        WHERE program_id = %s AND status = 'active'
+                        LIMIT 1
+                    """, (program_id_to_search,))
+                    
+                    fallback_result = cursor.fetchone()
+                    if fallback_result:
+                        section_id = fallback_result['section_id']
+                        logger.info(f"🔄 Using fallback section_id: {section_id}")
+                    else:
+                        logger.error(f"❌ No sections found for program: {program_id_to_search}")
+                
             except Exception as e:
                 logger.warning(f"⚠️ Error finding section: {e}")
         
@@ -10670,6 +10826,21 @@ def initialize_session():
             else:
                 return f"{minutes:02d}:{secs:02d}"
         
+        # 🎯 ADD PROGRAM DISPLAY NAME HELPER FUNCTION
+        def get_program_display_name(program_id):
+            """Get display name for program ID"""
+            program_map = {
+                'IT': 'BSIT',
+                'CS': 'BSCS', 
+                'ACT': 'ACT',
+                'Information Technology': 'BSIT',
+                'Computer Science': 'BSCS',
+                'Associate in Computer Technology': 'ACT'
+            }
+            return program_map.get(program_id, program_id)
+            
+        program_display = get_program_display_name(data.get('program', ''))
+        
         # ✅ STORE SESSION DATA - USE UNIQUE SESSION ID
         session_data = {
             'session_id': unique_session_id,  # 🎯 CRITICAL: Use unique session ID
@@ -10682,6 +10853,7 @@ def initialize_session():
             'faculty_photo': faculty_photo,
             'year_level': data.get('year_level', ''),
             'program': data.get('program', ''),
+            'program_display': program_display,  # 🆕 ADD PROGRAM DISPLAY NAME
             'section': data.get('section', ''),
             'duration': session_total_duration_seconds,
             'duration_display': format_time_display(session_total_duration_seconds),
@@ -10790,7 +10962,7 @@ def debug_threshold():
 
 @app.route('/api/get_class_students', methods=['GET'])
 def get_class_students():
-    """Get students for the current class including both regular and temporary students - FIXED: Using correct schema"""
+    """Get students for the current class including both regular and temporary students"""
     connection = None
     cursor = None
     try:
@@ -10806,10 +10978,14 @@ def get_class_students():
         section = request.args.get('section')
         session_id = request.args.get('session_id')
         
-        print(f"DEBUG: Received parameters - program: '{program}', year_level: '{year_level}', section: '{section}', session_id: '{session_id}'")
+        logger.info(f"🔍 get_class_students CALLED: program='{program}', year_level='{year_level}', section='{section}', session_id='{session_id}'")
         
         if not all([program, year_level, section]):
             return jsonify({'success': False, 'message': 'Missing required parameters'}), 400
+        
+        # 🎯 CORRECTED: Extract numeric year level from "4th Year"
+        year_level_clean = ''.join(filter(str.isdigit, year_level))
+        year_level_num = int(year_level_clean) if year_level_clean else None
         
         # Map program names to program_ids
         program_map = {
@@ -10818,24 +10994,30 @@ def get_class_students():
             'Associate in Computer Technology': 'ACT',
             'IT': 'IT',
             'CS': 'CS',
-            'ACT': 'ACT',
-            'BSIT': 'IT',
-            'BSCS': 'CS'
+            'ACT': 'ACT'
         }
         
         program_id_to_search = program_map.get(program, program)
+        section_to_search = section.upper().strip()
         
-        # Convert year_level to integer and section to uppercase
-        try:
-            year_level_num = int(year_level) if year_level else None
-        except (ValueError, TypeError):
-            year_level_num = None
-            
-        section_to_search = section.upper() if section else None
+        logger.info(f"🔍 Cleaned parameters: program_id='{program_id_to_search}', year_level={year_level_num}, section='{section_to_search}'")
         
-        print(f"DEBUG: Searching for program_id='{program_id_to_search}', year_level={year_level_num}, section='{section_to_search}'")
+        # 🎯 STEP 1: FIRST FIND THE SECTION_ID (USING THE SAME LOGIC AS initialize_session)
+        section_id = None
+        cursor.execute("""
+            SELECT section_id FROM year_sections 
+            WHERE program_id = %s AND year_level = %s AND section_name = %s
+        """, (program_id_to_search, year_level_num, section_to_search))
         
-        # ✅ STEP 1: Get REGULAR students from students table with proper joins
+        section_result = cursor.fetchone()
+        if section_result:
+            section_id = section_result['section_id']
+            logger.info(f"✅ Found section_id: {section_id}")
+        else:
+            logger.error(f"❌ No section found for {program_id_to_search} {year_level_num}{section_to_search}")
+            return jsonify({'success': False, 'message': 'Section not found'}), 404
+        
+        # 🎯 STEP 2: GET REGULAR STUDENTS USING SECTION_ID (NOT PROGRAM/YEAR/SECTION)
         regular_query = """
             SELECT 
                 s.student_id, 
@@ -10850,49 +11032,55 @@ def get_class_students():
             FROM students s
             JOIN year_sections ys ON s.section_id = ys.section_id
             JOIN programs p ON ys.program_id = p.program_id
-            WHERE ys.program_id = %s 
-            AND ys.year_level = %s 
-            AND ys.section_name = %s 
+            WHERE s.section_id = %s 
             AND s.status = 'active'
             ORDER BY s.last_name, s.first_name
         """
         
-        cursor.execute(regular_query, (program_id_to_search, year_level_num, section_to_search))
+        cursor.execute(regular_query, (section_id,))
         regular_students = cursor.fetchall()
         
-        # ✅ STEP 2: Get TEMPORARY students from temporary_students table
+        logger.info(f"🔍 Found {len(regular_students)} regular students in section {section_id}")
+        
+        # 🎯 STEP 3: GET TEMPORARY STUDENTS - FIXED: Query attendance table, not temporary_students
         temporary_students = []
         if session_id:
             temp_query = """
                 SELECT 
-                    student_id,
                     name,
-                    session_id,
-                    section_id,
                     status,
-                    created_at
-                FROM temporary_students 
+                    remarks,
+                    timestamp
+                FROM attendance 
                 WHERE session_id = %s 
-                AND is_temporary = 1
-                ORDER BY created_at DESC
+                AND student_id IS NULL
+                ORDER BY timestamp DESC
             """
             cursor.execute(temp_query, (session_id,))
             temp_results = cursor.fetchall()
             
             for temp_student in temp_results:
+                # Extract ID from remarks if available, otherwise generate one
+                temp_id = None
+                display_name = temp_student['name']
+                
+                if temp_student.get('remarks') and 'temp_id:' in temp_student['remarks']:
+                    temp_id = temp_student['remarks'].split('temp_id:')[1].strip()
+                else:
+                    # Generate ID from name and timestamp
+                    temp_id = f"temp_{hash(temp_student['name'] + str(temp_student['timestamp'])) % 10000}"
+                
                 temporary_students.append({
-                    'id': temp_student['student_id'],
-                    'name': temp_student['name'],
-                    'firstName': temp_student['name'].split(' ')[0],  # First word as first name
-                    'lastName': '',  # Temporary students don't have separate last names
+                    'id': temp_id,
+                    'name': display_name,
                     'photo_path': '/static/images/default-avatar.jpg',
                     'status': temp_student['status'] or 'present',
-                    'type': 'temporary',  # ✅ IMPORTANT: Mark as temporary
-                    'created_at': temp_student['created_at'].strftime('%Y-%m-%d %H:%M:%S') if temp_student['created_at'] else None
+                    'type': 'temporary'
                 })
         
-        print(f"DEBUG: Found {len(regular_students)} regular students and {len(temporary_students)} temporary students")
+        logger.info(f"🔍 Found {len(temporary_students)} temporary students")
         
+        # 🎯 STEP 4: FORMAT STUDENTS
         formatted_students = []
         
         for student in regular_students:
@@ -10916,16 +11104,16 @@ def get_class_students():
         for temp_student in temporary_students:
             formatted_students.append(temp_student)
         
-        # ✅ STEP 4: Update statuses based on today's attendance
+        # 🎯 STEP 5: UPDATE STATUSES FROM ATTENDANCE - FIXED: Handle temporary students
         if session_id:
+            # Update regular students
             attendance_query = """
-                SELECT student_id, status, MAX(timestamp) as latest_timestamp
+                SELECT student_id, status 
                 FROM attendance 
                 WHERE session_id = %s 
                 AND student_id IS NOT NULL
                 AND DATE(timestamp) = CURDATE()
-                GROUP BY student_id, status
-                ORDER BY latest_timestamp DESC
+                ORDER BY timestamp DESC
             """
             cursor.execute(attendance_query, (session_id,))
             attendance_records = cursor.fetchall()
@@ -10939,6 +11127,12 @@ def get_class_students():
             for student in formatted_students:
                 if student['type'] == 'regular' and student['id'] in status_map:
                     student['status'] = status_map[student['id']]
+                
+                # Temporary students already have their status from the attendance query above
+        
+        detected_count = len([s for s in formatted_students if s['status'] in ['present', 'late']])
+        
+        logger.info(f"📊 Final student count: {len(formatted_students)} total, {detected_count} detected")
         
         return jsonify({
             'success': True, 
@@ -10946,11 +11140,12 @@ def get_class_students():
             'total_count': len(formatted_students),
             'regular_count': len(regular_students),
             'temporary_count': len(temporary_students),
-            'detected_count': len([s for s in formatted_students if s['status'] in ['present', 'late']])
+            'detected_count': detected_count,
+            'section_id': section_id
         })
         
     except Exception as e:
-        logger.error(f"Error fetching class students: {e}")
+        logger.error(f"❌ Error fetching class students: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
     
     finally:
@@ -10958,6 +11153,32 @@ def get_class_students():
             cursor.close()
         if connection and connection.is_connected():
             connection.close()
+
+@app.route('/api/debug_section_students')
+def debug_section_students():
+    """Debug route to check students in section 26"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check section 26 details
+        cursor.execute("SELECT * FROM year_sections WHERE section_id = 26")
+        section = cursor.fetchone()
+        
+        # Check students in section 26
+        cursor.execute("SELECT * FROM students WHERE section_id = 26 AND status = 'active'")
+        students = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'section': section,
+            'students_count': len(students),
+            'students': students
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 @app.route('/api/debug_students')
 def debug_students():
@@ -11005,7 +11226,7 @@ student_status = {}  # In-memory dictionary to track student status
 
 @app.route('/api/get_student_status')
 def get_student_status():
-    """Get current status of all students - FIXED: Using correct schema with programs and year_sections"""
+    """Get current status of all students - FIXED: Proper missing/present logic"""
     global session_start_time, session_threshold_seconds, current_session_id, student_presence_tracker
     global locked_tracks
     
@@ -11045,32 +11266,53 @@ def get_student_status():
             logger.warning("⚠️ No threshold set, using default 900 seconds")
             threshold_seconds = 900
         
-        # Map program names to program_ids
-        program_map = {
-            'Information Technology': 'IT',
-            'Computer Science': 'CS', 
-            'Associate in Computer Technology': 'ACT',
-            'IT': 'IT',
-            'CS': 'CS',
-            'ACT': 'ACT',
-            'BSIT': 'IT',
-            'BSCS': 'CS'
-        }
-        
-        program_id_to_search = program_map.get(program, program)
-        
-        # Convert year_level to integer and section to uppercase for matching
-        try:
-            year_level_num = int(year_level) if year_level else None
-        except (ValueError, TypeError):
-            year_level_num = None
-            
-        section_to_search = section.upper() if section else None
-        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # ✅ CORRECTED QUERY: Join students with year_sections and programs
+        # 🎯 CRITICAL FIX: GET SECTION_ID FROM ATTENDANCE_SESSIONS
+        section_id = None
+        cursor.execute("""
+            SELECT section_id FROM attendance_sessions 
+            WHERE session_id = %s
+        """, (session_id,))
+        
+        session_data = cursor.fetchone()
+        if session_data and session_data.get('section_id'):
+            section_id = session_data['section_id']
+            logger.info(f"🎯 Using section_id from session: {section_id}")
+        else:
+            logger.warning(f"⚠️ No section_id found for session {session_id}, falling back to program/year/section lookup")
+            # Fallback to old method
+            program_map = {
+                'Information Technology': 'IT',
+                'Computer Science': 'CS', 
+                'Associate in Computer Technology': 'ACT',
+                'IT': 'IT',
+                'CS': 'CS',
+                'ACT': 'ACT'
+            }
+            program_id_to_search = program_map.get(program, program)
+            
+            # Extract numeric year level
+            year_level_clean = ''.join(filter(str.isdigit, year_level))
+            year_level_num = int(year_level_clean) if year_level_clean else None
+            section_to_search = section.upper() if section else None
+            
+            cursor.execute("""
+                SELECT section_id FROM year_sections 
+                WHERE program_id = %s AND year_level = %s AND section_name = %s
+            """, (program_id_to_search, year_level_num, section_to_search))
+            
+            section_result = cursor.fetchone()
+            if section_result:
+                section_id = section_result['section_id']
+                logger.info(f"🔄 Fallback: Found section_id: {section_id}")
+        
+        if not section_id:
+            logger.error(f"❌ No section_id found for session {session_id}")
+            return jsonify({'success': False, 'message': 'Section not found'}), 404
+        
+        # 🎯 CRITICAL FIX: GET STUDENTS BY SECTION_ID (NOT PROGRAM/YEAR/SECTION)
         cursor.execute("""
             SELECT 
                 s.student_id, 
@@ -11083,15 +11325,13 @@ def get_student_status():
             FROM students s
             JOIN year_sections ys ON s.section_id = ys.section_id
             JOIN programs p ON ys.program_id = p.program_id
-            WHERE ys.program_id = %s 
-            AND ys.year_level = %s 
-            AND ys.section_name = %s 
+            WHERE s.section_id = %s 
             AND s.status = 'active'
-        """, (program_id_to_search, year_level_num, section_to_search))
+        """, (section_id,))
         
         students = cursor.fetchall()
         
-        logger.info(f"🔍 Found {len(students)} students for program: {program_id_to_search}, year: {year_level_num}, section: {section_to_search}")
+        logger.info(f"🔍 Found {len(students)} students for section_id: {section_id}")
         
         # ✅ CRITICAL FIX: Get temporary students from CURRENT SESSION only
         cursor.execute("""
@@ -11160,6 +11400,7 @@ def get_student_status():
             
             is_manual_status = False
             current_status = None
+            original_status = attendance_record['status'] if attendance_record else None
             
             if attendance_record:
                 current_status = attendance_record['status']
@@ -11191,21 +11432,56 @@ def get_student_status():
                     'status': current_status,  # Use the manual status
                     'type': 'regular',
                     'program': student.get('program_name', program),
-                    'year_level': student.get('year_level', year_level_num),
-                    'section': student.get('section_name', section_to_search)
+                    'year_level': student.get('year_level'),
+                    'section': student.get('section_name')
                 })
                 manual_status_students.add(student_id)  # Track manual status students
                 continue  
             
-            # Priority 2: Student is currently missing (only if NOT manual status)
+            # 🎯 FIXED LOGIC: Check if student is CURRENTLY DETECTED first (highest priority after manual)
+            if student_id in safe_present_ids:
+                # Student is currently being tracked - they CANNOT be missing!
+                current_status = 'present'
+                
+                # 🎯 Check if they were previously missing and need to be marked as returned
+                if student_id in safe_missing_ids:
+                    # Student has returned from missing - restore original status
+                    try:
+                        cursor.execute("""
+                            SELECT original_status FROM missing_periods 
+                            WHERE student_id = %s AND session_id = %s AND returned = FALSE
+                            ORDER BY missing_start DESC LIMIT 1
+                        """, (student_id, session_id))
+                        
+                        missing_record = cursor.fetchone()
+                        if missing_record:
+                            original_status = missing_record['original_status']
+                            current_status = original_status  # Restore their original status (present/late)
+                            
+                            # Mark the missing period as returned
+                            cursor.execute("""
+                                UPDATE missing_periods 
+                                SET missing_end = NOW(), returned = TRUE
+                                WHERE student_id = %s AND session_id = %s AND returned = FALSE
+                            """, (student_id, session_id))
+                            
+                            # Update attendance record to restore original status
+                            cursor.execute("""
+                                UPDATE attendance 
+                                SET status = %s, timestamp = NOW()
+                                WHERE student_id = %s AND session_id = %s
+                            """, (original_status, student_id, session_id))
+                            
+                            logger.info(f"🔄 STUDENT RETURNED: {student_name} -> {original_status}")
+                    except Exception as e:
+                        logger.error(f"❌ Error marking student as returned: {e}")
+                
+                logger.info(f"✅ CURRENTLY PRESENT: {student_name}")
+            
+            # Priority 3: Student is currently marked as missing in database
             elif student_id in safe_missing_ids:
                 current_status = 'missing'
                 logger.info(f"🎯 CURRENTLY MISSING: {student_name} ({student_id})")
-            
-            # Priority 3: Real-time tracking shows student is currently present (only if NOT manual/missing)
-            elif student_id in safe_present_ids:
-                current_status = 'present'
-                logger.info(f"✅ REAL-TIME PRESENT: {student_name} is currently being tracked")
             
             # Priority 4: Check attendance records for original status (fallback)
             else:
@@ -11247,8 +11523,8 @@ def get_student_status():
                 'status': current_status,
                 'type': 'regular',
                 'program': student.get('program_name', program),
-                'year_level': student.get('year_level', year_level_num),
-                'section': student.get('section_name', section_to_search)
+                'year_level': student.get('year_level'),
+                'section': student.get('section_name')
             })
         
         temp_counter = 1
@@ -11315,8 +11591,8 @@ def get_student_status():
                     'status': current_status,
                     'type': 'temporary',
                     'program': program,
-                    'year_level': year_level_num,
-                    'section': section_to_search
+                    'year_level': year_level,
+                    'section': section
                 })
             
             if current_status in ['present', 'late']:
@@ -11344,7 +11620,8 @@ def get_student_status():
             'status_summary': status_counts,
             'missing_count_in_db': len(safe_missing_ids),
             'real_time_present_count': len(safe_present_ids),
-            'manual_status_count': len(manual_status_students)
+            'manual_status_count': len(manual_status_students),
+            'section_id_used': section_id  # 🆕 ADD FOR DEBUGGING
         })
         
     except Exception as e:
@@ -12003,6 +12280,18 @@ def get_all_students():
     except Exception as e:
         logger.error(f"Error getting all students: {e}")
         return jsonify({'success': False, 'message': str(e)})
+
+def get_program_display_name(program_id):
+    """Get display name for program ID"""
+    program_map = {
+        'IT': 'BSIT',
+        'CS': 'BSCS', 
+        'ACT': 'ACT',
+        'Information Technology': 'BSIT',
+        'Computer Science': 'BSCS',
+        'Associate in Computer Technology': 'ACT'
+    }
+    return program_map.get(program_id, program_id)
 
 @app.route('/api/cleanup_temp_students')
 def cleanup_temp_students():
@@ -13880,11 +14169,20 @@ def student_left():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get student name
-        cursor.execute("SELECT first_name, last_name FROM students WHERE student_id = %s", (student_id,))
-        student = cursor.fetchone()
-        student_name = f"{student['first_name']} {student['last_name']}" if student else f"Student {student_id}"
+        # ✅ FIXED: Better student lookup with error handling
+        student_name = f"Student {student_id}"  # Default name
         
+        try:
+            cursor.execute("SELECT first_name, last_name FROM students WHERE student_id = %s", (student_id,))
+            student = cursor.fetchone()
+            if student:
+                student_name = f"{student['first_name']} {student['last_name']}"
+            else:
+                logger.warning(f"⚠️ Student ID {student_id} not found in students table, using default name")
+        except Exception as e:
+            logger.warning(f"⚠️ Error fetching student name: {e}, using default name")
+        
+        # Check current attendance status
         cursor.execute("""
             SELECT id, status, session_id, remarks FROM attendance 
             WHERE student_id = %s AND session_id = %s
@@ -13925,7 +14223,7 @@ def student_left():
             else:
                 logger.info(f"🔄 AUTO STATUS: {student_name} has status '{current_status}' - CAN mark as missing")
         
-       
+        # Check for existing missing record
         cursor.execute("""
             SELECT id FROM missing_periods 
             WHERE student_id = %s AND session_id = %s AND returned = FALSE
@@ -13939,14 +14237,16 @@ def student_left():
             conn.close()
             return jsonify({'success': False, 'message': 'Student already marked as missing'}), 400
         
- 
+        # Get original status for tracking
         original_status = current_attendance['status'] if current_attendance else None
         
+        # Insert missing period record
         cursor.execute("""
             INSERT INTO missing_periods (student_id, session_id, missing_start, returned, original_status)
             VALUES (%s, %s, NOW(), FALSE, %s)
         """, (student_id, session_id, original_status))
         
+        # Update or create attendance record
         if current_attendance:
             cursor.execute("""
                 UPDATE attendance 
@@ -14435,6 +14735,107 @@ def check_email():
     except Exception as e:
         logger.error(f"Error checking email: {e}")
         return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/student/<student_id>/details')
+@login_required
+def get_student_details(student_id):
+    """Get student details with attendance records"""
+    try:
+        with get_db_cursor() as cursor:
+            # Get student information with program and section details via JOIN
+            cursor.execute("""
+                SELECT 
+                    s.student_id,
+                    s.first_name,
+                    s.middle_name,
+                    s.last_name,
+                    s.email,
+                    s.status,
+                    s.photo_path,
+                    p.program_name as course,
+                    CONCAT(
+                        CASE ys.year_level
+                            WHEN 1 THEN '1st'
+                            WHEN 2 THEN '2nd'
+                            WHEN 3 THEN '3rd'
+                            WHEN 4 THEN '4th'
+                        END,
+                        ' Year ',
+                        ys.section_name
+                    ) as year_section,
+                    ys.program_id,
+                    ys.year_level
+                FROM students s
+                LEFT JOIN year_sections ys ON s.section_id = ys.section_id
+                LEFT JOIN programs p ON ys.program_id = p.program_id
+                WHERE s.student_id = %s
+            """, (student_id,))
+            
+            student = cursor.fetchone()
+            
+            if not student:
+                return jsonify({
+                    'success': False,
+                    'message': 'Student not found'
+                }), 404
+            
+            # Get attendance records (latest 50 records for scrolling)
+            cursor.execute("""
+                SELECT 
+                    a.timestamp,
+                    CASE 
+                        WHEN a.status IS NULL OR a.status = '' OR a.status = 'missing' THEN 'absent'
+                        ELSE a.status
+                    END as status,
+                    a.subject_code,
+                    a.subject_name,
+                    a.room
+                FROM attendance a
+                WHERE a.student_id = %s
+                AND a.person_type = 'student'
+                ORDER BY a.timestamp DESC
+                LIMIT 50
+            """, (student_id,))
+            
+            attendance_records = cursor.fetchall()
+            
+            # Format attendance records
+            formatted_attendance = []
+            for record in attendance_records:
+                formatted_attendance.append({
+                    'timestamp': record['timestamp'].strftime('%Y-%m-%d %H:%M:%S') if record['timestamp'] else '',
+                    'status': record['status'],
+                    'subject_code': record['subject_code'],
+                    'subject_name': record['subject_name'],
+                    'room': record['room']
+                })
+            
+            return jsonify({
+                'success': True,
+                'student': {
+                    'student_id': student['student_id'],
+                    'first_name': student['first_name'],
+                    'middle_name': student['middle_name'] or '',
+                    'last_name': student['last_name'],
+                    'email': student['email'],
+                    'course': student['course'] or 'N/A',
+                    'year_section': student['year_section'] or 'N/A',
+                    'status': student['status'],
+                    'photo_path': student['photo_path'] or '/static/images/default-avatar.jpg',
+                    'program_id': student['program_id'],
+                    'year_level': student['year_level']
+                },
+                'attendance': formatted_attendance
+            })
+            
+    except Exception as e:
+        print(f"❌ ERROR in get_student_details: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Error loading student details: {str(e)}'
+        }), 500
 
 if __name__ == "__main__":
     latest_frame = None

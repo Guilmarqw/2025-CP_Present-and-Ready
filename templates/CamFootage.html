@@ -554,8 +554,77 @@ let UNRECOGNIZED_FACES_DATA = []; // Stores the full list of faces fetched from 
 window._sessionData = {};
 const MAX_VIDEO_RETRIES = 3;
 
+function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
+// Throttle the updateStudentCount function
+const throttledUpdateStudentCount = throttle(updateStudentCount, 3000);
+
+function setupPeriodicRefresh() {
+    // Update student status every 5 seconds instead of 3
+    setInterval(() => {
+        if (isSessionEnding || isDetectionStopped) return;
+        updateStudentCount();
+    }, 6000);
+    
+    // Force a hard refresh every 60 seconds instead of frequent updates
+    setInterval(() => {
+        if (isSessionEnding || isDetectionStopped) return;
+        
+        console.log("🔄 FORCING HARD REFRESH OF STUDENT LIST");
+        const urlParams = new URLSearchParams(window.location.search);
+        const program = urlParams.get('program');
+        const yearLevel = urlParams.get('year_level');
+        const section = urlParams.get('section');
+        
+        if (program && yearLevel && section) {
+            loadClassStudents(program, yearLevel, section);
+        }
+        window.lastHardRefresh = Date.now();
+    }, 60000);
+}
+
 window.addEventListener('load', () => {
-    console.log('Page loaded, initializing...');
+    console.log('🔴 PAGE LOADED - Starting initialization');
+    
+    // 🎯 ADD DATE-TIME FUNCTION
+    function updateDateTime() {
+        const now = new Date();
+        
+        // Format date as MM/DD/YY
+        const dateStr = now.toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: '2-digit'
+        });
+        
+        // Format time as HH:MM AM/PM
+        const timeStr = now.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+        
+        const dateTimeElement = document.getElementById('date-time');
+        if (dateTimeElement) {
+            dateTimeElement.textContent = `${dateStr} - ${timeStr}`;
+        }
+    }
+    
+    // 🎯 INITIALIZE DATE-TIME IMMEDIATELY
+    updateDateTime();
+    
+    setupPeriodicRefresh();
     
     // 🎯 CRITICAL FIX: Reset detection flags for new session
     isSessionEnding = false;
@@ -581,7 +650,7 @@ window.addEventListener('load', () => {
         mode: urlParams.get('mode')
     };
     
-    console.log('📋 Session data:', sessionData);
+    console.log('📋 Session data from URL:', sessionData);
     
     // Initialize session on backend with error handling
     fetch('/api/initialize_session', {
@@ -590,19 +659,20 @@ window.addEventListener('load', () => {
         body: JSON.stringify(sessionData)
     })
     .then(res => {
+        console.log('🔴 API Response status:', res.status);
         if (!res.ok) {
             throw new Error(`HTTP ${res.status}`);
         }
         return res.json();
     })
     .then(data => {
-        console.log('🔍 DEBUG: Full API response:', data);
+        console.log('🔴 Session initialization response:', data);
         
         if (data.success) {
             console.log('✅ Session initialized:', data.data);
             
             // 🎯 CRITICAL FIX: Store the session IDs in the GLOBAL variables
-            currentSessionId = data.data.session_id; // This is the unique ID like "26_abc12345_1234567890"
+            currentSessionId = data.data.session_id;
             currentSectionId = data.data.section_id;
             
             // Also store in window._sessionData for backward compatibility
@@ -616,9 +686,13 @@ window.addEventListener('load', () => {
                 section: data.data.section
             };
             
-            console.log('🔍 DEBUG: Available keys in data.data:', Object.keys(data.data));
-            console.log('🔍 DEBUG: currentSessionId value:', currentSessionId);
-            console.log('🔍 DEBUG: currentSectionId value:', currentSectionId);
+            console.log('🔴 Global variables set:', {
+                currentSessionId,
+                currentSectionId,
+                program: data.data.program,
+                year_level: data.data.year_level,
+                section: data.data.section
+            });
             
             // Validate that we actually got the IDs
             if (!currentSessionId) {
@@ -626,32 +700,48 @@ window.addEventListener('load', () => {
                 currentSessionId = sessionData.schedule_id;
             }
             
-            if (!currentSectionId) {
-                console.warn('⚠️ section_id not found in response, using section as fallback');
-                currentSectionId = sessionData.section;
-            }
-            
-            console.log(`🎯 Global Session IDs set:`, {
-                currentSessionId,
-                currentSectionId
-            });
+            console.log(`🎯 Final currentSessionId: ${currentSessionId}`);
             
             // 🎯 CRITICAL FIX: Ensure detection is enabled after session init
             isSessionEnding = false;
             isDetectionStopped = false;
-            resumePythonDetection(); // 🎯 EXPLICITLY RESUME DETECTION
+            resumePythonDetection();
             console.log('🟢 Detection EXPLICITLY ENABLED for new session');
             
             updateSessionUI(data.data);
             
-            // Wait a moment to ensure session ID is set, then load students
+            // 🎯 FIXED: Wait longer and add validation
             setTimeout(() => {
-                loadClassStudents(data.data.program, data.data.year_level, data.data.section);
-            }, 100);
+                console.log('🔴 Attempting to load students after timeout...');
+                console.log('🔴 Current values:', {
+                    program: data.data.program,
+                    year_level: data.data.year_level,
+                    section: data.data.section,
+                    currentSessionId: currentSessionId
+                });
+                
+                if (data.data.program && data.data.year_level && data.data.section && currentSessionId) {
+                    console.log('🔴 All parameters valid, calling loadClassStudents');
+                    loadClassStudents(data.data.program, data.data.year_level, data.data.section);
+                } else {
+                    console.error('❌ Missing parameters for loadClassStudents:', {
+                        program: data.data.program,
+                        year_level: data.data.year_level,
+                        section: data.data.section,
+                        currentSessionId: currentSessionId
+                    });
+                    
+                    // Try fallback if main parameters are missing
+                    if (sessionData.program && sessionData.year_level && sessionData.section) {
+                        console.log('🔄 Trying URL parameters as fallback');
+                        loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
+                    }
+                }
+            }, 1000); // Increased timeout to 1 second
             
             // Start auto-refresh
             updateStudentCount();
-            setInterval(updateStudentCount, 3000);
+            setInterval(updateStudentCount, 6000);
             
             console.log('🚀 Starting FRESH new session with detection ENABLED');
             
@@ -674,10 +764,21 @@ window.addEventListener('load', () => {
             };
             
             console.log('🔄 Using URL parameters as fallback for global variables');
+            console.log('🔴 Fallback values:', {
+                currentSessionId,
+                currentSectionId,
+                program: sessionData.program,
+                year_level: sessionData.year_level,
+                section: sessionData.section
+            });
             
             // Ensure detection is enabled even on fallback
             resumePythonDetection();
-            loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
+            
+            // Load students with fallback values
+            setTimeout(() => {
+                loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
+            }, 500);
         }
     })
     .catch(err => {
@@ -699,10 +800,21 @@ window.addEventListener('load', () => {
         };
         
         console.log('🔄 Using URL parameters due to error for global variables');
+        console.log('🔴 Error fallback values:', {
+            currentSessionId,
+            currentSectionId,
+            program: sessionData.program,
+            year_level: sessionData.year_level,
+            section: sessionData.section
+        });
         
         // Ensure detection is enabled even on error
         resumePythonDetection();
-        loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
+        
+        // Load students with error fallback values
+        setTimeout(() => {
+            loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
+        }, 500);
     });
     
     // Load settings (will use defaults if fails)
@@ -1001,10 +1113,19 @@ function updateSessionUI(data) {
         facultyAvatar.alt = data.instructor || 'Faculty Member';
     }
     
-    // Update section info in search bar
+    // 🎯 CRITICAL FIX: Update header with subject and room
+    const headerInfo = document.querySelector('.cctv-header div span');
+    if (headerInfo) {
+        headerInfo.textContent = data.subject_code && data.room 
+            ? `${data.subject_code} - ${data.room}` 
+            : 'Unknown Subject - Unknown Room';
+        console.log('✅ Updated header info:', headerInfo.textContent);
+    }
+    
+    // 🎯 CRITICAL FIX: Update section info in search bar
     const sectionInfoElement = document.querySelector('.section-info span:last-child');
     if (sectionInfoElement) {
-        // FIXED: Map program names properly
+        // Format: "BSIT 4C" or "BSCS 3A" etc.
         let programDisplay;
         switch (data.program) {
             case 'Information Technology':
@@ -1029,14 +1150,6 @@ function updateSessionUI(data) {
         
         sectionInfoElement.textContent = `${programDisplay} ${yearLevel}${section}`;
         console.log('✅ Updated section info:', sectionInfoElement.textContent);
-    }
-    
-    // Update header with subject and room
-    const headerInfo = document.querySelector('.cctv-header div span');
-    if (headerInfo) {
-        headerInfo.textContent = data.subject_code && data.room 
-            ? `${data.subject_code} - ${data.room}` 
-            : 'Unknown Subject - Unknown Room';
     }
     
     console.log('✅ Session UI updated successfully');
@@ -1093,7 +1206,7 @@ function updateTimer() {
 function startTimer() {
     try {
         if (!timerInterval) {
-            timerInterval = setInterval(updateTimer, 1000);
+            timerInterval = setInterval(updateTimer, 5000);
         }
     } catch (err) {
         console.error('Error starting timer:', err);
@@ -1239,11 +1352,13 @@ function maximizeScreen() {
 }
 
 function formatTime(seconds) {
-    seconds = Math.max(0, Math.floor(Number(seconds) || 0));
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    const secs = seconds % 60;
+    if (hrs > 0) {
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 function goToDashboard() {
@@ -1687,53 +1802,35 @@ async function confirmEndSession() {
     }
 }
 
-// ✅ ADD THIS FUNCTION: Update student statuses without replacing the list
 function updateStudentStatuses(students) {
-    console.log('🔄 updateStudentStatuses called with:', students.length, 'students');
+    if (isSessionEnding || isDetectionStopped) return;
     
-    const studentRows = document.querySelectorAll('.student-row');
-    console.log('🔍 Found', studentRows.length, 'student rows in DOM');
+    let changedCount = 0;
     
-    // Create a map of student IDs to their latest status
-    const statusMap = {};
     students.forEach(student => {
-        statusMap[student.id] = student.status;
-        console.log(`📊 Student ${student.id}: ${student.status}`);
-    });
-    
-    // Update each student row's status
-    let updatedCount = 0;
-    studentRows.forEach(row => {
-        const studentId = row.getAttribute('data-student-id');
-        const currentStatus = statusMap[studentId];
-        
-        console.log(`🔍 Checking row for ${studentId}: DOM status = ${row.querySelector('.status')?.textContent}, API status = ${currentStatus}`);
-        
-        if (currentStatus) {
-            const statusElement = row.querySelector('.status');
+        const studentElement = document.querySelector(`.student-row[data-student-id="${student.id}"]`);
+        if (studentElement) {
+            const statusClass = getStatusClass(student.status);
+            const statusText = getStatusText(student.status);
+            
+            // Update status element
+            const statusElement = studentElement.querySelector('.status');
             if (statusElement) {
-                const currentDisplayStatus = statusElement.textContent.toLowerCase();
-                const statusClass = getStatusClass(currentStatus);
-                const statusText = getStatusText(currentStatus);
-                
-                // Only update if status actually changed
-                if (currentDisplayStatus !== currentStatus) {
+                const currentStatus = statusElement.textContent.toLowerCase();
+                if (currentStatus !== student.status.toLowerCase()) {
                     statusElement.className = `status ${statusClass}`;
                     statusElement.textContent = statusText;
-                    updatedCount++;
-                    console.log(`🔄 Status updated: ${studentId} -> ${statusText}`);
-                } else {
-                    console.log(`⏭️ Status unchanged: ${studentId} = ${currentStatus}`);
+                    changedCount++;
                 }
-            } else {
-                console.error(`❌ No status element found for ${studentId}`);
             }
-        } else {
-            console.warn(`⚠️ No status found in API data for ${studentId}`);
         }
     });
     
-    console.log(`✅ Updated ${updatedCount} student statuses`);
+    // Only update count if there were changes
+    if (changedCount > 0) {
+        updateStudentCount();
+        console.log(`🔄 Updated ${changedCount} student statuses`);
+    }
 }
 
 // Add this to your browser console
@@ -1850,8 +1947,12 @@ function closeModal(modalId) {
 }
 
 function loadClassStudents(program, yearLevel, section) {
+    console.log('🎯🔴 loadClassStudents CALLED with:', { program, yearLevel, section });
+    console.log('🎯🔴 currentSessionId:', currentSessionId);
+    console.log('🎯🔴 window._sessionData:', window._sessionData);
+    
     if (!program || !yearLevel || !section) {
-        console.warn('Missing parameters for loading students');
+        console.error('❌ Missing parameters for loading students');
         return;
     }
     
@@ -1859,6 +1960,7 @@ function loadClassStudents(program, yearLevel, section) {
     if (!currentSessionId) {
         console.error('❌ Cannot load students: currentSessionId is null. Retrying in 1 second...');
         setTimeout(() => {
+            console.log('🎯🔴 Retry check - currentSessionId:', currentSessionId);
             if (currentSessionId) {
                 loadClassStudents(program, yearLevel, section);
             } else {
@@ -1870,21 +1972,21 @@ function loadClassStudents(program, yearLevel, section) {
         return;
     }
     
-    // 🎯 ADD DEBUG: Log what we're sending
-    console.log(`🔍 DEBUG: Loading students with session_id=${currentSessionId}, section=${section}`);
-    
     const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&session_id=${encodeURIComponent(currentSessionId)}`;
     
-    console.log(`🎯 Loading students for session: ${currentSessionId}`);
+    console.log('📡 Fetching students from:', url);
     
     fetch(url)
         .then(res => {
+            console.log('🔴 API Response status:', res.status);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}`);
             }
             return res.json();
         })
         .then(data => {
+            console.log('🔴 API Response data:', data);
+            
             if (data.success) {
                 console.log(`📊 Loaded ${data.students.length} students for session ${currentSessionId}`);
                 
@@ -2009,7 +2111,7 @@ function updateStudentList(students) {
                 statusText = 'Absent';
         }
         
-        // ✅ FIX: Handle both regular and temporary students
+        // Handle both regular and temporary students
         let avatarSrc = '/static/images/default-avatar.jpg';
         let displayName = student.name;
         let displayId = student.id;
@@ -2021,13 +2123,16 @@ function updateStudentList(students) {
             displayName = student.name.replace(/ \(ID: \d+\)/, ''); // Clean up name if needed
         }
         
+        // 🎯 ADD PROGRAM INFO TO STUDENT DISPLAY (for debugging)
+        const programInfo = student.program ? ` (${student.program})` : '';
+        
         return `
             <div class="student-row" data-student-id="${student.id}">
                 <div class="student-info">
                     <img src="${avatarSrc}" alt="${displayName}" 
                          class="avatar" onerror="this.src='/static/images/default-avatar.jpg'">
                     <div>
-                        <div class="student-name">${displayName}</div>
+                        <div class="student-name">${displayName}${programInfo}</div>
                         <div class="student-id">ID: ${displayId}</div>
                     </div>
                 </div>
@@ -2040,9 +2145,11 @@ function updateStudentList(students) {
     if (currentSearch) {
         filterStudents(currentSearch);
     }
+    
+    // 🎯 UPDATE STUDENT COUNTS
+    updateStudentCount();
 }
 
-// ✅ ADD THIS FUNCTION: Add temporary student to frontend list
 function addTemporaryStudentToFrontend(studentData) {
     const studentList = document.getElementById('studentList');
     
@@ -2055,16 +2162,18 @@ function addTemporaryStudentToFrontend(studentData) {
     const statusClass = getStatusClass(status);
     const statusText = getStatusText(status);
     
-    const studentRow = document.createElement('div');
-    studentRow.className = 'student-row';
-    studentRow.setAttribute('data-student-id', studentData.id);
+    const studentItem = document.createElement('div');
+    studentItem.className = 'student-row';
+    studentItem.setAttribute('data-student-id', studentData.id);
+    studentItem.setAttribute('data-type', 'temporary');
+    studentItem.style.display = 'flex';
     
-    studentRow.innerHTML = `
+    studentItem.innerHTML = `
         <div class="student-info">
             <img src="/static/images/default-avatar.jpg" alt="${studentData.name}" 
                  class="avatar" onerror="this.src='/static/images/default-avatar.jpg'">
             <div>
-                <div class="student-name">${studentData.name}</div>
+                <div class="student-name">${studentData.name} (Temporary)</div>
                 <div class="student-id">ID: ${studentData.id}</div>
             </div>
         </div>
@@ -2072,7 +2181,7 @@ function addTemporaryStudentToFrontend(studentData) {
     `;
     
     // Add to the beginning of the list
-    studentList.insertBefore(studentRow, studentList.firstChild);
+    studentList.insertBefore(studentItem, studentList.firstChild);
     
     // Update counters
     updateStudentCount();
@@ -2085,21 +2194,20 @@ function getStatusClass(status) {
     switch (status) {
         case 'present': return 'present';
         case 'late': return 'late';
-        case 'absent': return 'absent';
         case 'excused': return 'excused';
-        case 'missing': return 'missing';  // ✅ MAKE SURE THIS EXISTS
+        case 'absent': return 'absent';
+        case 'missing': return 'missing';
         default: return 'absent';
     }
 }
 
-// ✅ Helper function to get status text
 function getStatusText(status) {
     switch (status) {
         case 'present': return 'Present';
         case 'late': return 'Late';
-        case 'absent': return 'Absent';
         case 'excused': return 'Excused';
-        case 'missing': return 'Missing';  // ✅ MAKE SURE THIS EXISTS
+        case 'absent': return 'Absent';
+        case 'missing': return 'Missing';
         default: return 'Absent';
     }
 }
@@ -2109,8 +2217,8 @@ function filterStudents(searchTerm) {
     let hasMatches = false;
     
     studentRows.forEach(row => {
-        const studentName = row.querySelector('.student-name').textContent.toLowerCase();
-        const studentId = row.querySelector('.student-id').textContent.toLowerCase();
+        const studentName = row.querySelector('.student-name')?.textContent.toLowerCase() || '';
+        const studentId = row.querySelector('.student-id')?.textContent.toLowerCase() || '';
         
         if (studentName.includes(searchTerm) || studentId.includes(searchTerm)) {
             row.style.display = 'flex';
@@ -2122,10 +2230,10 @@ function filterStudents(searchTerm) {
     
     // Show "no results" message if needed
     const studentList = document.getElementById('studentList');
-    const noResults = studentList.querySelector('.no-search-results');
+    const noResults = studentList?.querySelector('.no-search-results');
     
     if (!hasMatches && searchTerm) {
-        if (!noResults) {
+        if (!noResults && studentList) {
             const noResultsDiv = document.createElement('div');
             noResultsDiv.className = 'no-search-results';
             noResultsDiv.textContent = 'No students found matching your search';
@@ -2145,14 +2253,16 @@ function updateStudentCount() {
     const program = urlParams.get('program');
     const yearLevel = urlParams.get('year_level');
     const section = urlParams.get('section');
-    const threshold = urlParams.get('threshold');
     
     if (!program || !yearLevel || !section) {
         console.warn('Missing class parameters for status update');
         return;
     }
     
-    fetch(`/api/get_student_status?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&threshold=${threshold}`)
+    // 🎯 USE CURRENT SESSION ID
+    const sessionId = window._sessionData?.session_id;
+    
+    fetch(`/api/get_student_status?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&session_id=${sessionId}`)
         .then(res => {
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}`);
@@ -2167,19 +2277,29 @@ function updateStudentCount() {
                 if (detectedElement) detectedElement.textContent = data.detected_count || 0;
                 if (totalElement) totalElement.textContent = data.total_count || 0;
                 
-                // 🆕 DEBUG: Log detailed student counts
-                const presentStudents = data.students.filter(s => s.status === 'present');
-                const lateStudents = data.students.filter(s => s.status === 'late');
-                const missingStudents = data.students.filter(s => s.status === 'missing');
-                const absentStudents = data.students.filter(s => s.status === 'absent');
-                const excusedStudents = data.students.filter(s => s.status === 'excused');
+                // 🆕 REDUCED LOGGING: Only log if there are actual changes
+                const currentPresent = data.students.filter(s => s.status === 'present').length;
+                const currentLate = data.students.filter(s => s.status === 'late').length;
+                const currentMissing = data.students.filter(s => s.status === 'missing').length;
                 
-                console.log(`🔄 Student Status - Present: ${presentStudents.length}, Late: ${lateStudents.length}, Missing: ${missingStudents.length}, Absent: ${absentStudents.length}, Excused: ${excusedStudents.length}, Total: ${data.total_count}`);
+                // Only log if status counts changed significantly
+                if (window.lastStatusCounts && 
+                    (window.lastStatusCounts.present !== currentPresent ||
+                     window.lastStatusCounts.late !== currentLate ||
+                     window.lastStatusCounts.missing !== currentMissing)) {
+                    
+                    console.log(`🔄 Status Update - Present: ${currentPresent}, Late: ${currentLate}, Missing: ${currentMissing}, Total: ${data.total_count}`);
+                }
                 
-                // ✅ FIX: Update student statuses without replacing the entire list
+                window.lastStatusCounts = {
+                    present: currentPresent,
+                    late: currentLate,
+                    missing: currentMissing
+                };
+                
+                // Update student statuses without replacing the entire list
                 updateStudentStatuses(data.students || []);
                 
-                console.log('🔄 Student statuses updated (list preserved)');
             }
         })
         .catch(err => {
@@ -2190,6 +2310,32 @@ function updateStudentCount() {
             if (totalElement) totalElement.textContent = '0';
         });
 }
+
+function debugSessionData() {
+    console.log('🔍 DEBUG SESSION DATA:');
+    console.log('📋 URL Parameters:', Object.fromEntries(new URLSearchParams(window.location.search)));
+    console.log('💾 Window Session Data:', window._sessionData);
+    console.log('🎯 Current Session ID:', currentSessionId);
+    console.log('🔗 Current Section ID:', currentSectionId);
+    
+    // Check DOM elements
+    const headerInfo = document.querySelector('.cctv-header div span');
+    const sectionInfo = document.querySelector('.section-info span:last-child');
+    console.log('🏷️ Header Element:', headerInfo?.textContent);
+    console.log('📚 Section Element:', sectionInfo?.textContent);
+    
+    return {
+        urlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
+        sessionData: window._sessionData,
+        currentSessionId,
+        currentSectionId,
+        headerText: headerInfo?.textContent,
+        sectionText: sectionInfo?.textContent
+    };
+}
+
+// Call this in browser console to debug
+// debugSessionData();
 
 async function populateDeleteStudentSelect() {
     console.log('populateDeleteStudentSelect called');

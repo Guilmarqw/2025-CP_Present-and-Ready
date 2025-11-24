@@ -343,6 +343,13 @@
             opacity: 1;
         }
 
+        .student-info img.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
         .actions {
             display: flex;
             padding: 0.75rem;
