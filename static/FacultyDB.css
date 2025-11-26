@@ -148,7 +148,7 @@
         }
 
         .invite-btn {
-            background: #685A45;
+            background: #4a6fa9;
             color: white;
             border: none;
             padding: 10px 20px;
@@ -163,7 +163,7 @@
         }
 
         .invite-btn:hover {
-            background: #4e4233;
+            background: #3b5b8d;
         }
 
         .invite-link-container {
@@ -187,7 +187,7 @@
         }
 
         .copy-btn {
-            background: #685A45;
+            background: #4a6fa9;
             color: white;
             border: none;
             padding: 8px 16px;
@@ -200,7 +200,7 @@
         }
 
         .copy-btn:hover {
-            background: #4e4233;
+            background: #3b5b8d;
         }
 
         .copy-status {

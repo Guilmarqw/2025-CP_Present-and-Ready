@@ -5,9 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - Students</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../static/StudentDB.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='StudentDB.css') }}">
-    
 </head>
 <body>
     <!-- Sidebar -->
@@ -23,6 +21,7 @@
             </div>
         </div>
 
+        <!-- STUDENT CONTENT - EVERYTHING INCLUDING TABLE IS NOW INSIDE -->
         <div class="student-content">
             <h3>Student Management</h3>
 
@@ -47,19 +46,20 @@
                         <option value="4">4th Year</option>
                     </select>
                 </div>
+
                 <div class="filter-group">
                     <label for="section">Section</label>
                     <select id="section">
                         <option value="">Select Section</option>
-                        </select>
+                    </select>
                 </div>
+
+            <button class="invite-btn" id="inviteBtn">
+                <i class="fas fa-user-plus"></i> Invite Student
+            </button>
             </div>
 
-                <button class="invite-btn" id="inviteBtn">
-                    <i class="fas fa-user-plus"></i> Invite Student
-                </button>
-            </div>
-
+            <!-- STUDENTS TABLE - NOW PROPERLY INSIDE .student-content -->
             <table class="students-table">
                 <thead>
                     <tr>
@@ -71,53 +71,11 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td><img src="https://ui-avatars.com/api/?name=Gulmar+Quimba&background=random" class="student-photo" alt="Student Photo"></td>
-                        <td>Gulmar A. Quimba</td>
-                        <td>1100-22</td>
-                        <td>BSCS 3B</td>
-                        <td class="action-buttons">
-                            <button class="action-btn edit-btn" data-id="1"><i class="fas fa-edit"></i></button>
-                            <button class="action-btn view-btn" data-id="1"><i class="fas fa-eye"></i></button>
-                            <button class="action-btn delete-btn" data-id="1"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><img src="https://ui-avatars.com/api/?name=Maria+Santos&background=random" class="student-photo" alt="Student Photo"></td>
-                        <td>Maria L. Santos</td>
-                        <td>1101-22</td>
-                        <td>BSIT 3C</td>
-                        <td class="action-buttons">
-                            <button class="action-btn edit-btn" data-id="2"><i class="fas fa-edit"></i></button>
-                            <button class="action-btn view-btn" data-id="2"><i class="fas fa-eye"></i></button>
-                            <button class="action-btn delete-btn" data-id="2"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><img src="https://ui-avatars.com/api/?name=Juan+Delacruz&background=random" class="student-photo" alt="Student Photo"></td>
-                        <td>Juan M. Dela Cruz</td>
-                        <td>1102-22</td>
-                        <td>BSCS 4A</td>
-                        <td class="action-buttons">
-                            <button class="action-btn edit-btn" data-id="3"><i class="fas fa-edit"></i></button>
-                            <button class="action-btn view-btn" data-id="3"><i class="fas fa-eye"></i></button>
-                            <button class="action-btn delete-btn" data-id="3"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><img src="https://ui-avatars.com/api/?name=Anna+Reyes&background=random" class="student-photo" alt="Student Photo"></td>
-                        <td>Anna P. Reyes</td>
-                        <td>1103-22</td>
-                        <td>BSIT 3B</td>
-                        <td class="action-buttons">
-                            <button class="action-btn edit-btn" data-id="4"><i class="fas fa-edit"></i></button>
-                            <button class="action-btn view-btn" data-id="4"><i class="fas fa-eye"></i></button>
-                            <button class="action-btn delete-btn" data-id="4"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
+                    <!-- Rows will be filled by JavaScript -->
                 </tbody>
             </table>
         </div>
+        <!-- End of .student-content -->
     </main>
 
     <!-- Add Student Modal -->
@@ -166,7 +124,7 @@
     </div>
 
     <!-- Edit Student Modal -->
-<div id="editStudentModal" class="modal">
+    <div id="editStudentModal" class="modal">
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h2 class="modal-title">Edit Student</h2>
@@ -203,13 +161,13 @@
                     <div class="form-row">
                         <div class="form-group" style="flex: 1;">
                             <label for="editProgram">Course *</label>
-                            <select id="editProgram" required="">
+                            <select id="editProgram" required>
                                 <option value="">Select Course</option>
-                                </select>
+                            </select>
                         </div>
                         <div class="form-group" style="flex: 1;">
                             <label for="editYearLevel">Year Level *</label>
-                            <select id="editYearLevel" required="">
+                            <select id="editYearLevel" required>
                                 <option value="">Select Year</option>
                                 <option value="1">1st Year</option>
                                 <option value="2">2nd Year</option>
@@ -220,9 +178,9 @@
                     </div>
                     <div class="form-group">
                         <label for="editSection">Section *</label>
-                        <select id="editSection" required="">
+                        <select id="editSection" required>
                             <option value="">Select Section</option>
-                            </select>
+                        </select>
                     </div>
                     
                     <div class="form-group">
@@ -232,12 +190,12 @@
                             <option value="inactive">Inactive</option>
                         </select>
                     </div>
-                
-                </form> </div> <div class="modal-footer">
+                </form>
+            </div>
+            <div class="modal-footer">
                 <button class="modal-btn btn-cancel">Cancel</button>
                 <button class="modal-btn btn-submit" id="submitEditStudent">Save Changes</button>
             </div>
-
         </div>
     </div>
 
@@ -274,7 +232,7 @@
                         <div class="detail-row"><span class="detail-label">Status:</span><span class="detail-value" id="viewStatus"></span></div>
                     </div>
 
-                    <!-- NEW: Attendance Record -->
+                    <!-- Attendance Record -->
                     <div class="detail-section">
                         <h4>Attendance Record</h4>
                         <div class="attendance-table-wrapper">
@@ -422,16 +380,12 @@
     </div>
 
     <script>
-
         let currentPage = 1;
         let studentsPerPage = 20;
         let allStudents = [];
         let totalStudents = 0;
 
-
-// This is in StudentDB.html
-
-async function loadStudentsFromDatabase() {
+        async function loadStudentsFromDatabase() {
             try {
                 showLoadingState('Loading students...');
                 const params = new URLSearchParams({
@@ -440,13 +394,11 @@ async function loadStudentsFromDatabase() {
                     status: 'active'
                 });
                 
-                // Get values from all 3 filters
                 const courseFilter = document.getElementById('course')?.value;
                 const yearFilter = document.getElementById('year_level')?.value; 
                 const sectionFilter = document.getElementById('section')?.value;
                 const searchTerm = document.querySelector('.search-box input')?.value;
 
-                // Append correct parameter names
                 if (courseFilter) params.append('program_id', courseFilter);
                 if (yearFilter) params.append('year_level', yearFilter);
                 if (sectionFilter) params.append('section_id', sectionFilter);
@@ -472,7 +424,7 @@ async function loadStudentsFromDatabase() {
             }
         }
 
-function displayStudents(students) {
+        function displayStudents(students) {
             const tbody = document.querySelector('.students-table tbody');
             if (!tbody) return;
             tbody.innerHTML = '';
@@ -509,6 +461,7 @@ function displayStudents(students) {
             if (pagination.page < pagination.pages) html += `<button class="page-btn" onclick="changePage(${pagination.page+1})"><i class="fas fa-chevron-right"></i></button>`;
             container.innerHTML = html;
         }
+
         function createPaginationContainer() {
             const div = document.createElement('div');
             div.id = 'studentPagination';
@@ -524,6 +477,7 @@ function displayStudents(students) {
             document.querySelector('.student-content').appendChild(div);
             return div;
         }
+
         function changePage(page) { currentPage = page; loadStudentsFromDatabase(); }
 
         function updateStudentStats(total) {
@@ -536,7 +490,6 @@ function displayStudents(students) {
             if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i><br>${msg}</td></tr>`;
         }
         function hideLoadingState() { /* replaced by data */ }
-
 
         const inviteBtn = document.getElementById('inviteBtn');
         const inviteLinkModal = document.getElementById('inviteLinkModal');
@@ -608,7 +561,7 @@ function displayStudents(students) {
             filterYear.addEventListener('change', fetchFilterSections);
         }
 
-function addEventListenersToRow(row) {
+        function addEventListenersToRow(row) {
             const editBtn = row.querySelector('.edit-btn');
             const viewBtn = row.querySelector('.view-btn');
             const deleteBtn = row.querySelector('.delete-btn');
@@ -623,14 +576,9 @@ function addEventListenersToRow(row) {
             });
 
             viewBtn?.addEventListener('click', function () {
-    const id = this.getAttribute('data-id');
-    openViewStudentModal(id); // ✅ Call this directly
-});
-
-// Add this function if it doesn't exist
-function showNotification(message, type = 'success') {
-    showAlert(message, type === 'success');
-}
+                const id = this.getAttribute('data-id');
+                openViewStudentModal(id);
+            });
 
             deleteBtn?.addEventListener('click', function () {
                 const id = this.getAttribute('data-id');
@@ -643,74 +591,68 @@ function showNotification(message, type = 'success') {
             });
         }
 
-     
-if (submitEditStudent) {
-    submitEditStudent.addEventListener('click', async function () {
-        const originalId = document.getElementById('editStudentId')?.value; 
-        const first = document.getElementById('editFirstName')?.value.trim();
-        const middle = document.getElementById('editMiddleName')?.value.trim();
-        const last = document.getElementById('editLastName')?.value.trim();
-        const newIdNum = document.getElementById('editStudentIdNumber')?.value.trim(); 
-        const email = document.getElementById('editEmail')?.value.trim();
-        const status = document.getElementById('editStatus')?.value;
-        
-        // Get values from dropdowns
-        const program = document.getElementById('editProgram')?.value;
-        const year = document.getElementById('editYearLevel')?.value;
-        const section = document.getElementById('editSection')?.value;
+        if (submitEditStudent) {
+            submitEditStudent.addEventListener('click', async function () {
+                const originalId = document.getElementById('editStudentId')?.value; 
+                const first = document.getElementById('editFirstName')?.value.trim();
+                const middle = document.getElementById('editMiddleName')?.value.trim();
+                const last = document.getElementById('editLastName')?.value.trim();
+                const newIdNum = document.getElementById('editStudentIdNumber')?.value.trim(); 
+                const email = document.getElementById('editEmail')?.value.trim();
+                const status = document.getElementById('editStatus')?.value;
+                
+                const program = document.getElementById('editProgram')?.value;
+                const year = document.getElementById('editYearLevel')?.value;
+                const section = document.getElementById('editSection')?.value;
 
-        // Validation
-        if (!first || !last || !newIdNum || !email || !section) {
-            showAlert('Please fill all required fields (marked with *)', false);
-            return;
-        }
+                if (!first || !last || !newIdNum || !email || !section) {
+                    showAlert('Please fill all required fields (marked with *)', false);
+                    return;
+                }
 
-        // Email validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            showAlert('Please enter a valid email address', false);
-            return;
-        }
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    showAlert('Please enter a valid email address', false);
+                    return;
+                }
 
-        // Disable button to prevent double submission
-        submitEditStudent.disabled = true;
-        submitEditStudent.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+                submitEditStudent.disabled = true;
+                submitEditStudent.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
 
-        try {
-            const res = await fetch('/api/update_student', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    original_student_id: originalId,
-                    student_id: newIdNum,
-                    first_name: first,
-                    last_name: last,
-                    middle_name: middle || '',
-                    section_id: section,  // Only send section_id, not program_id
-                    email: email,
-                    status: status
-                })
+                try {
+                    const res = await fetch('/api/update_student', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            original_student_id: originalId,
+                            student_id: newIdNum,
+                            first_name: first,
+                            last_name: last,
+                            middle_name: middle || '',
+                            section_id: section,
+                            email: email,
+                            status: status
+                        })
+                    });
+                    
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        showAlert(`Student ${first} ${last} updated successfully!`, true);
+                        closeModal(editStudentModal);
+                        await loadStudentsFromDatabase();
+                    } else {
+                        showAlert(data.message || 'Failed to update student', false);
+                    }
+                } catch (e) {
+                    console.error('Update error:', e);
+                    showAlert('Error updating student. Please try again.', false);
+                } finally {
+                    submitEditStudent.disabled = false;
+                    submitEditStudent.innerHTML = 'Save Changes';
+                }
             });
-            
-            const data = await res.json();
-            
-            if (data.success) {
-                showAlert(`Student ${first} ${last} updated successfully!`, true);
-                closeModal(editStudentModal);
-                await loadStudentsFromDatabase();
-            } else {
-                showAlert(data.message || 'Failed to update student', false);
-            }
-        } catch (e) {
-            console.error('Update error:', e);
-            showAlert('Error updating student. Please try again.', false);
-        } finally {
-            // Re-enable button
-            submitEditStudent.disabled = false;
-            submitEditStudent.innerHTML = 'Save Changes';
         }
-    });
-}
         
         if (confirmDelete) {
             confirmDelete.addEventListener('click', async function () {
@@ -736,7 +678,6 @@ if (submitEditStudent) {
             });
         }
 
-      
         const searchInput = document.querySelector('.search-box input');
         let searchTimeout;
         if (searchInput) {
@@ -745,114 +686,73 @@ if (submitEditStudent) {
                 searchTimeout = setTimeout(() => { currentPage = 1; loadStudentsFromDatabase(); }, 500);
             });
         }
+
         document.querySelectorAll('.filter-group select').forEach(f => {
             f.addEventListener('change', () => { currentPage = 1; loadStudentsFromDatabase(); });
         });
 
-function openViewStudentModal(studentId) {
-    const modal = document.getElementById('viewStudentModal');
-    
-    // Show loading state
-    const attendanceBody = document.getElementById('attendanceBody');
-    attendanceBody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i> Loading attendance...</td></tr>';
-    
-    // Fetch student details with attendance
-    fetch(`/api/student/${studentId}/details`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const student = data.student;
-                
-                // Populate personal information
-                document.getElementById('viewPhoto').src = student.photo_path || '/static/images/default-avatar.jpg';
-                document.getElementById('viewFullName').textContent = `${student.first_name} ${student.last_name}`;
-                document.getElementById('viewFirstName').textContent = student.first_name || 'N/A';
-                document.getElementById('viewMiddleName').textContent = student.middle_name || 'N/A';
-                document.getElementById('viewLastName').textContent = student.last_name || 'N/A';
-                document.getElementById('viewIdNumber').textContent = student.student_id || 'N/A';
-                document.getElementById('viewEmail').textContent = student.email || 'N/A';
-                
-                // Academic information
-                document.getElementById('viewCourse').textContent = student.course || 'N/A';
-                document.getElementById('viewSection').textContent = student.year_section || 'N/A';
-                document.getElementById('viewStatus').textContent = student.status || 'N/A';
-                
-                // Status badge
-                const statusBadge = document.getElementById('viewStatusBadge');
-                statusBadge.textContent = student.status || 'Active';
-                statusBadge.className = `detail-badge ${student.status === 'active' ? 'badge-success' : 'badge-warning'}`;
-                
-                // Populate attendance records
-                const attendanceRecords = data.attendance || [];
-                const noAttendanceMsg = document.getElementById('noAttendance');
-                
-                if (attendanceRecords.length > 0) {
-                    attendanceBody.innerHTML = '';
-                    noAttendanceMsg.style.display = 'none';
-                    
-                    attendanceRecords.forEach(record => {
-                        const row = document.createElement('tr');
+        function openViewStudentModal(studentId) {
+            const modal = document.getElementById('viewStudentModal');
+            
+            const attendanceBody = document.getElementById('attendanceBody');
+            attendanceBody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i> Loading attendance...</td></tr>';
+            
+            fetch(`/api/student/${studentId}/details`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const student = data.student;
                         
-                        // Format date
-                        const date = new Date(record.timestamp);
-                        const formattedDate = date.toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric', 
-                            year: 'numeric' 
-                        });
+                        document.getElementById('viewPhoto').src = student.photo_path || '/static/images/default-avatar.jpg';
+                        document.getElementById('viewFullName').textContent = `${student.first_name} ${student.last_name}`;
+                        document.getElementById('viewFirstName').textContent = student.first_name || 'N/A';
+                        document.getElementById('viewMiddleName').textContent = student.middle_name || 'N/A';
+                        document.getElementById('viewLastName').textContent = student.last_name || 'N/A';
+                        document.getElementById('viewIdNumber').textContent = student.student_id || 'N/A';
+                        document.getElementById('viewEmail').textContent = student.email || 'N/A';
+                        document.getElementById('viewCourse').textContent = student.course || 'N/A';
+                        document.getElementById('viewSection').textContent = student.year_section || 'N/A';
+                        document.getElementById('viewStatus').textContent = student.status || 'N/A';
                         
-                        // Status badge class
-                        const statusClass = `status-${record.status.toLowerCase()}`;
+                        const statusBadge = document.getElementById('viewStatusBadge');
+                        statusBadge.textContent = student.status || 'Active';
+                        statusBadge.className = `detail-badge ${student.status === 'active' ? 'badge-success' : 'badge-warning'}`;
                         
-                        row.innerHTML = `
-                            <td>${formattedDate}</td>
-                            <td style="text-align:center;">
-                                <span class="attendance-status-badge ${statusClass}">
-                                    ${record.status.toUpperCase()}
-                                </span>
-                            </td>
-                            <td>${record.subject_code || 'N/A'} - ${record.subject_name || 'N/A'}</td>
-                        `;
+                        const attendanceRecords = data.attendance || [];
+                        const noAttendanceMsg = document.getElementById('noAttendance');
                         
-                        attendanceBody.appendChild(row);
-                    });
-                } else {
-                    attendanceBody.innerHTML = '';
-                    noAttendanceMsg.style.display = 'block';
-                }
-                
-                // Show modal
-                modal.style.display = 'block';
-            } else {
-                showAlert(data.message || 'Failed to load student details', false);
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching student details:', error);
-            showAlert('Error loading student details', false);
-        });
-}
-
-// Wrapper function called by the view button click handler
-function populateViewModal(student) {
-    // Just call the API-based function
-    openViewStudentModal(student.id);
-}
-
-// Close modal handlers
-document.querySelectorAll('#viewStudentModal .close, #viewStudentModal .btn-cancel').forEach(element => {
-    element.addEventListener('click', () => {
-        document.getElementById('viewStudentModal').style.display = 'none';
-    });
-});
-
-// Close on outside click
-window.addEventListener('click', (event) => {
-    const modal = document.getElementById('viewStudentModal');
-    if (event.target === modal) {
-        modal.style.display = 'none';
-    }
-});
+                        if (attendanceRecords.length > 0) {
+                            attendanceBody.innerHTML = '';
+                            noAttendanceMsg.style.display = 'none';
+                            attendanceRecords.forEach(record => {
+                                const row = document.createElement('tr');
+                                const date = new Date(record.timestamp);
+                                const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                                const statusClass = `status-${record.status.toLowerCase()}`;
+                                row.innerHTML = `
+                                    <td>${formattedDate}</td>
+                                    <td style="text-align:center;">
+                                        <span class="attendance-status-badge ${statusClass}">${record.status.toUpperCase()}</span>
+                                    </td>
+                                    <td>${record.subject_code || 'N/A'} - ${record.subject_name || 'N/A'}</td>
+                                `;
+                                attendanceBody.appendChild(row);
+                            });
+                        } else {
+                            attendanceBody.innerHTML = '';
+                            noAttendanceMsg.style.display = 'block';
+                        }
+                        
+                        modal.style.display = 'block';
+                    } else {
+                        showAlert(data.message || 'Failed to load student details', false);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching student details:', error);
+                    showAlert('Error loading student details', false);
+                });
+        }
 
         async function loadProgramsToDropdown(dropdownId) {
             try {
@@ -860,10 +760,11 @@ window.addEventListener('click', (event) => {
                 const data = await response.json();
                 if (data.success && data.programs) {
                     const dropdown = document.getElementById(dropdownId);
+                    dropdown.innerHTML = '<option value="">Select Course</option>'; // clear first
                     data.programs.forEach(program => {
                         const option = document.createElement('option');
-                        option.value = program.program_id; // e.g., "CS"
-                        option.textContent = program.program_name; // e.g., "Computer Science"
+                        option.value = program.program_id;
+                        option.textContent = program.program_name;
                         dropdown.appendChild(option);
                     });
                 }
@@ -884,17 +785,11 @@ window.addEventListener('click', (event) => {
                     
                     sectionDropdown.innerHTML = '<option value="">Select Section</option>';
                     if (data.success && data.sections) {
-                        if (data.sections.length === 0) {
-                            sectionDropdown.innerHTML = '<option value="">No sections found</option>';
-                            return;
-                        }
                         data.sections.forEach(section => {
                             const option = document.createElement('option');
                             option.value = section.section_id;
                             option.textContent = section.section_name;
-                            if (section.section_id === currentSectionId) {
-                                option.selected = true;
-                            }
+                            if (section.section_id === currentSectionId) option.selected = true;
                             sectionDropdown.appendChild(option);
                         });
                         sectionDropdown.disabled = false;
@@ -903,54 +798,37 @@ window.addEventListener('click', (event) => {
                     console.error('Error fetching sections:', error);
                     sectionDropdown.innerHTML = '<option value="">Error loading</option>';
                 }
-            } else {
-                sectionDropdown.innerHTML = '<option value="">Select Course & Year first</option>';
             }
         }
 
-/**
-         * Populates the Edit Student form (REPLACED)
-         */
         async function populateEditForm(student) {
-    // Fill basic info
-    document.getElementById('editStudentId').value = student.id;
-    document.getElementById('editStudentIdNumber').value = student.idNumber || '';
-    document.getElementById('editEmail').value = student.email || '';
-    document.getElementById('editStatus').value = student.status || 'active';
+            document.getElementById('editStudentId').value = student.id;
+            document.getElementById('editStudentIdNumber').value = student.idNumber || '';
+            document.getElementById('editEmail').value = student.email || '';
+            document.getElementById('editStatus').value = student.status || 'active';
 
-    // Split name
-    let first = '', middle = '', last = '';
-    if (student.name) {
-        const parts = student.name.split(' ');
-        if (parts.length === 1) {
-            first = parts[0];
-        } else if (parts.length === 2) {
-            first = parts[0]; 
-            last = parts[1];
-        } else {
-            first = parts[0]; 
-            last = parts[parts.length-1]; 
-            middle = parts.slice(1, parts.length-1).join(' ');
+            let first = '', middle = '', last = '';
+            if (student.name) {
+                const parts = student.name.split(' ');
+                if (parts.length === 1) first = parts[0];
+                else if (parts.length === 2) { first = parts[0]; last = parts[1]; }
+                else { first = parts[0]; last = parts[parts.length-1]; middle = parts.slice(1, -1).join(' '); }
+            }
+            document.getElementById('editFirstName').value = first;
+            document.getElementById('editMiddleName').value = middle;
+            document.getElementById('editLastName').value = last;
+            
+            const programDropdown = document.getElementById('editProgram');
+            const yearDropdown = document.getElementById('editYearLevel');
+            
+            programDropdown.innerHTML = '<option value="">Loading Courses...</option>';
+            await loadProgramsToDropdown('editProgram');
+
+            programDropdown.value = student.program_id;
+            yearDropdown.value = student.year_level;
+
+            await fetchEditSections(student.program_id, student.year_level, student.section_id);
         }
-    }
-    document.getElementById('editFirstName').value = first;
-    document.getElementById('editMiddleName').value = middle;
-    document.getElementById('editLastName').value = last;
-    
-    // Load program dropdown
-    const programDropdown = document.getElementById('editProgram');
-    const yearDropdown = document.getElementById('editYearLevel');
-    
-    programDropdown.innerHTML = '<option value="">Loading Courses...</option>';
-    await loadProgramsToDropdown('editProgram');
-
-    // Set saved values
-    programDropdown.value = student.program_id;
-    yearDropdown.value = student.year_level;
-
-    // Fetch and populate sections
-    await fetchEditSections(student.program_id, student.year_level, student.section_id);
-}
 
         function initializeStudentInviteModal() {
             const genBtn = document.getElementById('generate-student-link-btn');
@@ -965,20 +843,21 @@ window.addEventListener('click', (event) => {
                 setStudentDurationFromMinutes(parseInt(this.dataset.minutes));
             }));
         }
+
         function updateStudentDurationPreview() {
             const d = parseInt(document.getElementById('studentDurationDays')?.value)||0;
             const h = parseInt(document.getElementById('studentDurationHours')?.value)||0;
             const m = parseInt(document.getElementById('studentDurationMinutes')?.value)||0;
             const total = d*1440 + h*60 + m;
             const el = document.getElementById('studentDurationPreview');
-            if (!el) return;
-            if (total===0) { el.textContent='Please set a valid duration'; return; }
+            if (!el || total===0) return;
             let txt='Link will expire in: ';
             if(d>0) txt+=`${d} day${d>1?'s':''} `;
             if(h>0) txt+=`${h} hour${h>1?'s':''} `;
             if(m>0) txt+=`${m} minute${m>1?'s':''}`;
             el.textContent=txt;
         }
+
         function setStudentDurationFromMinutes(min) {
             const d = Math.floor(min/1440);
             const h = Math.floor((min%1440)/60);
@@ -988,6 +867,7 @@ window.addEventListener('click', (event) => {
             document.getElementById('studentDurationMinutes').value=m;
             updateStudentDurationPreview();
         }
+
         function generateStudentDynamicInvite() {
             const d = parseInt(document.getElementById('studentDurationDays')?.value)||0;
             const h = parseInt(document.getElementById('studentDurationHours')?.value)||0;
@@ -1010,9 +890,10 @@ window.addEventListener('click', (event) => {
                     link.value=full; exp.textContent=new Date(data.expires_at).toLocaleString(); sec.style.display='block';
                     showAlert('Student invite link generated successfully!',true);
                 }else showAlert(data.message||'Failed to generate link',false);
-            }).catch(e=>{console.error(e);showAlert('Error generating link',false);})
+            }).catch(e=>{showAlert('Error generating link',false);})
             .finally(()=>{btn.innerHTML='<i class="fas fa-link"></i> Generate Student Link'; btn.disabled=false;});
         }
+
         function copyStudentGeneratedLink() {
             const inp=document.getElementById('studentGeneratedInviteLink');
             if(!inp) return;
@@ -1041,10 +922,9 @@ window.addEventListener('click', (event) => {
                 const yearLevel = editYearLevel.value;
                 fetchEditSections(programId, yearLevel, null);
             }
-            
             editProgram.addEventListener('change', updateEditSectionDropdown);
-            editYearLevel.add
-        }    
+            editYearLevel.addEventListener('change', updateEditSectionDropdown); // Fixed: was cut off before
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             initializeStudentInviteModal();

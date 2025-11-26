@@ -48,6 +48,61 @@
           <!-- Academic years will be loaded here -->
         </div>
       </div>
+<div class="page-container" id="batchManagementPage" style="display: none;">
+    <div class="header">
+      <h2><i class="fas fa-users"></i> Batch Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
+      <a href="#" id="backToAcademicYearsFromBatch" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Academic Years
+      </a>
+    </div>
+    <div class="batches-table">
+      <div class="academic-header">
+        <h3>Available Batches</h3>
+        <button id="addBatchBtn" class="btn btn-primary">
+          <i class="fas fa-plus"></i> Add Batch
+        </button>
+      </div>
+      <table id="batchesTable">
+        <thead>
+          <tr>
+            <th>Batch Name</th>
+            <th>Total Students</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Will be populated via JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+    <!-- Add Batch Modal -->
+  <div class="modal" id="addBatchModal">
+    <div class="modal-content" style="width: 500px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Add New Batch</h3>
+      </div>
+      <form id="addBatchForm">
+        <div class="form-group">
+          <label for="batch-name-add">Batch Name *</label>
+          <input type="text" id="batch-name-add" placeholder="e.g., Batch A, Morning Batch, Irregular 2024" required>
+        </div>
+        <div class="form-group">
+          <label for="batch-status-add">Status *</label>
+          <select id="batch-status-add" required>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideAddBatchModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleAddBatch()">Add Batch</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
       <div id="semestersList" style="margin-top: 20px; display: none;">
         <h4>Select Active Semester</h4>
@@ -974,25 +1029,24 @@ function displayAcademicYears(academicYears) {
     const tbody = document.querySelector('#academicYearsTable tbody');
     if (!tbody) return;
 
-    // Filter for active years only
     const activeYears = academicYears.filter(y => y.status === 'active');
 
     tbody.innerHTML = activeYears.map(year => `
         <tr>
             <td>${year.academic_year}</td>
             <td class="action-buttons">
-                <a href="#" class="btn btn-view view-academic-year" 
-                   data-academic-year="${year.academic_year}" 
-                   title="View">
-                    <i class="fas fa-eye"></i>
+                <a href="#" class="btn btn-view view-academic-year"
+                   data-academic-year="${year.academic_year}"
+                   title="View Batches">
+                    <i class="fas fa-users"></i> View Batches
                 </a>
-                <button class="btn btn-edit" 
-                        onclick="editAcademicYear('${year.academic_year}')" 
+                <button class="btn btn-edit"
+                        onclick="editAcademicYear('${year.academic_year}')"
                         title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button class="btn btn-danger" 
-                        onclick="deleteAcademicYear('${year.academic_year}')" 
+                <button class="btn btn-danger"
+                        onclick="deleteAcademicYear('${year.academic_year}')"
                         title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
@@ -1000,14 +1054,15 @@ function displayAcademicYears(academicYears) {
         </tr>
     `).join('');
 
-    // Re-attach event listeners
+    // Update event listeners to go to BATCH page
     document.querySelectorAll('.view-academic-year').forEach(button => {
         button.addEventListener('click', function(e) {
             e.preventDefault();
             const academicYear = this.getAttribute('data-academic-year');
             currentAcademicYear = academicYear;
+
             document.getElementById('academicYearManagementPage').style.display = 'none';
-            loadSemesterManagementPage(currentProgramCode, currentProgramName, academicYear);
+            loadBatchManagementPage(currentProgramCode, currentProgramName, academicYear);
         });
     });
 }
@@ -1220,7 +1275,116 @@ function deleteAcademicYear(academicYear) {
         }
     );
 }
+function loadBatchManagementPage(programCode, programName, academicYear) {
+  currentProgramCode = programCode;
+  currentProgramName = programName;
+  currentAcademicYear = academicYear;
 
+  const page = document.getElementById('batchManagementPage');
+  page.querySelector('.header h2').innerHTML = `<i class="fas fa-users"></i> Batch Management - ${programName} (${academicYear})`;
+  page.style.display = 'block';
+  loadBatches();
+
+  document.getElementById('backToAcademicYearsFromBatch').onclick = e => {
+    e.preventDefault();
+    page.style.display = 'none';
+    document.getElementById('academicYearManagementPage').style.display = 'block';
+  };
+
+  document.getElementById('addBatchBtn').onclick = showAddBatchModal;
+}
+
+function loadBatches() {
+  fetch(`/api/get_batches?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}`)
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) displayBatches(d.batches || []);
+      else {
+        showAlertModal('Error', d.message || 'Failed to load batches', true);
+        document.querySelector('#batchesTable tbody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:40px;">No batches found</td></tr>';
+      }
+    })
+    .catch(() => showAlertModal('Error', 'Network error', true));
+}
+
+function displayBatches(batches) {
+  const tbody = document.querySelector('#batchesTable tbody');
+  const active = batches.filter(b => b.status === 'active');
+
+  if (active.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:40px;">No active batches yet.<br>Click "Add Batch" to create one.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = active.map(b => `
+    <tr>
+      <td><a href="#" class="view-batch-link" data-batch-id="${b.batch_id}"><strong>${b.batch_name}</strong></a></td>
+      <td>${b.student_count || 0}</td>
+      <td><span style="color:${b.status==='active'?'green':'red'}">${b.status.charAt(0).toUpperCase()+b.status.slice(1)}</span></td>
+      <td class="action-buttons">
+        <button class="btn btn-edit" onclick="editBatch('${b.batch_id}')"><i class="fas fa-edit"></i></button>
+        <button class="btn btn-danger" onclick="deleteBatch('${b.batch_id}', '${b.batch_name.replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>
+      </td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('.view-batch-link').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      currentBatchId = link.dataset.batchId;
+      document.getElementById('batchManagementPage').style.display = 'none';
+      loadSemesterManagementPage(currentProgramCode, currentProgramName, currentAcademicYear);
+    });
+  });
+}
+
+function showAddBatchModal() {
+  document.getElementById('addBatchForm').reset();
+  const m = document.getElementById('addBatchModal');
+  m.classList.add('active');
+  m.style.display = 'flex';
+}
+function hideAddBatchModal() {
+  const m = document.getElementById('addBatchModal');
+  m.classList.remove('active');
+  m.style.display = 'none';
+}
+function handleAddBatch() {
+  const name = document.getElementById('batch-name-add').value.trim();
+  const status = document.getElementById('batch-status-add').value;
+  if (!name) return showAlertModal('Error', 'Batch name is required', true);
+
+  fetch('/api/add_batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      program_id: currentProgramCode,
+      academic_year: currentAcademicYear,
+      batch_name: name,
+      status: status
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      showAlertModal('Success', 'Batch added!', false);
+      hideAddBatchModal();
+      loadBatches();
+    } else showAlertModal('Error', d.message || 'Failed to add batch', true);
+  })
+  .catch(() => showAlertModal('Error', 'Network error', true));
+}
+function editBatch(id) { showAlertModal('Info', 'Edit batch coming soon', false); }
+function deleteBatch(id, name) {
+  showConfirmModal('Delete Batch', `Delete "${name}"? This cannot be undone.`, () => {
+    fetch('/api/delete_batch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({batch_id:id}) })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) { showAlertModal('Deleted', 'Batch removed', false); loadBatches(); }
+        else showAlertModal('Error', d.message || 'Delete failed', true);
+      });
+  });
+}
 // Semester Management Functions
 function loadSemesterManagementPage(programCode, programName, academicYear) {
     const semesterManagementPage = document.getElementById('semesterManagementPage');

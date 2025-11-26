@@ -114,13 +114,13 @@ body {
 
 /* Make Timer look a bit special */
 .nav-items .timer-item a {
-    background-color: green;
+    background-color: #4a6fa9;
     color: white;
     font-weight: 600;
 }
 
 .nav-items .timer-item a:hover {
-    background-color: #e63e3e;
+    background-color: #3b5b8d;
     color: white;
 }
 

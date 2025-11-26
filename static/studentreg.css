@@ -27,7 +27,7 @@
       text-align: center;
       font-size: 20px;
       font-weight: bold;
-      color: #5a4522;
+      color: #900;
       margin-bottom: 15px;
     }
     .terms-body {
@@ -50,14 +50,14 @@
       min-width: 100px;
     }
     #acceptTerms {
-      background: #5a4522;
+      background: #900;
       color: white;
     }
     #declineTerms {
       background: #ccc;
       color: #333;
     }
-    #acceptTerms:hover { background: #5a4522; }
+    #acceptTerms:hover { background: rgb(80, 18, 18); }
     #declineTerms:hover { background: #bbb; }
 
     /* Disable body scroll when modal is open */
@@ -83,7 +83,7 @@
       overflow: hidden;
     }
     .header {
-      background: #5a4522;
+      background: #900;
       color: white;
       text-align: center;
       padding: 14px;
@@ -139,12 +139,12 @@
 
     .resend-otp {
       margin: 15px 0;
-      color: #685A45;
+      color: #900;
       cursor: pointer;
       text-decoration: underline;
     }
     button {
-      background: #5a4522;
+      background: #900;
       color: white;
       border: none;
       padding: 12px 20px;
@@ -216,7 +216,7 @@
     .scan-instruction {
       margin: 15px 0;
       font-weight: bold;
-      color: #5a4522;
+      color: #900;
       min-height: 24px;
     }
     .scan-progress {
@@ -245,7 +245,7 @@
       height: 100%;
       border-radius: 50%;
       overflow: hidden;
-      border: 2px solid #5a4522;
+      border: 2px solid #900;
       display: flex;
       justify-content: center;
       align-items: center;
