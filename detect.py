@@ -9002,7 +9002,6 @@ def unassign_faculty_from_schedule():
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/get_sections', methods=['GET'])
-@login_required
 def get_sections():
     """Get sections based on program and year level"""
     try:
@@ -9018,8 +9017,7 @@ def get_sections():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Simple query: Get all active sections for program + year level
-        # Don't filter by semester - just get all available sections
+        # Updated query: Only get sections from active semesters
         query = """
             SELECT 
                 ys.section_id,
@@ -9030,10 +9028,12 @@ def get_sections():
                 ys.academic_year_id,
                 COUNT(DISTINCT s.student_id) as student_count
             FROM year_sections ys
+            INNER JOIN semesters sem ON ys.semester_id = sem.semester_id
             LEFT JOIN students s ON ys.section_id = s.section_id AND s.status = 'active'
             WHERE ys.program_id = %s 
             AND ys.year_level = %s
             AND ys.status = 'active'
+            AND sem.status = 'active'  -- Only active semesters
             GROUP BY ys.section_id, ys.section_name, ys.year_level, ys.program_id, ys.semester_id, ys.academic_year_id
             ORDER BY ys.section_name
         """
@@ -9051,9 +9051,10 @@ def get_sections():
             print(f"   - No sections found!")
             # Check if any sections exist for this program
             cursor.execute("""
-                SELECT year_level, section_name 
-                FROM year_sections 
-                WHERE program_id = %s AND status = 'active'
+                SELECT ys.year_level, ys.section_name, sem.semester_number, sem.status as semester_status
+                FROM year_sections ys
+                INNER JOIN semesters sem ON ys.semester_id = sem.semester_id
+                WHERE ys.program_id = %s AND ys.status = 'active'
             """, (program_id,))
             all_program_sections = cursor.fetchall()
             print(f"   - Available sections for {program_id}: {all_program_sections}")
@@ -14882,7 +14883,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.254.104", 
+            host="192.168.0.101", 
             port=5000,
             debug=False,
             threaded=True,
