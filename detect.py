@@ -321,8 +321,15 @@ try:
         raise FileNotFoundError("ReID model cache file not found")
     
     reid_model.eval()
+    
+    # ✅ ADD THIS RIGHT HERE - PROPER GPU SETUP:
     if torch.cuda.is_available():
         reid_model = reid_model.cuda()
+        reid_model = reid_model.half()  # Use FP16 for maximum speed
+        logger.info(f"✅ TorchReID model moved to GPU with FP16 precision")
+    else:
+        logger.info("⚠️ TorchReID model running on CPU")
+    
     logger.info(f"✅ TorchReID model loaded successfully on {DEVICE}")
     
 except Exception as e:
@@ -1609,9 +1616,9 @@ def detect_bodies(frame):
     try:
         # 🎯 ADD FP16 SUPPORT - Run YOLO detection for person class only
         if DEVICE == "cuda":
-            results = body_detector(frame, classes=[0], verbose=False, conf=0.3, half=True)  # 🆕 half=True
+            results = body_detector(frame, classes=[0], verbose=False, conf=0.25, half=True)
         else:
-            results = body_detector(frame, classes=[0], verbose=False, conf=0.3)
+            results = body_detector(frame, classes=[0], verbose=False, conf=0.25)
         
         detections = []
         if len(results) > 0 and results[0].boxes is not None:
@@ -3239,18 +3246,17 @@ def update_trackers_with_body(rgb, frame, frame_idx):
 
 @app.route('/video_feed')
 def video_feed():
-    """Stream video feed - OPTIMIZED SMOOTH WITH DETECTION"""
+    """Stream video feed - RESTORED WORKING VERSION WITH DETECTION"""
     def generate():
         global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
         frame_idx = 0
         last_processing_time = time.time()
-        processing_interval = 0.1  # Process detection every 100ms (~10 FPS detection)
         
         while not stop_flag:
             frame_start = time.time()
             
             try:
-                # 🎯 OPTIMIZED FRAME ACCESS
+                # 🎯 ORIGINAL FRAME ACCESS - KEEP THIS
                 if latest_frame is None:
                     time.sleep(0.01)
                     continue
@@ -3258,22 +3264,19 @@ def video_feed():
                 frame = latest_frame.copy()
                 current_time = time.time()
                 
-                # 🎯 ADAPTIVE PROCESSING: Time-based instead of frame-based
-                should_process_detection = (current_time - last_processing_time) >= processing_interval
+                # 🎯 CRITICAL: PROCESS DETECTION EVERY FRAME
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
-                if should_process_detection:
-                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
-                    # 🎯 OPTIMIZED DETECTION PIPELINE
-                    refresh_with_detections(frame, rgb, frame_idx)
-                    update_trackers_with_body(rgb, frame, frame_idx)
-                    
-                    last_processing_time = current_time
-                    frame_idx += 1
+                # 🎯 ALWAYS RUN DETECTION - DON'T SKIP FRAMES
+                refresh_with_detections(frame, rgb, frame_idx)
+                update_trackers_with_body(rgb, frame, frame_idx)
                 
-                # 🎯 OPTIMIZED ENCODING
+                last_processing_time = current_time
+                frame_idx += 1
+                
+                # 🎯 OPTIMIZED ENCODING (keep this)
                 ret, buffer = cv2.imencode('.jpg', frame, [
-                    cv2.IMWRITE_JPEG_QUALITY, 75,  # Balanced quality/speed
+                    cv2.IMWRITE_JPEG_QUALITY, 80,  # Good balance
                     cv2.IMWRITE_JPEG_OPTIMIZE, 1
                 ])
                 frame_bytes = buffer.tobytes()
@@ -3282,7 +3285,7 @@ def video_feed():
                       b'Content-Type: image/jpeg\r\n\r\n' + 
                       frame_bytes + b'\r\n')
                 
-                # 🎯 PRECISE TIMING CONTROL
+                # 🎯 REASONABLE TIMING CONTROL
                 processing_time = time.time() - frame_start
                 target_frame_time = 0.033  # ~30 FPS
                 sleep_time = max(0.001, target_frame_time - processing_time)
@@ -3381,27 +3384,22 @@ def extract_reid_features(frame, body_box):
         body_crop_resized = cv2.resize(body_crop, (128, 256))
         body_crop_normalized = body_crop_resized.astype(np.float32) / 255.0
         
-        # 🎯 CONVERT TO FP16 FOR GPU INFERENCE
-        if DEVICE == "cuda":
-            body_crop_normalized = body_crop_normalized.astype(np.float16)  # 🆕 FP16 conversion
-        
-        body_crop_tensor = torch.from_numpy(
-            np.transpose(body_crop_normalized, (2, 0, 1))
-        ).unsqueeze(0)
-        
+        # ✅ FIXED: CONSISTENT PRECISION HANDLING
         if torch.cuda.is_available():
-            body_crop_tensor = body_crop_tensor.cuda()
-            # 🎯 ENSURE TENSOR MATCHES MODEL PRECISION
-            if next(reid_model.parameters()).dtype == torch.float16:
-                body_crop_tensor = body_crop_tensor.half()  # 🆕 Match model precision
+            # Convert to FP16 and move to GPU
+            body_crop_tensor = torch.from_numpy(
+                np.transpose(body_crop_normalized, (2, 0, 1))
+            ).unsqueeze(0).half().cuda()  # ✅ FIXED: Consistent FP16 on GPU
+        else:
+            # CPU fallback
+            body_crop_tensor = torch.from_numpy(
+                np.transpose(body_crop_normalized, (2, 0, 1))
+            ).unsqueeze(0).float()
         
         with torch.no_grad():
             reid_features = reid_model(body_crop_tensor)
         
-        # 🎯 CONVERT BACK TO FP32 FOR CONSISTENT PROCESSING
-        if reid_features.dtype == torch.float16:
-            reid_features = reid_features.float()  # 🆕 Convert back to FP32 for numpy
-        
+        # ✅ FIXED: Always convert to CPU numpy for consistency
         return reid_features.cpu().numpy()[0]
     except Exception as e:
         logger.debug(f"Reid extraction error: {e}")
@@ -3446,11 +3444,16 @@ def calculate_reid_distance(feat1, feat2):
     return cosine_distance
 
 def optimize_memory():
-    """Optimize GPU memory usage - CALL THIS PERIODICALLY"""
+    """Aggressive memory cleanup for smooth performance"""
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
-        logger.debug("🧹 GPU memory optimized")
+    
+    # Force garbage collection
+    import gc
+    gc.collect()
+    
+    logger.debug("🧹 Aggressive memory optimization completed")
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -3478,6 +3481,27 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 app.json_encoder = CustomJSONEncoder
 
+def check_detection_status():
+    """Check why detection isn't running"""
+    global detectionStopped, current_session_id, latest_frame
+    
+    logger.info(f"🔍 DETECTION STATUS CHECK:")
+    logger.info(f"   - detectionStopped: {detectionStopped}")
+    logger.info(f"   - current_session_id: {current_session_id}")
+    logger.info(f"   - latest_frame: {'Available' if latest_frame is not None else 'None'}")
+    logger.info(f"   - ENABLE_RECOGNITION: {ENABLE_RECOGNITION}")
+    
+    # Check camera
+    try:
+        if cap is not None:
+            logger.info(f"   - Camera: Connected")
+        else:
+            logger.error("   - Camera: NOT CONNECTED")
+    except:
+        logger.error("   - Camera: ERROR")
+
+# Call this function to see what's wrong
+check_detection_status()
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -4692,8 +4716,8 @@ def logout_required(f):
     return decorated_function
 
 # Serve faculty photos
-os.makedirs('static/images/faculty', exist_ok=True)
-os.makedirs('static/images/admins', exist_ok=True)
+os.makedirs('static/images/faculty_photos', exist_ok=True)
+os.makedirs('static/images/admin_photos', exist_ok=True)
 
 @app.route('/api/get_other_students', methods=['GET'])  # Different route path
 def get_other_students():
@@ -5635,8 +5659,7 @@ def register_faculty():
             photo = request.files['photo']
             filename = secure_filename(photo.filename)
             if filename and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                os.makedirs('static/images/faculty', exist_ok=True)
-                photo_path = f"static/images/faculty/{faculty_id}.jpg"
+                photo_path = f"static/images/faculty_photos/{faculty_id}.jpg"
                 photo.save(photo_path)
                 logger.info(f"Saved photo for faculty {faculty_id} at {photo_path}")
                 
@@ -6051,24 +6074,26 @@ def student_attendance_data():
         semester_classes = cursor.fetchall()
         print(f"Semester classes found: {len(semester_classes)}")
         
-        # 6. Calculate attendance statistics
+        # 6. Calculate attendance statistics - FIXED: Count unique sessions
         cursor.execute("""
             SELECT 
-                COUNT(DISTINCT a.session_id) as total_sessions,
-                SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) as present_count,
-                SUM(CASE WHEN a.status = 'late' THEN 1 ELSE 0 END) as late_count,
-                SUM(CASE WHEN a.status = 'excused' THEN 1 ELSE 0 END) as excused_count
-            FROM attendance a
-            JOIN attendance_sessions ases ON a.session_id = ases.session_id
-            WHERE a.student_id = %s 
-            AND ases.status = 'completed'
-        """, (student_id,))
+                COUNT(DISTINCT ases.session_id) as total_classes,
+                COUNT(DISTINCT CASE WHEN a.status IN ('present', 'late') THEN ases.session_id END) as attended_classes
+            FROM attendance_sessions ases
+            LEFT JOIN attendance a ON (
+                a.session_id = ases.session_id 
+                AND a.student_id = %s
+                AND a.status IN ('present', 'late')
+            )
+            WHERE ases.status = 'completed'
+            AND ases.section_id = %s
+        """, (student_id, student_section_id))
         
         stats = cursor.fetchone()
         print(f"Stats: {stats}")
         
-        total_classes = stats['total_sessions'] or 0
-        attended_classes = (stats['present_count'] or 0) + (stats['late_count'] or 0)
+        total_classes = stats['total_classes'] or 0
+        attended_classes = stats['attended_classes'] or 0
         attendance_rate = (attended_classes / total_classes * 100) if total_classes > 0 else 0
         
         # Format today's classes - combine schedule with attendance
@@ -6147,6 +6172,7 @@ def student_attendance_data():
         
         response_data = {
             'student': {
+                'id': student_data['student_id'],
                 'name': f"{student_data['first_name']} {student_data['last_name']}",
                 'course': student_data['program_name'],  # Use program_name instead of course
                 'section': f"{student_data['year_level']}{student_data['section_name']}"  # Combine year_level and section_name
@@ -6166,6 +6192,7 @@ def student_attendance_data():
         print(f"Today classes: {len(today_classes)}")
         print(f"Attendance history: {len(formatted_history)}")
         print(f"Semester classes: {len(formatted_semester_classes)}")
+        print(f"Attendance stats: {attended_classes}/{total_classes} = {attendance_rate}%")
         return jsonify(response_data)
         
     except Exception as e:
@@ -6288,13 +6315,13 @@ def sidebar_page():
 
     user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or "Unknown User"
     
-    # DEBUG: Check what role is actually in the user object
     print(f"DEBUG - User object: {user}")
     print(f"DEBUG - User role: {user.get('role')}")
     print(f"DEBUG - User type: {user.get('user_type')}")
     
     user_role = user.get('role', '')
     user_type = user.get('user_type', '')
+    user_id = user.get('user_id', '') 
     
     logger.info("=== SIDEBAR DEBUG ===")
     logger.info(f"User ID: {user.get('user_id')}")
@@ -6308,8 +6335,9 @@ def sidebar_page():
         last_name=user.get('last_name', ''),
         middle_name=user.get('middle_name', ''),
         user_name=user_name,
-        user_role=user_role,  # This should be 'super_admin'
-        user_type=user_type   # This should be 'admin'
+        user_role=user_role,
+        user_type=user_type,
+        user_id=user_id  
     )
 
 @app.route('/api/get_user_info', methods=['GET'])
@@ -14253,7 +14281,7 @@ def student_left():
                 UPDATE attendance 
                 SET status = 'missing', timestamp = NOW()
                 WHERE id = %s
-            """, (current_attendance['id']))
+            """, (current_attendance['id'],))
             logger.info(f"🔄 UPDATED existing attendance record to 'missing' for {student_name}")
         else:
             cursor.execute("""
@@ -14883,7 +14911,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.0.101", 
+            host="192.168.0.105", 
             port=5000,
             debug=False,
             threaded=True,

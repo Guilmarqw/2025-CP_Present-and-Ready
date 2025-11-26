@@ -13,7 +13,7 @@
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="logo"><h1>Student Portal</h1></div>
-        <div class="user-info">
+<div class="user-info">
     <div class="avatar">
         <i class="fas fa-user"></i>
     </div>
@@ -358,6 +358,7 @@ function updateUserInfoInSidebar(student) {
     console.log('Updating user info:', student);
     const nameElement = document.querySelector('.user-info .name');
     const roleElement = document.querySelector('.user-info .role');
+    const avatarElement = document.querySelector('.user-info .avatar');
     
     if (nameElement && student) {
         nameElement.textContent = student.name;
@@ -365,6 +366,33 @@ function updateUserInfoInSidebar(student) {
     
     if (roleElement && student) {
         roleElement.textContent = `${student.course} • ${student.section}`;
+    }
+    
+    // Update avatar with student photo using correct path
+    if (avatarElement && student && student.id) {
+        const icon = avatarElement.querySelector('i');
+        const photoPath = `/static/images/student_photos/${student.id}.jpg`;
+        
+        // Try to load the student photo
+        const img = new Image();
+        img.src = photoPath;
+        
+        img.onload = function() {
+            // Photo exists, use it
+            avatarElement.style.backgroundImage = `url('${photoPath}')`;
+            avatarElement.style.backgroundSize = 'cover';
+            avatarElement.style.backgroundPosition = 'center';
+            if (icon) icon.style.display = 'none';
+        };
+        
+        img.onerror = function() {
+            // Photo doesn't exist, use default
+            console.log('Student photo not found, using default');
+            avatarElement.style.backgroundImage = `url('/static/images/default-avatar.jpg')`;
+            avatarElement.style.backgroundSize = 'cover';
+            avatarElement.style.backgroundPosition = 'center';
+            if (icon) icon.style.display = 'none';
+        };
     }
 }
 

@@ -197,6 +197,60 @@
         // Call backup title update
         updateSidebarTitle();
 
+        // Function to load user profile photo
+function loadUserPhoto() {
+    const avatarElement = document.querySelector('.user-info .avatar');
+    const iconElement = avatarElement.querySelector('i');
+    const userType = '{{ user_type }}';
+    const userId = '{{ user_id }}'; // You'll need to pass this from backend
+    
+    console.log('Loading photo for:', { userType, userId });
+    
+    if (!userId || userId === 'None' || !avatarElement) {
+        console.log('No user ID or avatar element found');
+        return;
+    }
+    
+    // Determine photo path based on user type
+    let photoPath;
+    if (userType === 'faculty') {
+        photoPath = `/static/images/faculty_photos/${userId}.jpg`;
+    } else if (userType === 'admin') {
+        photoPath = `/static/images/admin_photos/${userId}.jpg`;
+    } else {
+        console.log('Unknown user type:', userType);
+        return;
+    }
+    
+    console.log('Attempting to load photo from:', photoPath);
+    
+    // Try to load the photo
+    const img = new Image();
+    img.src = photoPath;
+    
+    img.onload = function() {
+        console.log('Photo loaded successfully');
+        avatarElement.style.backgroundImage = `url('${photoPath}')`;
+        avatarElement.style.backgroundSize = 'cover';
+        avatarElement.style.backgroundPosition = 'center';
+        avatarElement.style.backgroundRepeat = 'no-repeat';
+        if (iconElement) iconElement.style.display = 'none';
+    };
+    
+    img.onerror = function() {
+        console.log('Photo not found, using default avatar');
+        // Keep the default icon visible
+        avatarElement.style.backgroundImage = 'none';
+        if (iconElement) iconElement.style.display = 'block';
+    };
+}
+
+// Load photo when page loads
+if (document.readyState !== 'loading') {
+    loadUserPhoto();
+} else {
+    document.addEventListener('DOMContentLoaded', loadUserPhoto);
+}
         
     </script>
 </body>
