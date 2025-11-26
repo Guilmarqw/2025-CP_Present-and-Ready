@@ -27,7 +27,7 @@
       text-align: center;
       font-size: 20px;
       font-weight: bold;
-      color: #685A45;
+      color: #2eb774;
       margin-bottom: 15px;
     }
     .terms-body {
@@ -50,14 +50,14 @@
       min-width: 100px;
     }
     #acceptTerms {
-      background: #685A45;
+      background: #2eb774;
       color: white;
     }
     #declineTerms {
       background: #ccc;
       color: #333;
     }
-    #acceptTerms:hover { background: #4a3b2a; }
+    #acceptTerms:hover { background: #317d57; }
     #declineTerms:hover { background: #bbb; }
 
     /* Disable body scroll when modal is open */
@@ -83,7 +83,7 @@
       overflow: hidden;
     }
     .header {
-      background: #685A45;
+      background: #238e5a;
       color: white;
       text-align: center;
       padding: 14px;
@@ -130,12 +130,12 @@
     }
     .resend-otp {
       margin: 15px 0;
-      color: #685A45;
+      color: #238e5a;
       cursor: pointer;
       text-decoration: underline;
     }
     button {
-      background: #685A45;
+      background: #2eb774;
       color: white;
       border: none;
       padding: 12px 20px;
@@ -146,7 +146,7 @@
       width: 100%;
     }
     button:hover {
-      background: #3a2c16;
+      background: #317d57;
     }
     button:disabled {
       background: #cccccc;
@@ -172,14 +172,14 @@
       object-fit: cover;
     }
     .id-card {
-      border: 2px solid #900;
+      border: 2px solid #238e5a;
       border-radius: 8px;
       padding: 15px;
       background: #f9f9f9;
       text-align: left;
     }
     .id-header {
-      background: #900;
+      background: #238e5a;
       color: white;
       padding: 8px;
       border-radius: 6px 6px 0 0;
@@ -236,7 +236,7 @@
       height: 100%;
       border-radius: 50%;
       overflow: hidden;
-      border: 2px solid #685A45;
+      border: 2px solid #238e5a;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -290,7 +290,7 @@
     .modal-content h3 {
       margin: 0 0 10px;
       font-size: 18px;
-      color: #900;
+      color: #238e5a;
     }
     .modal-content button {
       margin-top: 15px;
