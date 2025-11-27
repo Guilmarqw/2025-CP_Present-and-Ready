@@ -3799,6 +3799,7 @@ def get_students_enhanced():
         program_id = request.args.get('program_id', '')
         year_level = request.args.get('year_level', '')
         section_id = request.args.get('section_id', '')
+        curriculum_id = request.args.get('curriculum_id', '')  # ADD THIS
         status = request.args.get('status', 'active')
         search = request.args.get('search', '')
         page = int(request.args.get('page', 1))     
@@ -3807,10 +3808,12 @@ def get_students_enhanced():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
+        # UPDATE: Added curricula join
         from_joins = """
             FROM students s
             JOIN year_sections ys ON s.section_id = ys.section_id
             JOIN programs p ON ys.program_id = p.program_id
+            JOIN curricula c ON s.curriculum_id = c.curriculum_id  # ADD THIS JOIN
         """
         
         where_conditions = ["s.status = %s"]
@@ -3827,6 +3830,11 @@ def get_students_enhanced():
         if section_id:
             where_conditions.append("s.section_id = %s") 
             params.append(section_id)
+            
+        # ADD THIS: Curriculum filter - THIS IS THE KEY FIX!
+        if curriculum_id:
+            where_conditions.append("s.curriculum_id = %s")
+            params.append(curriculum_id)
             
         if search:
             where_conditions.append("(s.first_name LIKE %s OR s.last_name LIKE %s OR s.student_id LIKE %s OR s.email LIKE %s)")
@@ -3847,8 +3855,11 @@ def get_students_enhanced():
                 p.program_name AS course, 
                 p.program_id,
                 ys.section_name,
-                ys.year_level ,
-                s.section_id
+                ys.year_level,
+                s.section_id,
+                s.curriculum_id,  # ADD THIS
+                c.curriculum_year,  # ADD THIS
+                c.curriculum_name   # ADD THIS
             {from_joins}
             WHERE {where_clause}
             ORDER BY s.last_name, s.first_name
@@ -3881,7 +3892,9 @@ def get_students_enhanced():
                 'updatedAt': s['updated_at'].isoformat() if s['updated_at'] else None,
                 'program_id': s['program_id'],
                 'year_level': s['year_level'],
-                'section_id': s['section_id']
+                'section_id': s['section_id'],
+                'curriculum_id': s['curriculum_id'],  # ADD THIS
+                'curriculum_year': s['curriculum_year']  # ADD THIS
             })
         
         return jsonify({
@@ -4392,7 +4405,7 @@ def revoke_invite():
 
 @app.route('/api/get_enhanced_dashboard_stats', methods=['GET'])
 def get_enhanced_dashboard_stats():
-    """Get comprehensive dashboard statistics including program breakdowns"""
+    """Get comprehensive dashboard statistics including program breakdowns - SHOW ONLY EXISTING PROGRAMS"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -4405,7 +4418,7 @@ def get_enhanced_dashboard_stats():
         cursor.execute("SELECT COUNT(*) as total_faculty FROM faculty WHERE status = 'active'")
         total_faculty = cursor.fetchone()['total_faculty']
         
-        # --- FIX 1: Get student count by PROGRAM (using JOIN) ---
+        # Get student count by PROGRAM (only programs that have students)
         cursor.execute("""
             SELECT 
                 p.program_id,
@@ -4420,22 +4433,36 @@ def get_enhanced_dashboard_stats():
         """)
         program_stats = cursor.fetchall()
         
-        # --- FIX 2: Calculate CS, IT, ACT counts from the NEW query ---
+        # Create program counts dictionary - ONLY FOR EXISTING PROGRAMS
+        program_counts = {}
+        for program in program_stats:
+            program_id = program['program_id'].upper()
+            program_counts[program_id] = program['count']
+        
+        # Get ALL active programs to know what programs exist
+        cursor.execute("SELECT program_id, program_name FROM programs WHERE status = 'active'")
+        all_active_programs = cursor.fetchall()
+        
+        # Initialize counts for ALL existing programs (even if they have 0 students)
         cs_count = 0
         it_count = 0 
         act_count = 0
         
-        for program in program_stats:
-            # We use the reliable program_id now
-            program_id = program['program_id'].upper() 
+        # Only count programs that actually exist in the system
+        existing_programs = {}
+        for program in all_active_programs:
+            program_id = program['program_id'].upper()
+            existing_programs[program_id] = program['program_name']
+            
+            # Set count for each existing program (0 if no students)
             if program_id == 'CS':
-                cs_count += program['count']
+                cs_count = program_counts.get('CS', 0)
             elif program_id == 'IT':
-                it_count += program['count']
+                it_count = program_counts.get('IT', 0)
             elif program_id == 'ACT':
-                act_count += program['count']
+                act_count = program_counts.get('ACT', 0)
         
-        # Get faculty count by department (This query was already correct)
+        # Get faculty count by department
         cursor.execute("""
             SELECT department, COUNT(*) as count 
             FROM faculty 
@@ -4445,8 +4472,7 @@ def get_enhanced_dashboard_stats():
         """)
         department_stats = cursor.fetchall()
         
-        # --- (These queries were already correct) ---
-        # Get recent attendance (today)
+        # Recent attendance (today)
         cursor.execute("""
             SELECT COUNT(DISTINCT student_id) as present_today,
                    COUNT(*) as total_attendance_records_today
@@ -4455,7 +4481,7 @@ def get_enhanced_dashboard_stats():
         """)
         attendance_today = cursor.fetchone()
         
-        # Get attendance this week
+        # Attendance this week
         cursor.execute("""
             SELECT COUNT(DISTINCT student_id) as unique_students_week,
                    COUNT(*) as total_records_week
@@ -4464,7 +4490,7 @@ def get_enhanced_dashboard_stats():
         """)
         attendance_week = cursor.fetchone()
         
-        # Get recent registrations (last 30 days)
+        # Recent registrations (last 30 days)
         cursor.execute("""
             SELECT 
                 (SELECT COUNT(*) FROM students WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as students_30days,
@@ -4472,7 +4498,7 @@ def get_enhanced_dashboard_stats():
         """)
         recent_registrations = cursor.fetchone()
         
-        # Get active invites count
+        # Active invites count
         cursor.execute("""
             SELECT COUNT(*) as active_invites
             FROM invites 
@@ -4480,41 +4506,33 @@ def get_enhanced_dashboard_stats():
         """)
         active_invites = cursor.fetchone()['active_invites']
         
-        # --- FIX 3: Get year/section distribution (using JOIN) ---
-        cursor.execute("""
-            SELECT 
-                CONCAT(ys.year_level, '-', ys.section_name) AS year_section, 
-                COUNT(s.student_id) as count 
-            FROM students s
-            JOIN year_sections ys ON s.section_id = ys.section_id
-            WHERE s.status = 'active' 
-            GROUP BY year_section
-            ORDER BY year_section
-        """)
-        year_section_stats = cursor.fetchall()
-        
         cursor.close()
         conn.close()
         
-        # --- FIX 4: Format the response with new variable names ---
+        # Build response with ONLY existing programs
         response_data = {
             'success': True,
             'stats': {
                 # Main dashboard cards
                 'total_students': total_students,
                 'total_faculty': total_faculty,
+                
+                # Program counts - ONLY FOR EXISTING PROGRAMS
                 'cs_students': cs_count,
                 'it_students': it_count, 
                 'act_students': act_count,
                 
+                # List of existing programs to help frontend decide what to display
+                'existing_programs': existing_programs,
+                
                 # Detailed breakdowns
                 'course_breakdown': [
                     {
-                        'course': program['program_name'], # Use program_name
+                        'course': program['program_name'],
                         'count': program['count'],
                         'percentage': round((program['count'] / total_students * 100), 1) if total_students > 0 else 0
                     }
-                    for program in program_stats # Use the new program_stats
+                    for program in program_stats
                 ],
                 
                 'department_breakdown': [
@@ -4526,16 +4544,7 @@ def get_enhanced_dashboard_stats():
                     for dept in department_stats
                 ],
                 
-                'year_section_breakdown': [
-                    {
-                        'year_section': ys['year_section'],
-                        'count': ys['count'],
-                        'percentage': round((ys['count'] / total_students * 100), 1) if total_students > 0 else 0
-                    }
-                    for ys in year_section_stats
-                ],
-                
-                # Attendance stats (Unchanged)
+                # Attendance stats
                 'attendance': {
                     'present_today': attendance_today['present_today'] or 0,
                     'total_records_today': attendance_today['total_attendance_records_today'] or 0,
@@ -4543,18 +4552,18 @@ def get_enhanced_dashboard_stats():
                     'total_records_week': attendance_week['total_records_week'] or 0
                 },
                 
-                # Recent activity (Unchanged)
+                # Recent activity
                 'recent_activity': {
                     'students_registered_30days': recent_registrations['students_30days'] or 0,
                     'faculty_registered_30days': recent_registrations['faculty_30days'] or 0,
                     'active_invites': active_invites
                 },
                 
-                # Status summary (Updated)
+                # Status summary
                 'summary': {
                     'total_users': total_students + total_faculty,
                     'attendance_rate_today': round((attendance_today['present_today'] / total_students * 100), 1) if total_students > 0 else 0,
-                    'most_popular_course': program_stats[0]['program_name'] if program_stats else 'N/A', # Use program_name
+                    'most_popular_course': program_stats[0]['program_name'] if program_stats else 'N/A',
                     'largest_department': department_stats[0]['department'] if department_stats else 'N/A'
                 }
             }
@@ -4564,7 +4573,6 @@ def get_enhanced_dashboard_stats():
         
     except Exception as e:
         logger.error(f"Error fetching enhanced dashboard stats: {e}")
-        # Return a default structure so the frontend doesn't crash
         return jsonify({
             'success': False, 
             'message': str(e),
@@ -4574,15 +4582,206 @@ def get_enhanced_dashboard_stats():
                 'cs_students': 0,
                 'it_students': 0,
                 'act_students': 0,
+                'existing_programs': {},
                 'course_breakdown': [],
                 'department_breakdown': [],
-                'year_section_breakdown': [],
                 'attendance': {'present_today': 0, 'total_records_today': 0, 'unique_students_week': 0, 'total_records_week': 0},
                 'recent_activity': {'students_registered_30days': 0, 'faculty_registered_30days': 0, 'active_invites': 0},
                 'summary': {'total_users': 0, 'attendance_rate_today': 0, 'most_popular_course': 'N/A', 'largest_department': 'N/A'}
             }
         })
 
+
+@app.route('/api/get_active_system_overview', methods=['GET'])
+def get_active_system_overview():
+    """Get current active academic year with ALL active curricula"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get the ACTIVE academic year
+        cursor.execute("""
+            SELECT ay.academic_year_id, ay.academic_year, ay.program_id, p.program_name
+            FROM academic_years ay
+            JOIN programs p ON ay.program_id = p.program_id
+            WHERE ay.status = 'active'
+            LIMIT 1
+        """)
+        active_academic_year = cursor.fetchone()
+        
+        if not active_academic_year:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': True,
+                'overview': {
+                    'active_academic_year': 'No active academic year set',
+                    'active_semester': 'N/A',
+                    'total_sections': 0,
+                    'total_subjects': 0,
+                    'total_units': 0,
+                    'has_active_period': False,
+                    'detailed_breakdown': [],
+                    'active_curricula': []
+                }
+            })
+        
+        academic_year = active_academic_year['academic_year']
+        academic_year_id = active_academic_year['academic_year_id']
+        
+        print(f"DEBUG: Active Academic Year - {academic_year} (ID: {academic_year_id})")
+        
+        # Get ALL active curricula for this academic year
+        cursor.execute("""
+            SELECT DISTINCT c.curriculum_id, c.curriculum_name, c.curriculum_year, p.program_name
+            FROM curricula c
+            JOIN programs p ON c.program_id = p.program_id
+            WHERE c.academic_year = %s AND c.status = 'active'
+            ORDER BY p.program_name, c.curriculum_year DESC
+        """, (academic_year,))
+        
+        active_curricula = cursor.fetchall()
+        print(f"DEBUG: Active curricula found: {[c['curriculum_name'] for c in active_curricula]}")
+        
+        # Get ALL semesters for this academic year (across all programs and curricula) - REMOVED status filter
+        cursor.execute("""
+            SELECT s.semester_id, s.semester_number, p.program_name, c.curriculum_name, c.curriculum_year
+            FROM semesters s
+            JOIN academic_years ay ON s.academic_year_id = ay.academic_year_id
+            JOIN programs p ON ay.program_id = p.program_id
+            JOIN curricula c ON s.curriculum_id = c.curriculum_id
+            WHERE ay.academic_year = %s  -- REMOVED: AND s.status = 'active'
+            ORDER BY p.program_name, c.curriculum_year, s.semester_number
+        """, (academic_year,))
+        
+        active_semesters = cursor.fetchall()
+        print(f"DEBUG: All semesters found: {len(active_semesters)}")
+        
+        if not active_semesters:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': True,
+                'overview': {
+                    'active_academic_year': academic_year,
+                    'active_semester': 'No semesters found',
+                    'total_sections': 0,
+                    'total_subjects': 0,
+                    'total_units': 0,
+                    'has_active_period': False,
+                    'detailed_breakdown': [],
+                    'active_curricula': active_curricula
+                }
+            })
+        
+        # Get semester IDs
+        semester_ids = [s['semester_id'] for s in active_semesters]
+        
+        # Get unique semester numbers
+        semester_numbers = list(set([s['semester_number'] for s in active_semesters]))
+        active_semester_display = ", ".join(semester_numbers)
+        
+        # Get data from ALL semesters
+        format_strings = ','.join(['%s'] * len(semester_ids))
+        
+        # Total sections
+        cursor.execute(f"""
+            SELECT COUNT(DISTINCT ys.section_id) as total_sections
+            FROM year_sections ys
+            WHERE ys.semester_id IN ({format_strings}) AND ys.status = 'active'
+        """, tuple(semester_ids))
+        total_sections = cursor.fetchone()['total_sections'] or 0
+        
+        # Total subjects and units
+        cursor.execute(f"""
+            SELECT 
+                COUNT(DISTINCT sub.subject_id) as total_subjects,
+                COALESCE(SUM(sub.units), 0) as total_units
+            FROM subjects sub
+            JOIN year_sections ys ON sub.section_id = ys.section_id
+            WHERE ys.semester_id IN ({format_strings}) AND sub.status = 'active' AND ys.status = 'active'
+        """, tuple(semester_ids))
+        subjects_result = cursor.fetchone()
+        total_subjects = subjects_result['total_subjects'] or 0
+        total_units = subjects_result['total_units'] or 0
+        
+        # Detailed breakdown by curriculum
+        detailed_breakdown = []
+        cursor.execute(f"""
+            SELECT 
+                ys.section_name,
+                ys.year_level,
+                p.program_name,
+                s.semester_number,
+                c.curriculum_name,
+                c.curriculum_year,
+                COUNT(DISTINCT sub.subject_id) as subject_count,
+                COALESCE(SUM(sub.units), 0) as section_units
+            FROM year_sections ys
+            JOIN semesters s ON ys.semester_id = s.semester_id
+            JOIN academic_years ay ON s.academic_year_id = ay.academic_year_id
+            JOIN programs p ON ay.program_id = p.program_id
+            JOIN curricula c ON s.curriculum_id = c.curriculum_id
+            LEFT JOIN subjects sub ON ys.section_id = sub.section_id AND sub.status = 'active'
+            WHERE ys.semester_id IN ({format_strings}) AND ys.status = 'active'
+            GROUP BY ys.section_id, ys.section_name, ys.year_level, p.program_name, 
+                     s.semester_number, c.curriculum_name, c.curriculum_year
+            ORDER BY p.program_name, c.curriculum_year DESC, ys.year_level, ys.section_name
+        """, tuple(semester_ids))
+        
+        sections_data = cursor.fetchall()
+        print(f"DEBUG: Found {len(sections_data)} section records")
+        
+        for section in sections_data:
+            detailed_breakdown.append({
+                'program': section['program_name'],
+                'curriculum': section['curriculum_name'],
+                'curriculum_year': section['curriculum_year'],
+                'semester': section['semester_number'],
+                'year_level': f"Year {section['year_level']}",
+                'section_name': section['section_name'],
+                'subject_count': section['subject_count'],
+                'section_units': section['section_units']
+            })
+            print(f"DEBUG Section: {section['program_name']} - {section['curriculum_name']} ({section['curriculum_year']}) - {section['section_name']}")
+        
+        cursor.close()
+        conn.close()
+        
+        overview_data = {
+            'success': True,
+            'overview': {
+                'active_academic_year': academic_year,
+                'active_semester': active_semester_display,
+                'total_sections': total_sections,
+                'total_subjects': total_subjects,
+                'total_units': total_units,
+                'has_active_period': True,
+                'detailed_breakdown': detailed_breakdown,
+                'active_curricula': active_curricula
+            }
+        }
+        
+        print(f"DEBUG FINAL: {total_sections} sections, {total_subjects} subjects, {total_units} units")
+        print(f"DEBUG FINAL Curricula: {[c['curriculum_name'] for c in active_curricula]}")
+        return jsonify(overview_data)
+        
+    except Exception as e:
+        logger.error(f"Error fetching active system overview: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e),
+            'overview': {
+                'active_academic_year': 'Error loading',
+                'active_semester': 'Error',
+                'total_sections': 0,
+                'total_subjects': 0,
+                'total_units': 0,
+                'has_active_period': False,
+                'detailed_breakdown': [],
+                'active_curricula': []
+            }
+        })
 
 @app.route('/api/get_course_distribution', methods=['GET'])
 def get_course_distribution():
@@ -5282,9 +5481,9 @@ def encode_face():
         pose_results = {
             'is_frontal': bool(abs(yaw) <= 20 and abs(pitch) <= 15),
             'is_left': bool(yaw >= 5),
-            'is_right': bool(yaw <= -5),
-            'is_up': bool(pitch <= -3),   # LOWER threshold for up (more negative)
-            'is_down': bool(pitch >= 2),  # HIGHER threshold for down (more positive)
+            'is_right': bool(yaw <= -4),
+            'is_up': bool(pitch <= -1),   # LOWER threshold for up (more negative)
+            'is_down': bool(pitch >= 1),  # HIGHER threshold for down (more positive)
             'is_mouth_open': bool(mar >= 0.08),
             'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.35)
         }
@@ -7354,13 +7553,11 @@ def logout_page():
 # ==========================================
 # PROGRAMS MANAGEMENT API ROUTES
 # ==========================================
-
-
     
 @app.route('/api/add_academic_year', methods=['POST'])
 @login_required
 def add_academic_year():
-    """Add a new academic year"""
+    """Add academic year and automatically create semesters with PROPER NAMES"""
     try:
         data = request.json
         program_id = data.get('program_id')
@@ -7368,33 +7565,63 @@ def add_academic_year():
         status = data.get('status', 'active')
         
         if not all([program_id, academic_year]):
-            return jsonify({'success': False, 'message': 'All fields are required'})
+            return jsonify({'success': False, 'message': 'Program ID and academic year are required'})
+        
+        # Validate academic year format
+        if not re.match(r'^\d{4}-\d{4}$', academic_year):
+            return jsonify({'success': False, 'message': 'Academic year must be in YYYY-YYYY format'})
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Check if already exists
+        # Check if this academic year already exists for THIS SPECIFIC PROGRAM
         cursor.execute(
             "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
             (program_id, academic_year)
         )
+        existing = cursor.fetchone()
         
-        if cursor.fetchone():
+        if existing:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'This academic year already exists'})
+            return jsonify({'success': False, 'message': f'Academic year {academic_year} already exists for this program'})
         
-        # Insert new academic year
+        # If setting as active, first deactivate all other academic years for THIS PROGRAM
+        if status == 'active':
+            cursor.execute(
+                "UPDATE academic_years SET status = 'inactive' WHERE program_id = %s",
+                (program_id,)
+            )
+        
+        # Insert academic year
         cursor.execute(
             "INSERT INTO academic_years (program_id, academic_year, status) VALUES (%s, %s, %s)",
             (program_id, academic_year, status)
         )
         
+        # Get the newly created academic_year_id
+        academic_year_id = cursor.lastrowid
+        
+        # AUTOMATICALLY CREATE SEMESTERS WITH PROPER NAMES
+        semester_names = ['1st Semester', '2nd Semester', '3rd Semester']
+        
+        for semester_name in semester_names:
+            # Insert semester for each active curriculum in this program
+            cursor.execute("""
+                INSERT INTO semesters (academic_year_id, semester_number, status, curriculum_id) 
+                SELECT %s, %s, 'active', c.curriculum_id
+                FROM curricula c 
+                WHERE c.program_id = %s AND c.status = 'active' AND c.academic_year = %s
+            """, (academic_year_id, semester_name, program_id, academic_year))
+        
         conn.commit()
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'message': 'Academic year added successfully'})
+        return jsonify({
+            'success': True, 
+            'message': f'Academic year {academic_year} added successfully with semesters created'
+        })
         
     except Exception as e:
         logger.error(f"Error adding academic year: {e}")
@@ -7554,6 +7781,7 @@ def add_semester():
         semester_number = data.get('semester_number')
         status = data.get('status', 'active')
         curriculum_id = data.get('curriculum_id')
+        set_current = data.get('set_current', False)  # NEW
         
         if not all([program_id, academic_year, semester_number, curriculum_id]):
             return jsonify({'success': False, 'message': 'All fields including curriculum are required'})
@@ -7578,7 +7806,7 @@ def add_semester():
         # Check if semester already exists for this academic_year AND curriculum
         cursor.execute(
             "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s AND curriculum_id = %s",
-            (academic_year_id, semester_number, curriculum_id)  # Check all three fields
+            (academic_year_id, semester_number, curriculum_id)
         )
         
         if cursor.fetchone():
@@ -7586,17 +7814,26 @@ def add_semester():
             conn.close()
             return jsonify({'success': False, 'message': f'Semester "{semester_number}" already exists for this curriculum'})
         
-        # Insert semester WITH curriculum_id
+        # If setting as current, first set all others to not current
+        if set_current:
+            cursor.execute(
+                "UPDATE semesters SET is_current = 0 WHERE academic_year_id = %s",
+                (academic_year_id,)
+            )
+        
+        # Insert semester
+        is_current_value = 1 if set_current else 0
         cursor.execute(
-            "INSERT INTO semesters (academic_year_id, semester_number, status, curriculum_id) VALUES (%s, %s, %s, %s)",
-            (academic_year_id, semester_number, status, curriculum_id)
+            "INSERT INTO semesters (academic_year_id, semester_number, status, curriculum_id, is_current) VALUES (%s, %s, %s, %s, %s)",
+            (academic_year_id, semester_number, status, curriculum_id, is_current_value)
         )
         
         conn.commit()
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'message': 'Semester added successfully'})
+        action_msg = "added and set as current" if set_current else "added"
+        return jsonify({'success': True, 'message': f'Semester {action_msg} successfully'})
         
     except Exception as e:
         logger.error(f"Error adding semester: {e}")
@@ -7605,13 +7842,14 @@ def add_semester():
 @app.route('/api/update_semester', methods=['POST'])
 @login_required
 def update_semester():
-    """Update semester status"""
+    """Update semester status and handle current semester"""
     try:
         data = request.json
         program_id = data.get('program_id')
         academic_year = data.get('academic_year')
         semester_number = data.get('semester_number')
         status = data.get('status')
+        set_current = data.get('set_current', False)  # NEW: Flag to set as current
         
         if not all([program_id, academic_year, semester_number, status]):
             return jsonify({'success': False, 'message': 'All fields are required'})
@@ -7633,10 +7871,26 @@ def update_semester():
         
         academic_year_id = result[0]
         
-        cursor.execute(
-            "UPDATE semesters SET status = %s WHERE academic_year_id = %s AND semester_number = %s",
-            (status, academic_year_id, semester_number)
-        )
+        # If setting this semester as current, first set all others to not current
+        if set_current:
+            cursor.execute(
+                "UPDATE semesters SET is_current = 0 WHERE academic_year_id = %s",
+                (academic_year_id,)
+            )
+        
+        # Update the semester
+        if set_current:
+            # Set status and is_current
+            cursor.execute(
+                "UPDATE semesters SET status = %s, is_current = 1 WHERE academic_year_id = %s AND semester_number = %s",
+                (status, academic_year_id, semester_number)
+            )
+        else:
+            # Only update status
+            cursor.execute(
+                "UPDATE semesters SET status = %s WHERE academic_year_id = %s AND semester_number = %s",
+                (status, academic_year_id, semester_number)
+            )
         
         if cursor.rowcount == 0:
             cursor.close()
@@ -7647,7 +7901,8 @@ def update_semester():
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'message': 'Semester updated successfully'})
+        action_msg = "set as current" if set_current else "updated"
+        return jsonify({'success': True, 'message': f'Semester {action_msg} successfully'})
         
     except Exception as e:
         logger.error(f"Error updating semester: {e}")
@@ -8657,81 +8912,7 @@ def unassign_faculty_from_schedule():
         logger.error(f"Error unassigning faculty: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/get_sections', methods=['GET'])
-def get_sections():
-    """Get sections based on program and year level"""
-    try:
-        program_id = request.args.get('program_id')
-        year_level = request.args.get('year_level')
-        
-        if not program_id or not year_level:
-            return jsonify({
-                'success': False, 
-                'message': 'Program ID and year level are required'
-            })
-        
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
-        # Updated query: Only get sections from active semesters
-        query = """
-            SELECT 
-                ys.section_id,
-                ys.section_name,
-                ys.year_level,
-                ys.program_id,
-                ys.semester_id,
-                ys.academic_year_id,
-                COUNT(DISTINCT s.student_id) as student_count
-            FROM year_sections ys
-            INNER JOIN semesters sem ON ys.semester_id = sem.semester_id
-            LEFT JOIN students s ON ys.section_id = s.section_id AND s.status = 'active'
-            WHERE ys.program_id = %s 
-            AND ys.year_level = %s
-            AND ys.status = 'active'
-            AND sem.status = 'active'  -- Only active semesters
-            GROUP BY ys.section_id, ys.section_name, ys.year_level, ys.program_id, ys.semester_id, ys.academic_year_id
-            ORDER BY ys.section_name
-        """
-        
-        cursor.execute(query, (program_id, year_level))
-        sections = cursor.fetchall()
-        
-        # Debug logging
-        print(f"🔍 DEBUG: Fetching sections for Program={program_id}, Year={year_level}")
-        print(f"🔍 DEBUG: Found {len(sections)} sections")
-        if sections:
-            for section in sections:
-                print(f"   - Section {section['section_name']} (ID: {section['section_id']}, Students: {section['student_count']})")
-        else:
-            print(f"   - No sections found!")
-            # Check if any sections exist for this program
-            cursor.execute("""
-                SELECT ys.year_level, ys.section_name, sem.semester_number, sem.status as semester_status
-                FROM year_sections ys
-                INNER JOIN semesters sem ON ys.semester_id = sem.semester_id
-                WHERE ys.program_id = %s AND ys.status = 'active'
-            """, (program_id,))
-            all_program_sections = cursor.fetchall()
-            print(f"   - Available sections for {program_id}: {all_program_sections}")
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True, 
-            'sections': sections,
-            'count': len(sections)
-        })
-        
-    except Exception as e:
-        print(f"❌ ERROR in get_sections: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            'success': False, 
-            'message': f'Error: {str(e)}'
-        })
+
 
 @app.route('/api/get_faculty_with_schedules', methods=['GET'])
 @login_required
@@ -8769,11 +8950,12 @@ def get_faculty_with_schedules():
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/get_academic_years_for_program', methods=['GET'])
-@login_required
 def get_academic_years_for_program():
-    """Get academic years for a program with section and subject counts - SHOW ALL YEARS"""
+    """Get academic years for a program"""
     try:
         program_id = request.args.get('program_id')
+        
+        print(f"=== DEBUG: Fetching academic years for program: {program_id} ===")
         
         if not program_id:
             return jsonify({'success': False, 'message': 'Program ID is required'})
@@ -8781,25 +8963,33 @@ def get_academic_years_for_program():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get ALL academic years for this program (don't filter by status)
+        # Get ALL academic years for this program - REMOVED active_semester_id references
         cursor.execute("""
             SELECT 
                 ay.academic_year,
                 ay.academic_year_id,
-                ay.status,  # This is included in SELECT
+                ay.status,
                 COUNT(DISTINCT ys.section_id) as section_count,
                 COUNT(DISTINCT sub.subject_id) as subject_count
             FROM academic_years ay
-            LEFT JOIN year_sections ys ON ay.academic_year_id = ys.academic_year_id AND ys.status = 'active'
-            LEFT JOIN subjects sub ON ys.section_id = sub.section_id AND sub.status = 'active'
+            LEFT JOIN year_sections ys ON (
+                ay.academic_year_id = ys.academic_year_id 
+                AND ys.status = 'active'
+                AND ys.program_id = %s
+            )
+            LEFT JOIN subjects sub ON (
+                ys.section_id = sub.section_id 
+                AND sub.status = 'active'
+            )
             WHERE ay.program_id = %s
             GROUP BY ay.academic_year_id, ay.academic_year, ay.status
             ORDER BY ay.academic_year DESC
-        """, (program_id,))
+        """, (program_id, program_id))
         
         academic_years = cursor.fetchall()
+        print(f"DEBUG: Processed {len(academic_years)} academic years for response")
         
-        # Find the current active academic year (should be only one)
+        # Find the current active academic year
         current_year = None
         for year in academic_years:
             if year['status'] == 'active':
@@ -8809,17 +8999,19 @@ def get_academic_years_for_program():
         cursor.close()
         conn.close()
         
-        # Format response - include ALL years WITH STATUS
+        # Format response - REMOVED active_semester_id and active_semester
         formatted_years = []
         for year in academic_years:
             formatted_years.append({
                 'academic_year': year['academic_year'],
                 'academic_year_id': year['academic_year_id'],
-                'status': year['status'],  # ADD THIS LINE - Include status in response
+                'status': year['status'],
                 'section_count': year['section_count'] or 0,
                 'subject_count': year['subject_count'] or 0,
                 'is_current': year['academic_year'] == current_year
             })
+        
+        print(f"DEBUG: Sending response: {formatted_years}")
         
         return jsonify({
             'success': True,
@@ -8831,11 +9023,83 @@ def get_academic_years_for_program():
         logger.error(f"Error fetching academic years for program: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
+@app.route('/api/get_active_academic_year', methods=['GET'])
+def get_active_academic_year():
+    """Get the current active academic year for the system"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Method 1: Get academic year where is_current = 1
+        cursor.execute("""
+            SELECT academic_year FROM academic_years 
+            WHERE is_current = 1 
+            AND status = 'active'
+            LIMIT 1
+        """)
+        result = cursor.fetchone()
+        
+        if result:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': True,
+                'academic_year': result['academic_year']
+            })
+        
+        # Method 2: Get any active academic year (fallback)
+        cursor.execute("""
+            SELECT academic_year FROM academic_years 
+            WHERE status = 'active' 
+            ORDER BY academic_year_id DESC 
+            LIMIT 1
+        """)
+        result = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if result:
+            return jsonify({
+                'success': True,
+                'academic_year': result['academic_year']
+            })
+        else:
+            # Final fallback: calculate based on current date
+            current_year = datetime.now().year
+            current_month = datetime.now().month
+            
+            if current_month >= 6:  # June or later
+                academic_year = f"{current_year}-{current_year + 1}"
+            else:
+                academic_year = f"{current_year - 1}-{current_year}"
+                
+            return jsonify({
+                'success': True,
+                'academic_year': academic_year
+            })
+            
+    except Exception as e:
+        print(f"Error getting active academic year: {str(e)}")
+        # Final fallback
+        current_year = datetime.now().year
+        current_month = datetime.now().month
+        
+        if current_month >= 6:
+            academic_year = f"{current_year}-{current_year + 1}"
+        else:
+            academic_year = f"{current_year - 1}-{current_year}"
+            
+        return jsonify({
+            'success': True,
+            'academic_year': academic_year
+        })
+
 
 @app.route('/api/set_active_academic_year', methods=['POST'])
 @login_required
 def set_active_academic_year():
-    """Set an academic year as active for a program - PROPERLY MANAGE ACTIVE STATUS"""
+    """Set an academic year as active - USING STATUS ONLY"""
     try:
         data = request.json
         program_id = data.get('program_id')
@@ -8847,13 +9111,10 @@ def set_active_academic_year():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # First, set ALL academic years for this program to inactive
-        cursor.execute(
-            "UPDATE academic_years SET status = 'inactive' WHERE program_id = %s",
-            (program_id,)
-        )
+        # First, set ALL academic years for THIS PROGRAM to inactive
+        cursor.execute("UPDATE academic_years SET status = 'inactive' WHERE program_id = %s", (program_id,))
         
-        # Then set ONLY the selected academic year to active
+        # Then set ONLY the selected academic year to active for THIS PROGRAM
         cursor.execute(
             "UPDATE academic_years SET status = 'active' WHERE program_id = %s AND academic_year = %s",
             (program_id, academic_year)
@@ -8865,14 +9126,15 @@ def set_active_academic_year():
         
         return jsonify({
             'success': True,
-            'message': f'Successfully set {academic_year} as active academic year'
+            'message': f'Successfully set {academic_year} as active academic year for {program_id}'
         })
         
     except Exception as e:
         logger.error(f"Error setting active academic year: {e}")
         return jsonify({'success': False, 'message': str(e)})
-    
-    
+
+
+
 @app.route('/api/get_year_sections', methods=['GET'])
 @login_required
 def get_year_sections():
@@ -8881,10 +9143,10 @@ def get_year_sections():
         program_id = request.args.get('program_id')
         academic_year = request.args.get('academic_year')
         semester = request.args.get('semester')
-        curriculum_id = request.args.get('curriculum_id')  # Add this parameter
+        curriculum_id = request.args.get('curriculum_id')
         
-        if not all([program_id, academic_year, semester]):
-            return jsonify({'success': False, 'message': 'Program ID, academic year, and semester are required'})
+        if not all([program_id, academic_year, semester, curriculum_id]):
+            return jsonify({'success': False, 'message': 'Program ID, academic year, semester, and curriculum are required'})
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -8902,11 +9164,11 @@ def get_year_sections():
         
         academic_year_id = result['academic_year_id']
         
-        # Get semester_id - ADD CURRICULUM FILTER HERE
+        # Get semester_id with curriculum filter
         cursor.execute(
             """SELECT semester_id FROM semesters 
                WHERE academic_year_id = %s AND semester_number = %s AND curriculum_id = %s""",
-            (academic_year_id, semester, curriculum_id)  # Add curriculum_id
+            (academic_year_id, semester, curriculum_id)
         )
         result = cursor.fetchone()
         if not result:
@@ -8923,31 +9185,35 @@ def get_year_sections():
                 ys.year_level,
                 ys.section_name,
                 ys.status,
+                ys.academic_year_id,
+                ys.curriculum_id,
                 COUNT(DISTINCT s.subject_id) as subject_count,
                 (SELECT COUNT(*) 
                  FROM students st 
                  WHERE st.section_id = ys.section_id 
                  AND st.status = 'active') as student_count
             FROM year_sections ys
-            JOIN programs p ON ys.program_id = p.program_id
             LEFT JOIN subjects s ON ys.section_id = s.section_id AND s.status = 'active'
             WHERE ys.program_id = %s 
-            AND ys.semester_id = %s  # This already links to the curriculum via semester_id
+            AND ys.academic_year_id = %s  # Link to academic_years table
+            AND ys.semester_id = %s       # Link to semesters table  
+            AND ys.curriculum_id = %s     # Link to curricula table
             AND ys.status = 'active'
-            GROUP BY ys.section_id, ys.year_level, ys.section_name, ys.status
+            GROUP BY ys.section_id, ys.year_level, ys.section_name, ys.status, 
+                     ys.academic_year_id, ys.curriculum_id
             ORDER BY ys.year_level, ys.section_name
         """
         
-        cursor.execute(query, (program_id, semester_id))
+        cursor.execute(query, (program_id, academic_year_id, semester_id, curriculum_id))
         sections = cursor.fetchall()
         cursor.close()
         conn.close()
         
         return jsonify({'success': True, 'sections': sections})
         
-    except Exception as e:
-        logger.error(f"Error fetching year sections: {e}")
-        return jsonify({'success': False, 'message': str(e)})
+    except Exception as error:
+        logger.error(f"Error fetching year sections: {error}")
+        return jsonify({'success': False, 'message': str(error)})
     
 @app.route('/api/add_year_section', methods=['POST'])
 @login_required
@@ -8960,7 +9226,7 @@ def add_year_section():
         semester = data.get('semester')
         year_level = data.get('year_level')
         section_name = data.get('section_name')
-        curriculum_id = data.get('curriculum_id')  # Add this
+        curriculum_id = data.get('curriculum_id')
         
         if not all([program_id, academic_year, semester, year_level, section_name, curriculum_id]):
             return jsonify({'success': False, 'message': 'All fields including curriculum are required'})
@@ -8995,7 +9261,7 @@ def add_year_section():
         
         semester_id = result['semester_id']
         
-        # Check if section already exists for this semester
+        # Check if section already exists for this semester and curriculum
         cursor.execute(
             """SELECT section_id FROM year_sections 
                WHERE program_id = %s AND semester_id = %s 
@@ -9009,12 +9275,12 @@ def add_year_section():
             conn.close()
             return jsonify({'success': False, 'message': 'Section already exists for this semester'})
         
-        # Insert new section
+        # Insert new section WITH academic_year_id
         cursor.execute(
             """INSERT INTO year_sections 
-               (program_id, semester_id, year_level, section_name, status) 
-               VALUES (%s, %s, %s, %s, 'active')""",
-            (program_id, semester_id, year_level, section_name)
+               (program_id, academic_year_id, semester_id, year_level, section_name, curriculum_id, status) 
+               VALUES (%s, %s, %s, %s, %s, %s, 'active')""",
+            (program_id, academic_year_id, semester_id, year_level, section_name, curriculum_id)
         )
         
         conn.commit()
@@ -9025,7 +9291,7 @@ def add_year_section():
         
     except Exception as e:
         logger.error(f"Error adding year section: {e}")
-        return jsonify({'success': False, 'message': str(e)})   
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/get_subjects', methods=['GET'])
 @login_required
@@ -9915,7 +10181,7 @@ def get_active_programs():
 @app.route('/api/get_semesters_for_switch', methods=['GET'])
 @login_required
 def get_semesters_for_switch():
-    """Get semesters for switch modal with section and subject counts - SHOW ALL SEMESTERS"""
+    """Get semesters for switch modal - GROUP BY semester_number to show one per type"""
     try:
         program_id = request.args.get('program_id')
         academic_year = request.args.get('academic_year')
@@ -9938,19 +10204,30 @@ def get_semesters_for_switch():
         
         academic_year_id = academic_year_result['academic_year_id']
         
-        # Get ALL semesters for this academic year (don't filter by status)
+        # GROUP BY semester_number to show only one instance per semester type
         cursor.execute("""
             SELECT 
                 s.semester_number,
-                s.semester_id,
-                s.status,
-                COUNT(DISTINCT ys.section_id) as section_count,
-                COUNT(DISTINCT sub.subject_id) as subject_count
+                -- Check if ANY of this semester type is active
+                MAX(CASE WHEN s.status = 'active' THEN 1 ELSE 0 END) as is_current,
+                -- Count how many curricula have this semester
+                COUNT(DISTINCT s.curriculum_id) as curriculum_count,
+                -- Aggregate section count across ALL curricula
+                SUM(
+                    (SELECT COUNT(DISTINCT ys.section_id) 
+                     FROM year_sections ys 
+                     WHERE ys.semester_id = s.semester_id AND ys.status = 'active')
+                ) as section_count,
+                -- Aggregate subject count across ALL curricula
+                SUM(
+                    (SELECT COUNT(DISTINCT sub.subject_id) 
+                     FROM subjects sub 
+                     JOIN year_sections ys ON sub.section_id = ys.section_id
+                     WHERE ys.semester_id = s.semester_id AND sub.status = 'active')
+                ) as subject_count
             FROM semesters s
-            LEFT JOIN year_sections ys ON s.semester_id = ys.semester_id AND ys.status = 'active'
-            LEFT JOIN subjects sub ON ys.section_id = sub.section_id AND sub.status = 'active'
             WHERE s.academic_year_id = %s
-            GROUP BY s.semester_id, s.semester_number, s.status
+            GROUP BY s.semester_number
             ORDER BY 
                 CASE s.semester_number
                     WHEN 'Summer' THEN 1
@@ -9962,25 +10239,25 @@ def get_semesters_for_switch():
         
         semesters = cursor.fetchall()
         
-        # Find the current active semester (should be only one)
+        # Find the current active semester (check if any semester type is marked as current)
         current_semester = None
         for semester in semesters:
-            if semester['status'] == 'active':
+            if semester['is_current']:
                 current_semester = semester['semester_number']
                 break
         
         cursor.close()
         conn.close()
         
-        # Format response - include ALL semesters
+        # Format response - now only one entry per semester type
         formatted_semesters = []
         for semester in semesters:
             formatted_semesters.append({
                 'semester_number': semester['semester_number'],
-                'semester_id': semester['semester_id'],
                 'section_count': semester['section_count'] or 0,
                 'subject_count': semester['subject_count'] or 0,
-                'is_current': semester['semester_number'] == current_semester
+                'is_current': bool(semester['is_current']),
+                'curriculum_count': semester['curriculum_count'] or 0
             })
         
         return jsonify({
@@ -9996,7 +10273,7 @@ def get_semesters_for_switch():
 @app.route('/api/set_active_semester', methods=['POST'])
 @login_required
 def set_active_semester():
-    """Set a semester as active for a program - PROPERLY MANAGE ACTIVE STATUS"""
+    """Set a semester as ACTIVE - REMOVED academic_years update"""
     try:
         data = request.json
         program_id = data.get('program_id')
@@ -10007,7 +10284,7 @@ def set_active_semester():
             return jsonify({'success': False, 'message': 'All fields are required'})
         
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         
         # Get academic_year_id
         cursor.execute(
@@ -10021,33 +10298,34 @@ def set_active_semester():
             conn.close()
             return jsonify({'success': False, 'message': 'Academic year not found'})
         
-        academic_year_id = academic_year_result[0]
+        academic_year_id = academic_year_result['academic_year_id']
         
-        # Get semester_id
+        # Get the semester_id for this specific semester
         cursor.execute(
-            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s",
+            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s LIMIT 1",
             (academic_year_id, semester_number)
         )
-        
         semester_result = cursor.fetchone()
         if not semester_result:
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Semester not found'})
         
-        semester_id = semester_result[0]
+        semester_id = semester_result['semester_id']
         
-        # First, set ALL semesters in this academic year to inactive
+        # FIRST: Set ALL semesters in this academic year to INACTIVE
         cursor.execute(
             "UPDATE semesters SET status = 'inactive' WHERE academic_year_id = %s",
             (academic_year_id,)
         )
         
-        # Then set ONLY the selected semester to active
+        # SECOND: Set the specific semester to ACTIVE
         cursor.execute(
             "UPDATE semesters SET status = 'active' WHERE semester_id = %s",
             (semester_id,)
         )
+        
+        # REMOVED: Update academic_years table with active_semester_id
         
         conn.commit()
         cursor.close()
@@ -10055,7 +10333,7 @@ def set_active_semester():
         
         return jsonify({
             'success': True,
-            'message': f'Successfully set {semester_number} {academic_year} as active period'
+            'message': f'Successfully set {semester_number} as active semester for {academic_year}'
         })
         
     except Exception as e:
@@ -10092,6 +10370,47 @@ def get_active_curricula():
         logger.error(f"Error fetching active curricula: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
+@app.route('/api/get_available_year_levels', methods=['GET'])
+@login_required
+def get_available_year_levels():
+    """Get distinct year levels available for a program and curriculum"""
+    try:
+        program_id = request.args.get('program_id')
+        curriculum_id = request.args.get('curriculum_id')
+        
+        if not program_id:
+            return jsonify({'success': False, 'message': 'Program ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        if curriculum_id:
+            # Get year levels for specific program and curriculum
+            cursor.execute("""
+                SELECT DISTINCT year_level 
+                FROM year_sections 
+                WHERE program_id = %s AND curriculum_id = %s AND status = 'active'
+                ORDER BY year_level
+            """, (program_id, curriculum_id))
+        else:
+            # Get year levels for program (all curricula)
+            cursor.execute("""
+                SELECT DISTINCT year_level 
+                FROM year_sections 
+                WHERE program_id = %s AND status = 'active'
+                ORDER BY year_level
+            """, (program_id,))
+        
+        year_levels = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'year_levels': year_levels})
+        
+    except Exception as e:
+        logger.error(f"Error fetching year levels: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
 @app.route('/api/get_active_period', methods=['GET'])
 @login_required
 def get_active_period():
@@ -10105,11 +10424,11 @@ def get_active_period():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get current academic year
+        # FIXED: Use is_current = 1 instead of TRUE
         cursor.execute("""
-            SELECT academic_year 
+            SELECT academic_year, academic_year_id
             FROM academic_years 
-            WHERE program_id = %s AND is_current = TRUE AND status = 'active'
+            WHERE program_id = %s AND is_current = 1 AND status = 'active'
             LIMIT 1
         """, (program_id,))
         
@@ -10121,24 +10440,9 @@ def get_active_period():
             return jsonify({'success': False, 'message': 'No active academic year found'})
         
         academic_year = academic_year_result['academic_year']
+        academic_year_id = academic_year_result['academic_year_id']
         
-        # Get academic_year_id
-        cursor.execute("""
-            SELECT academic_year_id 
-            FROM academic_years 
-            WHERE program_id = %s AND academic_year = %s AND status = 'active'
-        """, (program_id, academic_year))
-        
-        academic_year_id_result = cursor.fetchone()
-        
-        if not academic_year_id_result:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Academic year not found'})
-        
-        academic_year_id = academic_year_id_result['academic_year_id']
-        
-        # Get current semester (you might need to adjust this logic based on your semester system)
+        # Get current semester
         cursor.execute("""
             SELECT semester_number 
             FROM semesters 
@@ -10174,17 +10478,36 @@ def get_active_period():
         return jsonify({'success': False, 'message': str(e)})
     
 @app.route('/api/get_sections_with_semester', methods=['GET'])
-@login_required
 def get_sections_with_semester():
-    """Get sections filtered by program, year level, academic year, and semester"""
+    """Get sections for student registration - AUTO SEMESTER NAME CONVERSION"""
     try:
         program_id = request.args.get('program_id')
         year_level = request.args.get('year_level')
         academic_year = request.args.get('academic_year')
-        semester = request.args.get('semester')
+        semester = request.args.get('semester')  # This can be '1', '2', '3' or '1st Semester', etc.
+        curriculum_year = request.args.get('curriculum_year')
+        
+        print(f"=== DEBUG: Fetching sections for registration ===")
+        print(f"Program: {program_id}, Year: {year_level}, Academic Year: {academic_year}")
+        print(f"Semester: {semester}, Curriculum Year: {curriculum_year}")
         
         if not all([program_id, year_level, academic_year, semester]):
-            return jsonify({'success': False, 'message': 'All parameters are required'})
+            return jsonify({'success': False, 'message': 'Missing required parameters'})
+        
+        # AUTO CONVERT semester numbers to semester names
+        semester_map = {
+            '1': '1st Semester',
+            '2': '2nd Semester', 
+            '3': '3rd Semester',
+            'first': '1st Semester',
+            'second': '2nd Semester',
+            'third': '3rd Semester'
+        }
+        
+        # If semester is a number or common name, convert it. Otherwise use as-is.
+        semester_name = semester_map.get(semester.lower(), semester)
+        
+        print(f"Converted semester '{semester}' to: '{semester_name}'")
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -10194,52 +10517,98 @@ def get_sections_with_semester():
             "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
             (program_id, academic_year)
         )
-        result = cursor.fetchone()
-        if not result:
+        academic_year_result = cursor.fetchone()
+        if not academic_year_result:
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Academic year not found'})
         
-        academic_year_id = result['academic_year_id']
+        academic_year_id = academic_year_result['academic_year_id']
         
-        # Get semester_id
-        cursor.execute(
-            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s",
-            (academic_year_id, semester)
-        )
-        result = cursor.fetchone()
-        if not result:
+        # Get semester_id - FLEXIBLE SEARCH
+        if curriculum_year:
+            # Find the curriculum_id for this program and curriculum_year
+            cursor.execute(
+                "SELECT curriculum_id FROM curricula WHERE program_id = %s AND curriculum_year = %s AND academic_year = %s AND status = 'active'",
+                (program_id, curriculum_year, academic_year)
+            )
+            curriculum_result = cursor.fetchone()
+            
+            if not curriculum_result:
+                cursor.close()
+                conn.close()
+                return jsonify({'success': False, 'message': f'No {curriculum_year} curriculum found for {academic_year}'})
+            
+            curriculum_id = curriculum_result['curriculum_id']
+            
+            # Get semester_id - TRY MULTIPLE APPROACHES
+            cursor.execute(
+                "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND curriculum_id = %s AND (semester_number = %s OR semester_number LIKE %s)",
+                (academic_year_id, curriculum_id, semester_name, f'%{semester}%')
+            )
+        else:
+            # Fallback: get any semester if no curriculum_year provided
+            cursor.execute(
+                "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND (semester_number = %s OR semester_number LIKE %s) LIMIT 1",
+                (academic_year_id, semester_name, f'%{semester}%')
+            )
+        
+        semester_result = cursor.fetchone()
+        if not semester_result:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'Semester not found'})
+            return jsonify({'success': False, 'message': f'Semester not found. Tried: {semester_name} (from {semester})'})
         
-        semester_id = result['semester_id']
+        semester_id = semester_result['semester_id']
         
-        cursor.execute("""
+        # Get sections for this semester
+        query = """
             SELECT 
                 ys.section_id,
                 ys.section_name,
                 ys.year_level,
-                ys.program_id
+                ys.curriculum_id,
+                c.curriculum_year,
+                COUNT(DISTINCT s.subject_id) as subject_count
             FROM year_sections ys
+            LEFT JOIN curricula c ON ys.curriculum_id = c.curriculum_id
+            LEFT JOIN subjects s ON ys.section_id = s.section_id AND s.status = 'active'
             WHERE ys.program_id = %s 
-            AND ys.year_level = %s 
+            AND ys.year_level = %s
             AND ys.semester_id = %s
             AND ys.status = 'active'
+            GROUP BY ys.section_id, ys.section_name, ys.year_level, ys.curriculum_id, c.curriculum_year
             ORDER BY ys.section_name
-        """, (program_id, year_level, semester_id))
+        """
         
+        cursor.execute(query, (program_id, year_level, semester_id))
         sections = cursor.fetchall()
+        
+        print(f"DEBUG: Found {len(sections)} sections")
+        for section in sections:
+            print(f"Section: {section['section_name']}, Curriculum: {section['curriculum_year']}")
+        
         cursor.close()
         conn.close()
         
-        logger.info(f"Found {len(sections)} sections for program {program_id}, year {year_level}, {semester} {academic_year}")
-        return jsonify({'success': True, 'sections': sections})
+        return jsonify({
+            'success': True, 
+            'sections': sections,
+            'debug_info': {
+                'program': program_id,
+                'year_level': year_level,
+                'academic_year': academic_year,
+                'semester_requested': semester,
+                'semester_used': semester_name,
+                'curriculum_year': curriculum_year,
+                'sections_found': len(sections)
+            }
+        })
         
     except Exception as e:
-        logger.error(f"Error fetching sections with semester: {e}")
-        return jsonify({'success': False, 'message': str(e)})   
-
+        logger.error(f"Error fetching sections for registration: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    
 @app.route('/api/set_rtsp_url', methods=['POST'])
 @login_required
 def set_rtsp_url():
@@ -14736,8 +15105,6 @@ def get_student_details(student_id):
             'message': f'Error loading student details: {str(e)}'
         }), 500
 
-# Curriculum Management API Endpoints for Flask
-# Uses mysql.connector with get_db_cursor() context manager
 
 @app.route('/api/get_curricula', methods=['GET'])
 def get_curricula():
@@ -14753,7 +15120,7 @@ def get_curricula():
             }), 400
         
         with get_db_cursor(commit=False) as cursor:
-            # Get curricula with student count
+            # FIXED QUERY - count sections via semesters table
             query = """
                 SELECT 
                     c.curriculum_id,
@@ -14762,15 +15129,20 @@ def get_curricula():
                     c.description,
                     c.status,
                     c.effective_date,
-                    COUNT(DISTINCT s.student_id) as student_count,
-                    COUNT(DISTINCT ys.section_id) as section_count
+                    -- Student count using subquery
+                    (SELECT COUNT(DISTINCT s.student_id) 
+                     FROM students s 
+                     WHERE s.curriculum_id = c.curriculum_id 
+                     AND s.status = 'active') as student_count,
+                    -- Section count - FIXED: count via semesters table
+                    (SELECT COUNT(DISTINCT ys.section_id) 
+                     FROM year_sections ys 
+                     JOIN semesters sem ON ys.semester_id = sem.semester_id
+                     WHERE sem.curriculum_id = c.curriculum_id 
+                     AND ys.status = 'active') as section_count
                 FROM curricula c
-                LEFT JOIN students s ON c.curriculum_id = s.curriculum_id
-                LEFT JOIN year_sections ys ON c.curriculum_id = ys.curriculum_id
                 WHERE c.program_id = %s 
                 AND c.academic_year = %s
-                GROUP BY c.curriculum_id, c.curriculum_name, c.curriculum_year, 
-                         c.description, c.status, c.effective_date
                 ORDER BY c.curriculum_year DESC
             """
             
@@ -14945,7 +15317,8 @@ def get_curriculum_details():
             }), 400
         
         with get_db_cursor(commit=False) as cursor:
-            cursor.execute("""
+            # FIXED QUERY - using subqueries instead of joins to avoid cartesian product
+            query = """
                 SELECT 
                     c.curriculum_id,
                     c.program_id,
@@ -14955,17 +15328,21 @@ def get_curriculum_details():
                     c.description,
                     c.status,
                     c.effective_date,
-                    COUNT(DISTINCT s.student_id) as student_count,
-                    COUNT(DISTINCT ys.section_id) as section_count
+                    -- Student count using subquery
+                    (SELECT COUNT(DISTINCT s.student_id) 
+                     FROM students s 
+                     WHERE s.curriculum_id = c.curriculum_id 
+                     AND s.status = 'active') as student_count,
+                    -- Section count using subquery
+                    (SELECT COUNT(DISTINCT ys.section_id) 
+                     FROM year_sections ys 
+                     WHERE ys.curriculum_id = c.curriculum_id 
+                     AND ys.status = 'active') as section_count
                 FROM curricula c
-                LEFT JOIN students s ON c.curriculum_id = s.curriculum_id
-                LEFT JOIN year_sections ys ON c.curriculum_id = ys.curriculum_id
                 WHERE c.curriculum_id = %s
-                GROUP BY c.curriculum_id, c.program_id, c.academic_year, 
-                         c.curriculum_name, c.curriculum_year, c.description, 
-                         c.status, c.effective_date
-            """, (curriculum_id,))
+            """
             
+            cursor.execute(query, (curriculum_id,))
             curriculum = cursor.fetchone()
         
         if not curriculum:

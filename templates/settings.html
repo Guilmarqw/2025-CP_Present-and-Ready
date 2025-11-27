@@ -285,7 +285,7 @@
         if (selectedProgram && selectedYear) {
             try {
                 // This route is from your StudentDB page
-                const response = await fetch(`/api/get_sections?program_id=${selectedProgram}&year_level=${selectedYear}`);
+                const response = await fetch(`/api/get_sections_with_semester?program_id=${selectedProgram}&year_level=${selectedYear}`);
                 const data = await response.json();
                 sectionDropdown.innerHTML = '<option value="">Select Section</option>';
                 if (data.success && data.sections) {

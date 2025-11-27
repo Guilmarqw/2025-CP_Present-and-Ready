@@ -172,35 +172,18 @@
   <audio id="bellSound" src="static/Hotel bell ringing - Sounds effect.mp3" preload="auto"></audio>
 
 <script>
-      const container = document.querySelector(".container");
+const container = document.querySelector(".container");
 
-  document.addEventListener("DOMContentLoaded", function () {
-    const termsModal = document.getElementById("termsModal");
-    const acceptBtn = document.getElementById("acceptTerms");
-    const declineBtn = document.getElementById("declineTerms");
-
-    // Initially hide the form
-    container.style.opacity = "0.3";
-    container.style.pointerEvents = "none";
-    termsModal.style.display = "flex";
-    document.body.classList.add("modal-open");
-
-    acceptBtn.onclick = function () {
-      termsModal.style.display = "none";
-      document.body.classList.remove("modal-open");
-      container.style.opacity = "1";
-      container.style.pointerEvents = "auto"; // ← IMPORTANT: Re-enable clicks!
-    };
-
-    declineBtn.onclick = function () {
-      alert("You must accept the Terms & Conditions to proceed.");
-    };
-  });
-  
+// Global variables
 let currentPose = 'frontal';
 let faceEncoding = null;
 let faceEncodings = [];
+let currentActiveAcademicYear = null;
+let currentActiveSemester = null;
 let uploadedPhoto = null;
+let availableAcademicYears = [];
+let currentAcademicYear = null;
+let selectedAcademicYear = null;
 let videoStream = null;
 let scanState = 0;
 let scanInterval = null;
@@ -227,6 +210,310 @@ const POSE_STATES = [
     { id: 'mouth_open', name: 'Mouth Open', instruction: 'Please open your mouth slightly' },
     { id: 'eyes_closed', name: 'Eyes Closed', instruction: 'Please close your eyes gently' }
 ];
+
+
+function fetchAcademicYears() {
+    const programId = document.getElementById("program")?.value;
+    if (!programId) return;
+
+    console.log("Fetching academic years for program:", programId);
+    
+    fetch(`/api/get_academic_years_for_program?program_id=${programId}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log("Academic years response:", data);
+            
+            if (data.success && data.academic_years && data.academic_years.length > 0) {
+                availableAcademicYears = data.academic_years;
+                currentAcademicYear = data.current_year;
+                
+                console.log("Available academic years:", availableAcademicYears);
+                console.log("Current academic year:", currentAcademicYear);
+                
+                // Auto-select the current active academic year
+                if (currentAcademicYear) {
+                    window.selectedAcademicYear = currentAcademicYear;
+                    console.log("Auto-selected academic year:", currentAcademicYear);
+                    
+                    // Trigger sections fetch if year level is already selected
+                    const yearLevel = document.getElementById("year_level")?.value;
+                    if (yearLevel) {
+                        setTimeout(fetchSections, 100);
+                    }
+                }
+            } else {
+                console.warn("No academic years found for program:", programId);
+                availableAcademicYears = [];
+                currentAcademicYear = null;
+                showModal("Info", "No academic years available for the selected program.");
+            }
+        })
+        .catch(error => {
+            console.error("Error fetching academic years:", error);
+            availableAcademicYears = [];
+            currentAcademicYear = null;
+        });
+}
+
+
+// ========== CORE FUNCTIONS ==========
+
+function getActiveAcademicPeriod() {
+    return fetch('/api/get_active_period')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentActiveAcademicYear = data.academic_year;
+                currentActiveSemester = data.semester;
+                console.log("Active period:", currentActiveAcademicYear, currentActiveSemester);
+                return data;
+            } else {
+                throw new Error('Could not get active academic period');
+            }
+        });
+}
+
+function fetchPrograms() {
+    console.log("Starting to fetch programs...");
+    
+    const programDropdown = document.getElementById('program');
+    if (!programDropdown) {
+        console.error("Program dropdown element not found");
+        return;
+    }
+    
+    // Show loading state
+    programDropdown.innerHTML = '<option value="" disabled selected>Loading programs...</option>';
+    programDropdown.disabled = true;
+
+    fetch('/api/get_programs')
+        .then(response => {
+            console.log("Response received:", response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("Program data received:", data);
+            
+            if (data.success && data.programs && data.programs.length > 0) {
+                // Clear and populate dropdown
+                programDropdown.innerHTML = '<option value="" disabled selected>Select your Course</option>';
+                
+                data.programs.forEach(program => {
+                    const option = document.createElement('option');
+                    option.value = program.program_id; 
+                    option.textContent = program.program_name; 
+                    programDropdown.appendChild(option);
+                });
+                
+                programDropdown.disabled = false;
+                console.log(`Loaded ${data.programs.length} programs`);
+            } else {
+                // Handle empty or failed response
+                programDropdown.innerHTML = '<option value="" disabled selected>No programs available</option>';
+                console.error('No programs found or API returned failure:', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching programs:', error);
+            programDropdown.innerHTML = '<option value="" disabled selected>Error loading programs</option>';
+        });
+}
+
+function getCurrentAcademicInfo() {
+    console.log("=== ACADEMIC INFO DEBUG ===");
+    
+    const studentId = document.getElementById("studentId")?.value;
+    const curriculumYear = extractCurriculumYear(studentId);
+    
+    console.log("Student ID:", studentId);
+    console.log("Extracted curriculum year:", curriculumYear);
+    
+    // Ensure currentActiveAcademicYear is always set
+    const academicYear = window.currentActiveAcademicYear || "2025-2026";
+    const semester = 1; // Default to first semester
+    
+    console.log("Using active academic year:", academicYear);
+    console.log("With curriculum year:", curriculumYear);
+    console.log("Final academic info:", { academicYear, semester, curriculumYear });
+    console.log("=== END DEBUG ===");
+    
+    return { academicYear, semester, curriculumYear };
+}
+
+function resetDropdown(dropdown, defaultText) {
+    if (!dropdown) return;
+    
+    dropdown.innerHTML = ''; 
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = defaultText;
+    defaultOption.disabled = true;
+    defaultOption.selected = true;
+    dropdown.appendChild(defaultOption);
+}
+
+function fetchSections() {
+    const programId = document.getElementById("program")?.value;
+    const yearLevel = document.getElementById("year_level")?.value;
+    const studentId = document.getElementById("studentId")?.value;
+
+    console.log("Fetching sections for:", { programId, yearLevel, studentId });
+
+    const sectionDropdown = document.getElementById("section_id");
+    const programDropdown = document.getElementById("program");
+    resetDropdown(sectionDropdown, 'Select your Section');
+    sectionDropdown.disabled = true;
+
+    // Extract curriculum year from student ID
+    const curriculumYear = extractCurriculumYear(studentId);
+    if (!curriculumYear) {
+        resetDropdown(sectionDropdown, 'Enter valid Student ID first');
+        console.log("Waiting for valid Student ID with curriculum year");
+        return;
+    }
+
+    console.log("Extracted curriculum year:", curriculumYear);
+
+    // Get academic info FIRST
+    const { academicYear, semester, curriculumYear: academicCurriculumYear } = getCurrentAcademicInfo();
+    
+    console.log("Academic info:", { academicYear, semester, curriculumYear: academicCurriculumYear });
+
+    if (programId && yearLevel && academicYear) {
+        resetDropdown(sectionDropdown, 'Loading sections...');
+        
+        console.log("Searching sections with:", {
+            programId,
+            yearLevel, 
+            academicYear,
+            semester,
+            curriculumYear,
+            hasCurriculumYear: !!curriculumYear
+        });
+        
+        // Build API URL with optional curriculum_year parameter
+        let apiUrl = `/api/get_sections_with_semester?program_id=${programId}&year_level=${yearLevel}&academic_year=${academicYear}&semester=${semester}`;
+        if (curriculumYear) {
+            apiUrl += `&curriculum_year=${curriculumYear}`;
+        }
+        
+        console.log("Full API URL:", apiUrl);
+        
+        fetch(apiUrl)
+            .then(response => {
+                console.log("Response status:", response.status, response.statusText);
+                
+                // Check if we got redirected to login page (HTML response)
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('text/html')) {
+                    return response.text().then(html => {
+                        // Check if this is a login page
+                        if (html.includes('login') || html.includes('Login') || response.status === 401 || response.status === 403) {
+                            throw new Error('Authentication required. Please ensure the API allows public access for registration.');
+                        }
+                        throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
+                    });
+                }
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+                }
+                
+                return response.json();
+            })
+            .then(data => {
+                // Handle both HTML text (if any) and JSON data
+                if (typeof data === 'string') {
+                    // This should not happen with the above check, but just in case
+                    throw new Error('Server returned HTML instead of JSON data');
+                }
+                
+                console.log("Sections API response:", data);
+                
+                if (data.success && data.sections) {
+                    resetDropdown(sectionDropdown, 'Select your Section');
+                    
+                    if (data.sections.length === 0) {
+                        resetDropdown(sectionDropdown, 'No sections available');
+                        showModal("Info", 
+                            `No sections found for:\n` +
+                            `- Program: ${programDropdown.options[programDropdown.selectedIndex]?.text}\n` +
+                            `- Year: ${yearLevel}\n` +
+                            `- Academic Year: ${academicYear}\n` +
+                            `- Semester: ${semester}\n` +
+                            (curriculumYear ? `- Curriculum: ${curriculumYear}\n\n` : '\n') +
+                            `Please contact your department.`
+                        );
+                        return;
+                    }
+
+                    data.sections.forEach(section => {
+                        const option = document.createElement('option');
+                        option.value = section.section_id;
+                        option.textContent = section.section_name;
+                        sectionDropdown.appendChild(option);
+                    });
+                    sectionDropdown.disabled = false;
+                    console.log(`Successfully loaded ${data.sections.length} sections`);
+                } else {
+                    resetDropdown(sectionDropdown, 'No sections available');
+                    const errorMsg = data.message || 'No sections found for the selected criteria';
+                    console.error('API returned error:', errorMsg);
+                    showModal("Info", errorMsg);
+                }
+            })
+            .catch(error => {
+                console.error('Network error fetching sections:', error);
+                resetDropdown(sectionDropdown, 'Error loading sections');
+                
+                let errorMessage = "Failed to load sections. ";
+                
+                if (error.message.includes('Authentication required')) {
+                    errorMessage = "API requires authentication. This route needs to be accessible without login for registration. Please contact administrator.";
+                } else if (error.message.includes('404')) {
+                    errorMessage += "API endpoint not found.";
+                } else if (error.message.includes('500')) {
+                    errorMessage += "Server error.";
+                } else if (error.message.includes('HTML instead of JSON')) {
+                    errorMessage += "Server returned HTML page instead of data. This might be a login redirect.";
+                } else if (error.message.includes('Academic year not found')) {
+                    errorMessage = `Academic year ${academicYear} not found in the system. Please try a different program or contact administration.`;
+                } else if (error.message.includes('Semester not found')) {
+                    errorMessage = `Semester ${semester} not found for academic year ${academicYear}. Please contact administration.`;
+                } else if (error.message.includes('curriculum')) {
+                    errorMessage = `Curriculum ${curriculumYear} not found. Please check your Student ID format (e.g., 2022-01376).`;
+                } else {
+                    errorMessage += "Please try again later.";
+                }
+                
+                showModal("Error", errorMessage);
+            });
+    } else {
+        let missing = [];
+        if (!programId) missing.push("Course");
+        if (!yearLevel) missing.push("Year Level");
+        if (!academicYear) missing.push("Academic Year");
+        if (!curriculumYear) missing.push("valid Student ID");
+        
+        const message = missing.length === 0 ? 'Select your Section' : `Select ${missing.join(' and ')} first`;
+        resetDropdown(sectionDropdown, message);
+    }
+}
+
+function showSectionLoadStatus(message, isError = false) {
+    const sectionDropdown = document.getElementById("section_id");
+    if (sectionDropdown) {
+        resetDropdown(sectionDropdown, message);
+        if (isError) {
+            sectionDropdown.style.borderColor = "#ff4444";
+        }
+    }
+}
+
+// ========== EXISTING FUNCTIONS ==========
 
 function showModal(title, message) {
     const modalTitle = document.getElementById("modalTitle");
@@ -259,51 +546,50 @@ function nextStep(step) {
         setTimeout(startFaceScan, 1000);
     }
     
-if (step === 5) {
-    const firstName = document.getElementById("firstName")?.value || "";
-    const lastName = document.getElementById("lastName")?.value || "";
-    const middleName = document.getElementById("middleName")?.value || "";
-    const studentId = document.getElementById("studentId")?.value || "";
-    const programSelect = document.getElementById("program");
-    const yearLevelSelect = document.getElementById("year_level");
-    const sectionSelect = document.getElementById("section_id");
-    
-    // Get the selected text values
-    const programName = programSelect ? programSelect.options[programSelect.selectedIndex]?.text : "";
-    const yearLevelName = yearLevelSelect ? yearLevelSelect.options[yearLevelSelect.selectedIndex]?.text : "";
-    const sectionName = sectionSelect ? sectionSelect.options[sectionSelect.selectedIndex]?.text : "";
-    
-    console.log("Preview data:", {
-        firstName, lastName, middleName, studentId,
-        programName, yearLevelName, sectionName,
-        hasUploadedPhoto: !!uploadedPhoto
-    });
-    
-    // Update the preview elements
-    if (document.getElementById("previewName")) {
-        document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`.trim();
+    if (step === 5) {
+        const firstName = document.getElementById("firstName")?.value || "";
+        const lastName = document.getElementById("lastName")?.value || "";
+        const middleName = document.getElementById("middleName")?.value || "";
+        const studentId = document.getElementById("studentId")?.value || "";
+        const programSelect = document.getElementById("program");
+        const yearLevelSelect = document.getElementById("year_level");
+        const sectionSelect = document.getElementById("section_id");
+        
+        // Get the selected text values
+        const programName = programSelect ? programSelect.options[programSelect.selectedIndex]?.text : "";
+        const yearLevelName = yearLevelSelect ? yearLevelSelect.options[yearLevelSelect.selectedIndex]?.text : "";
+        const sectionName = sectionSelect ? sectionSelect.options[sectionSelect.selectedIndex]?.text : "";
+        
+        console.log("Preview data:", {
+            firstName, lastName, middleName, studentId,
+            programName, yearLevelName, sectionName,
+            hasUploadedPhoto: !!uploadedPhoto
+        });
+        
+        // Update the preview elements
+        if (document.getElementById("previewName")) {
+            document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`.trim();
+        }
+        if (document.getElementById("previewStudentId")) {
+            document.getElementById("previewStudentId").textContent = studentId;
+        }
+        if (document.getElementById("previewCourse")) {
+            document.getElementById("previewCourse").textContent = programName || "Not selected";
+        }
+        if (document.getElementById("previewYearSection")) {
+            const yearSectionText = sectionName ? `${yearLevelName} - ${sectionName}` : yearLevelName;
+            document.getElementById("previewYearSection").textContent = yearSectionText || "Not selected";
+        }
+        
+        // Display the uploaded photo
+        if (uploadedPhoto && document.getElementById("idPhoto")) {
+            document.getElementById("idPhoto").innerHTML = `<img src="${uploadedPhoto}" alt="ID Photo" style="width: 100%; height: 100%; object-fit: cover;">`;
+            console.log("Photo set in preview");
+        } else {
+            console.log("No photo available for preview");
+            document.getElementById("idPhoto").innerHTML = '<span style="color: red;">No Photo</span>';
+        }
     }
-    if (document.getElementById("previewStudentId")) {
-        document.getElementById("previewStudentId").textContent = studentId;
-    }
-    if (document.getElementById("previewCourse")) {
-        document.getElementById("previewCourse").textContent = programName || "Not selected";
-    }
-    if (document.getElementById("previewYearSection")) {
-        const yearSectionText = sectionName ? `${yearLevelName} - ${sectionName}` : yearLevelName;
-        document.getElementById("previewYearSection").textContent = yearSectionText || "Not selected";
-    }
-    
-    // Display the uploaded photo
-    if (uploadedPhoto && document.getElementById("idPhoto")) {
-        document.getElementById("idPhoto").innerHTML = `<img src="${uploadedPhoto}" alt="ID Photo" style="width: 100%; height: 100%; object-fit: cover;">`;
-        console.log("Photo set in preview");
-    } else {
-        console.log("No photo available for preview");
-        document.getElementById("idPhoto").innerHTML = '<span style="color: red;">No Photo</span>';
-    }
-}
-
 }
 
 function validateStep1() {
@@ -405,31 +691,6 @@ function handleOtpKeydown(current, event) {
     }
 }
 
-function moveToNextPin(current, event) {
-    const value = event.target.value;
-    const pinInputs = document.querySelectorAll('.pin-digit');
-    if (value.length > 0 && current < 6 && pinInputs[current]) {
-        pinInputs[current].focus();
-    }
-}
-
-function handlePinKeydown(current, event) {
-    if (event.key === "Backspace") {
-        const pinInputs = document.querySelectorAll('.pin-digit');
-        const currentInput = pinInputs[current - 1];
-        if (currentInput?.value === "" && current > 1) {
-            const prevInput = pinInputs[current - 2];
-            if (prevInput) {
-                prevInput.value = "";
-                prevInput.focus();
-            }
-        } else if (currentInput) {
-            currentInput.value = "";
-        }
-        event.preventDefault();
-    }
-}
-
 function validateStep2() {
     const boxes = document.querySelectorAll(".otp-boxes input");
     let otp = "";
@@ -515,12 +776,33 @@ function resendOTP() {
 }
 
 function extractCurriculumYear(studentId) {
+    if (!studentId) return null;
+    
     // Extract first 4 digits from student ID (e.g., "2022" from "2022-01376")
-    const year = studentId.substring(0, 4);
-    return year;
+    const yearMatch = studentId.match(/^(\d{4})/);
+    return yearMatch ? yearMatch[1] : null;
 }
 
- function validateStudentId(input) {
+document.getElementById('studentId').addEventListener('input', function(e) {
+    validateStudentId(this);
+    
+    // Auto-extract curriculum year from student ID
+    const curriculumYear = extractCurriculumYear(this.value);
+    if (curriculumYear) {
+        console.log('Detected curriculum year:', curriculumYear);
+        // Store for later use
+        window.currentCurriculumYear = curriculumYear;
+        
+        // Trigger section refresh if program and year level are already selected
+        const programId = document.getElementById("program")?.value;
+        const yearLevel = document.getElementById("year_level")?.value;
+        if (programId && yearLevel) {
+            setTimeout(fetchSections, 500);
+        }
+    }
+});
+
+function validateStudentId(input) {
     // Remove all non-numeric characters except hyphens
     let value = input.value.replace(/[^0-9-]/g, '');
     
@@ -530,12 +812,14 @@ function extractCurriculumYear(studentId) {
         input.value = value;
     }
     
-    // Auto-detect curriculum year when ID is complete
+    // Auto-detect curriculum year when ID is complete enough
     if (value.length >= 4) {
-        const curriculumYear = value.substring(0, 4);
-        console.log("Detected curriculum year:", curriculumYear);
-        // You can store this for later use in registration
-        window.detectedCurriculumYear = curriculumYear;
+        extractCurriculumYear(value);
+        // Trigger section refresh if year level is already selected
+        const yearLevel = document.getElementById("year_level")?.value;
+        if (yearLevel) {
+            setTimeout(fetchSections, 500);
+        }
     }
 }
 
@@ -637,7 +921,6 @@ function validateStep3() {
     const password = document.getElementById("password").value;
     const confirmPassword = document.getElementById("confirmPassword").value;
 
-    // FIXED: Use the correct variable names
     if (!lastName || !firstName || !studentId || !program || !yearLevel || !sectionId) {
         showModal("Warning", "Please fill out all required fields.");
         return;
@@ -784,9 +1067,9 @@ function checkPose(result, poseId) {
         case 'right':
             return result.is_right || (result.yaw <= -5);
         case 'up':
-            return result.is_up || (result.pitch <= -3);  // MORE SENSITIVE: -4° (was -10°)
+            return result.is_up || (result.pitch <= -3);
         case 'down':
-            return result.is_down || (result.pitch >= 2);  // MORE SENSITIVE: 4° (was 10°)
+            return result.is_down || (result.pitch >= 2);
         case 'mouth_open':
             return result.is_mouth_open || (result.mar >= 0.08);
         case 'eyes_closed':
@@ -933,7 +1216,6 @@ function automatedFaceScan() {
     });
 }
 
-
 function assessImageQuality(imageData) {
     // Simplified quality check - just check basic brightness
     const data = imageData.data;
@@ -1043,15 +1325,6 @@ async function captureFaceEncodingWithQuality() {
     }
 }
 
-async function detectFacePosition(canvas) {
-    try {
-        return { isCentered: true, size: 0.5 };
-    } catch (error) {
-        console.error("Face position detection error:", error);
-        return { isCentered: true, size: 0.5 };
-    }
-}
-
 function updateScanProgress() {
     for (let i = 0; i < POSE_STATES.length; i++) {
         const stepEl = document.getElementById(`step-${POSE_STATES[i].id}`);
@@ -1076,7 +1349,8 @@ function updateScanProgress() {
 function registerStudent() {
     const formData = new FormData();
     
-    const email = userEmail || "";const programId = document.getElementById("program")?.value || "";
+    const email = userEmail || "";
+    const programId = document.getElementById("program")?.value || "";
     const studentId = document.getElementById("studentId")?.value?.trim() || "";
     const firstName = document.getElementById("firstName")?.value?.trim() || "";
     const lastName = document.getElementById("lastName")?.value?.trim() || "";
@@ -1154,130 +1428,123 @@ function registerStudent() {
     });
 }
 
- const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-    if (token) {
-        document.getElementById('invite_token').value = token;
-    }
+function fetchActiveAcademicYear() {
+    fetch('/api/get_active_academic_year')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.academic_year) {
+                window.currentActiveAcademicYear = data.academic_year;
+                console.log("Active academic year set to:", window.currentActiveAcademicYear);
+            } else {
+                console.log("Using default academic year: 2025-2026");
+                window.currentActiveAcademicYear = "2025-2026";
+            }
+        })
+        .catch(error => {
+            console.error("Error fetching active academic year:", error);
+            window.currentActiveAcademicYear = "2025-2026";
+            console.log("Using fallback academic year: 2025-2026");
+        });
+}
 
+// ========== INITIALIZATION ==========
 
 document.addEventListener("DOMContentLoaded", function () {
-    console.log("DOM loaded, fetching programs...");
+    console.log("DOM loaded, initializing registration form...");
     
+    // Set the current active academic year
+    window.currentActiveAcademicYear = "2025-2026"; // Hardcoded for now
+    
+    // Initialize terms modal first
+    const termsModal = document.getElementById("termsModal");
+    const acceptBtn = document.getElementById("acceptTerms");
+    const declineBtn = document.getElementById("declineTerms");
+    const container = document.querySelector(".container");
+
+    // Initially hide the form
+    if (container) {
+        container.style.opacity = "0.3";
+        container.style.pointerEvents = "none";
+    }
+    if (termsModal) {
+        termsModal.style.display = "flex";
+        document.body.classList.add("modal-open");
+    }
+
+    if (acceptBtn) {
+        acceptBtn.onclick = function () {
+            if (termsModal) termsModal.style.display = "none";
+            document.body.classList.remove("modal-open");
+            if (container) {
+                container.style.opacity = "1";
+                container.style.pointerEvents = "auto";
+            }
+            // Now fetch programs after accepting terms
+            fetchPrograms();
+            
+            // Also fetch the active academic year from backend
+            fetchActiveAcademicYear();
+        };
+    }
+
+    if (declineBtn) {
+        declineBtn.onclick = function () {
+            alert("You must accept the Terms & Conditions to proceed.");
+        };
+    }
+
+    // Get form elements
     const programDropdown = document.getElementById('program');
     const yearDropdown = document.getElementById('year_level');
-    const sectionDropdown = document.getElementById('section_id');
+    const studentIdInput = document.getElementById('studentId');
 
-    // Fetch programs with better error handling
-    fetchPrograms();
-
-    function fetchPrograms() {
-        console.log("Starting to fetch programs...");
-        
-        // Show loading state
-        programDropdown.innerHTML = '<option value="" disabled selected>Loading programs...</option>';
-        programDropdown.disabled = true;
-
-        fetch('/api/get_programs')
-            .then(response => {
-                console.log("Response received:", response.status);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log("Program data received:", data);
-                
-                if (data.success && data.programs && data.programs.length > 0) {
-                    // Clear and populate dropdown
-                    programDropdown.innerHTML = '<option value="" disabled selected>Select your Course</option>';
-                    
-                    data.programs.forEach(program => {
-                        const option = document.createElement('option');
-                        option.value = program.program_id; 
-                        option.textContent = program.program_name; 
-                        programDropdown.appendChild(option);
-                    });
-                    
-                    programDropdown.disabled = false;
-                    console.log(`Loaded ${data.programs.length} programs`);
-                } else {
-                    // Handle empty or failed response
-                    programDropdown.innerHTML = '<option value="" disabled selected>No programs available</option>';
-                    console.error('No programs found or API returned failure:', data.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching programs:', error);
-                programDropdown.innerHTML = '<option value="" disabled selected>Error loading programs</option>';
-            });
+    // Set up event listeners - SIMPLIFIED
+    if (programDropdown) {
+        programDropdown.addEventListener('change', function() {
+            console.log("Program changed, fetching sections...");
+            setTimeout(fetchSections, 100);
+        });
+    }
+    
+    if (yearDropdown) {
+        yearDropdown.addEventListener('change', function() {
+            console.log("Year level changed, fetching sections...");
+            setTimeout(fetchSections, 100);
+        });
+    }
+    
+    if (studentIdInput) {
+        studentIdInput.addEventListener('input', function() {
+            validateStudentId(this);
+            const programId = document.getElementById("program")?.value;
+            const yearLevel = document.getElementById("year_level")?.value;
+            if (programId && yearLevel) {
+                console.log("Student ID entered, triggering sections fetch...");
+                setTimeout(fetchSections, 500);
+            }
+        });
     }
 
-    function fetchSections() {
-        const programId = programDropdown.value;
-        const yearLevel = yearDropdown.value;
-
-        console.log("Fetching sections for:", { programId, yearLevel });
-
-        resetDropdown(sectionDropdown, 'Select your Section');
-        sectionDropdown.disabled = true;
-
-        if (programId && yearLevel) {
-            resetDropdown(sectionDropdown, 'Loading sections...');
-            
-            fetch(`/api/get_sections?program_id=${programId}&year_level=${yearLevel}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log("Sections data received:", data);
-                    
-                    if (data.success && data.sections) {
-                        resetDropdown(sectionDropdown, 'Select your Section');
-                        
-                        if (data.sections.length === 0) {
-                            resetDropdown(sectionDropdown, 'No sections found for this year');
-                            return;
-                        }
-
-                        data.sections.forEach(section => {
-                            const option = document.createElement('option');
-                            option.value = section.section_id; 
-                            option.textContent = section.section_name; 
-                            sectionDropdown.appendChild(option);
-                        });
-                        sectionDropdown.disabled = false;
-                        console.log(`Loaded ${data.sections.length} sections`);
-                    } else {
-                        resetDropdown(sectionDropdown, 'Error loading sections');
-                        console.error('Failed to load sections:', data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching sections:', error);
-                    resetDropdown(sectionDropdown, 'Error loading sections');
-                });
+    // Handle invite token
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    if (token) {
+        const inviteTokenInput = document.getElementById('invite_token');
+        if (inviteTokenInput) {
+            inviteTokenInput.value = token;
         }
+        console.log("Invite token detected:", token);
     }
 
-    function resetDropdown(dropdown, defaultText) {
-        dropdown.innerHTML = ''; 
-        const defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = defaultText;
-        defaultOption.disabled = true;
-        defaultOption.selected = true;
-        dropdown.appendChild(defaultOption);
-    }
-
-    // Event listeners
-    programDropdown.addEventListener('change', fetchSections);
-    yearDropdown.addEventListener('change', fetchSections);
+    // Initialize global variables
+    window.availableAcademicYears = [];
+    window.currentAcademicYear = null;
+    window.selectedAcademicYear = null;
+    window.curriculumYear = null;
+    
+    console.log("Registration form initialization complete");
 });
+
 </script>
 </body>
 </html>

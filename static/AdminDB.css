@@ -324,3 +324,193 @@ body {
     .header { flex-direction: column; gap: 15px; text-align: center; }
     .stats-container { grid-template-columns: 1fr; }
 }
+
+/* System Overview Styles */
+.system-overview-container {
+    margin: 20px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+}
+
+.system-overview-container h3 {
+    margin-bottom: 20px;
+    color: #2c3e50;
+    font-size: 1.4rem;
+}
+
+.overview-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+.overview-card {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-left: 4px solid #007bff;
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s ease;
+}
+
+.overview-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.overview-card.academic-year { border-left-color: #28a745; }
+.overview-card.curriculum { border-left-color: #6f42c1; }
+.overview-card.semester { border-left-color: #fd7e14; }
+.overview-card.sections { border-left-color: #e83e8c; }
+.overview-card.subjects { border-left-color: #20c997; }
+
+.overview-icon {
+    font-size: 2rem;
+    margin-right: 15px;
+    color: #6c757d;
+}
+
+.overview-card.academic-year .overview-icon { color: #28a745; }
+.overview-card.curriculum .overview-icon { color: #6f42c1; }
+.overview-card.semester .overview-icon { color: #fd7e14; }
+.overview-card.sections .overview-icon { color: #e83e8c; }
+.overview-card.subjects .overview-icon { color: #20c997; }
+
+.overview-content h4 {
+    margin: 0 0 5px 0;
+    font-size: 0.9rem;
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.overview-value {
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 5px;
+}
+
+.overview-program,
+.overview-year,
+.overview-subtext {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+/* Status indicators */
+.system-overview-container.has-active-period {
+    border-left: 4px solid #28a745;
+}
+
+.system-overview-container.no-active-period {
+    border-left: 4px solid #dc3545;
+    background: #fff5f5;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .overview-cards {
+        grid-template-columns: 1fr;
+    }
+    
+    .overview-card {
+        padding: 15px;
+    }
+}
+
+/* Active Year Header */
+.active-year-header {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.active-year-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 25px;
+    font-weight: bold;
+    font-size: 1.1rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.active-year-badge i {
+    font-size: 1.3rem;
+}
+
+/* Overview Summary Cards Layout */
+.overview-summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+/* Breakdown Table */
+.breakdown-table-container {
+    margin-top: 30px;
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.breakdown-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+.breakdown-table th,
+.breakdown-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.breakdown-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #495057;
+}
+
+.breakdown-table tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.breakdown-total {
+    background: #e8f5e8 !important;
+    font-weight: bold;
+}
+
+.breakdown-total td {
+    border-top: 2px solid #28a745;
+}
+
+/* Status indicators */
+.system-overview-container.has-active-period {
+    border-left: 4px solid #28a745;
+}
+
+.system-overview-container.no-active-period {
+    border-left: 4px solid #dc3545;
+    background: #fff5f5;
+}
+
+/* Card colors */
+.overview-card.curriculum { border-left-color: #6f42c1; }
+.overview-card.semester { border-left-color: #fd7e14; }
+.overview-card.sections { border-left-color: #e83e8c; }
+.overview-card.subjects { border-left-color: #20c997; }
+
+.overview-card.curriculum .overview-icon { color: #6f42c1; }
+.overview-card.semester .overview-icon { color: #fd7e14; }
+.overview-card.sections .overview-icon { color: #e83e8c; }
+.overview-card.subjects .overview-icon { color: #20c997; }

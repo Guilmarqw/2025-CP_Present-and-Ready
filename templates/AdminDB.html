@@ -6,7 +6,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/AdminDB.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
-    </head>
+</head>
 <body>
     <!-- Sidebar -->
     <div id="sidebar-container"></div>
@@ -15,9 +15,17 @@
     <main class="main-content">
         <div class="header">
             <h2>Dashboard</h2>
-              </div>
+        </div>
         
         <div class="dashboard-content">
+            <!-- Active Year Header -->
+            <div class="active-year-header">
+                <div class="active-year-badge">
+                    <i class="fas fa-calendar-check"></i>
+                    <span id="active-year-display">Academic Year: Loading...</span>
+                </div>
+            </div>
+
             <h3>Overview</h3>
             
             <div class="stats-container">
@@ -29,417 +37,423 @@
                     <h4>Faculty Members</h4>
                     <div class="number">18</div>
                 </a>
-
                 <a href="/StudentDB" class="stat-card cs-students">
                     <h4>CS Students</h4>
                     <div class="number">124</div>
                 </a>
-
                 <a href="/StudentDB" class="stat-card it-students">
                     <h4>IT Students</h4>
                     <div class="number">156</div>
                 </a>
-                                <a href="/StudentDB" class="stat-card act-students">
+                <a href="/StudentDB" class="stat-card act-students">
                     <h4>ACT Students</h4>
                     <div class="number">76</div>
                 </a>
-                            </div>
+            </div>
             
-            <h3>Recent Activity</h3>
-            <p>System is running smoothly. No issues reported.</p>
-                </div>
+<!-- System Overview -->
+<div class="system-overview-container">
+    <h3>Active System Overview</h3>
+    
+    <!-- Summary Cards -->
+    <div class="overview-summary-cards">
+        <!-- REMOVED: Active Curriculum Card -->
+        
+        <div class="overview-card semester">
+            <div class="overview-icon">
+                <i class="fas fa-list-alt"></i>
+            </div>
+            <div class="overview-content">
+                <h4>Active Semester</h4>
+                <div class="overview-value" id="active-semester">Loading...</div>
+            </div>
+        </div>
+        
+        <div class="overview-card sections">
+            <div class="overview-icon">
+                <i class="fas fa-users"></i>
+            </div>
+            <div class="overview-content">
+                <h4>Total Sections</h4>
+                <div class="overview-value" id="total-sections">0</div>
+                <div class="overview-subtext">Active sections</div>
+            </div>
+        </div>
+        
+        <div class="overview-card subjects">
+            <div class="overview-icon">
+                <i class="fas fa-book-open"></i>
+            </div>
+            <div class="overview-content">
+                <h4>Curriculum Subjects</h4>
+                <div class="overview-value" id="total-subjects">0</div>
+                <div class="overview-subtext" id="total-units">0 total units</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Detailed Breakdown Table -->
+    <div class="breakdown-table-container" id="breakdown-table" style="display: none;">
+        <h4>Detailed Breakdown by Section</h4>
+        <table class="breakdown-table">
+    <thead>
+        <tr>
+            <th>Program</th>
+            <th>Curriculum</th>
+            <th>Semester</th>
+            <th>Year Level</th>
+            <th>Section</th>
+            <th>Subjects</th>
+            <th>Units</th>
+        </tr>
+    </thead>
+    <tbody id="breakdown-table-body">
+        <!-- Will be populated by JavaScript -->
+    </tbody>
+    <tfoot>
+        <tr class="breakdown-total">
+            <td colspan="5"><strong>Total</strong></td>
+            <td id="breakdown-total-subjects">0</td>
+            <td id="breakdown-total-units">0</td>
+        </tr>
+    </tfoot>
+</table>
+    </div>
+</div>
+            
+        </div>
     </main>
 
- <script>
-    console.log('Starting sidebar fetch...');
-    
-    // Load sidebar with error handling
-    fetch('/sidebar')
-        .then(response => {
-            console.log('Fetch response status:', response.status);
-            console.log('Fetch response URL:', response.url);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.text();
-        })
-        .then(html => {
-            console.log('Sidebar HTML received, length:', html.length);
-            console.log('First 100 chars:', html.substring(0, 100));
-            
-            document.getElementById('sidebar-container').innerHTML = html;
-            
-            // Initialize dropdown functionality
-            document.querySelectorAll(".dropdown-btn").forEach(btn => {
-                btn.addEventListener("click", function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    // Close all other dropdowns first
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        if (content !== this.nextElementSibling) {
-                            content.style.display = 'none';
+    <script>
+        console.log('Starting sidebar fetch...');
+        
+        // Load sidebar with error handling
+        fetch('/sidebar')
+            .then(response => {
+                console.log('Fetch response status:', response.status);
+                console.log('Fetch response URL:', response.url);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+            })
+            .then(html => {
+                console.log('Sidebar HTML received, length:', html.length);
+                console.log('First 100 chars:', html.substring(0, 100));
+                
+                document.getElementById('sidebar-container').innerHTML = html;
+                
+                // Initialize dropdown functionality
+                document.querySelectorAll(".dropdown-btn").forEach(btn => {
+                    btn.addEventListener("click", function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        // Close all other dropdowns first
+                        document.querySelectorAll('.dropdown-content').forEach(content => {
+                            if (content !== this.nextElementSibling) {
+                                content.style.display = 'none';
+                            }
+                        });
+
+                        // Toggle current dropdown
+                        const content = this.nextElementSibling;
+                        if (content) {
+                            content.style.display = content.style.display === 'block' ? 'none' : 'block';
                         }
                     });
+                });
 
-                    // Toggle current dropdown
-                    const content = this.nextElementSibling;
-                    if (content) {
-                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                // Close dropdowns when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('.dropdown')) {
+                        document.querySelectorAll('.dropdown-content').forEach(content => {
+                            content.style.display = 'none';
+                        });
                     }
                 });
+
+                // Handle active state
+                const currentPath = window.location.pathname;
+                document.querySelectorAll('.nav-items a').forEach(link => {
+                    const linkPath = link.getAttribute('href');
+                    if (currentPath.includes(linkPath) && linkPath !== '#') {
+                        link.classList.add('active');
+                        // If link is in dropdown, show parent dropdown
+                        const dropdown = link.closest('.dropdown-content');
+                        if (dropdown) {
+                            dropdown.style.display = 'block';
+                        }
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Sidebar fetch failed:', error);
+                console.error('Error details:', error.message);
+                // Show error in sidebar container for debugging
+                document.getElementById('sidebar-container').innerHTML = `
+                    <div style="color: red; padding: 20px;">
+                        <h3>Sidebar Error</h3>
+                        <p>Failed to load sidebar: ${error.message}</p>
+                        <p>Check console for details</p>
+                    </div>
+                `;
             });
 
-            // Close dropdowns when clicking outside
-            document.addEventListener('click', function(e) {
-                if (!e.target.closest('.dropdown')) {
-                    document.querySelectorAll('.dropdown-content').forEach(content => {
-                        content.style.display = 'none';
-                    });
+        // Dashboard Manager Class
+        class DashboardManager {
+            constructor() {
+                this.statsCache = null;
+                this.overviewCache = null;
+                this.lastUpdate = null;
+                this.refreshInterval = 30000;
+                this.init();
+            }
+
+            async init() {
+                await this.loadDashboardStats();
+                await this.loadSystemOverview();
+                this.setupAutoRefresh();
+                this.setupEventListeners();
+            }
+
+            async loadDashboardStats() {
+                try {
+                    const response = await fetch('/api/get_enhanced_dashboard_stats');
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.statsCache = data.stats;
+                        this.lastUpdate = new Date();
+                        this.updateDashboardUI(data.stats);
+                        console.log('Dashboard stats loaded successfully');
+                    } else {
+                        console.error('Failed to load dashboard stats:', data.message);
+                        this.showError('Failed to load dashboard statistics');
+                    }
+                } catch (error) {
+                    console.error('Error loading dashboard stats:', error);
+                    this.showError('Network error loading dashboard');
                 }
-            });
+            }
 
-            // Handle active state
-            const currentPath = window.location.pathname;
-            document.querySelectorAll('.nav-items a').forEach(link => {
-                const linkPath = link.getAttribute('href');
-                if (currentPath.includes(linkPath) && linkPath !== '#') {
-                    link.classList.add('active');
-                    // If link is in dropdown, show parent dropdown
-                    const dropdown = link.closest('.dropdown-content');
-                    if (dropdown) {
-                        dropdown.style.display = 'block';
+            async loadSystemOverview() {
+                try {
+                    const response = await fetch('/api/get_active_system_overview');
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.overviewCache = data.overview;
+                        this.updateSystemOverviewUI(data.overview);
+                        console.log('System overview loaded successfully');
+                    } else {
+                        console.error('Failed to load system overview:', data.message);
+                        this.showError('Failed to load system overview');
+                    }
+                } catch (error) {
+                    console.error('Error loading system overview:', error);
+                    this.showError('Network error loading system overview');
+                }
+            }
+
+            updateDashboardUI(stats) {
+                // Update main cards
+                this.updateStatCard('.stat-card.students .number', stats.total_students);
+                this.updateStatCard('.stat-card.faculty .number', stats.total_faculty);
+                
+                // Get existing programs from backend
+                const existingPrograms = stats.existing_programs || {};
+                
+                // Show/hide program cards based on what exists
+                this.toggleProgramCard('.stat-card.cs-students', 'CS', existingPrograms, stats.cs_students);
+                this.toggleProgramCard('.stat-card.it-students', 'IT', existingPrograms, stats.it_students);
+                this.toggleProgramCard('.stat-card.act-students', 'ACT', existingPrograms, stats.act_students);
+            }
+
+            toggleProgramCard(selector, programCode, existingPrograms, count) {
+                const card = document.querySelector(selector);
+                if (card) {
+                    if (existingPrograms[programCode]) {
+                        // Program exists - show the card and update count
+                        card.style.display = 'block';
+                        this.updateStatCard(`${selector} .number`, count);
+                        
+                        // Update the program name in case it's different
+                        const title = card.querySelector('h4');
+                        if (title) {
+                            title.textContent = `${existingPrograms[programCode]} Students`;
+                        }
+                    } else {
+                        // Program doesn't exist - hide the card
+                        card.style.display = 'none';
                     }
                 }
-            });
-        })
-        .catch(error => {
-            console.error('Sidebar fetch failed:', error);
-            console.error('Error details:', error.message);
-            // Show error in sidebar container for debugging
-            document.getElementById('sidebar-container').innerHTML = `
-                <div style="color: red; padding: 20px;">
-                    <h3>Sidebar Error</h3>
-                    <p>Failed to load sidebar: ${error.message}</p>
-                    <p>Check console for details</p>
-                </div>
+            }
+
+           updateSystemOverviewUI(overview) {
+    console.log('Updating system overview with:', overview);
+    
+    // Update summary cards
+    this.updateOverviewElement('#active-semester', overview.active_semester);
+    this.updateOverviewElement('#total-sections', overview.total_sections);
+    this.updateOverviewElement('#total-subjects', overview.total_subjects);
+    this.updateOverviewElement('#total-units', `${overview.total_units} total units`);
+    
+    // Update active year badge with program info
+    const activeYearBadge = document.querySelector('.active-year-badge span');
+    if (activeYearBadge && overview.active_academic_year) {
+        // Get active programs from the overview data
+        const activePrograms = overview.active_curricula.map(c => c.program_name);
+        const uniquePrograms = [...new Set(activePrograms)]; // Remove duplicates
+        const programsText = uniquePrograms.join(', ');
+        
+        activeYearBadge.textContent = `Academic Year: ${overview.active_academic_year} (${programsText})`;
+        console.log('Updated active year badge:', overview.active_academic_year, 'Programs:', programsText);
+    } else {
+        console.warn('Active year badge element not found');
+    }
+    
+    // Update detailed breakdown table
+    this.updateDetailedBreakdown(overview.detailed_breakdown, overview.total_subjects, overview.total_units);
+    
+    // Add visual indicators for active/inactive state
+    this.updateOverviewStatus(overview.has_active_period);
+    
+    // Debug: Log what we found
+    console.log('Active curricula:', overview.active_curricula);
+    console.log('Detailed breakdown count:', overview.detailed_breakdown ? overview.detailed_breakdown.length : 0);
+}
+
+           updateDetailedBreakdown(breakdown, totalSubjects, totalUnits) {
+    const tableBody = document.getElementById('breakdown-table-body');
+    const tableContainer = document.getElementById('breakdown-table');
+    const totalSubjectsElem = document.getElementById('breakdown-total-subjects');
+    const totalUnitsElem = document.getElementById('breakdown-total-units');
+    
+    console.log('Updating breakdown table with:', breakdown);
+    
+    if (breakdown && breakdown.length > 0) {
+        // Show table and populate data
+        tableContainer.style.display = 'block';
+        
+        tableBody.innerHTML = breakdown.map(section => {
+            console.log('Processing section:', section);
+            return `
+                <tr>
+                    <td>${section.program}</td>
+                    <td>${section.curriculum} (${section.curriculum_year})</td>
+                    <td>${section.semester}</td>
+                    <td>${section.year_level}</td>
+                    <td>${section.section_name}</td>
+                    <td>${section.subject_count}</td>
+                    <td>${section.section_units}</td>
+                </tr>
             `;
-        });
- // Add this JavaScript to your AdminDB.html file or create a separate dashboard.js file
-
-class DashboardManager {
-    constructor() {
-        this.statsCache = null;
-        this.lastUpdate = null;
-        this.refreshInterval = 30000; // 30 seconds
-        this.init();
-    }
-
-    init() {
-        this.loadDashboardStats();
-        this.setupAutoRefresh();
-        this.setupEventListeners();
-    }
-
-    async loadDashboardStats() {
-        try {
-            const response = await fetch('/api/get_enhanced_dashboard_stats');
-            const data = await response.json();
-
-            if (data.success) {
-                this.statsCache = data.stats;
-                this.lastUpdate = new Date();
-                this.updateDashboardUI(data.stats);
-                console.log('Dashboard stats loaded successfully');
-            } else {
-                console.error('Failed to load dashboard stats:', data.message);
-                this.showError('Failed to load dashboard statistics');
-            }
-        } catch (error) {
-            console.error('Error loading dashboard stats:', error);
-            this.showError('Network error loading dashboard');
-        }
-    }
-
-    updateDashboardUI(stats) {
-        // Update the main stat cards (matching your HTML structure)
-        this.updateStatCard('.stat-card.students .number', stats.total_students);
-        this.updateStatCard('.stat-card.faculty .number', stats.total_faculty);
-        this.updateStatCard('.stat-card.cs-students .number', stats.cs_students);
-        this.updateStatCard('.stat-card.it-students .number', stats.it_students);
-        this.updateStatCard('.stat-card.act-students .number', stats.act_students);
-
-        // Update course breakdown if container exists
-        if (document.getElementById('course-breakdown')) {
-            this.updateCourseBreakdown(stats.course_breakdown);
-        }
-
-        // Update faculty distribution if container exists
-        if (document.getElementById('faculty-distribution')) {
-            this.updateFacultyDistribution(stats.department_breakdown);
-        }
-
-        // Update attendance summary if container exists
-        if (document.getElementById('attendance-summary')) {
-            this.updateAttendanceSummary(stats.attendance);
-        }
-
-        // Update recent activity if container exists
-        if (document.getElementById('recent-activity')) {
-            this.updateRecentActivity(stats.recent_activity);
-        }
-
-        // Update last refresh time
-        this.updateLastRefreshTime();
-    }
-
-    updateStatCard(selector, value) {
-        const element = document.querySelector(selector);
-        if (element) {
-            // Animate number change
-            this.animateNumber(element, parseInt(element.textContent) || 0, value);
-        }
-    }
-
-    animateNumber(element, start, end) {
-        const duration = 1000;
-        const increment = (end - start) / (duration / 16);
-        let current = start;
-
-        const timer = setInterval(() => {
-            current += increment;
-            if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
-                current = end;
-                clearInterval(timer);
-            }
-            element.textContent = Math.round(current);
-        }, 16);
-    }
-
-    updateCourseBreakdown(courseData) {
-        const container = document.getElementById('course-breakdown');
-        if (!container || !courseData) return;
-
-        const html = `
-            <div class="breakdown-header">
-                <h4>Course Distribution</h4>
-            </div>
-            <div class="breakdown-list">
-                ${courseData.map(course => `
-                    <div class="breakdown-item">
-                        <div class="breakdown-info">
-                            <span class="breakdown-label">${course.course}</span>
-                            <span class="breakdown-count">${course.count} students</span>
-                        </div>
-                        <div class="breakdown-bar">
-                            <div class="breakdown-fill" style="width: ${course.percentage}%"></div>
-                        </div>
-                        <span class="breakdown-percentage">${course.percentage}%</span>
-                    </div>
-                `).join('')}
-            </div>
+        }).join('');
+        
+        // Update totals
+        if (totalSubjectsElem) totalSubjectsElem.textContent = totalSubjects;
+        if (totalUnitsElem) totalUnitsElem.textContent = totalUnits;
+        
+        console.log(`Table updated with ${breakdown.length} rows`);
+    } else {
+        // Hide table if no data
+        tableContainer.style.display = 'none';
+        
+        // Show empty state in table
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align: center; color: #666; padding: 20px;">
+                    No active sections found for the current academic year.
+                </td>
+            </tr>
         `;
-        container.innerHTML = html;
-    }
-
-    updateFacultyDistribution(departmentData) {
-        const container = document.getElementById('faculty-distribution');
-        if (!container || !departmentData) return;
-
-        const html = `
-            <div class="breakdown-header">
-                <h4>Faculty by Department</h4>
-            </div>
-            <div class="breakdown-list">
-                ${departmentData.map(dept => `
-                    <div class="breakdown-item">
-                        <div class="breakdown-info">
-                            <span class="breakdown-label">${dept.department}</span>
-                            <span class="breakdown-count">${dept.count} faculty</span>
-                        </div>
-                        <div class="breakdown-bar">
-                            <div class="breakdown-fill" style="width: ${dept.percentage}%"></div>
-                        </div>
-                        <span class="breakdown-percentage">${dept.percentage}%</span>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-        container.innerHTML = html;
-    }
-
-    updateAttendanceSummary(attendanceData) {
-        const container = document.getElementById('attendance-summary');
-        if (!container || !attendanceData) return;
-
-        const html = `
-            <div class="summary-header">
-                <h4>Attendance Summary</h4>
-            </div>
-            <div class="summary-stats">
-                <div class="summary-item">
-                    <span class="summary-label">Present Today</span>
-                    <span class="summary-value">${attendanceData.present_today}</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">Attendance Rate</span>
-                    <span class="summary-value">${this.statsCache?.summary?.attendance_rate_today || 0}%</span>
-                </div>
-                <div class="summary-item">
-                    <span class="summary-label">This Week</span>
-                    <span class="summary-value">${attendanceData.unique_students_week} unique</span>
-                </div>
-            </div>
-        `;
-        container.innerHTML = html;
-    }
-
-    updateRecentActivity(activityData) {
-        const container = document.getElementById('recent-activity');
-        if (!container || !activityData) return;
-
-        const html = `
-            <div class="activity-header">
-                <h4>Recent Activity (30 days)</h4>
-            </div>
-            <div class="activity-list">
-                <div class="activity-item">
-                    <i class="fas fa-user-graduate"></i>
-                    <span>${activityData.students_registered_30days} new students registered</span>
-                </div>
-                <div class="activity-item">
-                    <i class="fas fa-chalkboard-teacher"></i>
-                    <span>${activityData.faculty_registered_30days} new faculty registered</span>
-                </div>
-                <div class="activity-item">
-                    <i class="fas fa-envelope"></i>
-                    <span>${activityData.active_invites} active invitations</span>
-                </div>
-            </div>
-        `;
-        container.innerHTML = html;
-    }
-
-    updateLastRefreshTime() {
-        const element = document.getElementById('last-refresh');
-        if (element && this.lastUpdate) {
-            element.textContent = `Last updated: ${this.lastUpdate.toLocaleTimeString()}`;
-        }
-    }
-
-    setupAutoRefresh() {
-        setInterval(() => {
-            this.loadDashboardStats();
-        }, this.refreshInterval);
-    }
-
-    setupEventListeners() {
-        // Refresh button
-        const refreshBtn = document.getElementById('refresh-stats');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => {
-                this.loadDashboardStats();
-                this.showSuccess('Dashboard refreshed');
-            });
-        }
-
-        // Export buttons
-        const exportStudentsBtn = document.getElementById('export-students');
-        if (exportStudentsBtn) {
-            exportStudentsBtn.addEventListener('click', () => this.exportData('students'));
-        }
-
-        const exportFacultyBtn = document.getElementById('export-faculty');
-        if (exportFacultyBtn) {
-            exportFacultyBtn.addEventListener('click', () => this.exportData('faculty'));
-        }
-    }
-
-    async exportData(type) {
-        try {
-            const response = await fetch('/api/export_data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    type: type,
-                    filters: { status: 'active' }
-                })
-            });
-
-            const data = await response.json();
-            if (data.success) {
-                // Create and download CSV file
-                const blob = new Blob([data.csv_data], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = data.filename;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                
-                this.showSuccess(`${type} data exported successfully`);
-            } else {
-                this.showError(`Failed to export ${type} data`);
-            }
-        } catch (error) {
-            console.error('Export error:', error);
-            this.showError('Export failed');
-        }
-    }
-
-    showSuccess(message) {
-        this.showNotification(message, 'success');
-    }
-
-    showError(message) {
-        this.showNotification(message, 'error');
-    }
-
-    showNotification(message, type) {
-        // Create notification element
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.textContent = message;
-
-        // Add to page
-        document.body.appendChild(notification);
-
-        // Auto remove after 3 seconds
-        setTimeout(() => {
-            notification.remove();
-        }, 3000);
-    }
-
-    // Public method to get cached stats
-    getStats() {
-        return this.statsCache;
-    }
-
-    // Public method to force refresh
-    refresh() {
-        return this.loadDashboardStats();
+        console.log('No breakdown data to display');
     }
 }
 
-// Initialize dashboard manager when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    window.dashboardManager = new DashboardManager();
-});
-
-// Optional: Add keyboard shortcut for refresh (Ctrl+R or F5)
-document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey && e.key === 'r') || e.key === 'F5') {
-        e.preventDefault();
-        if (window.dashboardManager) {
-            window.dashboardManager.refresh();
-        }
+updateOverviewElement(selector, value) {
+    const element = document.querySelector(selector);
+    if (element) {
+        element.textContent = value;
+        console.log(`Updated ${selector} with: ${value}`);
+    } else {
+        console.warn(`Element not found: ${selector}`);
     }
-});       
-</script>
+}
+
+            updateOverviewStatus(hasActivePeriod) {
+                const container = document.querySelector('.system-overview-container');
+                if (container) {
+                    if (hasActivePeriod) {
+                        container.classList.remove('no-active-period');
+                        container.classList.add('has-active-period');
+                    } else {
+                        container.classList.remove('has-active-period');
+                        container.classList.add('no-active-period');
+                    }
+                }
+            }
+
+            updateStatCard(selector, value) {
+                const element = document.querySelector(selector);
+                if (element) {
+                    this.animateNumber(element, parseInt(element.textContent) || 0, value);
+                }
+            }
+
+            animateNumber(element, start, end) {
+                const duration = 1000;
+                const increment = (end - start) / (duration / 16);
+                let current = start;
+
+                const timer = setInterval(() => {
+                    current += increment;
+                    if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
+                        current = end;
+                        clearInterval(timer);
+                    }
+                    element.textContent = Math.round(current);
+                }, 16);
+            }
+
+            setupAutoRefresh() {
+                setInterval(() => {
+                    this.loadDashboardStats();
+                    this.loadSystemOverview();
+                }, this.refreshInterval);
+            }
+
+            refresh() {
+                this.loadDashboardStats();
+                this.loadSystemOverview();
+            }
+
+            setupEventListeners() {
+                // Add event listeners if needed
+            }
+
+            showError(message) {
+                console.error('Dashboard Error:', message);
+                // You can implement a proper notification system here
+            }
+        }
+
+        // Initialize dashboard manager when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            window.dashboardManager = new DashboardManager();
+        });
+
+        // Optional: Add keyboard shortcut for refresh (Ctrl+R or F5)
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey && e.key === 'r') || e.key === 'F5') {
+                e.preventDefault();
+                if (window.dashboardManager) {
+                    window.dashboardManager.refresh();
+                }
+            }
+        });       
+    </script>
 </body>
 </html>
