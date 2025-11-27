@@ -116,15 +116,18 @@
           <i class="fas fa-plus"></i> Add Academic Year
         </button>
       </div>
-      <table id="academicYearsTable">
-        <thead>
-          <tr>
+<table id="academicYearsTable">
+    <thead>
+        <tr>
             <th>Academic Year</th>
-            <th class="action-buttons">Actions</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        <!-- rows will be generated here -->
+    </tbody>
+</table>
     </div>
   </div>
   <!-- END Academic Year Management Page -->
@@ -165,31 +168,32 @@
   <!-- END Curriculum Management Page -->
 
   <!-- Semester Management Page -->
-  <div class="page-container" id="semesterManagementPage" style="display: none;">
-    <div class="header">
-      <h2><i class="fas fa-calendar"></i> Semester Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
-      <a href="#" id="backToAcademicYears" class="back-btn">
-        <i class="fas fa-arrow-left"></i> Back to Academic Years
-      </a>
-    </div>
-    <div class="semesters-table">
-      <div class="semester-header">
-        <h3>Available Semesters</h3>
-        <button id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
-          <i class="fas fa-plus"></i> Add Semester
-        </button>
-      </div>
-      <table id="semestersTable">
-        <thead>
-          <tr>
-            <th>Semester</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+<div class="page-container" id="semesterManagementPage" style="display: none;">
+  <div class="header">
+    <h2><i class="fas fa-calendar"></i> Semester Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
+    <a href="#" id="backToAcademicYears" class="back-btn">
+      <i class="fas fa-arrow-left"></i> Back to Academic Years
+    </a>
   </div>
+  <div class="semesters-table">
+    <div class="semester-header">
+      <h3>Available Semesters</h3>
+      <button id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
+        <i class="fas fa-plus"></i> Add Semester
+      </button>
+    </div>
+    <table id="semestersTable">
+      <thead>
+        <tr>
+          <th>Semester</th>
+          <th>Status</th>  
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
   <!-- END Semester Management Page -->
 
   <!-- Subject Management Page -->
@@ -262,11 +266,12 @@
   <!-- MODALS SECTION -->
  <!-- Switch Academic Year Modal -->
 <div class="modal" id="switchYearModal">
-    <div class="modal-content" style="width: 700px; max-width: 90%;">
+    <div class="modal-content" style="width: 800px; max-width: 95%;">
         <div class="modal-header">
             <h3><i class="fas fa-calendar-alt"></i> Switch Active Period</h3>
         </div>
         <div class="modal-body">
+            <!-- Program Selection -->
             <div class="form-group">
                 <label for="switch-program-select">Select Program *</label>
                 <select id="switch-program-select" onchange="loadAcademicYearsForSwitch()" required>
@@ -286,7 +291,19 @@
                 </div>
             </div>
 
-            <!-- Semesters Section - BELOW Academic Years -->
+            <!-- Curricula Section -->
+            <div id="curriculaList" style="margin-top: 20px; display: none;">
+                <div class="section-card" style="border: 2px solid #6f42c1; border-radius: 8px; padding: 15px; background: #f8f9fa;">
+                    <h4 style="color: #6f42c1; margin-bottom: 15px;">
+                        <i class="fas fa-graduation-cap"></i> Select Curriculum
+                    </h4>
+                    <div id="curriculaContainer" style="max-height: 300px; overflow-y: auto;">
+                        <!-- Curricula will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Semesters Section -->
             <div id="semestersList" style="margin-top: 20px; display: none;">
                 <div class="section-card" style="border: 2px solid #28a745; border-radius: 8px; padding: 15px; background: #f8f9fa;">
                     <h4 style="color: #28a745; margin-bottom: 15px;">
@@ -298,7 +315,19 @@
                 </div>
             </div>
 
-            <!-- Current Active Period - AT THE BOTTOM -->
+            <!-- Year Levels & Sections Section -->
+            <div id="yearLevelsList" style="margin-top: 20px; display: none;">
+                <div class="section-card" style="border: 2px solid #fd7e14; border-radius: 8px; padding: 15px; background: #f8f9fa;">
+                    <h4 style="color: #fd7e14; margin-bottom: 15px;">
+                        <i class="fas fa-users"></i> Year Levels & Sections
+                    </h4>
+                    <div id="yearLevelsContainer" style="max-height: 300px; overflow-y: auto;">
+                        <!-- Year levels and sections will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Active Period -->
             <div id="currentPeriodInfo" style="display: none; margin-top: 20px;">
                 <div class="section-card" style="border: 2px solid #17a2b8; border-radius: 8px; padding: 15px; background: #e8f5e9;">
                     <h4 style="color: #17a2b8; margin-bottom: 10px;">
@@ -379,33 +408,6 @@
     <tr>
       <th>Academic Year</th>
       <th class="action-btuttons">Actions</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
-    </div>
-  </div>
-
-  <!-- Semester Management Page -->
-  <div class="page-container" id="semesterManagementPage" style="display: none;">
-    <div class="header">
-      <h2><i class="fas fa-calendar"></i> Semester Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
-      <a href="#" id="backToAcademicYears" class="back-btn">
-        <i class="fas fa-arrow-left"></i> Back to Academic Years
-      </a>
-    </div>
-    <div class="semesters-table">
-     <div class="semester-header">
-  <h3>Available Semesters</h3>
-  <button id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
-    <i class="fas fa-plus"></i> Add Semester
-  </button>
-</div>
-     <table id="semestersTable">
-  <thead>
-    <tr>
-      <th>Semester</th>
-      <th>Actions</th>
     </tr>
   </thead>
   <tbody></tbody>
@@ -605,7 +607,7 @@
     </div>
   </div>
 
-  <!-- Edit Academic Year Modal - Make it editable -->
+<!-- Edit Academic Year Modal -->
 <div class="modal" id="editAcademicYearModal">
   <div class="modal-content" style="width: 500px; max-width: 90%;">
     <div class="modal-header">
@@ -616,6 +618,14 @@
         <label for="academic-year-edit">Academic Year *</label>
         <input type="text" id="academic-year-edit" placeholder="e.g., 2024-2025" pattern="\d{4}-\d{4}" title="Format: YYYY-YYYY" required>
         <small style="color: #666;">Format: YYYY-YYYY</small>
+      </div>
+      <!-- ADD THIS STATUS FIELD -->
+      <div class="form-group">
+        <label for="academic-year-status-edit">Status *</label>
+        <select id="academic-year-status-edit" required>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="hideEditAcademicYearModal()">Cancel</button>
@@ -766,6 +776,7 @@ let editingProgramId = null;
 let editingAcademicYearId = null;
 let editingSemesterId = null;
 let yearSectionsCache = {};
+let editingOriginalAcademicYear = ''; 
 
 console.log('Starting sidebar fetch...');
 
@@ -840,14 +851,9 @@ function loadPrograms() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Filter to show only active programs
-                const activePrograms = data.programs.filter(p => p.status === 'active');
-                displayPrograms(activePrograms);
                 
-                if (activePrograms.length === 0) {
-                    const tbody = document.querySelector('#programsTable tbody');
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #666;">No active programs found. Add a new program to get started.</td></tr>';
-                }
+                displayPrograms(data.programs);
+                
             } else {
                 showAlertModal('Error', 'Failed to load programs: ' + data.message, true);
             }
@@ -912,18 +918,25 @@ function hideSwitchYearModal() {
 
 
 function loadAcademicYearsForSwitch() {
-    const programId = document.getElementById('switch-program-select').value;
+    const programSelect = document.getElementById('switch-program-select');
+    if (!programSelect) return;
     
+    const programId = programSelect.value;
     if (!programId) return;
     
-    // Hide semester section when changing program
-    document.getElementById('semestersList').style.display = 'none';
+    // Safely hide sections
+    const semestersList = document.getElementById('semestersList');
+    const curriculumInfo = document.getElementById('curriculumInfo'); // This might be null
+    if (semestersList) semestersList.style.display = 'none';
+    if (curriculumInfo) curriculumInfo.style.display = 'none'; // Safe check
     
     fetch(`/api/get_academic_years_for_program?program_id=${programId}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
                 displayAcademicYearsForSwitch(data.academic_years, data.current_year, programId);
+                // Load curriculum information - THIS MIGHT BE THE PROBLEM
+                loadCurriculumInfo(programId);
             } else {
                 showAlertModal('Error', data.message, true);
             }
@@ -1110,58 +1123,17 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Fix the displayPrograms function to properly pass program data
-function displayPrograms(programs) {
-    const tbody = document.querySelector('#programsTable tbody');
-    if (!tbody) return;
 
-    tbody.innerHTML = programs.map(program => `
-        <tr>
-            <td>${program.program_id}</td>
-            <td>${program.program_name}</td>
-            <td>${program.department}</td>
-            <td>${program.total_subjects || 0}</td>
-            <td><span style="color: ${program.status === 'active' ? 'green' : 'red'};">${program.status === 'active' ? 'Active' : 'Inactive'}</span></td>
-            <td class="action-buttons">
-                <a href="#" class="btn btn-view view-program" 
-                   data-program-id="${program.program_id}" 
-                   data-program-name="${program.program_name}" 
-                   title="View">
-                    <i class="fas fa-eye"></i>
-                </a>
-                <button class="btn btn-edit" 
-                        onclick="editProgram('${program.program_id}')" 
-                        title="Edit">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn btn-danger" 
-                        onclick="deleteProgram('${program.program_id}', '${program.program_name}')" 
-                        title="Delete">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </td>
-        </tr>
-    `).join('');
-
-    // Fix event listeners to use correct data attributes
-    document.querySelectorAll('.view-program').forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.preventDefault();
-            const programId = this.getAttribute('data-program-id');
-            const programName = this.getAttribute('data-program-name');
-            console.log('Viewing program:', programId, programName);
-            currentProgramCode = programId;
-            currentProgramName = programName;
-            
-            document.getElementById('programsPage').style.display = 'none';
-            loadAcademicYearManagementPage(programId, programName);
-        });
-    });
-}
 
 // Fix loadAcademicYearManagementPage to properly update the header
 function loadAcademicYearManagementPage(programCode, programName) {
     const academicYearManagementPage = document.getElementById('academicYearManagementPage');
+    
+    if (!academicYearManagementPage) {
+        console.error('Academic Year Management Page element not found');
+        showAlertModal('Error', 'Academic Year Management page not found', true);
+        return;
+    }
     
     // Update the header with correct program name
     const headerElement = academicYearManagementPage.querySelector('.header h2');
@@ -1192,61 +1164,39 @@ function loadAcademicYearManagementPage(programCode, programName) {
 }
 
 function loadAcademicYears() {
-    fetch(`/api/get_academic_years?program_id=${currentProgramCode}`)
-        .then(response => response.json())
+    if (!currentProgramCode) {
+        console.error('No program code selected');
+        showAlertModal('Error', 'No program selected', true);
+        return;
+    }
+
+    console.log('Loading academic years for program:', currentProgramCode);
+    
+    // USE THE COMPREHENSIVE ENDPOINT INSTEAD
+    fetch(`/api/get_academic_years_for_program?program_id=${currentProgramCode}`)
+        .then(response => {
+            console.log('Response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Academic years response:', data);
             if (data.success) {
-                displayAcademicYears(data.academic_years);
+                console.log('Number of academic years:', data.academic_years?.length);
+                displayAcademicYears(data.academic_years || []);
             } else {
-                showAlertModal('Error', 'Failed to load academic years: ' + data.message, true);
+                console.error('API returned error:', data.message);
+                showAlertModal('Error', 'Failed to load academic years: ' + (data.message || 'Unknown error'), true);
+                displayAcademicYears([]);
             }
         })
         .catch(error => {
             console.error('Error loading academic years:', error);
-            showAlertModal('Error', 'Failed to load academic years', true);
+            showAlertModal('Error', 'Failed to load academic years: ' + error.message, true);
+            displayAcademicYears([]);
         });
-}
-
-function displayAcademicYears(academicYears) {
-    const tbody = document.querySelector('#academicYearsTable tbody');
-    if (!tbody) return;
-
-    const activeYears = academicYears.filter(y => y.status === 'active');
-
-    tbody.innerHTML = activeYears.map(year => `
-        <tr>
-            <td>${year.academic_year}</td>
-            <td class="action-buttons">
-                <a href="#" class="btn btn-view view-academic-year"
-                   data-academic-year="${year.academic_year}"
-                   title="View Curriculum">
-                    <i class="fas fa-book-open"></i> View Curriculum
-                </a>
-                <button class="btn btn-edit"
-                        onclick="editAcademicYear('${year.academic_year}')"
-                        title="Edit">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn btn-danger"
-                        onclick="deleteAcademicYear('${year.academic_year}')"
-                        title="Delete">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </td>
-        </tr>
-    `).join('');
-
-    // Click on academic year → go to CURRICULUM page
-    document.querySelectorAll('.view-academic-year').forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.preventDefault();
-            const academicYear = this.getAttribute('data-academic-year');
-            currentAcademicYear = academicYear;
-
-            document.getElementById('academicYearManagementPage').style.display = 'none';
-            loadCurriculumManagementPage(currentProgramCode, currentProgramName, academicYear);
-        });
-    });
 }
 
 function showAddAcademicYearModal() {
@@ -1256,10 +1206,12 @@ function showAddAcademicYearModal() {
     
     if (!modal) {
         console.error('Modal with ID addAcademicYearModal not found');
+        showAlertModal('Error', 'Add Academic Year modal not found', true);
         return;
     }
     if (!form) {
         console.error('Form with ID addAcademicYearForm not found');
+        showAlertModal('Error', 'Add Academic Year form not found', true);
         return;
     }
     
@@ -1306,7 +1258,7 @@ function handleAddAcademicYear() {
 
     if (!/^\d{4}-\d{4}$/.test(academicYear)) {
         console.error('Invalid academic year format:', academicYear);
-        showAlertModal('Invalid Format', 'Academic year must be in YYYY-YYYY format', true);
+        showAlertModal('Invalid Format', 'Academic year must be in YYYY-YYYY format (e.g., 2024-2025)', true);
         return;
     }
 
@@ -1343,7 +1295,7 @@ function handleAddAcademicYear() {
         if (data.success) {
             showAlertModal('Success', 'Academic year added successfully!', false);
             hideAddAcademicYearModal();
-            loadAcademicYears();
+            loadAcademicYears(); // Reload the list
         } else {
             showAlertModal('Error', data.message || 'Failed to add academic year', true);
         }
@@ -1355,32 +1307,52 @@ function handleAddAcademicYear() {
 }
 
 function showEditAcademicYearModal(academicYear) {
-    editingAcademicYearId = academicYear;
+    editingOriginalAcademicYear = academicYear;
     const modal = document.getElementById('editAcademicYearModal');
     const form = document.getElementById('editAcademicYearForm');
     
-    if (!modal || !form) return;
+    if (!modal || !form) {
+        console.error('Edit academic year modal or form not found');
+        return;
+    }
     
     form.reset();
     
-    fetch(`/api/get_academic_years?program_id=${currentProgramCode}`)
-        .then(response => response.json())
+    console.log('Loading academic year for editing:', academicYear);
+    
+    // Use the endpoint that gets ALL academic years
+    fetch(`/api/get_academic_years_for_program?program_id=${currentProgramCode}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Edit modal - Full API response:', data);
             if (data.success) {
+                // Find the year by academic_year field
                 const year = data.academic_years.find(y => y.academic_year === academicYear);
+                console.log('Found year for editing:', year);
+                
                 if (year) {
                     document.getElementById('academic-year-edit').value = year.academic_year;
+                    // Use the status field - it should now be available
                     document.getElementById('academic-year-status-edit').value = year.status;
+                    
+                    modal.classList.add('active');
+                    modal.style.display = 'flex';
+                } else {
+                    console.error('Academic year not found. Available years:', data.academic_years.map(y => y.academic_year));
+                    showAlertModal('Error', `Academic year "${academicYear}" not found in the system.`, true);
                 }
-                modal.classList.add('active');
-                modal.style.display = 'flex';
             } else {
-                showAlertModal('Error', 'Failed to load academic year data', true);
+                showAlertModal('Error', 'Failed to load academic year data: ' + (data.message || 'Unknown error'), true);
             }
         })
         .catch(error => {
             console.error('Error fetching academic year:', error);
-            showAlertModal('Error', 'Failed to load academic year data', true);
+            showAlertModal('Error', 'Failed to load academic year data: ' + error.message, true);
         });
 }
 
@@ -1391,39 +1363,67 @@ function hideEditAcademicYearModal() {
         modal.style.display = 'none';
     }
     editingAcademicYearId = null;
+    editingOriginalAcademicYear = null; // Add this line to reset it
 }
 
 function handleEditAcademicYear() {
-    const academicYear = document.getElementById('academic-year-edit')?.value;
-    const status = document.getElementById('academic-year-status-edit')?.value;
+    const academicYearInput = document.getElementById('academic-year-edit');
+    const statusInput = document.getElementById('academic-year-status-edit');
     
-    if (!academicYear || !status) {
+    const academicYear = academicYearInput?.value?.trim();
+    const status = statusInput?.value;
+    
+    if (!academicYearInput || !academicYear || !statusInput || !status) {
         showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
         return;
     }
+
+    if (!/^\d{4}-\d{4}$/.test(academicYear)) {
+        showAlertModal('Invalid Format', 'Academic year must be in YYYY-YYYY format (e.g., 2024-2025)', true);
+        return;
+    }
+
+    // ADD THIS VALIDATION
+    if (!editingOriginalAcademicYear) {
+        showAlertModal('Error', 'Cannot determine which academic year to update. Please try again.', true);
+        return;
+    }
+
+    console.log('Updating academic year:', {
+        program_id: currentProgramCode,
+        original_academic_year: editingOriginalAcademicYear,
+        new_academic_year: academicYear,
+        status: status
+    });
 
     fetch('/api/update_academic_year', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             program_id: currentProgramCode,
-            academic_year: academicYear,
+            original_academic_year: editingOriginalAcademicYear, // Send original value
+            academic_year: academicYear, // Send new value
             status: status
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             showAlertModal('Success', 'Academic year updated successfully!', false);
             hideEditAcademicYearModal();
             loadAcademicYears();
         } else {
-            showAlertModal('Error', data.message, true);
+            showAlertModal('Error', data.message || 'Failed to update academic year', true);
         }
     })
     .catch(error => {
         console.error('Error updating academic year:', error);
-        showAlertModal('Error', 'Failed to update academic year', true);
+        showAlertModal('Error', 'Failed to update academic year: ' + error.message, true);
     });
 }
 
@@ -1434,31 +1434,38 @@ function editAcademicYear(academicYear) {
 function deleteAcademicYear(academicYear) {
     showConfirmModal(
         'Delete Academic Year',
-        `Are you sure you want to delete academic year ${academicYear}? This action cannot be undone.`,
+        `Are you sure you want to permanently delete academic year "${academicYear}"? This action cannot be undone.`,
         function() {
             fetch('/api/delete_academic_year', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ program_id: currentProgramCode, academic_year: academicYear })
+                body: JSON.stringify({ 
+                    program_id: currentProgramCode, 
+                    academic_year: academicYear 
+                })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
                     showAlertModal('Deleted', 'Academic year deleted successfully!', false);
                     loadAcademicYears();
                 } else {
-                    showAlertModal('Error', data.message, true);
+                    showAlertModal('Error', data.message || 'Failed to delete academic year', true);
                 }
             })
             .catch(error => {
                 console.error('Error deleting academic year:', error);
-                showAlertModal('Error', 'Failed to delete academic year', true);
+                showAlertModal('Error', 'Failed to delete academic year: ' + error.message, true);
             });
         }
     );
 }
-// DIAGNOSTIC AND FIX FOR BLANK CURRICULUM PAGE
-// Add this temporarily to diagnose the issue
+
 
 function loadCurriculumManagementPage(programCode, programName, academicYear) {
     console.log('=== CURRICULUM PAGE DIAGNOSTIC ===');
@@ -1572,60 +1579,67 @@ function loadCurriculumManagementPage(programCode, programName, academicYear) {
 function displayCurricula(curricula) {
     console.log('=== DISPLAY CURRICULA DIAGNOSTIC ===');
     console.log('1. Received curricula:', curricula);
-    console.log('2. Curricula count:', curricula.length);
     
     const tbody = document.querySelector('#batchesTable tbody');
-    console.log('3. Tbody element found:', tbody !== null);
-    
-    if (!tbody) {
-        console.error('ERROR: tbody not found!');
-        alert('Error: Table body element not found. Check HTML structure.');
+    if (!tbody) return;
+
+    // Show ALL curricula (both active and inactive) - just like academic years
+    const allCurricula = curricula;
+
+    if (allCurricula.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align: center; color: #666; padding: 40px;">
+                    <i class="fas fa-book" style="font-size: 48px; margin-bottom: 16px; display: block;"></i>
+                    No curricula found for this program.<br>
+                    <small>Click "Add Curriculum" to create the first one.</small>
+                </td>
+            </tr>
+        `;
         return;
     }
-    
-    const active = curricula.filter(c => c.status === 'active');
-    console.log('4. Active curricula count:', active.length);
 
-    if (active.length === 0) {
-        console.log('5. No curricula - showing empty message');
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:40px;">No active curricula yet.<br>Click "Add Curriculum" to create one.</td></tr>';
+    tbody.innerHTML = allCurricula.map((c, index) => {
+        const status = c.status || 'active';
+        const statusClass = status === 'active' ? 'status-active' : 'status-inactive';
+        const statusIcon = status === 'active' ? 'fa-check-circle' : 'fa-times-circle';
         
-        // Force table to be visible
-        const table = document.getElementById('batchesTable');
-        if (table) {
-            table.style.display = 'table';
-            table.style.visibility = 'visible';
-            console.log('6. Table forced visible');
-        }
-        return;
-    }
-
-    console.log('5. Rendering', active.length, 'curricula rows');
-    tbody.innerHTML = active.map((c, index) => {
-        console.log(`   - Row ${index}:`, c.curriculum_name);
         return `
         <tr>
             <td>
-                <a href="#" class="view-curriculum-link" data-curriculum-id="${c.curriculum_id}">
+                <div class="curriculum-name">
                     <strong>${c.curriculum_name}</strong>
-                </a>
-                ${c.description ? `<br><small style="color:#666;">${c.description}</small>` : ''}
+                    ${c.description ? `<br><small style="color:#666;">${c.description}</small>` : ''}
+                </div>
             </td>
-            <td><span style="padding: 4px 8px; background: #e3f2fd; border-radius: 4px; font-weight: 600;">${c.curriculum_year}</span></td>
-            <td>${c.student_count || 0}</td>
-            <td>${c.section_count || 0}</td>
-            <td><span style="color:${c.status==='active'?'green':'red'}">${c.status.charAt(0).toUpperCase()+c.status.slice(1)}</span></td>
+            <td>${c.curriculum_year}</td>
+            <td class="text-center">${c.student_count || 0}</td>
+            <td class="text-center">${c.section_count || 0}</td>
+            <td class="text-center">
+                <span class="status-badge ${statusClass}">
+                    <i class="fas ${statusIcon}"></i>
+                    ${status.toUpperCase()}
+                </span>
+            </td>
             <td class="action-buttons">
-                <!-- ADD THIS VIEW BUTTON -->
                 <button class="btn btn-view view-curriculum-btn" 
+                        data-program-id="${currentProgramCode}"
+                        data-program-name="${currentProgramName}"
+                        data-academic-year="${currentAcademicYear}"
                         data-curriculum-id="${c.curriculum_id}"
+                        data-curriculum-name="${c.curriculum_name}"
+                        data-curriculum-year="${c.curriculum_year}"
                         title="View Semesters">
-                    <i class="fas fa-eye"></i>
+                    <i class="fas fa-eye"></i> View
                 </button>
-                <button class="btn btn-edit" onclick="editCurriculum('${c.curriculum_id}')" title="Edit">
+                <button class="btn btn-edit" 
+                        onclick="editCurriculum('${c.curriculum_id}')" 
+                        title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button class="btn btn-danger" onclick="deleteCurriculum('${c.curriculum_id}', '${c.curriculum_name.replace(/'/g, "\\'")}')" title="Delete">
+                <button class="btn btn-danger" 
+                        onclick="deleteCurriculum('${c.curriculum_id}', '${c.curriculum_name.replace(/'/g, "\\'")}')" 
+                        title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
             </td>
@@ -1633,42 +1647,41 @@ function displayCurricula(curricula) {
         `;
     }).join('');
     
-    console.log('6. HTML rendered to tbody');
-    
-    // Attach click handlers to curriculum name links
-    const nameLinks = document.querySelectorAll('.view-curriculum-link');
-    console.log('7. Found', nameLinks.length, 'curriculum name links');
-    
-    nameLinks.forEach((link, index) => {
-        link.addEventListener('click', e => {
-            e.preventDefault();
-            const curriculumId = link.dataset.curriculumId;
-            console.log(`Curriculum name ${index} clicked:`, curriculumId);
-            
-            window.currentCurriculumId = curriculumId;
-            document.getElementById('batchManagementPage').style.display = 'none';
-            loadSemesterManagementPage(currentProgramCode, currentProgramName, currentAcademicYear);
-        });
-    });
-    
-    // ADD THIS: Attach click handlers to VIEW BUTTONS
+    // Attach click handlers to VIEW BUTTONS
     const viewButtons = document.querySelectorAll('.view-curriculum-btn');
-    console.log('8. Found', viewButtons.length, 'view buttons');
+    console.log('Found', viewButtons.length, 'view buttons');
     
-    viewButtons.forEach((button, index) => {
-        button.addEventListener('click', e => {
-            e.preventDefault();
-            const curriculumId = button.dataset.curriculumId;
-            console.log(`View button ${index} clicked:`, curriculumId);
-            
-            window.currentCurriculumId = curriculumId;
-            document.getElementById('batchManagementPage').style.display = 'none';
-            loadSemesterManagementPage(currentProgramCode, currentProgramName, currentAcademicYear);
+    // In displayCurricula function - update the event listener:
+viewButtons.forEach((button, index) => {
+    button.addEventListener('click', e => {
+        e.preventDefault();
+        
+        // Get ALL the curriculum data from data attributes
+        const programId = button.dataset.programId;
+        const programName = button.dataset.programName;
+        const academicYear = button.dataset.academicYear;
+        const curriculumId = button.dataset.curriculumId;
+        const curriculumName = button.dataset.curriculumName;  // Make sure this is retrieved
+        const curriculumYear = button.dataset.curriculumYear;
+        
+        console.log('Viewing curriculum:', {
+            programId, programName, academicYear,
+            curriculumId, curriculumName, curriculumYear
         });
+        
+        // Store ALL the context
+        window.currentProgramCode = programId;
+        window.currentProgramName = programName;
+        window.currentAcademicYear = academicYear;
+        window.currentCurriculumId = curriculumId;
+        window.currentCurriculumName = curriculumName;  // Make sure this is stored
+        window.currentCurriculumYear = curriculumYear;
+        
+        // Navigate to semester page WITH CURRICULUM CONTEXT
+        document.getElementById('batchManagementPage').style.display = 'none';
+        loadSemesterManagementPage(programId, programName, academicYear, curriculumId, curriculumName);
     });
-    
-    console.log('=== END DISPLAY CURRICULA ===');
-}
+});}
 
 // Keep loadCurricula with added diagnostics
 function loadCurricula() {
@@ -1709,22 +1722,28 @@ function loadCurricula() {
         });
 }
 
-// 4. Load Semester Management Page (from curriculum)
-function loadSemesterManagementPage(programCode, programName, academicYear) {
+function loadSemesterManagementPage(programCode, programName, academicYear, curriculumId, curriculumName) {
     const semesterManagementPage = document.getElementById('semesterManagementPage');
     
-    // Update header
+    // Store ALL context
+    window.currentProgramCode = programCode;
+    window.currentProgramName = programName;
+    window.currentAcademicYear = academicYear;
+    window.currentCurriculumId = curriculumId;
+    window.currentCurriculumName = curriculumName;
+    
+    // Update header to show CURRICULUM context
     const headerElement = semesterManagementPage.querySelector('.header h2');
     if (headerElement) {
-        headerElement.innerHTML = `<i class="fas fa-calendar"></i> Semester Management - ${programName} (${academicYear})`;
+        headerElement.innerHTML = `<i class="fas fa-calendar"></i> Semester Management - ${programName} (${academicYear}) - ${curriculumName}`;
     }
     
     semesterManagementPage.style.display = 'block';
-    loadSemesters();
     
-    // Back button → go back to CURRICULUM page (not academic years)
+    // Update back button text to "Back to Curriculum"
     const backBtn = document.getElementById('backToAcademicYears');
     if (backBtn) {
+        backBtn.innerHTML = '<i class="fas fa-arrow-left"></i> Back to Curriculum';
         backBtn.removeEventListener('click', null);
         backBtn.addEventListener('click', function(e) {
             e.preventDefault();
@@ -1732,6 +1751,9 @@ function loadSemesterManagementPage(programCode, programName, academicYear) {
             document.getElementById('batchManagementPage').style.display = 'block'; // Go back to curriculum
         });
     }
+    
+    // Load semesters FOR THIS SPECIFIC CURRICULUM
+    loadSemestersForCurriculum(programCode, academicYear, curriculumId);
 }
 
 // 5. Keep existing loadCurricula function
@@ -1941,52 +1963,100 @@ function handleUpdateCurriculum(curriculumId) {
 }
 
 function deleteCurriculum(curriculumId, name) {
-    showConfirmModal('Delete Curriculum', `Delete "${name}"? This cannot be undone.`, () => {
-        fetch('/api/delete_curriculum', { 
-            method: 'POST', 
-            headers: {'Content-Type':'application/json'}, 
-            body: JSON.stringify({curriculum_id: curriculumId}) 
-        })
-        .then(r => r.json())
-        .then(d => {
-            if (d.success) { 
-                showAlertModal('Deleted', 'Curriculum removed', false); 
-                loadCurricula(); 
-            }
-            else showAlertModal('Error', d.message || 'Delete failed', true);
-        });
-    });
+    showConfirmModal(
+        'Delete Curriculum', 
+        `Are you sure you want to permanently delete curriculum "${name}"? This action cannot be undone.`,
+        function() {
+            fetch('/api/delete_curriculum', { 
+                method: 'POST', 
+                headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({curriculum_id: curriculumId}) 
+            })
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error(`HTTP error! status: ${r.status}`);
+                }
+                return r.json();
+            })
+            .then(d => {
+                if (d.success) { 
+                    showAlertModal('Deleted', 'Curriculum deleted permanently!', false); 
+                    loadCurricula(); // Reload to show updated list
+                } else {
+                    showAlertModal('Error', d.message || 'Failed to delete curriculum', true);
+                }
+            })
+            .catch(err => {
+                console.error('Error deleting curriculum:', err);
+                showAlertModal('Error', 'Failed to delete curriculum: ' + err.message, true);
+            });
+        }
+    );
 }
 
-// Update the displayAcademicYears function to call curriculum page instead
 function displayAcademicYears(academicYears) {
     const tbody = document.querySelector('#academicYearsTable tbody');
     if (!tbody) return;
 
-    const activeYears = academicYears.filter(y => y.status === 'active');
+    console.log('Displaying ALL academic years with status:', academicYears);
 
-    tbody.innerHTML = activeYears.map(year => `
+    if (academicYears.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="3" style="text-align: center; color: #666; padding: 40px;">
+                    <i class="fas fa-calendar-times" style="font-size: 48px; margin-bottom: 16px; display: block;"></i>
+                    No academic years found for this program.<br>
+                    <small>Click "Add Academic Year" to create the first one.</small>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = academicYears.map(year => {
+        const academicYear = year.academic_year || 'Unknown';
+        const status = year.status;
+        const statusClass = status === 'active' ? 'status-active' : 'status-inactive';
+        const statusIcon = status === 'active' ? 'fa-check-circle' : 'fa-times-circle';
+        const isCurrentBadge = year.is_current ? '<span class="badge-current">Current</span>' : '';
+        
+        return `
         <tr>
-            <td>${year.academic_year}</td>
+            <td>
+                <div class="academic-year-display">
+                    <span class="academic-year-text">${academicYear}</span>
+                    ${isCurrentBadge}
+                </div>
+            </td>
+            <td>
+                <span class="status-badge ${statusClass}">
+                    <i class="fas ${statusIcon}"></i>
+                    ${status.toUpperCase()}
+                </span>
+            </td>
             <td class="action-buttons">
                 <a href="#" class="btn btn-view view-academic-year"
-                   data-academic-year="${year.academic_year}"
+                   data-academic-year="${academicYear}"
                    title="View Curricula">
                     <i class="fas fa-book-open"></i> View Curricula
                 </a>
                 <button class="btn btn-edit"
-                        onclick="editAcademicYear('${year.academic_year}')"
+                        onclick="editAcademicYear('${academicYear}')"
                         title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
                 <button class="btn btn-danger"
-                        onclick="deleteAcademicYear('${year.academic_year}')"
+                        onclick="deleteAcademicYear('${academicYear}')"
                         title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
             </td>
         </tr>
-    `).join('');
+        `;
+    }).join('');
+
+    // Store academic years data globally for reference
+    window.academicYearsData = academicYears;
 
     // Update event listeners to go to CURRICULUM page
     document.querySelectorAll('.view-academic-year').forEach(button => {
@@ -2000,95 +2070,136 @@ function displayAcademicYears(academicYears) {
         });
     });
 }
-
-// Semester Management Functions
-function loadSemesterManagementPage(programCode, programName, academicYear) {
-    const semesterManagementPage = document.getElementById('semesterManagementPage');
+function loadSemestersForCurriculum(programCode, academicYear, curriculumId) {
+    console.log('=== LOAD SEMESTERS DEBUG ===');
+    console.log('Parameters:', { programCode, academicYear, curriculumId });
     
-    // Update header properly
-    const headerElement = semesterManagementPage.querySelector('.header h2');
-    if (headerElement) {
-        headerElement.innerHTML = `<i class="fas fa-calendar"></i> Semester Management - ${programName} (${academicYear})`;
-    }
-    
-    semesterManagementPage.style.display = 'block';
-    
-    loadSemesters();
-    
-    const backBtn = document.getElementById('backToAcademicYears');
-    if (backBtn) {
-        backBtn.removeEventListener('click', null);
-        backBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            semesterManagementPage.style.display = 'none';
-            document.getElementById('academicYearManagementPage').style.display = 'block';
-        });
-    }
-}
-
-function loadSemesters() {
-    fetch(`/api/get_semesters?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}`)
+    fetch(`/api/get_semesters_for_curriculum?program_id=${programCode}&academic_year=${academicYear}&curriculum_id=${curriculumId}`)
         .then(response => response.json())
         .then(data => {
+            console.log('=== API RESPONSE ===');
+            console.log('Success:', data.success);
+            console.log('Debug Info:', data.debug_info);
+            console.log('All semesters:', data.semesters);
+            console.log('Curriculum IDs in response:', data.semesters.map(s => s.curriculum_id));
+            
             if (data.success) {
-                displaySemesters(data.semesters);
+                console.log(`=== DISPLAYING FOR CURRICULUM ${curriculumId} ===`);
+                displaySemestersForCurriculum(data.semesters, programCode, academicYear, curriculumId);
             } else {
-                showAlertModal('Error', 'Failed to load semesters: ' + data.message, true);
+                console.error('API Error:', data.message);
+                showAlertModal('Error', data.message || 'Failed to load semesters', true);
+                const tbody = document.querySelector('#semestersTable tbody');
+                if (tbody) {
+                    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999;padding:40px;">No semesters found for this curriculum</td></tr>';
+                }
             }
         })
         .catch(error => {
-            console.error('Error loading semesters:', error);
+            console.error('Error loading semesters for curriculum:', error);
             showAlertModal('Error', 'Failed to load semesters', true);
         });
 }
 
-function displaySemesters(semesters) {
+
+function displaySemestersForCurriculum(semesters, programCode, academicYear, curriculumId) {
+    console.log('=== DISPLAY SEMESTERS DEBUG ===');
+    console.log('Received semesters:', semesters);
+    console.log('Target curriculum:', curriculumId);
+    
     const tbody = document.querySelector('#semestersTable tbody');
-    if (!tbody) return;
+    if (!tbody) {
+        console.error('Table body not found!');
+        return;
+    }
 
-    // Filter for active semesters only
-    const activeSemesters = semesters.filter(s => s.status === 'active');
+    if (!semesters || semesters.length === 0) {
+        console.log('No semesters to display');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="3" style="text-align: center; color: #666; padding: 20px;">
+                    No semesters found for this curriculum.<br>
+                    <small>Click "Add Semester" to create the first semester for this curriculum.</small>
+                </td>
+            </tr>
+        `;
+        return;
+    }
 
-    tbody.innerHTML = activeSemesters.map(semester => `
+    console.log(`Displaying ${semesters.length} semesters`);
+    
+    tbody.innerHTML = semesters.map(semester => {
+        const status = semester.status;
+        const statusClass = status === 'active' ? 'status-active' : 'status-inactive';
+        const statusIcon = status === 'active' ? 'fa-check-circle' : 'fa-times-circle';
+        
+        console.log(`Rendering semester: ${semester.semester_number} for curriculum: ${semester.curriculum_id}`);
+        
+        return `
         <tr>
-            <td>${semester.semester_number}</td>
+            <td>
+                <strong>${semester.semester_number}</strong>
+            </td>
+            <td>
+                <span class="status-badge ${statusClass}">
+                    <i class="fas ${statusIcon}"></i>
+                    ${status.toUpperCase()}
+                </span>
+            </td>
             <td class="action-buttons">
-                <a href="#" class="btn btn-view view-semester" 
-                   data-semester="${semester.semester_number}" 
-                   title="View">
+                <button class="btn btn-view view-semester" 
+                        data-semester="${semester.semester_number}" 
+                        data-curriculum-id="${currentCurriculumId}"
+                        data-curriculum-name="${currentCurriculumName}"
+                        title="View Subjects">
                     <i class="fas fa-eye"></i>
-                </a>
+                </button>
                 <button class="btn btn-edit" 
-                        onclick="editSemester('${semester.semester_number}')" 
+                        onclick="editSemester('${semester.semester_number}')"
                         title="Edit">
                     <i class="fas fa-edit"></i>
                 </button>
                 <button class="btn btn-danger" 
-                        onclick="deleteSemester('${semester.semester_number}')" 
+                        onclick="deleteSemester('${semester.semester_number}')"
                         title="Delete">
                     <i class="fas fa-trash"></i>
                 </button>
             </td>
         </tr>
-    `).join('');
+        `;
+    }).join('');
 
-    // Re-attach event listeners
+    // ✅ KEEP ONLY THIS EVENT LISTENER - REMOVE THE DUPLICATE ONE
     document.querySelectorAll('.view-semester').forEach(button => {
         button.addEventListener('click', function(e) {
             e.preventDefault();
             const semesterNumber = this.getAttribute('data-semester');
+            const curriculumId = this.getAttribute('data-curriculum-id');
+            const curriculumName = this.getAttribute('data-curriculum-name');
             
-            // CRITICAL FIX: Set the current semester to the clicked semester
+            // Store ALL context including curriculum
             currentSemester = semesterNumber;
+            currentCurriculumId = curriculumId;
+            currentCurriculumName = curriculumName;
             
-            console.log('Viewing semester:', {
+            console.log('Viewing semester for curriculum:', {
                 program: currentProgramCode,
                 academicYear: currentAcademicYear,
+                curriculum: currentCurriculumName,
                 semester: currentSemester
             });
             
             document.getElementById('semesterManagementPage').style.display = 'none';
-loadSubjectManagementPage(currentProgramCode, currentProgramName, currentAcademicYear, semesterNumber);
+            
+            // Pass ALL parameters including curriculum
+            loadSubjectManagementPage(
+                currentProgramCode, 
+                currentProgramName, 
+                currentAcademicYear, 
+                semesterNumber,
+                currentCurriculumId,
+                currentCurriculumName
+            );
         });
     });
 }
@@ -2169,22 +2280,47 @@ function hideAddSemesterModal() {
 }
 
 function handleAddSemester() {
-    const semesterNumber = document.getElementById('semester-number-add')?.value;
-    const status = document.getElementById('semester-status-add')?.value;
-    
-    if (!semesterNumber || !status) {
-        showAlertModal('Incomplete Form', 'Please fill in all required fields', true);
+    // Get form elements with null checks
+    const semesterNumberInput = document.getElementById('semester-number-add');
+    const statusInput = document.getElementById('semester-status-add');
+
+    // Check if elements exist
+    if (!semesterNumberInput || !statusInput) {
+        showAlertModal('Error', 'Form elements not found. Please refresh the page and try again.', true);
         return;
     }
+
+    const semesterNumber = semesterNumberInput.value;
+    const status = statusInput.value;
+
+    if (!semesterNumber || !status) {
+        showAlertModal('Error', 'Please fill in all required fields', true);
+        return;
+    }
+
+    // Make sure we have the current curriculum ID
+    if (!currentCurriculumId) {
+        showAlertModal('Error', 'No curriculum selected. Please go back and select a curriculum first.', true);
+        return;
+    }
+
+    console.log('Adding semester:', {
+        semester_number: semesterNumber,
+        status: status,
+        curriculum_id: currentCurriculumId,
+        program_id: currentProgramCode,
+        academic_year: currentAcademicYear
+    });
 
     fetch('/api/add_semester', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            program_id: currentProgramCode,
-            academic_year: currentAcademicYear,
             semester_number: semesterNumber,
-            status: status
+            status: status,
+            curriculum_id: currentCurriculumId,
+            program_id: currentProgramCode,
+            academic_year: currentAcademicYear
         })
     })
     .then(response => response.json())
@@ -2192,7 +2328,7 @@ function handleAddSemester() {
         if (data.success) {
             showAlertModal('Success', 'Semester added successfully!', false);
             hideAddSemesterModal();
-            loadSemesters();
+            loadSemestersForCurriculum(currentProgramCode, currentAcademicYear, currentCurriculumId);
         } else {
             showAlertModal('Error', data.message, true);
         }
@@ -2212,7 +2348,8 @@ function showEditSemesterModal(semesterNumber) {
     
     form.reset();
     
-    fetch(`/api/get_semesters?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}`)
+    // Use the curriculum-specific endpoint
+    fetch(`/api/get_semesters_for_curriculum?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}&curriculum_id=${currentCurriculumId}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -2233,6 +2370,7 @@ function showEditSemesterModal(semesterNumber) {
         });
 }
 
+
 function hideEditSemesterModal() {
     const modal = document.getElementById('editSemesterModal');
     if (modal) {
@@ -2251,6 +2389,12 @@ function handleEditSemester() {
         return;
     }
 
+    // Make sure we have curriculum ID
+    if (!currentCurriculumId) {
+        showAlertModal('Error', 'No curriculum selected', true);
+        return;
+    }
+
     fetch('/api/update_semester', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2258,7 +2402,8 @@ function handleEditSemester() {
             program_id: currentProgramCode,
             academic_year: currentAcademicYear,
             semester_number: semesterNumber,
-            status: status
+            status: status,
+            curriculum_id: currentCurriculumId  // ADD THIS
         })
     })
     .then(response => response.json())
@@ -2266,7 +2411,7 @@ function handleEditSemester() {
         if (data.success) {
             showAlertModal('Success', 'Semester updated successfully!', false);
             hideEditSemesterModal();
-            loadSemesters();
+            loadSemestersForCurriculum(currentProgramCode, currentAcademicYear, currentCurriculumId); // UPDATE THIS
         } else {
             showAlertModal('Error', data.message, true);
         }
@@ -2292,14 +2437,15 @@ function deleteSemester(semesterNumber) {
                 body: JSON.stringify({ 
                     program_id: currentProgramCode, 
                     academic_year: currentAcademicYear, 
-                    semester_number: semesterNumber 
+                    semester_number: semesterNumber,
+                    curriculum_id: currentCurriculumId  // ADD THIS
                 })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
                     showAlertModal('Deleted', 'Semester deleted successfully!', false);
-                    loadSemesters();
+                    loadSemestersForCurriculum(currentProgramCode, currentAcademicYear, currentCurriculumId); // UPDATE THIS
                 } else {
                     showAlertModal('Error', data.message, true);
                 }
@@ -2312,28 +2458,30 @@ function deleteSemester(semesterNumber) {
     );
 }
 
-// Subject Management Functions
-function loadSubjectManagementPage(programCode, programName, academicYear = null, semester = null) {
+function loadSubjectManagementPage(programCode, programName, academicYear = null, semester = null, curriculumId = null, curriculumName = null) {
     const subjectManagementPage = document.getElementById('subjectManagementPage');
     
-    // Store program info
+    // Store ALL context including curriculum
     currentProgramCode = programCode;
     currentProgramName = programName;
     
-    // Use provided academic year and semester, or fall back to current values
+    // Use provided values or fall back to current values
     if (academicYear) currentAcademicYear = academicYear;
     if (semester) currentSemester = semester;
+    if (curriculumId) currentCurriculumId = curriculumId;
+    if (curriculumName) currentCurriculumName = curriculumName;
     
-    // Update header to show the actual semester being viewed (not necessarily active)
+    // Update header to show the curriculum context
     const headerElement = subjectManagementPage.querySelector('.header h2');
     if (headerElement) {
-        headerElement.innerHTML = `<i class="fas fa-book"></i> Subject Management - ${programName} (${currentAcademicYear} - ${currentSemester})`;
+        headerElement.innerHTML = `<i class="fas fa-book"></i> Subject Management - ${programName} (${currentAcademicYear} - ${currentSemester}) - ${currentCurriculumName}`;
     }
     
     console.log('Loading subject management for:', {
         program: currentProgramCode,
         academicYear: currentAcademicYear,
-        semester: currentSemester
+        semester: currentSemester,
+        curriculum: currentCurriculumName
     });
     
     subjectManagementPage.style.display = 'block';
@@ -2384,24 +2532,24 @@ function loadSections() {
         return;
     }
 
-    // Use the current semester that was set when we clicked the tab
-    if (!currentSemester || !currentAcademicYear || !currentProgramCode) {
-        showAlertModal('Error', 'Please ensure you are viewing from a valid semester.', true);
+    // Check if we have curriculum context
+    if (!currentSemester || !currentAcademicYear || !currentProgramCode || !currentCurriculumId) {
+        showAlertModal('Error', 'Missing curriculum context. Please navigate from curriculum view.', true);
         return;
     }
 
     sectionSelect.disabled = true;
     sectionSelect.innerHTML = '<option value="" disabled selected>Loading sections...</option>';
 
-    // Include ALL required parameters for semester-specific filtering
-    const url = `/api/get_year_sections?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}&semester=${encodeURIComponent(currentSemester)}`;
+    // Include curriculum_id in the request
+    const url = `/api/get_year_sections?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}&semester=${encodeURIComponent(currentSemester)}&curriculum_id=${currentCurriculumId}`;
     
-    console.log('Loading sections for specific semester:', {
+    console.log('Loading sections for curriculum:', {
         program: currentProgramCode,
         academicYear: currentAcademicYear,
-        semester: currentSemester, // This should be the clicked semester, not necessarily active
-        yearLevel: yearLevel,
-        url: url
+        semester: currentSemester,
+        curriculum: currentCurriculumId,
+        yearLevel: yearLevel
     });
 
     fetch(url)
@@ -2410,11 +2558,11 @@ function loadSections() {
             console.log('Sections response:', data);
             
             if (data.success) {
-                // Filter by year level
+                // Filter by year level (backend should handle this, but double filter)
                 const sections = data.sections.filter(s => s.year_level == yearLevel);
                 
-                // Cache with semester included
-                const cacheKey = `${yearLevel}_${currentAcademicYear}_${currentSemester}`;
+                // Cache with curriculum included
+                const cacheKey = `${yearLevel}_${currentAcademicYear}_${currentSemester}_${currentCurriculumId}`;
                 yearSectionsCache[cacheKey] = sections;
                 
                 sectionSelect.innerHTML = '<option value="" disabled selected>Select Section</option>';
@@ -2422,17 +2570,15 @@ function loadSections() {
                 if (sections.length === 0) {
                     const option = document.createElement('option');
                     option.value = '';
-                    option.textContent = `No sections for Year ${yearLevel} in ${currentSemester}`;
+                    option.textContent = `No sections for Year ${yearLevel}`;
                     option.disabled = true;
                     sectionSelect.appendChild(option);
-                    console.log(`No sections found for Year ${yearLevel} in ${currentSemester}`);
                 } else {
                     sections.forEach(section => {
                         const option = document.createElement('option');
                         option.value = section.section_id;
                         option.textContent = `${section.section_name} (${section.subject_count || 0} subjects)`;
                         sectionSelect.appendChild(option);
-                        console.log('Added section option:', section);
                     });
                 }
                 
@@ -2444,7 +2590,7 @@ function loadSections() {
         })
         .catch(error => {
             console.error('Error loading sections:', error);
-            showAlertModal('Error', 'Failed to load sections. Please try again.', true);
+            showAlertModal('Error', 'Failed to load sections', true);
             sectionSelect.innerHTML = '<option value="" disabled selected>Error loading sections</option>';
         });
 }
@@ -2546,6 +2692,12 @@ function handleAddSection() {
         return;
     }
 
+    // Make sure we have curriculum context
+    if (!currentCurriculumId) {
+        showAlertModal('Error', 'No curriculum selected', true);
+        return;
+    }
+
     fetch('/api/add_year_section', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2554,17 +2706,18 @@ function handleAddSection() {
             academic_year: currentAcademicYear,
             semester: currentSemester,
             year_level: yearLevel,
-            section_name: sectionName
+            section_name: sectionName,
+            curriculum_id: currentCurriculumId  // Add this
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showAlertModal('Success', data.message || 'Section added successfully!', false);
+            showAlertModal('Success', 'Section added successfully!', false);
             hideAddSectionModal();
             const currentYearLevel = document.getElementById('select-year-level')?.value;
             if (currentYearLevel == yearLevel) {
-                loadSections(); // Reload sections for the current year level
+                loadSections(); // Reload sections
             }
         } else {
             showAlertModal('Error', data.message || 'Failed to add section', true);
@@ -2759,6 +2912,87 @@ function handleConfirmAction() {
         confirmCallback();
     }
     hideConfirmModal();
+}
+
+function displayPrograms(programs) {
+    console.log('=== DISPLAY PROGRAMS DEBUG ===');
+    console.log('Programs received:', programs);
+    console.log('Programs length:', programs.length);
+    
+    const tbody = document.querySelector('#programsTable tbody');
+    if (!tbody) {
+        console.error('Table body not found!');
+        return;
+    }
+
+    // Show ALL programs (both active and inactive)
+    const allPrograms = programs;
+
+    console.log('All programs to display:', allPrograms);
+
+    if (allPrograms.length === 0) {
+        console.log('No programs found, showing empty state');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align: center; color: #666; padding: 40px;">
+                    <i class="fas fa-graduation-cap" style="font-size: 48px; margin-bottom: 16px; display: block;"></i>
+                    No programs found.<br>
+                    <small>Click "Add Program" to create the first one.</small>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    console.log('Displaying', allPrograms.length, 'programs');
+    
+    tbody.innerHTML = allPrograms.map(program => `
+        <tr>
+            <td>${program.program_id}</td>
+            <td>${program.program_name}</td>
+            <td>${program.department}</td>
+            <td>${program.total_subjects || 0}</td>
+            <td>
+                <span class="status-badge ${program.status === 'active' ? 'status-active' : 'status-inactive'}">
+                    <i class="fas ${program.status === 'active' ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+                    ${program.status === 'active' ? 'ACTIVE' : 'INACTIVE'}
+                </span>
+            </td>
+            <td class="action-buttons">
+                <button class="btn btn-view view-program-btn" 
+                        data-program-id="${program.program_id}" 
+                        data-program-name="${program.program_name}" 
+                        title="View">
+                    <i class="fas fa-eye"></i> View
+                </button>
+                <button class="btn btn-edit" 
+                        onclick="editProgram('${program.program_id}')" 
+                        title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger" 
+                        onclick="deleteProgram('${program.program_id}', '${program.program_name.replace(/'/g, "\\'")}')" 
+                        title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+
+    // Fix event listeners to use correct data attributes
+    document.querySelectorAll('.view-program-btn').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const programId = this.getAttribute('data-program-id');
+            const programName = this.getAttribute('data-program-name');
+            console.log('Viewing program:', programId, programName);
+            currentProgramCode = programId;
+            currentProgramName = programName;
+            
+            document.getElementById('programsPage').style.display = 'none';
+            loadAcademicYearManagementPage(programId, programName);
+        });
+    });
 }
 
 // Program Modal Functions

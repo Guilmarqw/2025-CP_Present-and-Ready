@@ -7407,18 +7407,20 @@ def update_academic_year():
     try:
         data = request.json
         program_id = data.get('program_id')
-        academic_year = data.get('academic_year')
+        original_academic_year = data.get('original_academic_year')  # Get original value
+        academic_year = data.get('academic_year')  # This is the NEW value
         status = data.get('status')
         
-        if not all([program_id, academic_year, status]):
+        if not all([program_id, original_academic_year, academic_year, status]):
             return jsonify({'success': False, 'message': 'All fields are required'})
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Use original_academic_year in WHERE clause, new academic_year in SET
         cursor.execute(
-            "UPDATE academic_years SET status = %s WHERE program_id = %s AND academic_year = %s",
-            (status, program_id, academic_year)
+            "UPDATE academic_years SET academic_year = %s, status = %s WHERE program_id = %s AND academic_year = %s",
+            (academic_year, status, program_id, original_academic_year)  # Use original in WHERE
         )
         
         if cursor.rowcount == 0:
@@ -7435,7 +7437,7 @@ def update_academic_year():
     except Exception as e:
         logger.error(f"Error updating academic year: {e}")
         return jsonify({'success': False, 'message': str(e)})
-
+    
 def role_required(allowed_roles):
     def decorator(f):
         @wraps(f)
@@ -7467,64 +7469,78 @@ def get_template_user_data():
         }
     return {}
 
-@app.route('/api/get_semesters', methods=['GET'])
+@app.route('/api/get_semesters_for_curriculum', methods=['GET'])
 @login_required
-def get_semesters():
-    """Get semesters for a program and academic year"""
+def get_semesters_for_curriculum():
+    """Get semesters for a specific curriculum - SHOW ALL SEMESTERS"""
     try:
         program_id = request.args.get('program_id')
         academic_year = request.args.get('academic_year')
+        curriculum_id = request.args.get('curriculum_id')
         
-        if not all([program_id, academic_year]):
-            return jsonify({'success': False, 'message': 'Program ID and academic year are required'})
+        if not all([program_id, academic_year, curriculum_id]):
+            return jsonify({'success': False, 'message': 'Program ID, academic year, and curriculum ID are required'})
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get academic_year_id
+        # Get academic_year_id first
         cursor.execute(
             "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
             (program_id, academic_year)
         )
+        academic_year_result = cursor.fetchone()
         
-        result = cursor.fetchone()
-        if not result:
+        if not academic_year_result:
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Academic year not found'})
         
-        academic_year_id = result['academic_year_id']
+        academic_year_id = academic_year_result['academic_year_id']
         
-        # Get semesters with better error handling
+        # Get ALL semesters for this specific curriculum - SIMPLIFIED QUERY
         cursor.execute("""
             SELECT 
-                semester_id,
-                semester_number,
-                status,
-                created_at
-            FROM semesters
-            WHERE academic_year_id = %s
+                s.semester_id,
+                s.semester_number,
+                s.status,
+                s.curriculum_id,
+                (SELECT COUNT(DISTINCT ys.section_id) 
+                 FROM year_sections ys 
+                 WHERE ys.semester_id = s.semester_id AND ys.status = 'active') as section_count
+            FROM semesters s
+            WHERE s.academic_year_id = %s AND s.curriculum_id = %s
             ORDER BY 
-                CASE semester_number
+                CASE s.semester_number
                     WHEN 'Summer' THEN 1
                     WHEN '1st Semester' THEN 2
                     WHEN '2nd Semester' THEN 3
                     ELSE 4
                 END
-        """, (academic_year_id,))
+        """, (academic_year_id, curriculum_id))
         
         semesters = cursor.fetchall()
+        
+        # ADD DEBUG LOGGING
+        logger.info(f"Found {len(semesters)} semesters for curriculum {curriculum_id}")
+        for semester in semesters:
+            logger.info(f"Semester: {semester['semester_number']} - Status: {semester['status']}")
         
         cursor.close()
         conn.close()
         
         return jsonify({
             'success': True,
-            'semesters': semesters
+            'semesters': semesters,
+            'debug_info': {  # ADD DEBUG INFO
+                'total_semesters': len(semesters),
+                'active_semesters': len([s for s in semesters if s['status'] == 'active']),
+                'inactive_semesters': len([s for s in semesters if s['status'] == 'inactive'])
+            }
         })
         
     except Exception as e:
-        logger.error(f"Error fetching semesters: {e}")
+        logger.error(f"Error fetching semesters for curriculum: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/add_semester', methods=['POST'])
@@ -7537,9 +7553,10 @@ def add_semester():
         academic_year = data.get('academic_year')
         semester_number = data.get('semester_number')
         status = data.get('status', 'active')
+        curriculum_id = data.get('curriculum_id')
         
-        if not all([program_id, academic_year, semester_number]):
-            return jsonify({'success': False, 'message': 'All fields are required'})
+        if not all([program_id, academic_year, semester_number, curriculum_id]):
+            return jsonify({'success': False, 'message': 'All fields including curriculum are required'})
         
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -7558,21 +7575,21 @@ def add_semester():
         
         academic_year_id = result[0]
         
-        # Check if semester already exists
+        # Check if semester already exists for this academic_year AND curriculum
         cursor.execute(
-            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s",
-            (academic_year_id, semester_number)
+            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s AND curriculum_id = %s",
+            (academic_year_id, semester_number, curriculum_id)  # Check all three fields
         )
         
         if cursor.fetchone():
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'This semester already exists'})
+            return jsonify({'success': False, 'message': f'Semester "{semester_number}" already exists for this curriculum'})
         
-        # Insert semester
+        # Insert semester WITH curriculum_id
         cursor.execute(
-            "INSERT INTO semesters (academic_year_id, semester_number, status) VALUES (%s, %s, %s)",
-            (academic_year_id, semester_number, status)
+            "INSERT INTO semesters (academic_year_id, semester_number, status, curriculum_id) VALUES (%s, %s, %s, %s)",
+            (academic_year_id, semester_number, status, curriculum_id)
         )
         
         conn.commit()
@@ -7645,9 +7662,10 @@ def delete_semester():
         program_id = data.get('program_id')
         academic_year = data.get('academic_year')
         semester_number = data.get('semester_number')
+        curriculum_id = data.get('curriculum_id')  # ADD THIS
         
-        if not all([program_id, academic_year, semester_number]):
-            return jsonify({'success': False, 'message': 'All fields are required'})
+        if not all([program_id, academic_year, semester_number, curriculum_id]):  # UPDATE THIS
+            return jsonify({'success': False, 'message': 'All fields including curriculum are required'})
         
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -7666,10 +7684,10 @@ def delete_semester():
         
         academic_year_id = result[0]
         
-        # Delete semester
+        # Delete semester WITH curriculum_id
         cursor.execute(
-            "DELETE FROM semesters WHERE academic_year_id = %s AND semester_number = %s",
-            (academic_year_id, semester_number)
+            "DELETE FROM semesters WHERE academic_year_id = %s AND semester_number = %s AND curriculum_id = %s",
+            (academic_year_id, semester_number, curriculum_id)  # ADD curriculum_id
         )
         
         if cursor.rowcount == 0:
@@ -7690,18 +7708,19 @@ def delete_semester():
 @app.route('/api/delete_academic_year', methods=['POST'])
 @login_required
 def delete_academic_year():
-    """Delete an academic year"""
+    """Permanently delete an academic year"""
     try:
         data = request.json
         program_id = data.get('program_id')
         academic_year = data.get('academic_year')
         
         if not all([program_id, academic_year]):
-            return jsonify({'success': False, 'message': 'Program ID and academic year are required'})
+            return jsonify({'success': False, 'message': 'Program ID and Academic Year are required'})
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Permanent deletion
         cursor.execute(
             "DELETE FROM academic_years WHERE program_id = %s AND academic_year = %s",
             (program_id, academic_year)
@@ -7716,452 +7735,13 @@ def delete_academic_year():
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'message': 'Academic year deleted successfully'})
+        return jsonify({'success': True, 'message': 'Academic year deleted permanently'})
         
     except Exception as e:
         logger.error(f"Error deleting academic year: {e}")
-        return jsonify({'success': False, 'message': str(e)})    
-
-@app.route('/api/add_year_section', methods=['POST'])
-@role_required(['super_admin', 'admin', 'moderator'])  # Faculty cannot access
-@login_required
-def add_year_section():
-    """Add a new year section to a program and semester"""
-    try:
-        data = request.json
-        program_id = data.get('program_id')
-        academic_year = data.get('academic_year')
-        semester = data.get('semester')
-        year_level = data.get('year_level')
-        section_name = data.get('section_name', '').strip().upper()
-        
-        if not all([program_id, academic_year, semester, year_level, section_name]):
-            return jsonify({'success': False, 'message': 'All fields are required'})
-        
-        if not (1 <= int(year_level) <= 4):
-            return jsonify({'success': False, 'message': 'Year level must be between 1 and 4'})
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get academic_year_id
-        cursor.execute(
-            "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s AND status = 'active'",
-            (program_id, academic_year)
-        )
-        result = cursor.fetchone()
-        if not result:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Academic year not found or inactive'})
-        
-        academic_year_id = result[0]
-        
-        # Get semester_id
-        cursor.execute(
-            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s AND status = 'active'",
-            (academic_year_id, semester)
-        )
-        result = cursor.fetchone()
-        if not result:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Semester not found or inactive'})
-        
-        semester_id = result[0]
-        
-        # Check if section already exists for THIS SPECIFIC semester and academic year
-        cursor.execute(
-            """SELECT section_id FROM year_sections 
-               WHERE program_id = %s 
-               AND academic_year_id = %s
-               AND semester_id = %s
-               AND year_level = %s 
-               AND section_name = %s
-               AND status = 'active'""",
-            (program_id, academic_year_id, semester_id, year_level, section_name)
-        )
-        
-        if cursor.fetchone():
-            cursor.close()
-            conn.close()
-            return jsonify({
-                'success': False, 
-                'message': f'Section {section_name} already exists for Year {year_level} in {semester} {academic_year}'
-            })
-        
-        # Insert new section with semester_id
-        cursor.execute(
-            """INSERT INTO year_sections 
-               (program_id, academic_year_id, semester_id, year_level, section_name, status) 
-               VALUES (%s, %s, %s, %s, %s, 'active')""",
-            (program_id, academic_year_id, semester_id, year_level, section_name)
-        )
-        
-        conn.commit()
-        section_id = cursor.lastrowid
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"Added section {section_name} for {program_id} Year {year_level} - {semester} {academic_year}")
-        
-        return jsonify({
-            'success': True, 
-            'message': f'Section {section_name} added successfully to {semester} {academic_year}',
-            'section_id': section_id
-        })
-        
-    except mysql.connector.IntegrityError as e:
-        logger.error(f"Integrity error adding section: {e}")
-        return jsonify({
-            'success': False, 
-            'message': 'This section already exists for this semester. Please use a different section name.'
-        })
-    except Exception as e:
-        logger.error(f"Error adding year section: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/get_subjects', methods=['GET'])
-@login_required
-def get_subjects():
-    """Get all subjects for a year section with semester info"""
-    try:
-        section_id = request.args.get('section_id')
-        
-        if not section_id:
-            return jsonify({'success': False, 'message': 'Section ID is required'})
-        
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
-        cursor.execute("""
-            SELECT 
-                s.subject_id,
-                s.subject_code,
-                s.subject_name,
-                s.class_type,
-                s.units,
-                s.status,
-                s.created_at,
-                sem.semester_number,
-                ay.academic_year
-            FROM subjects s
-            JOIN year_sections ys ON s.section_id = ys.section_id
-            JOIN semesters sem ON ys.semester_id = sem.semester_id
-            JOIN academic_years ay ON ys.academic_year_id = ay.academic_year_id
-            WHERE s.section_id = %s AND s.status = 'active'
-            ORDER BY s.subject_code
-        """, (section_id,))
-        
-        subjects = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        return jsonify({'success': True, 'subjects': subjects})
-        
-    except Exception as e:
-        logger.error(f"Error fetching subjects: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/add_subject', methods=['POST'])
-@login_required
-def add_subject():
-    """Add a new subject to a year section with semester awareness"""
-    try:
-        data = request.json
-        section_id = data.get('section_id')
-        subject_code = data.get('subject_code', '').strip().upper()
-        subject_name = data.get('subject_name', '').strip()
-        class_type = data.get('class_type', 'lecture')
-        units = data.get('units', 3)
-        
-        if not all([section_id, subject_code, subject_name]):
-            return jsonify({'success': False, 'message': 'All fields are required'})
-        
-        if class_type not in ['lecture', 'laboratory', 'both']:
-            return jsonify({'success': False, 'message': 'Invalid class type'})
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get semester and academic year information for this section
-        cursor.execute("""
-            SELECT ys.semester_id, s.semester_number, ay.academic_year 
-            FROM year_sections ys
-            JOIN semesters s ON ys.semester_id = s.semester_id
-            JOIN academic_years ay ON ys.academic_year_id = ay.academic_year_id
-            WHERE ys.section_id = %s
-        """, (section_id,))
-        
-        section_info = cursor.fetchone()
-        if not section_info:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Section not found'})
-        
-        semester_id, semester_number, academic_year = section_info
-        
-        # Check if subject code already exists in this EXACT section (same semester and academic year)
-        cursor.execute("""
-            SELECT subject_id FROM subjects 
-            WHERE section_id = %s AND subject_code = %s AND status = 'active'
-        """, (section_id, subject_code))
-        
-        existing_subject = cursor.fetchone()
-        if existing_subject:
-            cursor.close()
-            conn.close()
-            return jsonify({
-                'success': False, 
-                'message': f'Subject code {subject_code} already exists in this section for {semester_number} {academic_year}'
-            })
-        
-        # Insert new subject
-        cursor.execute(
-            """INSERT INTO subjects (section_id, subject_code, subject_name, class_type, units) 
-               VALUES (%s, %s, %s, %s, %s)""",
-            (section_id, subject_code, subject_name, class_type, units)
-        )
-        
-        conn.commit()
-        subject_id = cursor.lastrowid
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"Added subject {subject_code} to section {section_id} for {semester_number} {academic_year}")
-        return jsonify({
-            'success': True, 
-            'message': f'Subject added successfully to {semester_number} {academic_year}',
-            'subject_id': subject_id
-        })
-        
-    except Exception as e:
-        logger.error(f"Error adding subject: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/update_subject', methods=['POST'])
-@login_required
-def update_subject():
-    """Update an existing subject"""
-    try:
-        data = request.json
-        subject_id = data.get('subject_id')
-        subject_code = data.get('subject_code', '').strip().upper()
-        subject_name = data.get('subject_name', '').strip()
-        class_type = data.get('class_type', 'lecture')
-        units = data.get('units', 3)
-        
-        if not all([subject_id, subject_code, subject_name]):
-            return jsonify({'success': False, 'message': 'All fields are required'})
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Check if subject exists
-        cursor.execute(
-            "SELECT section_id FROM subjects WHERE subject_id = %s",
-            (subject_id,)
-        )
-        
-        result = cursor.fetchone()
-        if not result:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Subject not found'})
-        
-        section_id = result[0]
-        
-        # Check if new subject code conflicts with another subject in same section
-        cursor.execute(
-            "SELECT subject_id FROM subjects WHERE section_id = %s AND subject_code = %s AND subject_id != %s",
-            (section_id, subject_code, subject_id)
-        )
-        
-        if cursor.fetchone():
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Subject code already exists in this section'})
-        
-        cursor.execute(
-            """UPDATE subjects 
-               SET subject_code = %s, subject_name = %s, class_type = %s, units = %s, updated_at = NOW()
-               WHERE subject_id = %s""",
-            (subject_code, subject_name, class_type, units, subject_id)
-        )
-        
-        if cursor.rowcount == 0:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'No changes made'})
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"Successfully updated subject {subject_id}")
-        return jsonify({'success': True, 'message': 'Subject updated successfully'})
-        
-    except mysql.connector.Error as db_error:
-        logger.error(f"Database error updating subject: {db_error}")
-        if conn:
-            conn.rollback()
-        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'})
-    except Exception as e:
-        logger.error(f"Error updating subject: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/delete_subject', methods=['POST'])
-@login_required
-def delete_subject():
-    """Delete a subject permanently from the database"""
-    try:
-        subject_id = request.json.get('subject_id')
-        
-        if not subject_id:
-            return jsonify({'success': False, 'message': 'Subject ID is required'})
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # First, check if subject exists
-        cursor.execute(
-            "SELECT subject_id FROM subjects WHERE subject_id = %s",
-            (subject_id,)
-        )
-        
-        if not cursor.fetchone():
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Subject not found'})
-        
-        # Delete related faculty schedules first (to maintain referential integrity)
-        cursor.execute("""
-            DELETE fs FROM faculty_schedules fs
-            INNER JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
-            WHERE cs.subject_id = %s
-        """, (subject_id,))
-        
-        deleted_faculty_schedules = cursor.rowcount
-        logger.info(f"Deleted {deleted_faculty_schedules} faculty schedule assignments for subject {subject_id}")
-        
-        # Delete related class schedules
-        cursor.execute(
-            "DELETE FROM class_schedules WHERE subject_id = %s",
-            (subject_id,)
-        )
-        
-        deleted_class_schedules = cursor.rowcount
-        logger.info(f"Deleted {deleted_class_schedules} class schedules for subject {subject_id}")
-        
-        # Finally, delete the subject itself
-        cursor.execute(
-            "DELETE FROM subjects WHERE subject_id = %s",
-            (subject_id,)
-        )
-        
-        if cursor.rowcount == 0:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Failed to delete subject'})
-        
-        # Commit all changes
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"Successfully deleted subject {subject_id}")
-        return jsonify({
-            'success': True, 
-            'message': 'Subject and all related schedules deleted successfully'
-        })
-        
-    except mysql.connector.Error as db_error:
-        logger.error(f"Database error deleting subject: {db_error}")
-        if conn:
-            conn.rollback()
-        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'})
-    except Exception as e:
-        logger.error(f"Error deleting subject: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/api/delete_year_section', methods=['POST'])
-@login_required
-def delete_year_section():
-    """Delete a year section and all related data permanently"""
-    try:
-        section_id = request.json.get('section_id')
-        
-        if not section_id:
-            return jsonify({'success': False, 'message': 'Section ID is required'})
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Check if section exists
-        cursor.execute(
-            "SELECT section_id FROM year_sections WHERE section_id = %s",
-            (section_id,)
-        )
-        
-        if not cursor.fetchone():
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Section not found'})
-        
-        # Delete in correct order to maintain referential integrity
-        
-        # 1. Delete faculty schedule assignments
-        cursor.execute("""
-            DELETE fs FROM faculty_schedules fs
-            INNER JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
-            WHERE cs.section_id = %s
-        """, (section_id,))
-        logger.info(f"Deleted faculty schedule assignments for section {section_id}")
-        
-        # 2. Delete class schedules
-        cursor.execute(
-            "DELETE FROM class_schedules WHERE section_id = %s",
-            (section_id,)
-        )
-        logger.info(f"Deleted class schedules for section {section_id}")
-        
-        # 3. Delete subjects
-        cursor.execute(
-            "DELETE FROM subjects WHERE section_id = %s",
-            (section_id,)
-        )
-        logger.info(f"Deleted subjects for section {section_id}")
-        
-        # 4. Finally delete the year section
-        cursor.execute(
-            "DELETE FROM year_sections WHERE section_id = %s",
-            (section_id,)
-        )
-        
-        if cursor.rowcount == 0:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Failed to delete section'})
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        logger.info(f"Successfully deleted year section {section_id} and all related data")
-        return jsonify({
-            'success': True, 
-            'message': 'Year section and all related data deleted successfully'
-        })
-        
-    except mysql.connector.Error as db_error:
-        logger.error(f"Database error deleting section: {db_error}")
-        if conn:
-            conn.rollback()
-        return jsonify({'success': False, 'message': f'Database error: {str(db_error)}'})
-    except Exception as e:
-        logger.error(f"Error deleting year section: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-    
+ 
 # ==========================================
 # CLASS SCHEDULE MANAGEMENT API ROUTES
 # ==========================================
@@ -9206,7 +8786,7 @@ def get_academic_years_for_program():
             SELECT 
                 ay.academic_year,
                 ay.academic_year_id,
-                ay.status,
+                ay.status,  # This is included in SELECT
                 COUNT(DISTINCT ys.section_id) as section_count,
                 COUNT(DISTINCT sub.subject_id) as subject_count
             FROM academic_years ay
@@ -9229,12 +8809,13 @@ def get_academic_years_for_program():
         cursor.close()
         conn.close()
         
-        # Format response - include ALL years
+        # Format response - include ALL years WITH STATUS
         formatted_years = []
         for year in academic_years:
             formatted_years.append({
                 'academic_year': year['academic_year'],
                 'academic_year_id': year['academic_year_id'],
+                'status': year['status'],  # ADD THIS LINE - Include status in response
                 'section_count': year['section_count'] or 0,
                 'subject_count': year['subject_count'] or 0,
                 'is_current': year['academic_year'] == current_year
@@ -9291,53 +8872,16 @@ def set_active_academic_year():
         logger.error(f"Error setting active academic year: {e}")
         return jsonify({'success': False, 'message': str(e)})
     
-@app.route('/api/get_academic_years', methods=['GET'])
-@login_required
-def get_academic_years():
-    """Get academic years for a program (used when viewing program details)"""
-    try:
-        program_id = request.args.get('program_id')
-        
-        if not program_id:
-            return jsonify({'success': False, 'message': 'Program ID is required'})
-        
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
-        cursor.execute("""
-            SELECT 
-                academic_year_id,
-                academic_year,
-                status,
-                is_current,
-                created_at
-            FROM academic_years
-            WHERE program_id = %s
-            ORDER BY academic_year DESC
-        """, (program_id,))
-        
-        academic_years = cursor.fetchall()
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'academic_years': academic_years
-        })
-        
-    except Exception as e:
-        logger.error(f"Error fetching academic years: {e}")
-        return jsonify({'success': False, 'message': str(e)})    
     
 @app.route('/api/get_year_sections', methods=['GET'])
 @login_required
 def get_year_sections():
-    """Get all year sections for a program - filtered by semester"""
+    """Get all year sections for a program - filtered by semester AND curriculum"""
     try:
         program_id = request.args.get('program_id')
         academic_year = request.args.get('academic_year')
         semester = request.args.get('semester')
+        curriculum_id = request.args.get('curriculum_id')  # Add this parameter
         
         if not all([program_id, academic_year, semester]):
             return jsonify({'success': False, 'message': 'Program ID, academic year, and semester are required'})
@@ -9358,20 +8902,21 @@ def get_year_sections():
         
         academic_year_id = result['academic_year_id']
         
-        # Get semester_id
+        # Get semester_id - ADD CURRICULUM FILTER HERE
         cursor.execute(
-            "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND semester_number = %s",
-            (academic_year_id, semester)
+            """SELECT semester_id FROM semesters 
+               WHERE academic_year_id = %s AND semester_number = %s AND curriculum_id = %s""",
+            (academic_year_id, semester, curriculum_id)  # Add curriculum_id
         )
         result = cursor.fetchone()
         if not result:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'Semester not found'})
+            return jsonify({'success': False, 'message': 'Semester not found for this curriculum'})
         
         semester_id = result['semester_id']
         
-        # Get sections for this specific semester - FIXED QUERY
+        # Get sections for this specific semester AND curriculum - FIXED QUERY
         query = """
             SELECT 
                 ys.section_id,
@@ -9387,7 +8932,7 @@ def get_year_sections():
             JOIN programs p ON ys.program_id = p.program_id
             LEFT JOIN subjects s ON ys.section_id = s.section_id AND s.status = 'active'
             WHERE ys.program_id = %s 
-            AND ys.semester_id = %s
+            AND ys.semester_id = %s  # This already links to the curriculum via semester_id
             AND ys.status = 'active'
             GROUP BY ys.section_id, ys.year_level, ys.section_name, ys.status
             ORDER BY ys.year_level, ys.section_name
@@ -9403,6 +8948,251 @@ def get_year_sections():
     except Exception as e:
         logger.error(f"Error fetching year sections: {e}")
         return jsonify({'success': False, 'message': str(e)})
+    
+@app.route('/api/add_year_section', methods=['POST'])
+@login_required
+def add_year_section():
+    """Add a new year section with curriculum context"""
+    try:
+        data = request.get_json()
+        program_id = data.get('program_id')
+        academic_year = data.get('academic_year')
+        semester = data.get('semester')
+        year_level = data.get('year_level')
+        section_name = data.get('section_name')
+        curriculum_id = data.get('curriculum_id')  # Add this
+        
+        if not all([program_id, academic_year, semester, year_level, section_name, curriculum_id]):
+            return jsonify({'success': False, 'message': 'All fields including curriculum are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get academic_year_id
+        cursor.execute(
+            "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
+            (program_id, academic_year)
+        )
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Academic year not found'})
+        
+        academic_year_id = result['academic_year_id']
+        
+        # Get semester_id with curriculum filter
+        cursor.execute(
+            """SELECT semester_id FROM semesters 
+               WHERE academic_year_id = %s AND semester_number = %s AND curriculum_id = %s""",
+            (academic_year_id, semester, curriculum_id)
+        )
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Semester not found for this curriculum'})
+        
+        semester_id = result['semester_id']
+        
+        # Check if section already exists for this semester
+        cursor.execute(
+            """SELECT section_id FROM year_sections 
+               WHERE program_id = %s AND semester_id = %s 
+               AND year_level = %s AND section_name = %s""",
+            (program_id, semester_id, year_level, section_name)
+        )
+        existing = cursor.fetchone()
+        
+        if existing:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Section already exists for this semester'})
+        
+        # Insert new section
+        cursor.execute(
+            """INSERT INTO year_sections 
+               (program_id, semester_id, year_level, section_name, status) 
+               VALUES (%s, %s, %s, %s, 'active')""",
+            (program_id, semester_id, year_level, section_name)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Section added successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error adding year section: {e}")
+        return jsonify({'success': False, 'message': str(e)})   
+
+@app.route('/api/get_subjects', methods=['GET'])
+@login_required
+def get_subjects():
+    """Get all subjects for a section"""
+    try:
+        section_id = request.args.get('section_id')
+        
+        if not section_id:
+            return jsonify({'success': False, 'message': 'Section ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get subjects for this section
+        cursor.execute("""
+            SELECT 
+                subject_id,
+                subject_code,
+                subject_name, 
+                class_type,
+                units,
+                status,
+                created_at,
+                updated_at
+            FROM subjects 
+            WHERE section_id = %s AND status = 'active'
+            ORDER BY subject_code
+        """, (section_id,))
+        
+        subjects = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'subjects': subjects})
+        
+    except Exception as e:
+        logger.error(f"Error fetching subjects: {e}")
+        return jsonify({'success': False, 'message': str(e)})     
+
+@app.route('/api/add_subject', methods=['POST'])
+@login_required
+def add_subject():
+    """Add a new subject to a section"""
+    try:
+        data = request.get_json()
+        section_id = data.get('section_id')
+        subject_code = data.get('subject_code')
+        subject_name = data.get('subject_name')
+        class_type = data.get('class_type')
+        units = data.get('units')
+        
+        if not all([section_id, subject_code, subject_name, class_type, units]):
+            return jsonify({'success': False, 'message': 'All fields are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if subject code already exists in this section
+        cursor.execute(
+            "SELECT subject_id FROM subjects WHERE section_id = %s AND subject_code = %s",
+            (section_id, subject_code)
+        )
+        existing = cursor.fetchone()
+        
+        if existing:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Subject code already exists in this section'})
+        
+        # Insert new subject
+        cursor.execute(
+            """INSERT INTO subjects 
+               (section_id, subject_code, subject_name, class_type, units, status) 
+               VALUES (%s, %s, %s, %s, %s, 'active')""",
+            (section_id, subject_code, subject_name, class_type, units)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Subject added successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error adding subject: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/update_subject', methods=['POST'])
+@login_required
+def update_subject():
+    """Update an existing subject"""
+    try:
+        data = request.get_json()
+        subject_id = data.get('subject_id')
+        subject_code = data.get('subject_code')
+        subject_name = data.get('subject_name')
+        class_type = data.get('class_type')
+        units = data.get('units')
+        
+        if not all([subject_id, subject_code, subject_name, class_type, units]):
+            return jsonify({'success': False, 'message': 'All fields are required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if subject code already exists in the same section (excluding current subject)
+        cursor.execute("""
+            SELECT subject_id FROM subjects 
+            WHERE subject_code = %s 
+            AND section_id = (SELECT section_id FROM subjects WHERE subject_id = %s)
+            AND subject_id != %s
+        """, (subject_code, subject_id, subject_id))
+        
+        existing = cursor.fetchone()
+        if existing:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Subject code already exists in this section'})
+        
+        # Update subject
+        cursor.execute(
+            """UPDATE subjects 
+               SET subject_code = %s, subject_name = %s, class_type = %s, units = %s, updated_at = NOW()
+               WHERE subject_id = %s""",
+            (subject_code, subject_name, class_type, units, subject_id)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Subject updated successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error updating subject: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/delete_subject', methods=['POST'])
+@login_required
+def delete_subject():
+    """Delete a subject (soft delete by setting status to inactive)"""
+    try:
+        data = request.get_json()
+        subject_id = data.get('subject_id')
+        
+        if not subject_id:
+            return jsonify({'success': False, 'message': 'Subject ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Soft delete by setting status to inactive
+        cursor.execute(
+            "UPDATE subjects SET status = 'inactive', updated_at = NOW() WHERE subject_id = %s",
+            (subject_id,)
+        )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Subject deleted successfully'})
+        
+    except Exception as e:
+        logger.error(f"Error deleting subject: {e}")
+        return jsonify({'success': False, 'message': str(e)})    
 
 @app.route('/api/check_database_tables', methods=['GET'])
 def check_database_tables():
@@ -9494,21 +9284,19 @@ def initialize_default_data():
 
 @app.route('/api/get_programs', methods=['GET'])
 def get_programs():
-    """Get all programs with their statistics per semester - PRESERVED & FIXED"""
+    """Get all programs with their statistics per semester - SHOW ALL PROGRAMS"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Simple query first to check if we can get basic program data
         cursor.execute("""
             SELECT 
                 program_id,
                 program_name,
                 department,
-                status,
+                status,  
                 created_at
             FROM programs 
-            WHERE status = 'active'
             ORDER BY program_name
         """)
         
@@ -9524,7 +9312,7 @@ def get_programs():
                 'message': 'No programs found'
             })
         
-        # Get all active semesters
+        # Get all active semesters (keep this as is)
         cursor.execute("""
             SELECT DISTINCT semester_number 
             FROM semesters 
@@ -9756,7 +9544,7 @@ def update_program():
 @app.route('/api/delete_program', methods=['POST'])
 @login_required
 def delete_program():
-    """Delete a program"""
+    """Delete a program permanently"""
     try:
         program_id = request.json.get('program_id')
         
@@ -9766,23 +9554,27 @@ def delete_program():
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Soft delete by setting status to inactive
-        cursor.execute("UPDATE programs SET status = 'inactive' WHERE program_id = %s", (program_id,))
+        # Check if program exists first
+        cursor.execute("SELECT program_id FROM programs WHERE program_id = %s", (program_id,))
+        program = cursor.fetchone()
         
-        if cursor.rowcount == 0:
+        if not program:
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Program not found'})
+        
+        # Permanent deletion
+        cursor.execute("DELETE FROM programs WHERE program_id = %s", (program_id,))
         
         conn.commit()
         cursor.close()
         conn.close()
         
-        return jsonify({'success': True, 'message': 'Program deleted successfully'})
+        return jsonify({'success': True, 'message': 'Program deleted permanently'})
         
     except Exception as e:
         logger.error(f"Error deleting program: {e}")
-        return jsonify({'success': False, 'message': str(e)})        
+        return jsonify({'success': False, 'message': str(e)})     
     
 @app.route('/api/get_current_class', methods=['GET'])
 @login_required
@@ -15109,61 +14901,35 @@ def update_curriculum():
 
 
 @app.route('/api/delete_curriculum', methods=['POST'])
+@login_required
 def delete_curriculum():
-    """Delete a curriculum"""
+    """Permanently delete a curriculum"""
     try:
-        data = request.get_json()
-        curriculum_id = data.get('curriculum_id')
+        curriculum_id = request.json.get('curriculum_id')
         
         if not curriculum_id:
-            return jsonify({
-                'success': False,
-                'message': 'Curriculum ID is required'
-            }), 400
+            return jsonify({'success': False, 'message': 'Curriculum ID is required'})
         
-        with get_db_cursor(commit=True) as cursor:
-            # Check if curriculum has students
-            cursor.execute("""
-                SELECT COUNT(*) as count FROM students WHERE curriculum_id = %s
-            """, (curriculum_id,))
-            
-            result = cursor.fetchone()
-            student_count = result['count'] if result else 0
-            
-            if student_count > 0:
-                return jsonify({
-                    'success': False,
-                    'message': f'Cannot delete curriculum. It has {student_count} student(s) enrolled in it.'
-                }), 400
-            
-            # Check if curriculum has sections/subjects
-            cursor.execute("""
-                SELECT COUNT(*) as count FROM year_sections WHERE curriculum_id = %s
-            """, (curriculum_id,))
-            
-            result = cursor.fetchone()
-            section_count = result['count'] if result else 0
-            
-            if section_count > 0:
-                return jsonify({
-                    'success': False,
-                    'message': f'Cannot delete curriculum. It has {section_count} section(s) with subjects defined.'
-                }), 400
-            
-            # Delete curriculum
-            cursor.execute("DELETE FROM curricula WHERE curriculum_id = %s", (curriculum_id,))
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        return jsonify({
-            'success': True,
-            'message': 'Curriculum deleted successfully!'
-        })
+        # Permanent deletion
+        cursor.execute("DELETE FROM curricula WHERE curriculum_id = %s", (curriculum_id,))
+        
+        if cursor.rowcount == 0:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Curriculum not found'})
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Curriculum deleted permanently'})
         
     except Exception as e:
-        logger.error(f"Error in delete_curriculum: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': str(e)
-        }), 500
+        logger.error(f"Error deleting curriculum: {e}")
+        return jsonify({'success': False, 'message': str(e)})
 
 
 @app.route('/api/get_curriculum_details', methods=['GET'])
@@ -15276,7 +15042,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.254.105", 
+            host="192.168.0.101", 
             port=5000,
             debug=False,
             threaded=True,
