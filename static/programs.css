@@ -819,3 +819,91 @@
       background-color: #f9f9f9;
       font-size: 14px;
     }
+    .batches-table {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+  margin-bottom: 30px;
+}
+
+.batches-table .academic-header {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #eef2f6;
+}
+
+.batches-table .table-responsive {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e0e6ed;
+}
+
+.unified-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14.5px;
+}
+
+.unified-table thead th {
+  background: #4a6fa9;
+  color: white;
+  padding: 16px 12px;
+  text-align: center;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12.5px;
+  letter-spacing: 0.5px;
+}
+
+.unified-table tbody td {
+  padding: 16px 12px;
+  text-align: center;
+  vertical-align: middle;
+  border-bottom: 1px solid #eef2f6;
+  color: #2d3748;
+}
+
+.unified-table tbody tr:hover {
+  background-color: #f8f9ff;
+}
+
+.unified-table .action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.unified-table .action-buttons .btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.unified-table .action-buttons .btn:hover {
+  background: #4a6fa9;
+  color: white;
+  transform: translateY(-1px);
+}
+
+.unified-table .action-buttons .btn-danger:hover {
+  background: #e74c3c;
+}
+
+.badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.badge-success { background: #d4edda; color: #155724; }
+.badge-warning { background: #fff3cd; color: #856404; }
+.badge-secondary { background: #e2e3e5; color: #383d41; }
