@@ -15276,7 +15276,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.0.101", 
+            host="192.168.254.105", 
             port=5000,
             debug=False,
             threaded=True,
