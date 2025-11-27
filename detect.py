@@ -5472,9 +5472,10 @@ def register_student():
         last_name = data.get('last_name', '').strip()
         middle_name = data.get('middle_name', '').strip()
         section_id = data.get('section_id', '').strip()
+        program_id = data.get('program_id', '').strip()  # Get program_id from frontend
         password = data.get('password', '').strip()
         
-        if not all([email, student_id, first_name, last_name, section_id, password]):
+        if not all([email, student_id, first_name, last_name, section_id, program_id, password]):
             logger.warning("Missing required fields in register_student request")
             return jsonify({'success': False, 'message': 'All fields are required'})
         
@@ -5485,11 +5486,24 @@ def register_student():
         if len(password) < 8:
             return jsonify({'success': False, 'message': 'Password must be at least 8 characters long'})
         
+        # Extract curriculum year from student ID (first 4 digits)
+        if len(student_id) >= 4:
+            curriculum_year = student_id[:4]
+            # Validate it's a reasonable year (between 2000 and current year + 1)
+            current_year = datetime.now().year
+            if not (2000 <= int(curriculum_year) <= current_year + 1):
+                curriculum_year = str(current_year)  # Fallback to current year
+        else:
+            # Fallback if student ID format is unexpected
+            current_year = datetime.now().year
+            curriculum_year = str(current_year)
+        
         password_hash = hash_password(password)
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # Check if student already exists
         cursor.execute("SELECT student_id, email FROM students WHERE student_id = %s OR email = %s", 
                       (student_id, email))
         existing = cursor.fetchone()
@@ -5503,6 +5517,36 @@ def register_student():
             else:
                 logger.warning(f"Email {email} already registered")
                 return jsonify({'success': False, 'message': 'Email already registered'})
+        
+        # Find the appropriate curriculum
+        current_academic_year = f"{datetime.now().year}-{datetime.now().year + 1}"
+        
+        cursor.execute(
+            """SELECT curriculum_id FROM curricula 
+            WHERE program_id = %s AND academic_year = %s AND curriculum_year = %s AND status = 'active'
+            ORDER BY effective_date DESC LIMIT 1""",
+            (program_id, current_academic_year, curriculum_year)
+        )
+        
+        curriculum_result = cursor.fetchone()
+        curriculum_id = curriculum_result[0] if curriculum_result else None
+        
+        # If no exact match found, try to find the closest curriculum
+        if not curriculum_id:
+            cursor.execute(
+                """SELECT curriculum_id FROM curricula 
+                WHERE program_id = %s AND academic_year = %s AND status = 'active'
+                ORDER BY ABS(CAST(curriculum_year AS SIGNED) - %s) LIMIT 1""",
+                (program_id, current_academic_year, int(curriculum_year))
+            )
+            curriculum_result = cursor.fetchone()
+            curriculum_id = curriculum_result[0] if curriculum_result else None
+        
+        # Log curriculum assignment
+        if curriculum_id:
+            logger.info(f"Assigned curriculum {curriculum_id} to student {student_id} (program: {program_id}, year: {curriculum_year})")
+        else:
+            logger.warning(f"No active curriculum found for student {student_id} (program: {program_id}, year: {curriculum_year})")
         
         face_encoding_data = data.get('face_encoding', '')
         encoding_str = None
@@ -5538,14 +5582,18 @@ def register_student():
                         logger.error(f"Failed to save photo: {e}")
                         photo_path = None
         
+        # Insert student with curriculum_id
         cursor.execute(
             """INSERT INTO students 
-            (student_id, first_name, last_name, middle_name, section_id, email, face_encoding, photo_path, password_hash) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (student_id, first_name, last_name, middle_name or None, section_id, email, encoding_str, photo_path, password_hash)
+            (student_id, first_name, last_name, middle_name, section_id, email, 
+             face_encoding, photo_path, password_hash, curriculum_id) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (student_id, first_name, last_name, middle_name or None, section_id, email, 
+             encoding_str, photo_path, password_hash, curriculum_id)
         )
         conn.commit()
         
+        # Handle invite token (your existing code)
         if invite_token:
             try:
                 conn_invite = get_db_connection()
@@ -5585,7 +5633,7 @@ def register_student():
         except Exception as e:
             logger.warning(f"Failed to reload known faces: {e}")
         
-        logger.info(f"Student registered successfully: {student_id} ({first_name} {last_name})")
+        logger.info(f"Student registered successfully: {student_id} ({first_name} {last_name}) with curriculum {curriculum_id}")
         return jsonify({'success': True, 'message': 'Student registered successfully'})
 
     except Exception as e:
@@ -10221,7 +10269,37 @@ def set_active_semester():
     except Exception as e:
         logger.error(f"Error setting active semester: {e}")
         return jsonify({'success': False, 'message': str(e)})
-    
+
+@app.route('/api/get_active_curricula', methods=['GET'])
+@login_required
+def get_active_curricula():
+    """Get active curricula for a program"""
+    try:
+        program_id = request.args.get('program_id')
+        
+        if not program_id:
+            return jsonify({'success': False, 'message': 'Program ID is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT curriculum_id, curriculum_name, curriculum_year, description, status
+            FROM curricula 
+            WHERE program_id = %s AND status = 'active'
+            ORDER BY curriculum_year DESC
+        """, (program_id,))
+        
+        curricula = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'curricula': curricula})
+        
+    except Exception as e:
+        logger.error(f"Error fetching active curricula: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
 @app.route('/api/get_active_period', methods=['GET'])
 @login_required
 def get_active_period():

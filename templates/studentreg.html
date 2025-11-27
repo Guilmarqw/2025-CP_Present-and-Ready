@@ -514,17 +514,30 @@ function resendOTP() {
     });
 }
 
+function extractCurriculumYear(studentId) {
+    // Extract first 4 digits from student ID (e.g., "2022" from "2022-01376")
+    const year = studentId.substring(0, 4);
+    return year;
+}
 
-    function validateStudentId(input) {
-        // Remove all non-numeric characters
-        let value = input.value.replace(/[^0-9]/g, '');
-        
-        if (value.length > 4) {
-            input.value = value.substring(0, 4) + '-' + value.substring(4);
-        } else {
-            input.value = value;
-        }
+ function validateStudentId(input) {
+    // Remove all non-numeric characters except hyphens
+    let value = input.value.replace(/[^0-9-]/g, '');
+    
+    if (value.length > 4 && !value.includes('-')) {
+        input.value = value.substring(0, 4) + '-' + value.substring(4);
+    } else {
+        input.value = value;
     }
+    
+    // Auto-detect curriculum year when ID is complete
+    if (value.length >= 4) {
+        const curriculumYear = value.substring(0, 4);
+        console.log("Detected curriculum year:", curriculumYear);
+        // You can store this for later use in registration
+        window.detectedCurriculumYear = curriculumYear;
+    }
+}
 
 function previewUploadedImage(event) {
     const file = event.target.files[0];
@@ -1063,7 +1076,7 @@ function updateScanProgress() {
 function registerStudent() {
     const formData = new FormData();
     
-    const email = userEmail || "";
+    const email = userEmail || "";const programId = document.getElementById("program")?.value || "";
     const studentId = document.getElementById("studentId")?.value?.trim() || "";
     const firstName = document.getElementById("firstName")?.value?.trim() || "";
     const lastName = document.getElementById("lastName")?.value?.trim() || "";
@@ -1094,6 +1107,7 @@ function registerStudent() {
     
     formData.append('email', email);
     formData.append('student_id', studentId);
+    formData.append('program_id', programId);
     formData.append('first_name', firstName);
     formData.append('last_name', lastName);
     formData.append('middle_name', middleName);
