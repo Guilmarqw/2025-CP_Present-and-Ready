@@ -9,7 +9,6 @@
   
 </head>
 <body>
-<!-- Sidebar -->
 <div id="sidebar-container"></div>
 
 <!-- Main Content -->
@@ -17,111 +16,16 @@
   <!-- Programs Page -->
   <div class="page-container" id="programsPage">
     <div class="header">
-  <h2><i class="fas fa-book"></i> Programs Management</h2>
-  <div style="display: flex; gap: 10px;">
-    <button id="switchYearBtn" class="btn btn-primary">
-      <i class="fas fa-calendar-alt"></i> Switch Academic Year
-    </button>
-    <button id="addProgramBtn" class="btn btn-primary">
-      <i class="fas fa-plus"></i> Add Program
-    </button>
-  </div>
-</div>
-
-<!-- Switch Academic Year Modal -->
-<div class="modal" id="switchYearModal">
-  <div class="modal-content" style="width: 700px; max-width: 90%;">
-    <div class="modal-header">
-      <h3><i class="fas fa-calendar-alt"></i> Switch Active Period</h3>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label for="switch-program-select">Select Program *</label>
-        <select id="switch-program-select" onchange="loadAcademicYearsForSwitch()" required>
-          <option value="" disabled selected>Select Program</option>
-        </select>
-      </div>
-      
-      <div id="academicYearsList" style="margin-top: 20px; display: none;">
-        <h4>Select Academic Year</h4>
-        <div id="academicYearsContainer" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
-          <!-- Academic years will be loaded here -->
-        </div>
-      </div>
-<div class="page-container" id="batchManagementPage" style="display: none;">
-    <div class="header">
-      <h2><i class="fas fa-users"></i> Batch Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
-      <a href="#" id="backToAcademicYearsFromBatch" class="back-btn">
-        <i class="fas fa-arrow-left"></i> Back to Academic Years
-      </a>
-    </div>
-    <div class="batches-table">
-      <div class="academic-header">
-        <h3>Available Batches</h3>
-        <button id="addBatchBtn" class="btn btn-primary">
-          <i class="fas fa-plus"></i> Add Batch
+      <h2><i class="fas fa-book"></i> Programs Management</h2>
+      <div style="display: flex; gap: 10px;">
+        <button id="switchYearBtn" class="btn btn-primary">
+          <i class="fas fa-calendar-alt"></i> Switch Academic Year
+        </button>
+        <button id="addProgramBtn" class="btn btn-primary">
+          <i class="fas fa-plus"></i> Add Program
         </button>
       </div>
-      <table id="batchesTable">
-        <thead>
-          <tr>
-            <th>Batch Name</th>
-            <th>Total Students</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Will be populated via JS -->
-        </tbody>
-      </table>
     </div>
-  </div>
-
-    <!-- Add Batch Modal -->
-  <div class="modal" id="addBatchModal">
-    <div class="modal-content" style="width: 500px; max-width: 90%;">
-      <div class="modal-header">
-        <h3>Add New Batch</h3>
-      </div>
-      <form id="addBatchForm">
-        <div class="form-group">
-          <label for="batch-name-add">Batch Name *</label>
-          <input type="text" id="batch-name-add" placeholder="e.g., Batch A, Morning Batch, Irregular 2024" required>
-        </div>
-        <div class="form-group">
-          <label for="batch-status-add">Status *</label>
-          <select id="batch-status-add" required>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="hideAddBatchModal()">Cancel</button>
-          <button type="button" class="btn btn-success" onclick="handleAddBatch()">Add Batch</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-      <div id="semestersList" style="margin-top: 20px; display: none;">
-        <h4>Select Active Semester</h4>
-        <div id="semestersContainer" style="max-height: 200px; overflow-y: auto;">
-          <!-- Semesters will be loaded here -->
-        </div>
-      </div>
-      
-      <div style="margin-top: 20px; padding: 15px; background: #f0f8ff; border-radius: 5px; display: none;" id="currentPeriodInfo">
-        <strong>Currently Active:</strong><br>
-        <span id="currentPeriodText" style="font-size: 16px; color: #007bff;">-</span>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-secondary" onclick="hideSwitchYearModal()">Close</button>
-    </div>
-  </div>
-</div>
-
 
     <div class="courses-table">
       <h3>Available Programs</h3>
@@ -194,6 +98,236 @@
         </tbody>
       </table>
     </div>
+  </div>
+  <!-- END Programs Page -->
+
+  <!-- Academic Year Management Page -->
+  <div class="page-container" id="academicYearManagementPage" style="display: none;">
+    <div class="header">
+      <h2><i class="fas fa-calendar-alt"></i> Academic Year Management - PROGRAM_NAME</h2>
+      <a href="#" id="backToProgramsFromYear" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Programs
+      </a>
+    </div>
+    <div class="years-table">
+      <div class="academic-header">
+        <h3>Available Academic Years</h3>
+        <button id="addAcademicYearBtn" class="btn btn-primary">
+          <i class="fas fa-plus"></i> Add Academic Year
+        </button>
+      </div>
+      <table id="academicYearsTable">
+        <thead>
+          <tr>
+            <th>Academic Year</th>
+            <th class="action-buttons">Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <!-- END Academic Year Management Page -->
+
+  <!-- Curriculum Management Page -->
+  <div class="page-container" id="batchManagementPage" style="display: none;">
+    <div class="header">
+      <h2><i class="fas fa-book-open"></i> Curriculum Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
+      <a href="#" id="backToAcademicYearsFromBatch" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Academic Years
+      </a>
+    </div>
+    <div class="batches-table">
+      <div class="academic-header">
+        <h3>Available Curricula</h3>
+        <button id="addBatchBtn" class="btn btn-primary">
+          <i class="fas fa-plus"></i> Add Curriculum
+        </button>
+      </div>
+      <table id="batchesTable">
+        <thead>
+          <tr>
+            <th>Curriculum Name</th>
+            <th>Year</th>
+            <th>Students Enrolled</th>
+            <th>Sections</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Will be populated via JS -->
+        </tbody>
+      </table>
+    </div>
+  
+  </div>
+  <!-- END Curriculum Management Page -->
+
+  <!-- Semester Management Page -->
+  <div class="page-container" id="semesterManagementPage" style="display: none;">
+    <div class="header">
+      <h2><i class="fas fa-calendar"></i> Semester Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
+      <a href="#" id="backToAcademicYears" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Academic Years
+      </a>
+    </div>
+    <div class="semesters-table">
+      <div class="semester-header">
+        <h3>Available Semesters</h3>
+        <button id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
+          <i class="fas fa-plus"></i> Add Semester
+        </button>
+      </div>
+      <table id="semestersTable">
+        <thead>
+          <tr>
+            <th>Semester</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <!-- END Semester Management Page -->
+
+  <!-- Subject Management Page -->
+  <div class="page-container" id="subjectManagementPage" style="display: none;">
+    <div class="header">
+      <h2><i class="fas fa-book"></i> Subject Management - PROGRAM_NAME</h2>
+      <a href="#" id="backToSemesters" class="back-btn">
+        <i class="fas fa-arrow-left"></i> Back to Semesters
+      </a>
+    </div>
+
+    <div class="dashboard-content">
+      <div class="selection-controls">
+        <div class="control-group">
+          <label for="select-year-level">Year Level</label>
+          <select id="select-year-level" onchange="loadSections()">
+            <option value="" disabled selected>Select Year Level</option>
+            <option value="1">1st Year</option>
+            <option value="2">2nd Year</option>
+            <option value="3">3rd Year</option>
+            <option value="4">4th Year</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="select-section">Section</label>
+          <select id="select-section" onchange="loadSubjects()" disabled>
+            <option value="" disabled selected>Select Section</option>
+          </select>
+        </div>
+
+        <button id="addSectionBtn" class="btn btn-primary" onclick="showAddSectionModal()">
+          <i class="fas fa-plus"></i> Add Section
+        </button>
+
+        <button id="addSubjectBtn" class="btn btn-primary" disabled onclick="showAddSubjectModal()">
+          <i class="fas fa-plus"></i> Add Subject
+        </button>
+      </div>
+
+      <div class="selection-prompt">
+        <i class="fas fa-calendar-alt"></i>
+        <h4>Select Year Level and Section</h4>
+        <p>Please select a year level and section from the dropdowns above to view and manage subject schedules.</p>
+      </div>
+
+      <div class="subjects-list" id="subjectsList" style="display: none;">
+        <h3>Subjects Schedule</h3>
+        <div class="table-container">
+          <table id="subjectsTable" class="subjects-table">
+            <thead>
+              <tr>
+                <th>Subject Code</th>
+                <th>Subject Name</th>
+                <th>Class Type</th>
+                <th>Units</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="subjectsTableBody"></tbody>
+          </table>
+        </div>
+        <div id="noSubjectsMessage" style="text-align: center; padding: 20px; color: #666; display: none;">
+          No subjects added yet for this year level and section.
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- END Subject Management Page -->
+
+  <!-- MODALS SECTION -->
+  <!-- Switch Academic Year Modal -->
+  <div class="modal" id="switchYearModal">
+    <div class="modal-content" style="width: 700px; max-width: 90%;">
+      <div class="modal-header">
+        <h3><i class="fas fa-calendar-alt"></i> Switch Active Period</h3>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="switch-program-select">Select Program *</label>
+          <select id="switch-program-select" onchange="loadAcademicYearsForSwitch()" required>
+            <option value="" disabled selected>Select Program</option>
+          </select>
+        </div>
+        
+        <div id="academicYearsList" style="margin-top: 20px; display: none;">
+          <h4>Select Academic Year</h4>
+          <div id="academicYearsContainer" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+            <!-- Academic years will be loaded here -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="hideSwitchYearModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Batch Modal -->
+  <div class="modal" id="addBatchModal">
+    <div class="modal-content" style="width: 600px; max-width: 90%;">
+      <div class="modal-header">
+        <h3>Add New Curriculum</h3>
+      </div>
+      <form id="addBatchForm">
+        <div class="form-group">
+          <label for="curriculum-name-add">Curriculum Name *</label>
+          <input type="text" id="curriculum-name-add" placeholder="e.g., 2018 Curriculum, Revised 2022 Curriculum" required>
+          <small style="color: #666;">A descriptive name for this curriculum version</small>
+        </div>
+        <div class="form-group">
+          <label for="curriculum-year-add">Curriculum Year *</label>
+          <input type="text" id="curriculum-year-add" placeholder="e.g., 2018, 2020, 2022" pattern="\d{4}" title="Format: YYYY" required>
+          <small style="color: #666;">The year this curriculum was established (YYYY format)</small>
+        </div>
+        <div class="form-group">
+          <label for="curriculum-description-add">Description</label>
+          <textarea id="curriculum-description-add" rows="3" placeholder="Brief description of changes or features in this curriculum"></textarea>
+          <small style="color: #666;">Optional: Describe what makes this curriculum different</small>
+        </div>
+        <div class="form-group">
+          <label for="curriculum-effective-date-add">Effective Date</label>
+          <input type="date" id="curriculum-effective-date-add">
+          <small style="color: #666;">When this curriculum becomes active</small>
+        </div>
+        <div class="form-group">
+          <label for="curriculum-status-add">Status *</label>
+          <select id="curriculum-status-add" required>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="hideAddBatchModal()">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="handleAddCurriculum()">Add Curriculum</button>
+        </div>
+      </form>
+    </div>
+  </div>
   </div>
 
   <!-- Academic Year Management Page -->
@@ -1037,8 +1171,8 @@ function displayAcademicYears(academicYears) {
             <td class="action-buttons">
                 <a href="#" class="btn btn-view view-academic-year"
                    data-academic-year="${year.academic_year}"
-                   title="View Batches">
-                    <i class="fas fa-users"></i> View Batches
+                   title="View Curricula">
+                    <i class="fas fa-book-open"></i> View Curricula
                 </a>
                 <button class="btn btn-edit"
                         onclick="editAcademicYear('${year.academic_year}')"
@@ -1054,7 +1188,7 @@ function displayAcademicYears(academicYears) {
         </tr>
     `).join('');
 
-    // Update event listeners to go to BATCH page
+    // Click on academic year → go to CURRICULUM page
     document.querySelectorAll('.view-academic-year').forEach(button => {
         button.addEventListener('click', function(e) {
             e.preventDefault();
@@ -1062,7 +1196,7 @@ function displayAcademicYears(academicYears) {
             currentAcademicYear = academicYear;
 
             document.getElementById('academicYearManagementPage').style.display = 'none';
-            loadBatchManagementPage(currentProgramCode, currentProgramName, academicYear);
+            loadCurriculumManagementPage(currentProgramCode, currentProgramName, academicYear);
         });
     });
 }
@@ -1275,116 +1409,550 @@ function deleteAcademicYear(academicYear) {
         }
     );
 }
-function loadBatchManagementPage(programCode, programName, academicYear) {
-  currentProgramCode = programCode;
-  currentProgramName = programName;
-  currentAcademicYear = academicYear;
+// DIAGNOSTIC AND FIX FOR BLANK CURRICULUM PAGE
+// Add this temporarily to diagnose the issue
 
-  const page = document.getElementById('batchManagementPage');
-  page.querySelector('.header h2').innerHTML = `<i class="fas fa-users"></i> Batch Management - ${programName} (${academicYear})`;
-  page.style.display = 'block';
-  loadBatches();
+function loadCurriculumManagementPage(programCode, programName, academicYear) {
+    console.log('=== CURRICULUM PAGE DIAGNOSTIC ===');
+    console.log('1. Function called with:', { programCode, programName, academicYear });
+    
+    currentProgramCode = programCode;
+    currentProgramName = programName;
+    currentAcademicYear = academicYear;
 
-  document.getElementById('backToAcademicYearsFromBatch').onclick = e => {
-    e.preventDefault();
-    page.style.display = 'none';
-    document.getElementById('academicYearManagementPage').style.display = 'block';
-  };
-
-  document.getElementById('addBatchBtn').onclick = showAddBatchModal;
+    const page = document.getElementById('batchManagementPage');
+    console.log('2. Page element found:', page !== null);
+    console.log('3. Page element:', page);
+    
+    if (!page) {
+        console.error('ERROR: batchManagementPage element not found in DOM!');
+        alert('Error: Curriculum page container not found. Check HTML structure.');
+        return;
+    }
+    
+    // Check if page is inside a modal
+    let parent = page.parentElement;
+    let depth = 0;
+    console.log('4. Checking parent hierarchy:');
+    while (parent && depth < 10) {
+        console.log(`   - Level ${depth}:`, parent.tagName, parent.className, parent.id);
+        if (parent.classList.contains('modal')) {
+            console.error('ERROR: Page is inside a MODAL! This will cause it to be hidden.');
+            alert('Error: Curriculum page is nested inside a modal. Please fix HTML structure.');
+        }
+        parent = parent.parentElement;
+        depth++;
+    }
+    
+    // Force show the page
+    console.log('5. Setting display to block...');
+    page.style.display = 'block';
+    page.style.visibility = 'visible';
+    page.style.opacity = '1';
+    
+    // Check computed styles
+    const computed = window.getComputedStyle(page);
+    console.log('6. Computed styles:', {
+        display: computed.display,
+        visibility: computed.visibility,
+        opacity: computed.opacity,
+        position: computed.position,
+        zIndex: computed.zIndex
+    });
+    
+    // Hide all other pages
+    console.log('7. Hiding other pages...');
+    const allPages = ['programsPage', 'academicYearManagementPage', 'semesterManagementPage', 'subjectManagementPage'];
+    allPages.forEach(pageId => {
+        const el = document.getElementById(pageId);
+        if (el) {
+            el.style.display = 'none';
+            console.log(`   - Hidden: ${pageId}`);
+        }
+    });
+    
+    // Update header
+    console.log('8. Updating header...');
+    const headerEl = page.querySelector('.header h2');
+    if (headerEl) {
+        headerEl.innerHTML = `<i class="fas fa-book-open"></i> Curriculum Management - ${programName} (${academicYear})`;
+        console.log('   - Header updated');
+    } else {
+        console.error('   - ERROR: Header element not found!');
+    }
+    
+    // Check table
+    console.log('9. Checking table...');
+    const table = document.getElementById('batchesTable');
+    const tbody = table ? table.querySelector('tbody') : null;
+    console.log('   - Table found:', table !== null);
+    console.log('   - Tbody found:', tbody !== null);
+    
+    // Check button
+    console.log('10. Checking add button...');
+    const addBtn = document.getElementById('addBatchBtn');
+    console.log('   - Add button found:', addBtn !== null);
+    
+    if (addBtn) {
+        addBtn.innerHTML = '<i class="fas fa-plus"></i> Add Curriculum';
+        addBtn.onclick = showAddCurriculumModal;
+        console.log('   - Button configured');
+    }
+    
+    // Setup back button
+    console.log('11. Setting up back button...');
+    const backBtn = document.getElementById('backToAcademicYearsFromBatch');
+    if (backBtn) {
+        backBtn.onclick = e => {
+            e.preventDefault();
+            console.log('Back button clicked');
+            page.style.display = 'none';
+            document.getElementById('academicYearManagementPage').style.display = 'block';
+        };
+        console.log('   - Back button configured');
+    } else {
+        console.error('   - ERROR: Back button not found!');
+    }
+    
+    // Load curricula
+    console.log('12. Loading curricula data...');
+    loadCurricula();
+    
+    console.log('=== END DIAGNOSTIC ===');
 }
 
-function loadBatches() {
-  fetch(`/api/get_batches?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}`)
+function displayCurricula(curricula) {
+    console.log('=== DISPLAY CURRICULA DIAGNOSTIC ===');
+    console.log('1. Received curricula:', curricula);
+    console.log('2. Curricula count:', curricula.length);
+    
+    const tbody = document.querySelector('#batchesTable tbody');
+    console.log('3. Tbody element found:', tbody !== null);
+    
+    if (!tbody) {
+        console.error('ERROR: tbody not found!');
+        alert('Error: Table body element not found. Check HTML structure.');
+        return;
+    }
+    
+    const active = curricula.filter(c => c.status === 'active');
+    console.log('4. Active curricula count:', active.length);
+
+    if (active.length === 0) {
+        console.log('5. No curricula - showing empty message');
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:40px;">No active curricula yet.<br>Click "Add Curriculum" to create one.</td></tr>';
+        
+        // Force table to be visible
+        const table = document.getElementById('batchesTable');
+        if (table) {
+            table.style.display = 'table';
+            table.style.visibility = 'visible';
+            console.log('6. Table forced visible');
+        }
+        return;
+    }
+
+    console.log('5. Rendering', active.length, 'curricula rows');
+    tbody.innerHTML = active.map((c, index) => {
+        console.log(`   - Row ${index}:`, c.curriculum_name);
+        return `
+        <tr>
+            <td>
+                <a href="#" class="view-curriculum-link" data-curriculum-id="${c.curriculum_id}">
+                    <strong>${c.curriculum_name}</strong>
+                </a>
+                ${c.description ? `<br><small style="color:#666;">${c.description}</small>` : ''}
+            </td>
+            <td><span style="padding: 4px 8px; background: #e3f2fd; border-radius: 4px; font-weight: 600;">${c.curriculum_year}</span></td>
+            <td>${c.student_count || 0}</td>
+            <td>${c.section_count || 0}</td>
+            <td><span style="color:${c.status==='active'?'green':'red'}">${c.status.charAt(0).toUpperCase()+c.status.slice(1)}</span></td>
+            <td class="action-buttons">
+                <!-- ADD THIS VIEW BUTTON -->
+                <button class="btn btn-view view-curriculum-btn" 
+                        data-curriculum-id="${c.curriculum_id}"
+                        title="View Semesters">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button class="btn btn-edit" onclick="editCurriculum('${c.curriculum_id}')" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger" onclick="deleteCurriculum('${c.curriculum_id}', '${c.curriculum_name.replace(/'/g, "\\'")}')" title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+        `;
+    }).join('');
+    
+    console.log('6. HTML rendered to tbody');
+    
+    // Attach click handlers to curriculum name links
+    const nameLinks = document.querySelectorAll('.view-curriculum-link');
+    console.log('7. Found', nameLinks.length, 'curriculum name links');
+    
+    nameLinks.forEach((link, index) => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            const curriculumId = link.dataset.curriculumId;
+            console.log(`Curriculum name ${index} clicked:`, curriculumId);
+            
+            window.currentCurriculumId = curriculumId;
+            document.getElementById('batchManagementPage').style.display = 'none';
+            loadSemesterManagementPage(currentProgramCode, currentProgramName, currentAcademicYear);
+        });
+    });
+    
+    // ADD THIS: Attach click handlers to VIEW BUTTONS
+    const viewButtons = document.querySelectorAll('.view-curriculum-btn');
+    console.log('8. Found', viewButtons.length, 'view buttons');
+    
+    viewButtons.forEach((button, index) => {
+        button.addEventListener('click', e => {
+            e.preventDefault();
+            const curriculumId = button.dataset.curriculumId;
+            console.log(`View button ${index} clicked:`, curriculumId);
+            
+            window.currentCurriculumId = curriculumId;
+            document.getElementById('batchManagementPage').style.display = 'none';
+            loadSemesterManagementPage(currentProgramCode, currentProgramName, currentAcademicYear);
+        });
+    });
+    
+    console.log('=== END DISPLAY CURRICULA ===');
+}
+
+// Keep loadCurricula with added diagnostics
+function loadCurricula() {
+    console.log('=== LOAD CURRICULA ===');
+    console.log('Program:', currentProgramCode);
+    console.log('Academic Year:', currentAcademicYear);
+    
+    if (!currentProgramCode || !currentAcademicYear) {
+        console.error('ERROR: Missing required parameters');
+        showAlertModal('Error', 'Missing program or academic year information', true);
+        return;
+    }
+    
+    const url = `/api/get_curricula?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}`;
+    console.log('Fetching:', url);
+    
+    fetch(url)
+        .then(r => {
+            console.log('Response status:', r.status);
+            return r.json();
+        })
+        .then(d => {
+            console.log('Response data:', d);
+            if (d.success) {
+                displayCurricula(d.curricula || []);
+            } else {
+                console.error('API returned error:', d.message);
+                showAlertModal('Error', d.message || 'Failed to load curricula', true);
+                const tbody = document.querySelector('#batchesTable tbody');
+                if (tbody) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:40px;">Failed to load curricula</td></tr>';
+                }
+            }
+        })
+        .catch(err => {
+            console.error('Fetch error:', err);
+            showAlertModal('Error', 'Network error: ' + err.message, true);
+        });
+}
+
+// 4. Load Semester Management Page (from curriculum)
+function loadSemesterManagementPage(programCode, programName, academicYear) {
+    const semesterManagementPage = document.getElementById('semesterManagementPage');
+    
+    // Update header
+    const headerElement = semesterManagementPage.querySelector('.header h2');
+    if (headerElement) {
+        headerElement.innerHTML = `<i class="fas fa-calendar"></i> Semester Management - ${programName} (${academicYear})`;
+    }
+    
+    semesterManagementPage.style.display = 'block';
+    loadSemesters();
+    
+    // Back button → go back to CURRICULUM page (not academic years)
+    const backBtn = document.getElementById('backToAcademicYears');
+    if (backBtn) {
+        backBtn.removeEventListener('click', null);
+        backBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            semesterManagementPage.style.display = 'none';
+            document.getElementById('batchManagementPage').style.display = 'block'; // Go back to curriculum
+        });
+    }
+}
+
+// 5. Keep existing loadCurricula function
+function loadCurricula() {
+    if (!currentProgramCode || !currentAcademicYear) {
+        showAlertModal('Error', 'Missing program or academic year information', true);
+        return;
+    }
+    
+    fetch(`/api/get_curricula?program_id=${currentProgramCode}&academic_year=${currentAcademicYear}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                displayCurricula(d.curricula || []);
+            } else {
+                showAlertModal('Error', d.message || 'Failed to load curricula', true);
+                document.querySelector('#batchesTable tbody').innerHTML = 
+                    '<tr><td colspan="6" style="text-align:center;color:#999;padding:40px;">Failed to load curricula</td></tr>';
+            }
+        })
+        .catch(err => {
+            showAlertModal('Error', 'Network error: ' + err.message, true);
+        });
+}
+
+// 6. Keep all curriculum CRUD functions (add, edit, delete)
+function showAddCurriculumModal() {
+    const modal = document.getElementById('addBatchModal');
+    const modalHeader = modal.querySelector('.modal-header h3');
+    if (modalHeader) modalHeader.textContent = 'Add New Curriculum';
+    
+    const form = document.getElementById('addBatchForm');
+    form.innerHTML = `
+        <div class="form-group">
+            <label for="curriculum-name-add">Curriculum Name *</label>
+            <input type="text" id="curriculum-name-add" placeholder="e.g., 2018 Curriculum, Revised 2022" required>
+            <small style="color: #666;">A descriptive name for this curriculum version</small>
+        </div>
+        <div class="form-group">
+            <label for="curriculum-year-add">Curriculum Year *</label>
+            <input type="text" id="curriculum-year-add" placeholder="e.g., 2018, 2020, 2022" pattern="\\d{4}" title="Format: YYYY" required>
+            <small style="color: #666;">The year this curriculum was established (YYYY format)</small>
+        </div>
+        <div class="form-group">
+            <label for="curriculum-description-add">Description</label>
+            <textarea id="curriculum-description-add" rows="3" placeholder="Brief description of this curriculum"></textarea>
+            <small style="color: #666;">Optional: Describe what makes this curriculum different</small>
+        </div>
+        <div class="form-group">
+            <label for="curriculum-effective-date-add">Effective Date</label>
+            <input type="date" id="curriculum-effective-date-add">
+            <small style="color: #666;">When this curriculum becomes active</small>
+        </div>
+        <div class="form-group">
+            <label for="curriculum-status-add">Status *</label>
+            <select id="curriculum-status-add" required>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+            </select>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="hideAddBatchModal()">Cancel</button>
+            <button type="button" class="btn btn-success" onclick="handleAddCurriculum()">Add Curriculum</button>
+        </div>
+    `;
+    
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+}
+
+function hideAddBatchModal() {
+    const modal = document.getElementById('addBatchModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+function handleAddCurriculum() {
+    const name = document.getElementById('curriculum-name-add')?.value?.trim();
+    const year = document.getElementById('curriculum-year-add')?.value?.trim();
+    const description = document.getElementById('curriculum-description-add')?.value?.trim() || '';
+    const effectiveDate = document.getElementById('curriculum-effective-date-add')?.value || null;
+    const status = document.getElementById('curriculum-status-add')?.value;
+    
+    if (!name || !year) {
+        showAlertModal('Error', 'Curriculum name and year are required', true);
+        return;
+    }
+
+    if (!/^\d{4}$/.test(year)) {
+        showAlertModal('Error', 'Curriculum year must be in YYYY format', true);
+        return;
+    }
+
+    fetch('/api/add_curriculum', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            program_id: currentProgramCode,
+            academic_year: currentAcademicYear,
+            curriculum_name: name,
+            curriculum_year: year,
+            description: description,
+            effective_date: effectiveDate,
+            status: status
+        })
+    })
     .then(r => r.json())
     .then(d => {
-      if (d.success) displayBatches(d.batches || []);
-      else {
-        showAlertModal('Error', d.message || 'Failed to load batches', true);
-        document.querySelector('#batchesTable tbody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:40px;">No batches found</td></tr>';
-      }
+        if (d.success) {
+            showAlertModal('Success', 'Curriculum added successfully!', false);
+            hideAddBatchModal();
+            loadCurricula();
+        } else {
+            showAlertModal('Error', d.message || 'Failed to add curriculum', true);
+        }
     })
-    .catch(() => showAlertModal('Error', 'Network error', true));
-}
-
-function displayBatches(batches) {
-  const tbody = document.querySelector('#batchesTable tbody');
-  const active = batches.filter(b => b.status === 'active');
-
-  if (active.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;padding:40px;">No active batches yet.<br>Click "Add Batch" to create one.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = active.map(b => `
-    <tr>
-      <td><a href="#" class="view-batch-link" data-batch-id="${b.batch_id}"><strong>${b.batch_name}</strong></a></td>
-      <td>${b.student_count || 0}</td>
-      <td><span style="color:${b.status==='active'?'green':'red'}">${b.status.charAt(0).toUpperCase()+b.status.slice(1)}</span></td>
-      <td class="action-buttons">
-        <button class="btn btn-edit" onclick="editBatch('${b.batch_id}')"><i class="fas fa-edit"></i></button>
-        <button class="btn btn-danger" onclick="deleteBatch('${b.batch_id}', '${b.batch_name.replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>
-      </td>
-    </tr>
-  `).join('');
-
-  document.querySelectorAll('.view-batch-link').forEach(link => {
-    link.addEventListener('click', e => {
-      e.preventDefault();
-      currentBatchId = link.dataset.batchId;
-      document.getElementById('batchManagementPage').style.display = 'none';
-      loadSemesterManagementPage(currentProgramCode, currentProgramName, currentAcademicYear);
+    .catch(err => {
+        showAlertModal('Error', 'Network error: ' + err.message, true);
     });
-  });
 }
 
-function showAddBatchModal() {
-  document.getElementById('addBatchForm').reset();
-  const m = document.getElementById('addBatchModal');
-  m.classList.add('active');
-  m.style.display = 'flex';
+function editCurriculum(curriculumId) {
+    fetch(`/api/get_curriculum_details?curriculum_id=${curriculumId}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                showEditCurriculumModal(d.curriculum);
+            } else {
+                showAlertModal('Error', 'Failed to load curriculum details', true);
+            }
+        })
+        .catch(err => {
+            showAlertModal('Error', 'Failed to load curriculum details', true);
+        });
 }
-function hideAddBatchModal() {
-  const m = document.getElementById('addBatchModal');
-  m.classList.remove('active');
-  m.style.display = 'none';
-}
-function handleAddBatch() {
-  const name = document.getElementById('batch-name-add').value.trim();
-  const status = document.getElementById('batch-status-add').value;
-  if (!name) return showAlertModal('Error', 'Batch name is required', true);
 
-  fetch('/api/add_batch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      program_id: currentProgramCode,
-      academic_year: currentAcademicYear,
-      batch_name: name,
-      status: status
+function showEditCurriculumModal(curriculum) {
+    const modal = document.getElementById('addBatchModal');
+    modal.querySelector('.modal-header h3').textContent = 'Edit Curriculum';
+    
+    const form = document.getElementById('addBatchForm');
+    form.innerHTML = `
+        <div class="form-group">
+            <label for="curriculum-name-edit">Curriculum Name *</label>
+            <input type="text" id="curriculum-name-edit" value="${curriculum.curriculum_name}" required>
+        </div>
+        <div class="form-group">
+            <label for="curriculum-year-edit">Curriculum Year *</label>
+            <input type="text" id="curriculum-year-edit" value="${curriculum.curriculum_year}" pattern="\\d{4}" required>
+        </div>
+        <div class="form-group">
+            <label for="curriculum-description-edit">Description</label>
+            <textarea id="curriculum-description-edit" rows="3">${curriculum.description || ''}</textarea>
+        </div>
+        <div class="form-group">
+            <label for="curriculum-effective-date-edit">Effective Date</label>
+            <input type="date" id="curriculum-effective-date-edit" value="${curriculum.effective_date || ''}">
+        </div>
+        <div class="form-group">
+            <label for="curriculum-status-edit">Status *</label>
+            <select id="curriculum-status-edit" required>
+                <option value="active" ${curriculum.status === 'active' ? 'selected' : ''}>Active</option>
+                <option value="inactive" ${curriculum.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+            </select>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="hideAddBatchModal()">Cancel</button>
+            <button type="button" class="btn btn-success" onclick="handleUpdateCurriculum('${curriculum.curriculum_id}')">Update Curriculum</button>
+        </div>
+    `;
+    
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+}
+
+function handleUpdateCurriculum(curriculumId) {
+    const name = document.getElementById('curriculum-name-edit').value.trim();
+    const year = document.getElementById('curriculum-year-edit').value.trim();
+    const description = document.getElementById('curriculum-description-edit')?.value?.trim() || '';
+    const effectiveDate = document.getElementById('curriculum-effective-date-edit')?.value || null;
+    const status = document.getElementById('curriculum-status-edit').value;
+
+    fetch('/api/update_curriculum', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            curriculum_id: curriculumId,
+            curriculum_name: name,
+            curriculum_year: year,
+            description: description,
+            effective_date: effectiveDate,
+            status: status
+        })
     })
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.success) {
-      showAlertModal('Success', 'Batch added!', false);
-      hideAddBatchModal();
-      loadBatches();
-    } else showAlertModal('Error', d.message || 'Failed to add batch', true);
-  })
-  .catch(() => showAlertModal('Error', 'Network error', true));
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            showAlertModal('Success', 'Curriculum updated!', false);
+            hideAddBatchModal();
+            loadCurricula();
+        } else {
+            showAlertModal('Error', d.message, true);
+        }
+    });
 }
-function editBatch(id) { showAlertModal('Info', 'Edit batch coming soon', false); }
-function deleteBatch(id, name) {
-  showConfirmModal('Delete Batch', `Delete "${name}"? This cannot be undone.`, () => {
-    fetch('/api/delete_batch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({batch_id:id}) })
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) { showAlertModal('Deleted', 'Batch removed', false); loadBatches(); }
-        else showAlertModal('Error', d.message || 'Delete failed', true);
-      });
-  });
+
+function deleteCurriculum(curriculumId, name) {
+    showConfirmModal('Delete Curriculum', `Delete "${name}"? This cannot be undone.`, () => {
+        fetch('/api/delete_curriculum', { 
+            method: 'POST', 
+            headers: {'Content-Type':'application/json'}, 
+            body: JSON.stringify({curriculum_id: curriculumId}) 
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) { 
+                showAlertModal('Deleted', 'Curriculum removed', false); 
+                loadCurricula(); 
+            }
+            else showAlertModal('Error', d.message || 'Delete failed', true);
+        });
+    });
 }
+
+// Update the displayAcademicYears function to call curriculum page instead
+function displayAcademicYears(academicYears) {
+    const tbody = document.querySelector('#academicYearsTable tbody');
+    if (!tbody) return;
+
+    const activeYears = academicYears.filter(y => y.status === 'active');
+
+    tbody.innerHTML = activeYears.map(year => `
+        <tr>
+            <td>${year.academic_year}</td>
+            <td class="action-buttons">
+                <a href="#" class="btn btn-view view-academic-year"
+                   data-academic-year="${year.academic_year}"
+                   title="View Curricula">
+                    <i class="fas fa-book-open"></i> View Curricula
+                </a>
+                <button class="btn btn-edit"
+                        onclick="editAcademicYear('${year.academic_year}')"
+                        title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-danger"
+                        onclick="deleteAcademicYear('${year.academic_year}')"
+                        title="Delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+
+    // Update event listeners to go to CURRICULUM page
+    document.querySelectorAll('.view-academic-year').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const academicYear = this.getAttribute('data-academic-year');
+            currentAcademicYear = academicYear;
+
+            document.getElementById('academicYearManagementPage').style.display = 'none';
+            loadCurriculumManagementPage(currentProgramCode, currentProgramName, academicYear);
+        });
+    });
+}
+
 // Semester Management Functions
 function loadSemesterManagementPage(programCode, programName, academicYear) {
     const semesterManagementPage = document.getElementById('semesterManagementPage');

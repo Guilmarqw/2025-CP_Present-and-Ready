@@ -14866,6 +14866,293 @@ def get_student_details(student_id):
             'message': f'Error loading student details: {str(e)}'
         }), 500
 
+# Curriculum Management API Endpoints for Flask
+# Uses mysql.connector with get_db_cursor() context manager
+
+@app.route('/api/get_curricula', methods=['GET'])
+def get_curricula():
+    """Get all curricula for a specific program and academic year"""
+    try:
+        program_id = request.args.get('program_id')
+        academic_year = request.args.get('academic_year')
+        
+        if not program_id or not academic_year:
+            return jsonify({
+                'success': False,
+                'message': 'Program ID and Academic Year are required'
+            }), 400
+        
+        with get_db_cursor(commit=False) as cursor:
+            # Get curricula with student count
+            query = """
+                SELECT 
+                    c.curriculum_id,
+                    c.curriculum_name,
+                    c.curriculum_year,
+                    c.description,
+                    c.status,
+                    c.effective_date,
+                    COUNT(DISTINCT s.student_id) as student_count,
+                    COUNT(DISTINCT ys.section_id) as section_count
+                FROM curricula c
+                LEFT JOIN students s ON c.curriculum_id = s.curriculum_id
+                LEFT JOIN year_sections ys ON c.curriculum_id = ys.curriculum_id
+                WHERE c.program_id = %s 
+                AND c.academic_year = %s
+                GROUP BY c.curriculum_id, c.curriculum_name, c.curriculum_year, 
+                         c.description, c.status, c.effective_date
+                ORDER BY c.curriculum_year DESC
+            """
+            
+            cursor.execute(query, (program_id, academic_year))
+            curricula = cursor.fetchall()
+        
+        curriculum_list = []
+        for curr in curricula:
+            curriculum_list.append({
+                'curriculum_id': curr['curriculum_id'],
+                'curriculum_name': curr['curriculum_name'],
+                'curriculum_year': curr['curriculum_year'],
+                'description': curr['description'],
+                'status': curr['status'],
+                'effective_date': curr['effective_date'].strftime('%Y-%m-%d') if curr['effective_date'] else None,
+                'student_count': curr['student_count'] or 0,
+                'section_count': curr['section_count'] or 0
+            })
+        
+        return jsonify({
+            'success': True,
+            'curricula': curriculum_list
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_curricula: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/add_curriculum', methods=['POST'])
+def add_curriculum():
+    """Add a new curriculum"""
+    try:
+        data = request.get_json()
+        program_id = data.get('program_id')
+        academic_year = data.get('academic_year')
+        curriculum_name = data.get('curriculum_name')
+        curriculum_year = data.get('curriculum_year')
+        description = data.get('description', '')
+        status = data.get('status', 'active')
+        effective_date = data.get('effective_date')
+        
+        if not all([program_id, academic_year, curriculum_name, curriculum_year]):
+            return jsonify({
+                'success': False,
+                'message': 'Program ID, Academic Year, Curriculum Name, and Curriculum Year are required'
+            }), 400
+        
+        with get_db_cursor(commit=True) as cursor:
+            # Check if curriculum already exists
+            cursor.execute("""
+                SELECT curriculum_id FROM curricula 
+                WHERE program_id = %s 
+                AND academic_year = %s 
+                AND curriculum_year = %s
+            """, (program_id, academic_year, curriculum_year))
+            
+            if cursor.fetchone():
+                return jsonify({
+                    'success': False,
+                    'message': f'Curriculum year "{curriculum_year}" already exists for {academic_year}'
+                }), 400
+            
+            # Insert new curriculum
+            cursor.execute("""
+                INSERT INTO curricula 
+                (program_id, academic_year, curriculum_name, curriculum_year, description, status, effective_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (program_id, academic_year, curriculum_name, curriculum_year, description, status, effective_date))
+        
+        return jsonify({
+            'success': True,
+            'message': f'Curriculum "{curriculum_name}" added successfully!'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in add_curriculum: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/update_curriculum', methods=['POST'])
+def update_curriculum():
+    """Update an existing curriculum"""
+    try:
+        data = request.get_json()
+        curriculum_id = data.get('curriculum_id')
+        curriculum_name = data.get('curriculum_name')
+        curriculum_year = data.get('curriculum_year')
+        description = data.get('description')
+        status = data.get('status')
+        effective_date = data.get('effective_date')
+        
+        if not all([curriculum_id, curriculum_name, curriculum_year, status]):
+            return jsonify({
+                'success': False,
+                'message': 'Curriculum ID, Name, Year, and Status are required'
+            }), 400
+        
+        with get_db_cursor(commit=True) as cursor:
+            # Update curriculum
+            cursor.execute("""
+                UPDATE curricula 
+                SET curriculum_name = %s, 
+                    curriculum_year = %s,
+                    description = %s,
+                    status = %s,
+                    effective_date = %s
+                WHERE curriculum_id = %s
+            """, (curriculum_name, curriculum_year, description, status, effective_date, curriculum_id))
+        
+        return jsonify({
+            'success': True,
+            'message': 'Curriculum updated successfully!'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in update_curriculum: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/delete_curriculum', methods=['POST'])
+def delete_curriculum():
+    """Delete a curriculum"""
+    try:
+        data = request.get_json()
+        curriculum_id = data.get('curriculum_id')
+        
+        if not curriculum_id:
+            return jsonify({
+                'success': False,
+                'message': 'Curriculum ID is required'
+            }), 400
+        
+        with get_db_cursor(commit=True) as cursor:
+            # Check if curriculum has students
+            cursor.execute("""
+                SELECT COUNT(*) as count FROM students WHERE curriculum_id = %s
+            """, (curriculum_id,))
+            
+            result = cursor.fetchone()
+            student_count = result['count'] if result else 0
+            
+            if student_count > 0:
+                return jsonify({
+                    'success': False,
+                    'message': f'Cannot delete curriculum. It has {student_count} student(s) enrolled in it.'
+                }), 400
+            
+            # Check if curriculum has sections/subjects
+            cursor.execute("""
+                SELECT COUNT(*) as count FROM year_sections WHERE curriculum_id = %s
+            """, (curriculum_id,))
+            
+            result = cursor.fetchone()
+            section_count = result['count'] if result else 0
+            
+            if section_count > 0:
+                return jsonify({
+                    'success': False,
+                    'message': f'Cannot delete curriculum. It has {section_count} section(s) with subjects defined.'
+                }), 400
+            
+            # Delete curriculum
+            cursor.execute("DELETE FROM curricula WHERE curriculum_id = %s", (curriculum_id,))
+        
+        return jsonify({
+            'success': True,
+            'message': 'Curriculum deleted successfully!'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in delete_curriculum: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/get_curriculum_details', methods=['GET'])
+def get_curriculum_details():
+    """Get details of a specific curriculum"""
+    try:
+        curriculum_id = request.args.get('curriculum_id')
+        
+        if not curriculum_id:
+            return jsonify({
+                'success': False,
+                'message': 'Curriculum ID is required'
+            }), 400
+        
+        with get_db_cursor(commit=False) as cursor:
+            cursor.execute("""
+                SELECT 
+                    c.curriculum_id,
+                    c.program_id,
+                    c.academic_year,
+                    c.curriculum_name,
+                    c.curriculum_year,
+                    c.description,
+                    c.status,
+                    c.effective_date,
+                    COUNT(DISTINCT s.student_id) as student_count,
+                    COUNT(DISTINCT ys.section_id) as section_count
+                FROM curricula c
+                LEFT JOIN students s ON c.curriculum_id = s.curriculum_id
+                LEFT JOIN year_sections ys ON c.curriculum_id = ys.curriculum_id
+                WHERE c.curriculum_id = %s
+                GROUP BY c.curriculum_id, c.program_id, c.academic_year, 
+                         c.curriculum_name, c.curriculum_year, c.description, 
+                         c.status, c.effective_date
+            """, (curriculum_id,))
+            
+            curriculum = cursor.fetchone()
+        
+        if not curriculum:
+            return jsonify({
+                'success': False,
+                'message': 'Curriculum not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'curriculum': {
+                'curriculum_id': curriculum['curriculum_id'],
+                'program_id': curriculum['program_id'],
+                'academic_year': curriculum['academic_year'],
+                'curriculum_name': curriculum['curriculum_name'],
+                'curriculum_year': curriculum['curriculum_year'],
+                'description': curriculum['description'],
+                'status': curriculum['status'],
+                'effective_date': curriculum['effective_date'].strftime('%Y-%m-%d') if curriculum['effective_date'] else None,
+                'student_count': curriculum['student_count'] or 0,
+                'section_count': curriculum['section_count'] or 0
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_curriculum_details: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
 if __name__ == "__main__":
     latest_frame = None
     stop_flag = False
