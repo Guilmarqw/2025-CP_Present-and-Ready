@@ -80,20 +80,28 @@
         <h3 class="group-title">Class Details</h3>
         <div class="input-group">
             <input type="text" placeholder="Subject Instructor" id="subjectInstructor" readonly>
-            <select id="subjectCode" disabled>
-                <option value="" selected disabled>Select Subject Code</option>
-            </select>
+            
+            <!-- CHANGE: Add multiple selection for subjects -->
+            <div class="multi-select-container">
+                <select id="subjectCode" multiple size="4" style="width: 100%; padding: 8px;">
+                    <option value="" disabled>Select Subject Code(s)</option>
+                </select>
+                <small class="select-hint">Hold Ctrl/Cmd to select multiple subjects</small>
+            </div>
         </div>
-        <div class="input-group">
-            <input type="text" placeholder="Year Level" id="yearLevel" readonly>
-            <input type="text" placeholder="Course" id="course" readonly>
-            <!-- FIXED: Changed id to "curriculum" and proper placeholder -->
-            <select id="curriculum" disabled>
-                <option value="" selected disabled>Select Curriculum</option>
-            </select>
+        
+        <!-- CHANGE: Add selected subjects display -->
+        <div class="selected-subjects" id="selectedSubjects" style="display: none;">
+            <h4>Selected Subjects:</h4>
+            <div id="selectedSubjectsList" class="selected-list"></div>
         </div>
+        
         <div class="input-group">
-            <!-- FIXED: This should be the section dropdown -->
+    <input type="text" placeholder="Year Level" id="yearLevel" readonly>
+    <input type="text" placeholder="Course" id="course" readonly>
+    <!-- REMOVED curriculum dropdown -->
+</div>
+        <div class="input-group">
             <select id="courseSection" disabled>
                 <option value="" selected disabled>Select Section</option>
             </select>
@@ -296,7 +304,6 @@ async function loadCustomSettings() {
     try {
         showLoading('Loading schedules...');
         
-        // Fetch faculty schedules with enhanced details
         const response = await fetch('/api/get_faculty_schedules_for_timer');
         const data = await response.json();
         
@@ -315,24 +322,16 @@ async function loadCustomSettings() {
         document.getElementById('subjectInstructor').value = data.logged_in_user || 'Instructor';
         document.getElementById('subjectInstructor').removeAttribute('readonly');
         
-        // Populate subject dropdown with enhanced information
+        // Populate subject dropdown with MULTIPLE selection
         const subjectDropdown = document.getElementById('subjectCode');
-        subjectDropdown.innerHTML = '<option value="" selected disabled>Select Subject Code</option>';
+        subjectDropdown.innerHTML = '<option value="" disabled>Select Subject Code(s)</option>';
         
         if (data.schedules && data.schedules.length > 0) {
-            const uniqueSubjects = {};
             data.schedules.forEach(sched => {
-                const key = `${sched.schedule_id}-${sched.subject_code}`;
-                if (!uniqueSubjects[key]) {
-                    uniqueSubjects[key] = sched;
-                }
-            });
-            
-            Object.values(uniqueSubjects).forEach(sched => {
                 const option = document.createElement('option');
                 option.value = sched.schedule_id;
                 
-                // Enhanced display with class type
+                // Enhanced display with class type and curriculum
                 let subjectDisplay = sched.subject_code;
                 if (sched.class_type === 'lecture') {
                     subjectDisplay += ' (Lecture)';
@@ -340,47 +339,35 @@ async function loadCustomSettings() {
                     subjectDisplay += ' (Laboratory)';
                 }
                 subjectDisplay += ` - ${sched.subject_name}`;
+                subjectDisplay += ` [${sched.curriculum_year || 'Default'}]`;
                 
                 option.textContent = subjectDisplay;
-                option.dataset.year = sched.year_level;
-                option.dataset.program = sched.program_name || sched.program;
-                option.dataset.section = sched.section_name || sched.section;
-                option.dataset.curriculum = sched.curriculum_year || 'Default';
-                option.dataset.classType = sched.class_type;
+                
+                // Store all data as JSON in dataset
+                option.dataset.subjectData = JSON.stringify({
+                    schedule_id: sched.schedule_id,
+                    subject_code: sched.subject_code,
+                    subject_name: sched.subject_name,
+                    class_type: sched.class_type,
+                    year_level: sched.year_level,
+                    section_name: sched.section_name,
+                    program_name: sched.program_name,
+                    curriculum_year: sched.curriculum_year,
+                    curriculum_id: sched.curriculum_id
+                });
+                
                 subjectDropdown.appendChild(option);
             });
         } else {
-            subjectDropdown.innerHTML = '<option value="" selected disabled>No schedules available</option>';
+            subjectDropdown.innerHTML = '<option value="" disabled>No schedules available</option>';
         }
         
         subjectDropdown.disabled = false;
+        
+        // Handle multiple subject selection
         subjectDropdown.addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-            if (selectedOption.value) {
-                // Set year level with ordinal suffix
-                document.getElementById('yearLevel').value = `${selectedOption.dataset.year}${getOrdinalSuffix(selectedOption.dataset.year)} Year`;
-                
-                // Set program name
-                document.getElementById('course').value = selectedOption.dataset.program;
-                
-                // Set curriculum
-                const curriculumDropdown = document.getElementById('curriculum');
-                curriculumDropdown.innerHTML = `<option value="${selectedOption.dataset.curriculum}" selected>${selectedOption.dataset.curriculum}</option>`;
-                curriculumDropdown.disabled = false;
-                
-                // Set section
-                const sectionDropdown = document.getElementById('courseSection');
-                sectionDropdown.innerHTML = `<option value="${selectedOption.dataset.section}" selected>Section ${selectedOption.dataset.section}</option>`;
-                sectionDropdown.disabled = false;
-                
-                console.log('Selected Class:', {
-                    year: selectedOption.dataset.year,
-                    program: selectedOption.dataset.program,
-                    curriculum: selectedOption.dataset.curriculum,
-                    section: selectedOption.dataset.section,
-                    classType: selectedOption.dataset.classType
-                });
-            }
+            updateSelectedSubjects();
+            updateClassSummary();
         });
         
         // Make all timer inputs editable
@@ -393,6 +380,109 @@ async function loadCustomSettings() {
         console.error('Error loading custom settings:', error);
         showModal('Error', 'Failed to load schedules: ' + error.message);
     }
+}
+
+function updateSelectedSubjects() {
+    const subjectDropdown = document.getElementById('subjectCode');
+    const selectedSubjectsContainer = document.getElementById('selectedSubjects');
+    const selectedSubjectsList = document.getElementById('selectedSubjectsList');
+    
+    const selectedOptions = Array.from(subjectDropdown.selectedOptions);
+    
+    if (selectedOptions.length === 0) {
+        selectedSubjectsContainer.style.display = 'none';
+        return;
+    }
+    
+    selectedSubjectsContainer.style.display = 'block';
+    selectedSubjectsList.innerHTML = '';
+    
+    selectedOptions.forEach(option => {
+        if (option.value) {
+            const subjectData = JSON.parse(option.dataset.subjectData);
+            
+            const chip = document.createElement('div');
+            chip.className = 'subject-chip';
+            chip.innerHTML = `
+                ${subjectData.subject_code} - ${subjectData.curriculum_year}
+                <button type="button" class="remove-chip" data-value="${option.value}">&times;</button>
+            `;
+            
+            selectedSubjectsList.appendChild(chip);
+        }
+    });
+    
+    // Add remove functionality
+    document.querySelectorAll('.remove-chip').forEach(button => {
+        button.addEventListener('click', function() {
+            const valueToRemove = this.getAttribute('data-value');
+            const optionToRemove = Array.from(subjectDropdown.options).find(opt => opt.value === valueToRemove);
+            if (optionToRemove) {
+                optionToRemove.selected = false;
+            }
+            updateSelectedSubjects();
+            updateClassSummary();
+        });
+    });
+}
+
+function updateClassSummary() {
+    const subjectDropdown = document.getElementById('subjectCode');
+    const yearLevelInput = document.getElementById('yearLevel');
+    const courseInput = document.getElementById('course');
+    const sectionDropdown = document.getElementById('courseSection');
+    
+    const selectedOptions = Array.from(subjectDropdown.selectedOptions).filter(opt => opt.value);
+    
+    if (selectedOptions.length === 0) {
+        // Reset if no subjects selected
+        yearLevelInput.value = '';
+        courseInput.value = '';
+        sectionDropdown.innerHTML = '<option value="" selected disabled>Select Section</option>';
+        return;
+    }
+    
+    if (selectedOptions.length === 1) {
+        // Single subject selected
+        const subjectData = JSON.parse(selectedOptions[0].dataset.subjectData);
+        
+        yearLevelInput.value = `${subjectData.year_level}${getOrdinalSuffix(subjectData.year_level)} Year`;
+        courseInput.value = subjectData.program_name;
+        
+        sectionDropdown.innerHTML = `<option value="${subjectData.section_name}" selected>Section ${subjectData.section_name}</option>`;
+        sectionDropdown.disabled = false;
+        
+    } else {
+        // Multiple subjects selected - show mixed or common values
+        const subjectsData = selectedOptions.map(opt => JSON.parse(opt.dataset.subjectData));
+        
+        // Check if all subjects have same year level
+        const yearLevels = [...new Set(subjectsData.map(s => s.year_level))];
+        if (yearLevels.length === 1) {
+            yearLevelInput.value = `${yearLevels[0]}${getOrdinalSuffix(yearLevels[0])} Year`;
+        } else {
+            yearLevelInput.value = 'Mixed Year Levels';
+        }
+        
+        // Check if all subjects have same program
+        const programs = [...new Set(subjectsData.map(s => s.program_name))];
+        if (programs.length === 1) {
+            courseInput.value = programs[0];
+        } else {
+            courseInput.value = 'Mixed Programs';
+        }
+        
+        // Check if all subjects have same section
+        const sections = [...new Set(subjectsData.map(s => s.section_name))];
+        if (sections.length === 1) {
+            sectionDropdown.innerHTML = `<option value="${sections[0]}" selected>Section ${sections[0]}</option>`;
+        } else {
+            sectionDropdown.innerHTML = '<option value="mixed" selected>Mixed Sections</option>';
+        }
+        sectionDropdown.disabled = false;
+    }
+    
+    console.log('Selected Subjects:', selectedOptions.map(opt => JSON.parse(opt.dataset.subjectData)));
 }
 
 function showLoginRequired() {
@@ -487,6 +577,17 @@ async function startSession(event) {
         return;
     }
     
+    // Get selected subjects
+    const subjectDropdown = document.getElementById('subjectCode');
+    const selectedOptions = Array.from(subjectDropdown.selectedOptions).filter(opt => opt.value);
+    
+    if (selectedOptions.length === 0) {
+        showModal('Error', 'Please select at least one subject');
+        return;
+    }
+    
+    const selectedSubjects = selectedOptions.map(opt => JSON.parse(opt.dataset.subjectData));
+    
     // First, set the RTSP URL in the backend
     try {
         showLoading('Connecting to camera...');
@@ -527,27 +628,8 @@ async function startSession(event) {
     // Save to localStorage for persistence
     localStorage.setItem('rtspUrl', rtspUrl);
     
-    // Get all the DOM elements first
-    const subjectDropdown = document.getElementById('subjectCode');
+    const curriculumDropdown = document.getElementById('curriculum');
     const sectionDropdown = document.getElementById('courseSection');
-    const curriculumDropdown = document.getElementById('curriculum'); // ADD THIS
-    
-    let scheduleIdToSend;
-    let subjectCodeToSend;
-    let sectionToSend;
-    let curriculumToSend = curriculumDropdown.value; // ADD THIS
-
-    if (timerMode === 'default') {
-        // In default mode, get ID from the button dataset and value from dropdown
-        scheduleIdToSend = document.getElementById('startBtn').dataset.scheduleId;
-        subjectCodeToSend = subjectDropdown.value; // This will be the schedule_id
-        sectionToSend = sectionDropdown.value;
-    } else {
-        // In custom mode, the schedule_id IS the value of the subject dropdown
-        scheduleIdToSend = subjectDropdown.value;
-        subjectCodeToSend = subjectDropdown.value; // Send the same ID
-        sectionToSend = sectionDropdown.value;
-    }
     
     const settings = {
         timer: {
@@ -564,26 +646,22 @@ async function startSession(event) {
         },
         classDetails: {
             instructor: document.getElementById('subjectInstructor').value,
-            subjectCode: subjectCodeToSend,
+            selectedSubjects: selectedSubjects, // 🆕 ARRAY OF SELECTED SUBJECTS
             yearLevel: document.getElementById('yearLevel').value,
             course: document.getElementById('course').value,
-            curriculum: curriculumToSend, // ADD THIS
-            section: sectionToSend
+            section: sectionDropdown.value
         },
         rtspUrl: rtspUrl,
         mode: timerMode,
-        scheduleId: scheduleIdToSend
+        scheduleIds: selectedSubjects.map(subject => subject.schedule_id) // 🆕 ARRAY OF SCHEDULE IDs
     };
     
     localStorage.setItem('classSettings', JSON.stringify(settings));
     
     // Validation
-    if (!settings.classDetails.instructor || 
-        !settings.classDetails.subjectCode ||
-        !settings.classDetails.section) {
-        
+    if (!settings.classDetails.instructor || selectedSubjects.length === 0) {
         console.error('Validation Failed:', settings.classDetails);
-        showModal('Validation Error', 'Please fill in all class details (Instructor, Subject, Section)');
+        showModal('Validation Error', 'Please fill in all class details (Instructor, at least one Subject)');
         return;
     }
     
@@ -609,14 +687,13 @@ async function startSession(event) {
         return;
     }
 
-    // Redirect to camfootage with enhanced parameters
+    // 🆕 ENHANCED: Redirect to camfootage with multiple subjects
     const params = new URLSearchParams({
-        schedule_id: settings.scheduleId,
+        schedule_ids: settings.scheduleIds.join(','), // 🆕 COMMA-SEPARATED SCHEDULE IDs
         instructor: settings.classDetails.instructor,
-        subject: settings.classDetails.subjectCode,
+        subjects: JSON.stringify(selectedSubjects), // 🆕 ALL SUBJECTS DATA AS JSON
         year_level: settings.classDetails.yearLevel,
         program: settings.classDetails.course,
-        curriculum: settings.classDetails.curriculum, // ADD THIS
         section: settings.classDetails.section,
         duration: totalSeconds,
         threshold: thresholdSeconds,
@@ -624,10 +701,7 @@ async function startSession(event) {
         mode: timerMode
     });
 
-    console.log('🚀 REDIRECTING WITH PARAMS:');
-    params.forEach((value, key) => {
-        console.log(`  ${key}: ${value}`);
-    });
+    console.log('🚀 REDIRECTING WITH MULTIPLE SUBJECTS:', selectedSubjects);
     
     // Add a small delay to ensure camera is ready
     setTimeout(() => {
