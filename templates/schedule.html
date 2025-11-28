@@ -68,16 +68,28 @@
             </div>
             
             <div class="schedule-form">
-                <h3>Add Schedule</h3>
-                <form id="scheduleForm" onsubmit="return false;">
-                    <div class="course-selection">
-<div>
-    <label for="course">Course</label>
-    <select id="course" onchange="loadSections()">
-        <option value="" disabled selected>Loading courses...</option>
-    </select>
-</div>
-                        <div>
+    <h3>Add Schedule</h3>
+    <form id="scheduleForm" onsubmit="return false;">
+        <div class="course-selection">
+            <div>
+                <label for="course">Course</label>
+                <select id="course" onchange="loadCurricula()">
+                    <option value="" disabled selected>Select Course</option>
+                    <option value="ACT">Associate in Computer Technology</option>
+                    <option value="CS">Computer Science</option>
+                    <option value="IT">Information Technology</option>
+                </select>
+            </div>
+            
+            <!-- ADD CURRICULUM DROPDOWN HERE -->
+            <div>
+                <label for="curriculum">Curriculum</label>
+                <select id="curriculum" onchange="loadSections()" disabled>
+                    <option value="" disabled selected>Select Course First</option>
+                </select>
+            </div>
+            
+            <div>
                             <label for="yearLevel">Year Level</label>
                             <select id="yearLevel" onchange="loadSections()">
                                 <option value="" disabled selected>Select Year</option>
@@ -159,7 +171,9 @@
     <script>
 console.log('Starting sidebar fetch...');
 
-// Global state
+let currentCurriculumId = '';
+let currentAcademicYear = '';
+let currentSemester = '';
 let allFaculty = [];
 let selectedScheduleIds = new Set();
 let currentFacultyId = null;
@@ -170,6 +184,74 @@ let currentConfirmationCallback = null;
 window.showPhase2 = showPhase2;
 window.loadSections = loadSections;
 window.loadClassSchedule = loadClassSchedule;
+
+const curriculumSelect = document.getElementById('curriculum');
+
+async function loadCurricula() {
+    const course = document.getElementById('course').value;
+    const curriculumSelect = document.getElementById('curriculum');
+    const yearLevelSelect = document.getElementById('yearLevel');
+    const sectionSelect = document.getElementById('section');
+    
+    // ADD NULL CHECKS
+    if (!curriculumSelect || !yearLevelSelect || !sectionSelect) {
+        console.error('Required form elements not found');
+        return;
+    }
+    
+    if (!course) {
+        curriculumSelect.disabled = true;
+        curriculumSelect.innerHTML = '<option value="" disabled selected>Select Course First</option>';
+        yearLevelSelect.disabled = true;
+        sectionSelect.disabled = true;
+        return;
+    }
+    
+    try {
+        // First get active period to get academic_year
+        const activePeriodResponse = await fetch(`/api/get_active_period?program_id=${course}`);
+        const activePeriodData = await activePeriodResponse.json();
+        
+        if (!activePeriodData.success) {
+            curriculumSelect.disabled = true;
+            curriculumSelect.innerHTML = '<option value="" disabled selected>No active period found</option>';
+            showModal(activePeriodData.message || 'No active academic period');
+            return;
+        }
+        
+        currentAcademicYear = activePeriodData.active_period.academic_year;
+        currentSemester = activePeriodData.active_period.semester;
+        
+        // Now load curricula for this program and academic year
+        const response = await fetch(`/api/get_curricula?program_id=${course}&academic_year=${encodeURIComponent(currentAcademicYear)}`);
+        const data = await response.json();
+        
+        if (data.success && data.curricula && data.curricula.length > 0) {
+            curriculumSelect.disabled = false;
+            curriculumSelect.innerHTML = '<option value="" disabled selected>Select Curriculum</option>';
+            
+            data.curricula.forEach(curriculum => {
+                const option = document.createElement('option');
+                option.value = curriculum.curriculum_id;  // Use curriculum_id as value
+                option.textContent = `${curriculum.curriculum_name} (${curriculum.curriculum_year})`;
+                curriculumSelect.appendChild(option);
+            });
+            
+            // Enable year level selection
+            yearLevelSelect.disabled = false;
+        } else {
+            curriculumSelect.disabled = true;
+            curriculumSelect.innerHTML = '<option value="" disabled selected>No curricula found</option>';
+            showModal('No curricula found for this course and academic year');
+        }
+    } catch (error) {
+        console.error('Error loading curricula:', error);
+        curriculumSelect.disabled = true;
+        curriculumSelect.innerHTML = '<option value="" disabled selected>Error loading curricula</option>';
+        showModal('Failed to load curricula');
+    }
+}
+
 
 function showConfirmation(message, callback, title = 'Confirm Action') {
     const modal = document.getElementById('confirmationModal');
@@ -512,29 +594,28 @@ async function loadAllFaculty() {
 
 async function loadSections() {
     const course = document.getElementById('course').value;
+    const curriculum = document.getElementById('curriculum').value; // This is now curriculum_id
     const yearLevel = document.getElementById('yearLevel').value;
     const sectionSelect = document.getElementById('section');
     
-    if (!course || !yearLevel) {
+    // ADD NULL CHECK
+    if (!sectionSelect) {
+        console.error('Section select element not found');
+        return;
+    }
+    
+    if (!course || !curriculum || !yearLevel) {
         sectionSelect.disabled = true;
-        sectionSelect.innerHTML = '<option value="" disabled selected>Select Course and Year First</option>';
+        sectionSelect.innerHTML = '<option value="" disabled selected>Select Course, Curriculum and Year First</option>';
         return;
     }
     
     try {
-        const activePeriodResponse = await fetch(`/api/get_active_period?program_id=${course}`);
-        const activePeriodData = await activePeriodResponse.json();
+        sectionSelect.disabled = true;
+        sectionSelect.innerHTML = '<option value="" disabled selected>Loading sections...</option>';
         
-        if (!activePeriodData.success) {
-            sectionSelect.disabled = true;
-            sectionSelect.innerHTML = '<option value="" disabled selected>No active period found</option>';
-            showModal(activePeriodData.message || 'No active academic period');
-            return;
-        }
-        
-        const { academic_year, semester } = activePeriodData.active_period;
-        
-        const response = await fetch(`/api/get_sections_with_semester?program_id=${course}&year_level=${yearLevel}&academic_year=${academic_year}&semester=${encodeURIComponent(semester)}`);
+        // Use curriculum_id instead of curriculum_year
+        const response = await fetch(`/api/get_sections_with_semester?program_id=${course}&year_level=${yearLevel}&academic_year=${encodeURIComponent(currentAcademicYear)}&semester=${encodeURIComponent(currentSemester)}&curriculum_year=${curriculum}`);
         const data = await response.json();
         
         if (data.success) {
@@ -546,6 +627,9 @@ async function loadSections() {
                     const option = document.createElement('option');
                     option.value = section.section_id;
                     option.textContent = section.section_name;
+                    // Store curriculum info for display
+                    option.dataset.curriculum = section.curriculum_year || 'N/A';
+                    option.dataset.curriculumName = section.curriculum_name || 'N/A';
                     sectionSelect.appendChild(option);
                 });
             } else {
@@ -566,6 +650,10 @@ async function loadSections() {
 
 async function loadClassSchedule() {
     const sectionId = document.getElementById('section').value;
+    const sectionSelect = document.getElementById('section');
+    const selectedOption = sectionSelect.options[sectionSelect.selectedIndex];
+    const curriculum = selectedOption ? selectedOption.dataset.curriculum : '';
+    
     const calendar = document.getElementById('classSchedule');
     
     if (!sectionId || !calendar) {
@@ -574,6 +662,7 @@ async function loadClassSchedule() {
     }
     
     currentSectionId = sectionId;
+    currentCurriculumId = curriculum; // Store curriculum for display
     selectedScheduleIds.clear();
     
     try {
@@ -581,7 +670,7 @@ async function loadClassSchedule() {
         const data = await response.json();
         
         if (data.success) {
-            renderScheduleGrid(data.schedules);
+            renderScheduleGrid(data.schedules, curriculum);
             updateSaveButton();
         }
     } catch (error) {
@@ -590,13 +679,20 @@ async function loadClassSchedule() {
     }
 }
 
-function renderScheduleGrid(schedules) {
+function renderScheduleGrid(schedules, curriculum) {
     const calendar = document.getElementById('classSchedule');
     calendar.style.display = 'grid';
     
     // Clear existing cells
     const cells = calendar.querySelectorAll('.time-cell, .schedule-cell');
     cells.forEach(cell => cell.remove());
+    
+    // Add curriculum info to calendar header
+    const calendarHeader = calendar.querySelector('.calendar-header');
+    if (calendarHeader && curriculum) {
+        calendarHeader.textContent = `Class Schedule - ${curriculum} Curriculum`;
+    }
+
     
     // Get unique time slots from schedules
     const timeSlots = new Set();
@@ -651,6 +747,7 @@ function renderScheduleGrid(schedules) {
                             <div class="subject-code">${schedule.subject_code} - ${schedule.subject_name}</div>
                             <div class="subject-room">${schedule.class_type || 'Lecture'} | Room: ${schedule.room || 'TBA'}</div>
                             <div class="faculty-member-name">${schedule.faculty_name}</div>
+                            ${curriculum ? `<div class="curriculum-info">${curriculum}</div>` : ''}
                         </div>
                     `;
                 } else {
@@ -658,6 +755,7 @@ function renderScheduleGrid(schedules) {
                         <div class="subject-info">
                             <div class="subject-code">${schedule.subject_code} - ${schedule.subject_name}</div>
                             <div style="font-weight:lighter; font-size:0.7rem;" class="subject-room">${schedule.class_type || 'Lecture'} | Click to assign</div>
+                            ${curriculum ? `<div style="font-weight:lighter; font-size:0.7rem;" class="curriculum-info">${curriculum}</div>` : ''}
                         </div>
                     `;
                     
@@ -761,6 +859,12 @@ function displayFacultyScheduleModal(facultyName, schedules) {
     const modal = document.getElementById('scheduleOverviewModal');
     const content = document.getElementById('overviewContent');
     
+    // ADD NULL CHECKS
+    if (!modal || !content) {
+        console.error('Modal elements not found');
+        return;
+    }
+    
     content.innerHTML = '';
     
     const header = document.createElement('h4');
@@ -779,8 +883,6 @@ function displayFacultyScheduleModal(facultyName, schedules) {
         modal.style.display = 'block';
         return;
     }
-    
-    console.log('Rendering schedules:', schedules);
     
     const calendar = document.createElement('div');
     calendar.className = 'weekly-calendar';
@@ -808,10 +910,14 @@ function displayFacultyScheduleModal(facultyName, schedules) {
                 const scheduleItem = document.createElement('div');
                 scheduleItem.className = 'schedule-item';
                 
+                // FIXED: Handle missing curriculum_year
+                const curriculum = schedule.curriculum_year || 'N/A';
+                
                 scheduleItem.innerHTML = `
                     <div class="subject-code">${schedule.subject_code}</div>
                     <div class="subject-name">${schedule.subject_name}</div>
                     <div class="class-info">${schedule.program} ${schedule.year_level}-${schedule.section}</div>
+                    <div class="curriculum-info">Curriculum: ${curriculum}</div>
                     <div class="time-info">${schedule.start_time} - ${schedule.end_time}</div>
                     <div class="room-info">Room: ${schedule.room || 'TBA'}</div>
                     ${schedule.class_type ? `<div class="type-info">${schedule.class_type}</div>` : ''}

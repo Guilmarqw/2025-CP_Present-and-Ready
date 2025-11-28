@@ -29,17 +29,28 @@
         <div class="horizontal-form-group">
           <!-- First Row: Program, Year & Section, Subject Code, Class Type -->
           <div class="form-row-1">
-            <div class="form-field">
-              <label for="program">
-                <i class="fas fa-layer-group"></i> Program *
-              </label>
-              <select id="program" required>
-                <option value="" disabled selected>Choose Program</option>
-                <option value="CS">BS Computer Science</option>
-                <option value="IT">BS Information Technology</option>
-                <option value="ACT">Assistive in Computer Technology</option>
-              </select>
-            </div>
+  <div class="form-field">
+    <label for="program">
+      <i class="fas fa-layer-group"></i> Program *
+    </label>
+    <select id="program" required>
+      <option value="" disabled selected>Choose Program</option>
+      <option value="CS">BS Computer Science</option>
+      <option value="IT">BS Information Technology</option>
+      <option value="ACT">Assistive in Computer Technology</option>
+    </select>
+  </div>
+  
+  <!-- NEW: Curriculum Dropdown -->
+  <div class="form-field">
+    <label for="curriculum">
+      <i class="fas fa-graduation-cap"></i> Curriculum *
+    </label>
+    <select id="curriculum" required disabled>
+      <option value="" disabled selected>Select Program First</option>
+    </select>
+  </div>
+
             <div class="form-field">
               <label for="yearSection">
                 <i class="fas fa-layer-group"></i> Year & Section *
@@ -192,19 +203,20 @@
     <div class="schedule-table">
       <h3><i class="fas fa-list"></i> Class Schedule List</h3>
       <table id="classScheduleTable">
-        <thead>
-          <tr>
-            <th>Year & Section</th>
-            <th>Subject Code</th>
-            <th>Subject</th>
-            <th>Class Types</th>
-            <th>Schedule</th>
-            <th>Rooms</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+  <thead>
+    <tr>
+      <th>Curriculum</th>  <!-- ADD THIS -->
+      <th>Year & Section</th>
+      <th>Subject Code</th>
+      <th>Subject</th>
+      <th>Class Types</th>
+      <th>Schedule</th>
+      <th>Rooms</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
     </div>
   </div>
 
@@ -230,6 +242,16 @@
   </div>
 
   <script>
+      // Global variables
+    let currentProgramId = '';
+    let currentSectionId = null;
+    let currentAcademicYear = '';
+    let currentSemester = '';
+    let yearSectionsCache = {};
+    let subjectsCache = {};
+    let pendingSchedules = [];
+    let allSchedules = [];
+    let currentCurriculumId = '';
     // Load sidebar
     console.log('Starting sidebar fetch...');
     
@@ -292,20 +314,12 @@
             `;
         });
 
-    // Global variables
-    let currentProgramId = '';
-    let currentSectionId = null;
-    let currentAcademicYear = '';
-    let currentSemester = '';
-    let yearSectionsCache = {};
-    let subjectsCache = {};
-    let pendingSchedules = [];
-    let allSchedules = [];
 
     // DOM Elements
     const modalOverlay = document.getElementById('modalOverlay');
     const modalMessage = document.getElementById('modalMessage');
     const closeModal = document.getElementById('closeModal');
+    const curriculumSelect = document.getElementById('curriculum');
     const form = document.getElementById('classScheduleForm');
     const tableBody = document.querySelector('#classScheduleTable tbody');
     const programSelect = document.getElementById('program');
@@ -353,14 +367,50 @@
         loadAllSchedules();
     });
 
-    // Program change handler
-    programSelect.addEventListener('change', function() {
-        currentProgramId = this.value;
-        if (currentProgramId) {
-            loadActivePeriod();
-        }
-        resetDependentFields(['yearSection', 'subjectCode', 'classType', 'room']);
-    });
+programSelect.addEventListener('change', function() {
+    currentProgramId = this.value;
+    if (currentProgramId) {
+        loadActivePeriod(); // This will load active period and then curricula
+    }
+    resetDependentFields(['curriculum', 'yearSection', 'subjectCode', 'classType', 'room']);
+});
+
+curriculumSelect.addEventListener('change', function() {
+    currentCurriculumId = this.value;
+    if (currentCurriculumId && currentAcademicYear && currentSemester) {
+        loadYearSections(); // Load sections for this curriculum
+    }
+    resetDependentFields(['yearSection', 'subjectCode', 'classType', 'room']);
+});
+
+function loadCurricula() {
+    if (!currentProgramId || !currentAcademicYear) return;
+    
+    curriculumSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+    curriculumSelect.disabled = true;
+    
+    fetch(`/api/get_curricula?program_id=${currentProgramId}&academic_year=${encodeURIComponent(currentAcademicYear)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.curricula.length > 0) {
+                curriculumSelect.innerHTML = '<option value="" disabled selected>-- Select Curriculum --</option>';
+                data.curricula.forEach(curriculum => {
+                    const option = document.createElement('option');
+                    option.value = curriculum.curriculum_id;
+                    option.textContent = `${curriculum.curriculum_name} (${curriculum.curriculum_year})`;
+                    curriculumSelect.appendChild(option);
+                });
+                curriculumSelect.disabled = false;
+            } else {
+                showModal('No curricula found for this program and academic year.', 'No Curricula');
+                curriculumSelect.innerHTML = '<option value="" disabled selected>-- No Curricula Found --</option>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading curricula:', error);
+            showModal('Failed to load curricula.', 'Error');
+        });
+}
 
     // Year section change handler
     yearSectionSelect.addEventListener('change', function() {
@@ -427,7 +477,7 @@
     daysContainer.addEventListener('change', updateAddScheduleButton);
 
     // Form field change listeners for button state (removed scheduleDaySelect)
-    [programSelect, yearSectionSelect, subjectCodeSelect, classTypeSelect, 
+    [programSelect, curriculumSelect, yearSectionSelect, subjectCodeSelect, classTypeSelect, 
      startTimeSelect, endTimeSelect, roomSelect].forEach(el => {
         if (el) el.addEventListener('change', updateAddScheduleButton);
     });
@@ -439,78 +489,84 @@
     }
 
     function loadActivePeriod() {
-        if (!currentProgramId) return;
-        
-        fetch(`/api/get_active_period?program_id=${currentProgramId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.active_period) {
-                    currentAcademicYear = data.active_period.academic_year;
-                    currentSemester = data.active_period.semester;
-                    loadYearSections();
-                } else {
-                    showModal(
-                        'No active academic year/semester set for this program.\n\n' +
-                        'Please go to the Programs page and set an active period.',
-                        'Setup Required'
-                    );
-                    resetDependentFields(['yearSection', 'subjectCode', 'classType', 'room']);
-                }
-            })
-            .catch(error => {
-                console.error('Error loading active period:', error);
-                showModal('Failed to load active period.', 'Error');
-            });
-    }
+    if (!currentProgramId) return;
+    
+    fetch(`/api/get_active_period?program_id=${currentProgramId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.active_period) {
+                currentAcademicYear = data.active_period.academic_year;
+                currentSemester = data.active_period.semester;
+                loadCurricula(); // MOVE THIS HERE - after we have academic_year
+            } else {
+                showModal(
+                    'No active academic year/semester set for this program.\n\n' +
+                    'Please go to the Programs page and set an active period.',
+                    'Setup Required'
+                );
+                resetDependentFields(['curriculum', 'yearSection', 'subjectCode', 'classType', 'room']);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading active period:', error);
+            showModal('Failed to load active period.', 'Error');
+        });
+}
 
     function loadYearSections() {
-        if (!currentProgramId || !currentAcademicYear || !currentSemester) return;
-        
-        yearSectionSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
-        yearSectionSelect.disabled = true;
-        
-        fetch(`/api/get_year_sections?program_id=${currentProgramId}&academic_year=${encodeURIComponent(currentAcademicYear)}&semester=${encodeURIComponent(currentSemester)}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.sections.length > 0) {
-                    yearSectionsCache = data.sections;
-                    yearSectionSelect.innerHTML = '<option value="" disabled selected>-- Choose Year & Section --</option>';
-                    data.sections.forEach(section => {
-                        const option = document.createElement('option');
-                        option.value = section.section_id;
-                        option.dataset.sectionId = section.section_id;
-                        option.textContent = `${section.year_level}${getOrdinalSuffix(section.year_level)} Year - Section ${section.section_name}`;
-                        yearSectionSelect.appendChild(option);
-                    });
-                    yearSectionSelect.disabled = false;
-                } else {
-                    showModal('No sections found for this semester.', 'No Sections');
-                }
-            })
-            .catch(error => {
-                console.error('Error loading year sections:', error);
-                showModal('Failed to load sections.', 'Error');
-            });
-    }
+    if (!currentProgramId || !currentAcademicYear || !currentSemester || !currentCurriculumId) return;
+    
+    yearSectionSelect.innerHTML = '<option value="" disabled selected>Loading...</option>';
+    yearSectionSelect.disabled = true;
+    
+    fetch(`/api/get_year_sections?program_id=${currentProgramId}&academic_year=${encodeURIComponent(currentAcademicYear)}&semester=${encodeURIComponent(currentSemester)}&curriculum_id=${currentCurriculumId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.sections.length > 0) {
+                yearSectionsCache = data.sections;
+                yearSectionSelect.innerHTML = '<option value="" disabled selected>-- Choose Year & Section --</option>';
+                data.sections.forEach(section => {
+                    const option = document.createElement('option');
+                    option.value = section.section_id;
+                    option.dataset.sectionId = section.section_id;
+                    option.textContent = `${section.year_level}${getOrdinalSuffix(section.year_level)} Year - Section ${section.section_name}`;
+                    yearSectionSelect.appendChild(option);
+                });
+                yearSectionSelect.disabled = false;
+            } else {
+                showModal('No sections found for this semester and curriculum.', 'No Sections');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading year sections:', error);
+            showModal('Failed to load sections.', 'Error');
+        });
+}
 
     function resetDependentFields(fields) {
-        const fieldMap = {
-            'yearSection': yearSectionSelect,
-            'subjectCode': subjectCodeSelect,
-            'classType': classTypeSelect,
-            'room': roomSelect
-        };
-        
-        fields.forEach(field => {
-            const element = fieldMap[field];
-            if (element) {
-                element.innerHTML = `<option value="" disabled selected>-- ${field === 'room' ? 'Select Class Type First' : 'Select Option'} --</option>`;
-                element.disabled = true;
-            }
-        });
-        
-        updateAddScheduleButton();
-    }
+    const fieldMap = {
+        'curriculum': curriculumSelect,  // ADD THIS
+        'yearSection': yearSectionSelect,
+        'subjectCode': subjectCodeSelect,
+        'classType': classTypeSelect,
+        'room': roomSelect
+    };
+    
+    fields.forEach(field => {
+        const element = fieldMap[field];
+        if (element) {
+            let placeholder = '-- Select Option --';
+            if (field === 'curriculum') placeholder = 'Select Program First';
+            else if (field === 'yearSection') placeholder = 'Choose Curriculum First';
+            else if (field === 'room') placeholder = 'Select Class Type First';
+            
+            element.innerHTML = `<option value="" disabled selected>${placeholder}</option>`;
+            element.disabled = true;
+        }
+    });
+    
+    updateAddScheduleButton();
+}
 
     function loadSubjects() {
         if (!currentSectionId) return;
@@ -642,16 +698,17 @@
     }
 
     function isFormComplete() {
-        const selectedDays = getSelectedDays();
-        return programSelect.value && 
-               yearSectionSelect.value && 
-               subjectCodeSelect.value && 
-               classTypeSelect.value && 
-               selectedDays.length > 0 &&
-               startTimeSelect.value && 
-               endTimeSelect.value && 
-               roomSelect.value;
-    }
+    const selectedDays = getSelectedDays();
+    return programSelect.value && 
+           curriculumSelect.value &&  // ADD THIS
+           yearSectionSelect.value && 
+           subjectCodeSelect.value && 
+           classTypeSelect.value && 
+           selectedDays.length > 0 &&
+           startTimeSelect.value && 
+           endTimeSelect.value && 
+           roomSelect.value;
+}
 
     function updateAddScheduleButton() {
         addScheduleBtn.disabled = !isFormComplete();
@@ -832,55 +889,57 @@
     }
 
     function renderScheduleTable() {
-        tableBody.innerHTML = '';
-        const grouped = {};
+    tableBody.innerHTML = '';
+    const grouped = {};
+    
+    allSchedules.forEach(schedule => {
+        const key = `${schedule.subject_code}-${schedule.section_id}`;
+        if (!grouped[key]) {
+            grouped[key] = {
+                subject_code: schedule.subject_code,
+                subject_name: schedule.subject_name,
+                year_level: schedule.year_level,
+                section_name: schedule.section_name,
+                program_name: schedule.program_name,
+                curriculum_name: schedule.curriculum_name || 'N/A',  // ADD THIS
+                schedules: []
+            };
+        }
+        grouped[key].schedules.push(schedule);
+    });
+    
+    Object.values(grouped).forEach(group => {
+        const row = document.createElement('tr');
+        const classTypes = [...new Set(group.schedules.map(s => s.class_type))];
+        const rooms = [...new Set(group.schedules.map(s => s.room))];
         
-        allSchedules.forEach(schedule => {
-            const key = `${schedule.subject_code}-${schedule.section_id}`;
-            if (!grouped[key]) {
-                grouped[key] = {
-                    subject_code: schedule.subject_code,
-                    subject_name: schedule.subject_name,
-                    year_level: schedule.year_level,
-                    section_name: schedule.section_name,
-                    program_name: schedule.program_name,
-                    schedules: []
-                };
-            }
-            grouped[key].schedules.push(schedule);
-        });
-        
-        Object.values(grouped).forEach(group => {
-            const row = document.createElement('tr');
-            const classTypes = [...new Set(group.schedules.map(s => s.class_type))];
-            const rooms = [...new Set(group.schedules.map(s => s.room))];
-            
-            let scheduleDisplay = '';
-            group.schedules.forEach(s => {
-                scheduleDisplay += `
-                    <div class="schedule-item ${s.class_type}">
-                        <span class="schedule-type ${s.class_type}">${s.class_type}</span>
-                        ${s.day_of_week} ${formatTime(s.start_time)} - ${formatTime(s.end_time)} (${s.room})
-                    </div>
-                `;
-            });
-            
-            row.innerHTML = `
-                <td>${group.year_level}${getOrdinalSuffix(group.year_level)} Year - ${group.section_name}</td>
-                <td>${group.subject_code}</td>
-                <td>${group.subject_name}</td>
-                <td>${classTypes.map(ct => `<span class="schedule-type ${ct}">${ct}</span>`).join(', ')}</td>
-                <td class="merged-content">${scheduleDisplay}</td>
-                <td>${rooms.join(', ')}</td>
-                <td class="action-btns">
-                    <button class="action-btns delete" onclick="deleteScheduleGroup('${group.subject_code}', ${group.schedules[0].section_id})" title="Delete">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
-                </td>
+        let scheduleDisplay = '';
+        group.schedules.forEach(s => {
+            scheduleDisplay += `
+                <div class="schedule-item ${s.class_type}">
+                    <span class="schedule-type ${s.class_type}">${s.class_type}</span>
+                    ${s.day_of_week} ${formatTime(s.start_time)} - ${formatTime(s.end_time)} (${s.room})
+                </div>
             `;
-            tableBody.appendChild(row);
         });
-    }
+        
+        row.innerHTML = `
+            <td>${group.curriculum_name}</td>  <!-- ADD THIS COLUMN -->
+            <td>${group.year_level}${getOrdinalSuffix(group.year_level)} Year - ${group.section_name}</td>
+            <td>${group.subject_code}</td>
+            <td>${group.subject_name}</td>
+            <td>${classTypes.map(ct => `<span class="schedule-type ${ct}">${ct}</span>`).join(', ')}</td>
+            <td class="merged-content">${scheduleDisplay}</td>
+            <td>${rooms.join(', ')}</td>
+            <td class="action-btns">
+                <button class="action-btns delete" onclick="deleteScheduleGroup('${group.subject_code}', ${group.schedules[0].section_id})" title="Delete">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </td>
+        `;
+        tableBody.appendChild(row);
+    });
+}
 
     function formatTime(time24) {
         const [hours, minutes] = time24.split(':');

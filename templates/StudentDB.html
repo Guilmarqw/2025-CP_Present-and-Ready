@@ -1141,33 +1141,89 @@ async function onCurriculumChange() {
         }
 
         fetch('/sidebar')
-            .then(r=>{ if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
-            .then(html=>{ document.getElementById('sidebar-container').innerHTML=html; })
-            .catch(e=>{ console.error(e); document.getElementById('sidebar-container').innerHTML=`<div style="color:red;padding:20px;"><h3>Sidebar Error</h3><p>${e.message}</p></div>`; });
-
-        if (inviteBtn) inviteBtn.addEventListener('click', () => openModal(inviteLinkModal));
-        closeButtons.forEach(b => b.addEventListener('click', () => closeModal(b.closest('.modal'))));
-        cancelButtons.forEach(b => b.addEventListener('click', () => closeModal(b.closest('.modal'))));
-        if (alertButton) alertButton.addEventListener('click', () => closeModal(alertModal));
-        window.addEventListener('click', e => { if (e.target.classList.contains('modal')) closeModal(e.target); });
-
-        const editProgram = document.getElementById('editProgram');
-        const editYearLevel = document.getElementById('editYearLevel');
-
-        if (editProgram && editYearLevel) {
-            function updateEditSectionDropdown() {
-                const programId = editProgram.value;
-                const yearLevel = editYearLevel.value;
-                fetchEditSections(programId, yearLevel, null);
+    .then(r => { 
+        if (!r.ok) throw new Error(`HTTP ${r.status}`); 
+        return r.text(); 
+    })
+    .then(html => { 
+        document.getElementById('sidebar-container').innerHTML = html; 
+        
+        // ADD NAVIGATION HANDLERS FOR SIDEBAR LINKS
+        document.addEventListener('click', function(e) {
+            const link = e.target.closest('#sidebar-container .nav-items a[href]');
+            if (link) {
+                const href = link.getAttribute('href');
+                
+                // Skip dropdown buttons and external links
+                if (href === '#' || href.startsWith('http')) {
+                    return;
+                }
+                
+                // Prevent default and navigate manually
+                e.preventDefault();
+                console.log('Navigating to:', href);
+                window.location.href = href;
             }
-            editProgram.addEventListener('change', updateEditSectionDropdown);
-            editYearLevel.addEventListener('change', updateEditSectionDropdown); // Fixed: was cut off before
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            initializeStudentInviteModal();
-            loadStudentsFromDatabase();
         });
+        
+        // ADD DROPDOWN FUNCTIONALITY
+        document.querySelectorAll('#sidebar-container .dropdown-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const content = this.nextElementSibling;
+                if (content) {
+                    // Close all other dropdowns
+                    document.querySelectorAll('#sidebar-container .dropdown-content').forEach(other => {
+                        if (other !== content) {
+                            other.style.display = 'none';
+                        }
+                    });
+                    // Toggle current dropdown
+                    content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                }
+            });
+        });
+        
+        // CLOSE DROPDOWNS WHEN CLICKING OUTSIDE
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#sidebar-container .dropdown')) {
+                document.querySelectorAll('#sidebar-container .dropdown-content').forEach(content => {
+                    content.style.display = 'none';
+                });
+            }
+        });
+    })
+    .catch(e => { 
+        console.error(e); 
+        document.getElementById('sidebar-container').innerHTML = `<div style="color:red;padding:20px;"><h3>Sidebar Error</h3><p>${e.message}</p></div>`; 
+    });
+
+// Your existing code continues...
+if (inviteBtn) inviteBtn.addEventListener('click', () => openModal(inviteLinkModal));
+closeButtons.forEach(b => b.addEventListener('click', () => closeModal(b.closest('.modal'))));
+cancelButtons.forEach(b => b.addEventListener('click', () => closeModal(b.closest('.modal'))));
+if (alertButton) alertButton.addEventListener('click', () => closeModal(alertModal));
+window.addEventListener('click', e => { if (e.target.classList.contains('modal')) closeModal(e.target); });
+
+const editProgram = document.getElementById('editProgram');
+const editYearLevel = document.getElementById('editYearLevel');
+
+if (editProgram && editYearLevel) {
+    function updateEditSectionDropdown() {
+        const programId = editProgram.value;
+        const yearLevel = editYearLevel.value;
+        fetchEditSections(programId, yearLevel, null);
+    }
+    editProgram.addEventListener('change', updateEditSectionDropdown);
+    editYearLevel.addEventListener('change', updateEditSectionDropdown);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initializeStudentInviteModal();
+    loadStudentsFromDatabase();
+});
     </script>
 </body>
 </html>

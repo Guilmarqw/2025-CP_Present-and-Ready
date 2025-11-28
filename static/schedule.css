@@ -162,10 +162,6 @@
         }
 
 
-        .subject-info {
-            font-size: 0.8rem;
-        }
-
         /* Main Content Styles */
         .main-content {
             flex: 1;
@@ -973,3 +969,16 @@
 }
 
         
+/* Add to your schedule.css */
+.curriculum-info {
+    font-size: 0.7rem;
+    color: #666;
+    font-weight: lighter;
+    margin-top: 2px;
+}
+
+.subject-info .curriculum-info {
+    font-size: 0.65rem;
+    color: #888;
+    font-style: italic;
+}

@@ -300,16 +300,24 @@
     this.updateOverviewElement('#total-subjects', overview.total_subjects);
     this.updateOverviewElement('#total-units', `${overview.total_units} total units`);
     
-    // Update active year badge with program info
+    // FIXED: Use active_programs from backend or fallback to current logic
     const activeYearBadge = document.querySelector('.active-year-badge span');
     if (activeYearBadge && overview.active_academic_year) {
-        // Get active programs from the overview data
-        const activePrograms = overview.active_curricula.map(c => c.program_name);
-        const uniquePrograms = [...new Set(activePrograms)]; // Remove duplicates
-        const programsText = uniquePrograms.join(', ');
+        let programsText;
+        
+        if (overview.active_programs && overview.active_programs.length > 0) {
+            // Use the active_programs list from backend
+            programsText = overview.active_programs.join(', ');
+            console.log('Using backend active_programs:', programsText);
+        } else {
+            // Fallback: Get programs from active curricula
+            const activePrograms = overview.active_curricula.map(c => c.program_name);
+            const uniquePrograms = [...new Set(activePrograms)];
+            programsText = uniquePrograms.join(', ');
+            console.log('Fallback to curricula programs:', programsText);
+        }
         
         activeYearBadge.textContent = `Academic Year: ${overview.active_academic_year} (${programsText})`;
-        console.log('Updated active year badge:', overview.active_academic_year, 'Programs:', programsText);
     } else {
         console.warn('Active year badge element not found');
     }
@@ -321,6 +329,7 @@
     this.updateOverviewStatus(overview.has_active_period);
     
     // Debug: Log what we found
+    console.log('Active programs:', overview.active_programs);
     console.log('Active curricula:', overview.active_curricula);
     console.log('Detailed breakdown count:', overview.detailed_breakdown ? overview.detailed_breakdown.length : 0);
 }

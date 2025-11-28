@@ -976,27 +976,28 @@ function displayAcademicYearsForSwitch(years, currentYear, programId) {
     
     // Show current active period
     if (currentYear && currentText) {
-        currentText.textContent = `${currentYear.academic_year} - ${currentYear.semester || 'No active semester'}`;
+        currentText.textContent = `${currentYear} - Loading semester...`;
         if (infoDiv) infoDiv.style.display = 'block';
     } else if (infoDiv) {
         infoDiv.style.display = 'none';
     }
     
-    // Display academic years with card layout
     container.innerHTML = years.map(year => `
-        <div class="year-card" style="padding: 15px; margin: 10px 0; border: 2px solid ${year.is_current ? '#28a745' : '#ddd'}; border-radius: 8px; cursor: pointer; background: ${year.is_current ? '#e8f5e9' : '#fff'}; transition: all 0.3s ease;" 
+        <div class="year-card" style="padding: 15px; margin: 10px 0; border: 2px solid ${year.status === 'active' ? '#28a745' : '#ddd'}; border-radius: 8px; cursor: pointer; background: ${year.status === 'active' ? '#e8f5e9' : '#fff'}; transition: all 0.3s ease;" 
              onclick="selectAcademicYearForSwitch('${programId}', '${year.academic_year}')"
              onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.1)';" 
              onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="flex: 1;">
                     <strong style="font-size: 18px; color: #333;">${year.academic_year}</strong>
-                    ${year.is_current ? '<span style="margin-left: 10px; padding: 4px 12px; background: #28a745; color: white; border-radius: 20px; font-size: 12px; font-weight: bold;">CURRENT</span>' : ''}
+                    ${year.status === 'active' ? '<span style="margin-left: 10px; padding: 4px 12px; background: #28a745; color: white; border-radius: 20px; font-size: 12px; font-weight: bold;">CURRENT</span>' : ''}
                     <div style="margin-top: 8px; color: #666; font-size: 14px;">
+                        <span>${year.section_count} section(s)</span> • 
+                        <span>${year.subject_count} subject(s)</span>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    ${!year.is_current ? 
+                    ${year.status !== 'active' ? 
                         `<button class="btn btn-primary" onclick="event.stopPropagation(); activateAcademicYear('${programId}', '${year.academic_year}')" 
                                 style="padding: 6px 12px; font-size: 13px; border-radius: 20px;">
                             Set Active
@@ -1011,7 +1012,6 @@ function displayAcademicYearsForSwitch(years, currentYear, programId) {
     
     listDiv.style.display = 'block';
 }
-
 function selectAcademicYearForSwitch(programId, academicYear) {
     console.log('Selecting academic year:', { programId, academicYear });
     
@@ -1058,8 +1058,8 @@ function activateSemester(programId, academicYear, semesterNumber) {
             .then(data => {
                 if (data.success) {
                     showAlertModal('Success', data.message, false);
-                    // Reload the semester list to show updated active status
-                    selectAcademicYearForSwitch(programId, academicYear);
+                    // Update UI without reloading the entire list
+                    updateSemesterCardUI(programId, academicYear, semesterNumber);
                     // Update the current period info
                     const currentText = document.getElementById('currentPeriodText');
                     if (currentText) {
@@ -1105,8 +1105,8 @@ function activateAcademicYear(programId, academicYear) {
             .then(data => {
                 if (data.success) {
                     showAlertModal('Success', data.message, false);
-                    // Reload the academic years list to show updated active status
-                    reloadAcademicYears();
+                    // Update UI without reloading the entire list
+                    updateAcademicYearCardUI(programId, academicYear);
                 } else {
                     showAlertModal('Error', data.message || 'Failed to activate academic year', true);
                 }
@@ -2314,19 +2314,22 @@ function displaySemestersForSwitch(semesters, currentSemester, programId, academ
     }
     
     container.innerHTML = semesters.map(semester => `
-        <div class="semester-card" style="padding: 15px; margin: 10px 0; border: 2px solid ${semester.is_current ? '#28a745' : '#ddd'}; border-radius: 8px; cursor: pointer; background: ${semester.is_current ? '#e8f5e9' : '#fff'}; transition: all 0.3s ease;"
+        <div class="semester-card" style="padding: 15px; margin: 10px 0; border: 2px solid ${semester.is_active ? '#28a745' : '#ddd'}; border-radius: 8px; cursor: pointer; background: ${semester.is_active ? '#e8f5e9' : '#fff'}; transition: all 0.3s ease;"
              onclick="activateSemester('${programId}', '${academicYear}', '${semester.semester_number}')"
              onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.1)';" 
              onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="flex: 1;">
                     <strong style="font-size: 18px; color: #333;">${semester.semester_number}</strong>
-                    ${semester.is_current ? '<span style="margin-left: 10px; padding: 4px 12px; background: #28a745; color: white; border-radius: 20px; font-size: 12px; font-weight: bold;">ACTIVE</span>' : ''}
+                    ${semester.is_active ? '<span style="margin-left: 10px; padding: 4px 12px; background: #28a745; color: white; border-radius: 20px; font-size: 12px; font-weight: bold;">ACTIVE</span>' : ''}
                     <div style="margin-top: 8px; color: #666; font-size: 14px;">
+                        <span>${semester.curriculum_count} curriculum(s)</span> • 
+                        <span>${semester.section_count} section(s)</span> • 
+                        <span>${semester.subject_count} subject(s)</span>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    ${!semester.is_current ? 
+                    ${!semester.is_active ? 
                         `<button class="btn btn-primary" onclick="event.stopPropagation(); activateSemester('${programId}', '${academicYear}', '${semester.semester_number}')" 
                                 style="padding: 6px 12px; font-size: 13px; border-radius: 20px;">
                             Set Active
@@ -2345,7 +2348,7 @@ function displaySemestersForSwitch(semesters, currentSemester, programId, academ
     const currentText = document.getElementById('currentPeriodText');
     const infoDiv = document.getElementById('currentPeriodInfo');
     if (currentText && infoDiv) {
-        const activeSemester = semesters.find(s => s.is_current);
+        const activeSemester = semesters.find(s => s.is_active);
         if (activeSemester) {
             currentText.textContent = `${academicYear} - ${activeSemester.semester_number}`;
         } else {
@@ -2761,6 +2764,124 @@ function displaySubjects(subjects) {
             </td>
         </tr>
     `).join('');
+}
+
+function updateSemesterCardUI(programId, academicYear, activatedSemester) {
+    // Update all semester cards visually without reloading data
+    const semesterCards = document.querySelectorAll('.semester-card');
+    
+    semesterCards.forEach(card => {
+        const semesterElement = card.querySelector('strong');
+        const semester = semesterElement?.textContent;
+        
+        if (semester === activatedSemester) {
+            // Set this card as active
+            card.style.borderColor = '#28a745';
+            card.style.background = '#e8f5e9';
+            
+            // Update or add active badge
+            let badge = card.querySelector('[style*="background: #28a745"]');
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.style.marginLeft = '10px';
+                badge.style.padding = '4px 12px';
+                badge.style.background = '#28a745';
+                badge.style.color = 'white';
+                badge.style.borderRadius = '20px';
+                badge.style.fontSize = '12px';
+                badge.style.fontWeight = 'bold';
+                badge.textContent = 'ACTIVE';
+                semesterElement.parentNode.insertBefore(badge, semesterElement.nextSibling);
+            }
+            
+            // Update button to check icon
+            const button = card.querySelector('.btn');
+            if (button) {
+                button.outerHTML = '<i class="fas fa-check-circle" style="font-size: 24px; color: #28a745;"></i>';
+            }
+        } else {
+            // Set other cards as inactive
+            card.style.borderColor = '#ddd';
+            card.style.background = '#fff';
+            
+            // Remove active badge
+            const badge = card.querySelector('[style*="background: #28a745"]');
+            if (badge) {
+                badge.remove();
+            }
+            
+            // Update icon back to button
+            const icon = card.querySelector('.fa-check-circle');
+            if (icon) {
+                icon.outerHTML = `<button class="btn btn-primary" onclick="event.stopPropagation(); activateSemester('${programId}', '${academicYear}', '${semester}')" 
+                    style="padding: 6px 12px; font-size: 13px; border-radius: 20px;">
+                    Set Active
+                </button>`;
+            }
+        }
+    });
+}
+
+function updateAcademicYearCardUI(programId, activatedYear) {
+    // Update all academic year cards visually without reloading data
+    const yearCards = document.querySelectorAll('.year-card');
+    
+    yearCards.forEach(card => {
+        const yearElement = card.querySelector('strong');
+        const year = yearElement?.textContent;
+        
+        if (year === activatedYear) {
+            // Set this card as active
+            card.style.borderColor = '#28a745';
+            card.style.background = '#e8f5e9';
+            
+            // Update or add active badge
+            let badge = card.querySelector('[style*="background: #28a745"]');
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.style.marginLeft = '10px';
+                badge.style.padding = '4px 12px';
+                badge.style.background = '#28a745';
+                badge.style.color = 'white';
+                badge.style.borderRadius = '20px';
+                badge.style.fontSize = '12px';
+                badge.style.fontWeight = 'bold';
+                badge.textContent = 'CURRENT';
+                yearElement.parentNode.insertBefore(badge, yearElement.nextSibling);
+            }
+            
+            // Update button to check icon
+            const button = card.querySelector('.btn');
+            if (button) {
+                button.outerHTML = '<i class="fas fa-check-circle" style="font-size: 24px; color: #28a745;"></i>';
+            }
+        } else {
+            // Set other cards as inactive
+            card.style.borderColor = '#ddd';
+            card.style.background = '#fff';
+            
+            // Remove active badge
+            const badge = card.querySelector('[style*="background: #28a745"]');
+            if (badge) {
+                badge.remove();
+            }
+            
+            // Update icon back to button
+            const icon = card.querySelector('.fa-check-circle');
+            if (icon) {
+                icon.outerHTML = `<button class="btn btn-primary" onclick="event.stopPropagation(); activateAcademicYear('${programId}', '${year}')" 
+                    style="padding: 6px 12px; font-size: 13px; border-radius: 20px;">
+                    Set Active
+                </button>`;
+            }
+        }
+    });
+    
+    // Update current period text
+    const currentText = document.getElementById('currentPeriodText');
+    if (currentText) {
+        currentText.textContent = `${activatedYear} - Loading semester...`;
+    }
 }
 
 function showAddSectionModal() {
