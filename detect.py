@@ -22,6 +22,7 @@ from torchreid import metrics
 import random
 import string
 import json
+import re
 import secrets
 import uuid
 import ssl
@@ -132,14 +133,23 @@ current_session_students = []  # List of student IDs for current class
 
 CONFIRMATION_FRAMES_REQUIRED = 2  # 2 consecutive frames = ~0.067 seconds
 CONFIRMATION_SIMILARITY_THRESHOLD = 0.50  # Balanced threshold (not too strict, not too loose)
-BODY_MATCH_IOU_THRESHOLD = 0.03  # Low threshold for better body matching
+BODY_MATCH_IOU_THRESHOLD = 0.1
 FACE_TO_BODY_VERTICAL_RATIO = 0.7  # Face should be in upper 60% of body
-REID_DISTANCE_THRESHOLD = 0.4  # Strict ReID for overlap prevention
-DETECT_EVERY = 1
+REID_DISTANCE_THRESHOLD = 0.15
+DETECT_EVERY = 2
+
+MIN_REID_CONFIDENCE = 0.92  # Minimum ReID confidence to accept match
+MAX_SIZE_CHANGE_RATIO = 0.15  # Max 15% size change between frames
+MAX_ASPECT_RATIO_CHANGE = 0.1  # Max 10% aspect ratio change
 
 current_rtsp_url = None
 WEIGHTS_PATH = "yolov8n-face.pt"
-STREAM_WIDTH, STREAM_HEIGHT = 1920, 1080
+STREAM_WIDTH, STREAM_HEIGHT = 1280, 720
+TARGET_FPS = 60
+JPEG_QUALITY = 75
+YOLO_IMG_SIZE = 320
+REID_IMG_SIZE = (64, 128)
+FACE_DET_SIZE = (256, 256)
 pose_embeddings = {}
 
 ATTENDANCE_CSV_FILE = "attendance_log.csv"
@@ -174,7 +184,7 @@ LOCK_TIMEOUT_FRAMES = 120  # 3 seconds at 30 FPS (was 60)
 LOCK_MISS_THRESHOLD = 15  # 0.5 seconds before removing lock (faster cleanup)
 PENDING_CONFIRMATION_TIMEOUT = 10  # Frames before cleaning up stale confirmations
 ACTIVE_PENDING_WINDOW = 5  # Only draw confirmations seen in last 5 frames
-MAX_TELEPORT_DISTANCE = 200  # Max pixels a person can move per frame
+MAX_TELEPORT_DISTANCE = 80
 
 # Database configuration
 DB_CONFIG = {
@@ -191,8 +201,8 @@ DB_CONFIG = {
 EMAIL_CONFIG = {
     'smtp_server': 'smtp.gmail.com',
     'smtp_port': 587,
-    'email': 'lawrencetilde@gmail.com',
-    'password': 'ufwxvjacdtftfcof'
+    'email': 'presentready29@gmail.com',
+    'password': 'uhrpwhutybcykcur'
 }
 
 # InsightFace model
@@ -202,10 +212,9 @@ POSE_SEQUENCE = [
     'frontal', 'right', 'left', 'up', 'down', 'mouth_open', 'eyes_closed'
 ]
 
-# Logging configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+student_status = {} 
 # =========================
 # Session & Attendance State
 # =========================
@@ -231,16 +240,24 @@ yolo = YOLO(WEIGHTS_PATH)
 yolo.to(DEVICE)
 logger.info(f"Using device: {DEVICE}  |  Model: {WEIGHTS_PATH}")
 
-# Initialize body detector for person tracking (Single initialization with error handling)
+# Initialize body detector for person tracking - 🚀 OPTIMIZED VERSION
 try:
-    body_detector = YOLO('yolov8n.pt')  # Standard YOLO for person detection
+    body_detector = YOLO('yolov8n.pt')
     body_detector.to(DEVICE)
+    
+    # 🚀 CRITICAL: Enable FP16 for 2x speed on RTX 3050
+    if DEVICE == "cuda":
+        body_detector.model.half()
+        logger.info("✅ Body detector running in FP16 mode (2x faster on RTX 3050)")
+    
     logger.info(f"✅ Body detector (YOLOv8n) loaded successfully on {DEVICE}")
 except Exception as e:
     logger.error(f"❌ Failed to load body detector: {e}")
     logger.info("Downloading yolov8n.pt model...")
-    body_detector = YOLO('yolov8n.pt')  # This will auto-download
+    body_detector = YOLO('yolov8n.pt')
     body_detector.to(DEVICE)
+    if DEVICE == "cuda":
+        body_detector.model.half()
 
 # =========================
 # ByteTrack Initialization - FIXED VERSION
@@ -256,7 +273,7 @@ try:
     logger.info("✅ ByteTrack initialized successfully for body tracking")
     
     # Test ByteTrack with dummy detection - FIXED IMPORT
-    test_detection = sv.Detections(  # ✅ FIXED: Changed from 'Detection' to 'Detections'
+    test_detection = sv.Detections(
         xyxy=np.array([[100, 100, 200, 200]]),
         confidence=np.array([0.8]),
         class_id=np.array([0])
@@ -300,7 +317,7 @@ except Exception as e:
     logger.info("🔄 Using simple fallback tracker instead of ByteTrack")
 
 # =========================
-# TorchReID OSNet Model - WORKING VERSION
+# TorchReID OSNet Model - 🚀 OPTIMIZED VERSION
 # =========================
 try:
     reid_model = torchreid.models.build_model(
@@ -322,10 +339,10 @@ try:
     
     reid_model.eval()
     
-    # ✅ ADD THIS RIGHT HERE - PROPER GPU SETUP:
+    # 🚀 CRITICAL: Enable FP16 for GPU
     if torch.cuda.is_available():
         reid_model = reid_model.cuda()
-        reid_model = reid_model.half()  # Use FP16 for maximum speed
+        reid_model = reid_model.half()  # FP16 for maximum speed
         logger.info(f"✅ TorchReID model moved to GPU with FP16 precision")
     else:
         logger.info("⚠️ TorchReID model running on CPU")
@@ -337,7 +354,7 @@ except Exception as e:
     reid_model = None
 
 # =========================
-# Load InsightFace model - FIXED CUDA INITIALIZATION
+# Load InsightFace model - 🚀 OPTIMIZED VERSION
 # =========================
 try:
     available_providers = ort.get_available_providers()
@@ -373,14 +390,15 @@ try:
         provider_options=provider_options
     )
 
-    # Prepare with optimized settings
+    # 🚀 OPTIMIZED: Prepare with smaller detection size
     face_analysis.prepare(
         ctx_id=ctx_id,
-        det_size=(320, 320),  # Lower resolution = less GPU memory usage
-        det_thresh=0.6
+        det_size=FACE_DET_SIZE,  # 🚀 Uses config (256, 256) instead of (320, 320)
+        det_thresh=0.65  # 🚀 Higher threshold for fewer false positives
     )
 
     logger.info(f"🎯 InsightFace model '{INSIGHTFACE_MODEL}' loaded successfully")
+    logger.info(f"🚀 InsightFace optimized for high FPS - det_size: {FACE_DET_SIZE}")
 
     # Test the model to verify it works
     try:
@@ -403,7 +421,7 @@ except Exception as e:
         try:
             logger.info(f"🔄 Attempting fallback with model: {model_name}")
             face_analysis = insightface.app.FaceAnalysis(name=model_name, providers=['CPUExecutionProvider'])
-            face_analysis.prepare(ctx_id=-1, det_size=(320, 320))
+            face_analysis.prepare(ctx_id=-1, det_size=FACE_DET_SIZE)  # 🚀 Use config
             
             # Test the fallback model
             test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
@@ -424,6 +442,36 @@ except Exception as e:
         ENABLE_RECOGNITION = False
     else:
         ENABLE_RECOGNITION = True
+
+# =========================
+# 🚀 CUDA & CPU OPTIMIZATIONS - ADD THIS NEW SECTION
+# =========================
+if torch.cuda.is_available():
+    # Enable cuDNN benchmarking for faster convolutions
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = True
+    
+    # Enable TensorFloat-32 for faster matrix operations
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.set_float32_matmul_precision('medium')
+    
+    # Set GPU memory allocation (use 70% of GPU memory)
+    torch.cuda.set_per_process_memory_fraction(0.7)
+    
+    # Clear initial GPU cache
+    torch.cuda.empty_cache()
+    
+    logger.info("✅ CUDA optimizations enabled for RTX 3050")
+    logger.info("   - cuDNN benchmark: True")
+    logger.info("   - TF32 matmul: True")
+    logger.info("   - GPU memory fraction: 0.7")
+
+# Set CPU thread count for better performance
+torch.set_num_threads(4)  # Optimal for i5 13th gen (8 threads total, use 4 for CV)
+cv2.setNumThreads(4)
+
+logger.info("✅ CPU optimizations: 4 threads for PyTorch and OpenCV")
+logger.info("🚀 All models loaded and optimized for high FPS performance")
 
 # =========================
 # Utilities
@@ -965,18 +1013,131 @@ def calculate_mar(landmarks, mouth_indices):
 # =========================
 # Load known faces from database
 # =========================
-known_face_encodings = np.array([]) 
+known_face_encodings = []  # CHANGED from np.array([]) to []
 known_face_names = []
 known_face_ids = []
 known_face_types = []  # 'student' or 'faculty'
 KNOWN_FACE_ENCODINGS_ARRAY = None 
-def finalize_known_faces():
-    """Converts the list of encodings to a single NumPy array for fast vector comparison."""
-    global known_face_encodings, KNOWN_FACE_ENCODINGS_ARRAY
+
+def get_current_section_student_ids():
+    """Get student IDs for the current session's section"""
+    global current_session_id
+    
+    if not current_session_id:
+        logger.warning("⚠️ No current session ID")
+        return []
+    
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get section_id from current session
+        cursor.execute("""
+            SELECT section_id 
+            FROM attendance_sessions 
+            WHERE session_id = %s
+        """, (current_session_id,))
+        
+        session_info = cursor.fetchone()
+        if not session_info or session_info.get('section_id') is None:
+            cursor.close()
+            connection.close()
+            logger.warning("⚠️ No section_id found for current session")
+            return []
+        
+        section_id = session_info['section_id']
+        
+        # Get student IDs for this section from students table
+        cursor.execute("""
+            SELECT student_id 
+            FROM students 
+            WHERE section_id = %s 
+            AND (status = 'active' OR status IS NULL)
+        """, (section_id,))
+        
+        results = cursor.fetchall()
+        student_ids = [row['student_id'] for row in results]
+        
+        cursor.close()
+        connection.close()
+        
+        logger.info(f"📋 Section ID {section_id} has {len(student_ids)} active students")
+        return student_ids
+        
+    except Exception as e:
+        logger.error(f"Error getting current section students: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
+
+def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
+    """Add a single face to memory (called after registration)"""
+    global known_face_encodings, known_face_names, known_face_ids, known_face_types, KNOWN_FACE_ENCODINGS_ARRAY
+    
+    try:
+        # Parse the encoding
+        encoding = parse_face_encoding(face_encoding)
+        
+        if encoding is None or encoding.size != 512:
+            logger.error(f"Invalid encoding for {id}")
+            return False
+        
+        # Add to arrays
+        known_face_encodings.append(encoding)
+        full_name = f"{first_name} {last_name}"
+        known_face_names.append(full_name)
+        known_face_ids.append(id)
+        known_face_types.append(person_type)
+        
+        # Rebuild the array
+        rebuild_known_faces_array()
+        
+        logger.info(f"✅ Added {person_type} {full_name} ({id}) to memory")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to add {person_type} {id} to memory: {e}")
+        return False
+
+def parse_face_encoding(face_encoding):
+    """Parse face encoding from TEXT field"""
+    if face_encoding is None:
+        return None
+    
+    try:
+        if isinstance(face_encoding, str):
+            encoding_str = face_encoding.strip()
+            if encoding_str.startswith('[') and encoding_str.endswith(']'):
+                encoding_str = encoding_str[1:-1]
+            
+            if ', ' in encoding_str:
+                parts = encoding_str.split(', ')
+            elif ',' in encoding_str:
+                parts = encoding_str.split(',')
+            else:
+                parts = encoding_str.split()
+            
+            encoding = np.array([float(x) for x in parts], dtype=np.float32)
+            return encoding
+            
+        elif isinstance(face_encoding, (bytes, bytearray)):
+            return np.frombuffer(face_encoding, dtype=np.float32)
+        elif isinstance(face_encoding, list):
+            return np.array(face_encoding, dtype=np.float32)
+        else:
+            logger.error(f"Unknown encoding type: {type(face_encoding)}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Failed to parse encoding: {e}")
+        return None
+
+def rebuild_known_faces_array():
+    """Rebuild the consolidated array"""
+    global KNOWN_FACE_ENCODINGS_ARRAY
     if known_face_encodings:
-        # Stack the list of encoding arrays into a single 2D NumPy array (N, 512)
         KNOWN_FACE_ENCODINGS_ARRAY = np.vstack(known_face_encodings)
-        logger.info(f"Finalized KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+        logger.info(f"Rebuilt KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
     else:
         KNOWN_FACE_ENCODINGS_ARRAY = np.array([])
         logger.info("No known faces loaded.")
@@ -985,41 +1146,108 @@ def load_known_faces_from_db():
     global known_face_encodings, known_face_names, known_face_ids, known_face_types
 
     try:
+        # Get current section student IDs
+        current_section_students = get_current_section_student_ids()
+        
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT student_id, first_name, last_name, face_encoding FROM students WHERE face_encoding IS NOT NULL")
         
-        for (id, first_name, last_name, face_encoding) in cursor:
-            try:
-                if isinstance(face_encoding, str):
-                    # Robust parsing for string-encoded vectors (like those stored in text fields)
-                    encoding_str = face_encoding.strip('[]')
-                    if ', ' in encoding_str:
-                        encoding_list = encoding_str.split(', ')
-                    elif ',' in encoding_str:
-                        encoding_list = encoding_str.split(',')
+        loaded_count = 0
+        
+        if current_section_students:
+            # Load ONLY students from current section
+            logger.info(f"🔍 Loading faces for {len(current_section_students)} students in current section")
+            
+            # Create placeholders for SQL IN clause
+            placeholders = ', '.join(['%s'] * len(current_section_students))
+            
+            # Query with IN clause
+            query = f"""
+                SELECT student_id, first_name, last_name, face_encoding 
+                FROM students 
+                WHERE student_id IN ({placeholders}) 
+                AND face_encoding IS NOT NULL
+                AND face_encoding != ''
+                AND TRIM(face_encoding) != ''
+            """
+            
+            cursor.execute(query, tuple(current_section_students))
+            
+            for (id, first_name, last_name, face_encoding) in cursor:
+                try:
+                    encoding = parse_face_encoding(face_encoding)
+                    
+                    if encoding is not None and encoding.size == 512:
+                        known_face_encodings.append(encoding)
+                        full_name = f"{first_name} {last_name}"
+                        known_face_names.append(full_name)
+                        known_face_ids.append(id)
+                        known_face_types.append('student')
+                        loaded_count += 1
+                        logger.info(f"✅ Loaded current section student {full_name} ({id})")
                     else:
-                        encoding_list = encoding_str.split()
-                    encoding = np.array([float(x) for x in encoding_list], dtype=np.float32)
-                else:
-                    # Preferred method: direct loading from byte arrays (BLOB fields)
-                    encoding = np.frombuffer(face_encoding, dtype=np.float32)
-                
-                if encoding.size == 512:
-                    known_face_encodings.append(encoding)
-                    full_name = f"{first_name} {last_name}"
-                    known_face_names.append(full_name)
-                    known_face_ids.append(id)
-                    known_face_types.append('student')
-                    logger.info(f"Loaded student {full_name} ({id})")
-                else:
-                    logger.warning(f"Invalid encoding size for student {id}: {encoding.size}")
-            except Exception as e:
-                logger.error(f"Error parsing encoding for student {id}: {e}")
+                        logger.warning(f"⚠️ Invalid encoding for student {id} - size: {encoding.size if encoding is not None else 'None'}")
+                except Exception as e:
+                    logger.error(f"❌ Error parsing encoding for student {id}: {e}")
+        else:
+            # If no section filtering possible, load all students with faces
+            logger.warning("⚠️ No current section students found - loading all students with faces")
+            cursor.execute("""
+                SELECT student_id, first_name, last_name, face_encoding 
+                FROM students 
+                WHERE face_encoding IS NOT NULL 
+                AND face_encoding != ''
+                AND TRIM(face_encoding) != ''
+                AND (status = 'active' OR status IS NULL)
+            """)
+            
+            for (id, first_name, last_name, face_encoding) in cursor:
+                try:
+                    encoding = parse_face_encoding(face_encoding)
+                    
+                    if encoding is not None and encoding.size == 512:
+                        known_face_encodings.append(encoding)
+                        full_name = f"{first_name} {last_name}"
+                        known_face_names.append(full_name)
+                        known_face_ids.append(id)
+                        known_face_types.append('student')
+                        loaded_count += 1
+                        logger.info(f"✅ Loaded student {full_name} ({id})")
+                    else:
+                        logger.warning(f"⚠️ Invalid encoding for student {id}")
+                except Exception as e:
+                    logger.error(f"❌ Error parsing encoding for student {id}: {e}")
+        
         cursor.close()
         conn.close()
+        
+        logger.info(f"📊 Total loaded student faces: {loaded_count}")
+            
     except Exception as e:
-        logger.error(f"Failed to load student faces from database: {e}")
+        logger.error(f"❌ Failed to load student faces from database: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
+def debug_face_loading():
+    """Debug function to check face loading status"""
+    logger.info(f"=== FACE LOADING DEBUG ===")
+    logger.info(f"Total known faces: {len(known_face_names)}")
+    logger.info(f"Known face IDs: {known_face_ids}")
+    logger.info(f"Known face names: {known_face_names}")
+    logger.info(f"Known face types: {known_face_types}")
+    
+    # Get current section info
+    current_section_students = get_current_section_student_ids()
+    logger.info(f"Current section students: {current_section_students}")
+    
+    # Check if KNOWN_FACE_ENCODINGS_ARRAY is built
+    if KNOWN_FACE_ENCODINGS_ARRAY is not None:
+        logger.info(f"KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+    else:
+        logger.warning("KNOWN_FACE_ENCODINGS_ARRAY is None!")
+    
+    logger.info(f"=== END DEBUG ===")
 
 def load_known_faculties_from_db():
     global known_face_encodings, known_face_names, known_face_ids, known_face_types
@@ -1031,21 +1259,9 @@ def load_known_faculties_from_db():
         
         for (id, first_name, last_name, face_encoding) in cursor:
             try:
-                if isinstance(face_encoding, str):
-                    # Robust parsing for string-encoded vectors
-                    encoding_str = face_encoding.strip('[]')
-                    if ', ' in encoding_str:
-                        encoding_list = encoding_str.split(', ')
-                    elif ',' in encoding_str:
-                        encoding_list = encoding_str.split(',')
-                    else:
-                        encoding_list = encoding_str.split()
-                    encoding = np.array([float(x) for x in encoding_list], dtype=np.float32)
-                else:
-                    # Preferred method: direct loading from byte arrays
-                    encoding = np.frombuffer(face_encoding, dtype=np.float32)
+                encoding = parse_face_encoding(face_encoding)
                 
-                if encoding.size == 512:
+                if encoding is not None and encoding.size == 512:
                     known_face_encodings.append(encoding)
                     full_name = f"{first_name} {last_name}"
                     known_face_names.append(full_name)
@@ -1053,7 +1269,7 @@ def load_known_faculties_from_db():
                     known_face_types.append('faculty')
                     logger.info(f"Loaded faculty {full_name} ({id})")
                 else:
-                    logger.warning(f"Invalid encoding size for faculty {id}: {encoding.size}")
+                    logger.warning(f"Invalid encoding for faculty {id}")
             except Exception as e:
                 logger.error(f"Error parsing encoding for faculty {id}: {e}")
         cursor.close()
@@ -1061,11 +1277,105 @@ def load_known_faculties_from_db():
     except Exception as e:
         logger.error(f"Failed to load faculty faces from database: {e}")
 
+def debug_face_loading_status():
+    """Debug function to check face loading status"""
+    logger.info("=== FACE LOADING DEBUG ===")
+    logger.info(f"Total known faces: {len(known_face_names)}")
+    
+    if known_face_names:
+        logger.info(f"Loaded face IDs: {known_face_ids}")
+        logger.info(f"Loaded face names: {known_face_names}")
+        logger.info(f"Loaded face types: {known_face_types}")
+    else:
+        logger.warning("No faces loaded!")
+    
+    # Get current section info
+    current_section_students = get_current_section_student_ids()
+    logger.info(f"Current section has {len(current_section_students)} students: {current_section_students}")
+    
+    # Check if KNOWN_FACE_ENCODINGS_ARRAY is built
+    if KNOWN_FACE_ENCODINGS_ARRAY is not None:
+        logger.info(f"KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+    else:
+        logger.warning("KNOWN_FACE_ENCODINGS_ARRAY is None!")
+    
+    logger.info("=== END DEBUG ===")
+
+
+@app.route('/api/debug_face_status', methods=['GET'])
+def debug_face_status():
+    """API endpoint to debug face recognition status"""
+    current_section_students = get_current_section_student_ids()
+    
+    # Get current session info
+    session_info = {}
+    if current_session_id:
+        try:
+            connection = get_db_connection()
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT section_id, section_name, year_level, program_name
+                FROM attendance_sessions 
+                WHERE session_id = %s
+            """, (current_session_id,))
+            session_info = cursor.fetchone() or {}
+            cursor.close()
+            connection.close()
+        except Exception as e:
+            logger.error(f"Error getting session info: {e}")
+    
+    return jsonify({
+        'total_known_faces': len(known_face_names),
+        'known_face_ids': known_face_ids,
+        'known_face_names': known_face_names,
+        'known_face_types': known_face_types,
+        'current_session_id': current_session_id,
+        'session_info': session_info,
+        'current_section_students': current_section_students,
+        'section_students_count': len(current_section_students),
+        'KNOWN_FACE_ENCODINGS_ARRAY_exists': KNOWN_FACE_ENCODINGS_ARRAY is not None,
+        'KNOWN_FACE_ENCODINGS_ARRAY_shape': KNOWN_FACE_ENCODINGS_ARRAY.shape if KNOWN_FACE_ENCODINGS_ARRAY is not None else 'None'
+    })
+
+def reload_faces_for_current_session():
+    """Reload face encodings when session changes"""
+    global known_face_encodings, known_face_names, known_face_ids, known_face_types
+    
+    # Clear existing arrays
+    known_face_encodings.clear()
+    known_face_names.clear()
+    known_face_ids.clear()
+    known_face_types.clear()
+    
+    # Reload faces
+    load_known_faces_from_db()
+    load_known_faculties_from_db()
+    rebuild_known_faces_array()
+    
+    # Debug logging
+    debug_face_loading_status()
+    
+    logger.info(f"🔄 Reloaded faces for current session. Total: {len(known_face_names)} faces")
+
+@app.route('/api/debug_loaded_faces', methods=['GET'])
+def debug_loaded_faces():
+    """Debug endpoint to see what faces are loaded"""
+    return jsonify({
+        'total_faces': len(known_face_names),
+        'names': known_face_names,
+        'ids': known_face_ids,
+        'types': known_face_types,
+        'current_session_id': current_session_id,
+        'current_section_students': get_current_section_student_ids()
+    })
+
 # Initialize known faces
 known_face_encodings, known_face_names, known_face_ids, known_face_types = [], [], [], []
 load_known_faces_from_db()
 load_known_faculties_from_db()
-finalize_known_faces() 
+rebuild_known_faces_array()  # CHANGED from finalize_known_faces()
+
+
 
 # =========================
 # OPTIMIZED CAMERA CAPTURE
@@ -1608,26 +1918,42 @@ def save_attendance_to_csv(person_id, name, timestamp, person_type):
 # =========================
 
 def detect_bodies(frame):
-    """Detect people bodies using YOLOv8 - OPTIMIZED WITH FP16"""
+    """Detect people bodies using YOLOv8 - OPTIMIZED FOR HIGH FPS"""
     if body_detector is None:
         logger.warning("Body detector not initialized")
         return []
     
     try:
-        # 🎯 ADD FP16 SUPPORT - Run YOLO detection for person class only
+        # 🚀 Resize for faster detection (USES YOLO_IMG_SIZE)
+        h, w = frame.shape[:2]
+        scale = YOLO_IMG_SIZE / max(h, w)  # 🚀 USES CONFIG
+        new_w, new_h = int(w * scale), int(h * scale)
+        resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        
+        # 🚀 Run detection with FP16 (USES YOLO_IMG_SIZE)
         if DEVICE == "cuda":
-            results = body_detector(frame, classes=[0], verbose=False, conf=0.25, half=True)
+            results = body_detector(
+                resized,
+                classes=[0],
+                verbose=False,
+                conf=0.3,
+                half=True,
+                imgsz=YOLO_IMG_SIZE  # 🚀 USES CONFIG
+            )
         else:
-            results = body_detector(frame, classes=[0], verbose=False, conf=0.25)
+            results = body_detector(resized, classes=[0], verbose=False, conf=0.3)
         
         detections = []
         if len(results) > 0 and results[0].boxes is not None:
             boxes = results[0].boxes
             for box in boxes:
+                # Scale back to original size
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                x1, y1, x2, y2 = int(x1/scale), int(y1/scale), int(x2/scale), int(y2/scale)
                 conf = float(box.conf[0])
+                
                 detections.append({
-                    'box': [int(x1), int(y1), int(x2), int(y2)],
+                    'box': [x1, y1, x2, y2],
                     'confidence': conf
                 })
         
@@ -1874,8 +2200,9 @@ def refresh_with_detections(frame, rgb, frame_idx):
     FIXED: ByteTrack coordinate extraction - was treating bbox as track_id
     FIXED: Strong anti-swapping with strict ReID + spatial validation
     PRESERVED: Fast recognition and instant locking system
+    UPDATED: Now filters recognition to only current section students
     """
-    logger.info(f"🔍 refresh_with_detections CALLED - Frame {frame_idx}")
+    logger.debug(f"🔍 refresh_with_detections CALLED - Frame {frame_idx}")
     global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
     global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
     if detectionStopped:
@@ -1977,7 +2304,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 'reid_features': reid_features
                             })
             
-                logger.info(f"✅ ByteTrack: {len(body_tracks)} body tracks")
+                logger.debug(f"✅ ByteTrack: {len(body_tracks)} body tracks")
             
             except Exception as e:
                 logger.error(f"❌ ByteTrack failed: {e}")
@@ -2083,7 +2410,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         except Exception as e:
             logger.error(f"Error processing face detection (idx: {face_idx}): {e}")
             continue
-    logger.info(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces")
+    logger.debug(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces") 
     # Step 4: ULTRA STRONG ReID MATCHING FOR LOCKED TRACKS (Anti-Swapping)
     new_tracks = []
     used_detections = set()
@@ -2095,8 +2422,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
     
         if last_reid_features is not None and body_tracks:
             best_match_idx = None
-            best_reid_distance = 0.18  # 🆕 ULTRA STRICT for maximum anti-swapping
-            best_spatial_match = None
+            best_reid_distance = 0.15
+            
         
             # Try ReID matching with multi-stage validation
             for idx, body_track in enumerate(body_tracks):
@@ -2123,14 +2450,14 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 if last_body_box:
                     last_area = (last_body_box[2] - last_body_box[0]) * (last_body_box[3] - last_body_box[1])
                     new_area = (body_track['body_box'][2] - body_track['body_box'][0]) * (body_track['body_box'][3] - body_track['body_box'][1])
-                    
-                    # Avoid division by zero
+
                     if max(last_area, new_area) == 0:
-                        continue
+                       continue
                     
                     area_ratio = min(last_area, new_area) / max(last_area, new_area)
                     # 🆕 Body size must be within 70% similarity (stricter)
-                    if area_ratio < 0.70:
+                    if area_ratio < 0.85:
+                        logger.debug(f"❌ Rejected: area ratio too different ({area_ratio:.2f})")
                         continue
                 
                 # Stage 4: 🆕 ASPECT RATIO VALIDATION - Prevent shape distortion
@@ -2145,12 +2472,21 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         new_aspect = new_width / new_height
                         aspect_diff = abs(last_aspect - new_aspect)
                         # 🆕 Aspect ratio change must be minimal
-                        if aspect_diff > 0.15:
+                        if aspect_diff > 0.1:
+                            logger.debug(f"❌ Rejected: aspect ratio changed too much ({aspect_diff:.2f})")
                             continue
+                if last_body_box:
+                    overlap = iou(tuple(body_track['body_box']), last_body_box)
+                 # 🛡️ Require at least 20% overlap with previous position
+                    if overlap < 0.2:
+                        logger.debug(f"❌ Rejected: insufficient overlap ({overlap:.2f})")
+                        continue        
             
                 # All validations passed - this is the best match
                 best_reid_distance = reid_dist
                 best_match_idx = idx
+                logger.debug(f"✅ Match passed all checks: ReID={reid_dist:.3f}, Movement={movement:.1f}px, AreaRatio={area_ratio:.2f}")
+    
         
             if best_match_idx is not None:
                 # Found matching body via strict ReID + spatial validation
@@ -2162,17 +2498,18 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 lock_info['missed_detections'] = 0
                 
                 if matched_body['reid_features'] is not None:
-                    alpha = 0.92  #  Very high retention for maximum stability
+                    alpha = 0.95
                     lock_info['reid_features'] = (
                         alpha * last_reid_features +
                         (1 - alpha) * matched_body['reid_features']
                     )
             
-                logger.info(f"✅ Locked {lock_info.get('name', person_id)} updated via ReID (dist: {best_reid_distance:.3f})")
+                logger.debug(f"✅ Locked {lock_info.get('name', person_id)} updated via ReID (dist: {best_reid_distance:.3f})")
             else:
                 # No match - preserve last position and count miss
                 lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
-                logger.debug(f"❌ No ReID match for {lock_info.get('name', person_id)} - Preserving last detection")
+                logger.debug(f"⚠️ No match for {lock_info.get('name', person_id)} - Preserving last position")
+
     for person_id, lock_info in locked_tracks.items():
         lock_start = lock_info.get('lock_start', frame_idx)
         tracking_seconds = (frame_idx - lock_start) // 30
@@ -2231,13 +2568,14 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 break
         if overlaps_existing:
             continue
-        # Face Recognition (PRESERVED: Fast instant recognition)
+        # Face Recognition (PRESERVED: Fast instant recognition) - UPDATED with section filtering
         name = "Unknown"
         person_id = None
         ptype = None
         confidence = conf
         face_embedding = None
         best_similarity = 0
+
         if conf >= 0.15 and KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
             try:
                 face_embedding = face_obj.embedding
@@ -2246,6 +2584,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     logger.warning("No known faces loaded for recognition")
                     name = "Unknown"
                 else:
+                    # 🎯 ADDED: Get current section students for filtering
+                    current_section_students = get_current_section_student_ids()
+                    logger.debug(f"📊 Current section has {len(current_section_students)} students")
+                    logger.debug(f"📊 Total known faces in memory: {len(known_face_names)}")
+                    
                     dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
                     norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
                     norm_b = np.linalg.norm(face_embedding)
@@ -2256,25 +2599,59 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     if similarities.size > 0:
                         best_match_index = int(np.argmax(similarities))
                         best_similarity = float(similarities[best_match_index])
+                        
                         if best_similarity >= 0.50:  # PRESERVED: Fast recognition threshold
-                            name = known_face_names[best_match_index]
-                            person_id = known_face_ids[best_match_index]
-                            ptype = known_face_types[best_match_index]
-                            confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
-                        
-                            if ptype == 'faculty':
-                                name = f"Faculty: {name}"
-                        
-                            logger.info(f"✅ RECOGNITION MATCH: {name} ({person_id}) - Similarity: {best_similarity:.3f}")
+                            # 🎯 UPDATED: Check if matched student is in current section
+                            matched_id = known_face_ids[best_match_index]
+                            matched_type = known_face_types[best_match_index]
+                            matched_name = known_face_names[best_match_index]
+                            
+                            logger.info(f"🎯 Potential match: {matched_name} ({matched_id}) - Type: {matched_type} - Similarity: {best_similarity:.3f}")
+                            
+                            if matched_type == 'faculty':
+                                # Always accept faculty (they can be in any class)
+                                name = f"Faculty: {matched_name}"
+                                person_id = matched_id
+                                ptype = 'faculty'
+                                confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
+                                logger.info(f"✅ FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
+                            
+                            elif matched_type == 'student':
+                                # Check if student is enrolled in current section
+                                if current_section_students and matched_id in current_section_students:
+                                    # Student is in current section - accept recognition
+                                    name = matched_name
+                                    person_id = matched_id
+                                    ptype = 'student'
+                                    confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
+                                    logger.info(f"✅ STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
+                                else:
+                                    # Student not in current section - mark as unknown
+                                    logger.info(f"❌ STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
+                                    name = "Unknown - Wrong Section"
+                                    # Still store the embedding for unknown face capture
+                                    if face_embedding is not None:
+                                        try:
+                                            face_crop = frame[y1:y2, x1:x2]
+                                            if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
+                                                session_id = get_current_session_id()
+                                                if session_id:
+                                                    success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
+                                                    if success:
+                                                        logger.info(f"📸 CAPTURED OUT-OF-SECTION FACE - Added to enrollment system")
+                                        except Exception as capture_error:
+                                            logger.error(f"Error capturing out-of-section face: {capture_error}")
                         else:
                             logger.info(f"❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold 0.50")
                             name = "Unknown"
                         
             except Exception as e:
                 logger.error(f"❌ Error in recognition: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 name = "Unknown"
-        # Handle unknown faces
-        if name == "Unknown" and face_embedding is not None:
+        # Handle unknown faces (for faces that didn't match or weren't recognized)
+        if name == "Unknown" and face_embedding is not None and not name.startswith("Unknown - Wrong Section"):
             try:
                 face_crop = frame[y1:y2, x1:x2]
                 if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
@@ -2316,7 +2693,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     used_body_tracks.add(body_track['track_id'])
                     logger.info(f"✅ Face-Body matched: track_id={body_track['track_id']}, ratio={face_body_ratio:.3f}")
                     break
-        # If still unknown after recognition attempt
+        # If still unknown after recognition attempt (or wrong section student)
         if person_id is None:
             unique_id = f"U-{frame_idx}-{x1}"
         
@@ -2329,7 +2706,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'confidence': max(0.3, conf),
                     'last_seen': frame_idx,
                     'is_locked': False,
-                    'name': "Unknown",
+                    'name': name if name.startswith("Unknown") else "Unknown",
                     'type': 'unknown',
                     'start_frame': frame_idx,
                     'reid_features': matched_body_track['reid_features']
@@ -2343,13 +2720,13 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'confidence': max(0.3, conf),
                     'last_seen': frame_idx,
                     'is_locked': False,
-                    'name': "Unknown",
+                    'name': name if name.startswith("Unknown") else "Unknown",
                     'type': 'unknown',
                     'start_frame': frame_idx
                 })
                 logger.info(f"📍 Unknown face without body")
         else:
-            # Known person (PRESERVED: Fast locking)
+            # Known person (PRESERVED: Fast locking) - Only for recognized current section students/faculty
             if matched_body_track and person_id not in locked_tracks:
                 if person_id not in pending_confirmations:
                     pending_confirmations[person_id] = {
@@ -2414,9 +2791,14 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     }
                     new_tracks.append(locked_track_obj)
                 
-                    mark_attendance(name, person_id, ptype)
+                    # Only mark attendance for current section students and faculty
+                    if ptype == 'faculty' or (ptype == 'student' and current_section_students and person_id in current_section_students):
+                        mark_attendance(name, person_id, ptype)
+                        logger.info(f"🔒 LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
+                    else:
+                        logger.info(f"🔒 LOCKED but NO ATTENDANCE (wrong section) for {name} ({person_id})")
+                    
                     del pending_confirmations[person_id]
-                    logger.info(f"🔒 LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
                 else:
                     temp_track = {
                         'id': person_id,
@@ -2455,7 +2837,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if not (tr.get('name') == "Unknown" and frame_idx - tr.get('last_seen', 0) > 30)
     ]
     tracks[:] = current_tracks
-    logger.info(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
+    logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
 
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
@@ -2652,7 +3034,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 for attempt in range(3):
                     try:
                         response = requests.post(
-                            'https://192.168.0.101:5000/api/student_left', 
+                            'https://192.168.0.100:5000/api/student_left', 
                             json=api_data,  
                             timeout=3,
                             headers={
@@ -2993,7 +3375,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 for attempt in range(3):
                     try:
                         response = requests.post(
-                            'https://192.168.0.101:5000/api/student_left',  # FIXED: Use localhost
+                            'https://192.168.0.100:5000/api/student_left',  # FIXED: Use localhost
                             json=api_data,  # FIXED: Use json parameter
                             timeout=3,
                             headers={'Connection': 'close'}
@@ -3121,30 +3503,30 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             bx1, by1, bx2, by2 = body_box
             
             # 🎯 BOLDER Orange box for confirmation phase (thicker border)
-            cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 165, 255), 5)  # Increased thickness from 4 to 5
+            cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 165, 255), 2)
             
             display_name = conf_data.get('name', f'Person {person_id}')
             progress = len(conf_data['frames'])
             
             # 🎯 LARGER TEXT for name and progress
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale_name = 1.1  # Increased from 0.9
-            font_scale_status = 0.9  # Increased from 0.7
-            thickness = 3  # Increased from 2
+            font_scale_name = 0.5
+            font_scale_status = 0.4
+            thickness = 1
             
             # Name with larger text
             (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale_name, thickness)
-            name_y = max(25, by1 - 15)  # Increased margin
-            cv2.rectangle(frame, (bx1, name_y - name_h - 10), (bx1 + name_w + 20, name_y + 10), (0, 0, 0), -1)
-            cv2.putText(frame, display_name, (bx1 + 10, name_y), font, font_scale_name, (255, 255, 255), thickness)
-            
+            name_y = max(20, by1 - 10)
+            cv2.rectangle(frame, (bx1, name_y - name_h - 6), (bx1 + name_w + 12, name_y + 6), (0, 0, 0), -1)
+            cv2.putText(frame, display_name, (bx1 + 6, name_y), font, font_scale_name, (255, 255, 255), thickness)
+        
             # Progress with larger text
             status_label = f"CONFIRMING {progress}/{CONFIRMATION_FRAMES_REQUIRED}"
             (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale_status, thickness)
-            status_y = by2 + status_h + 20  # Increased spacing
-            cv2.rectangle(frame, (bx1, status_y - status_h - 8), (bx1 + status_w + 15, status_y + 8), (0, 140, 255), -1)
-            cv2.putText(frame, status_label, (bx1 + 8, status_y), font, font_scale_status, (255, 255, 255), thickness)
-    
+            status_y = by2 + status_h + 12
+            cv2.rectangle(frame, (bx1, status_y - status_h - 4), (bx1 + status_w + 8, status_y + 4), (0, 140, 255), -1)
+            cv2.putText(frame, status_label, (bx1 + 4, status_y), font, font_scale_status, (255, 255, 255), thickness)
+   
     # Step 6: Draw LOCKED tracks (Green BODY boxes only)
     for person_id, lock_info in locked_tracks.items():
         body_box = lock_info.get('body_box')
@@ -3154,7 +3536,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         bx1, by1, bx2, by2 = body_box
         
         # 🎯 BOLDER Green box for locked body tracking (thicker border)
-        cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 255, 0), 5)  # Increased thickness from 4 to 5
+        cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
         
         display_name = lock_info.get('name', f'Person {person_id}')
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -3165,29 +3547,26 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         time_label = f"Time: {tracking_seconds}s"
         
         # 🎯 LARGER TEXT settings
-        font_scale_name = 1.1  # Increased from 0.9
-        font_scale_info = 0.9  # Increased from 0.7
-        thickness = 3  # Increased from 2
+        font_scale_name = 0.5
+        font_scale_info = 0.4
+        thickness = 1
         
-        # Draw name at top with larger text
         (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale_name, thickness)
-        name_y = max(25, by1 - 15)  # Increased margin
-        cv2.rectangle(frame, (bx1, name_y - name_h - 10), (bx1 + name_w + 20, name_y + 10), (0, 0, 0), -1)
-        cv2.putText(frame, display_name, (bx1 + 10, name_y), font, font_scale_name, (255, 255, 255), thickness)
-        
-        # Draw tracking time at bottom with larger text
+        name_y = max(20, by1 - 10)
+        cv2.rectangle(frame, (bx1, name_y - name_h - 6), (bx1 + name_w + 12, name_y + 6), (0, 0, 0), -1)
+        cv2.putText(frame, display_name, (bx1 + 6, name_y), font, font_scale_name, (255, 255, 255), thickness)
+    
         (time_w, time_h), _ = cv2.getTextSize(time_label, font, font_scale_info, thickness)
-        time_y = by2 + time_h + 20  # Increased spacing
-        cv2.rectangle(frame, (bx1, time_y - time_h - 8), (bx1 + time_w + 15, time_y + 8), (0, 200, 0), -1)
-        cv2.putText(frame, time_label, (bx1 + 8, time_y), font, font_scale_info, (255, 255, 255), thickness)
-        
-        # Draw status with larger text
+        time_y = by2 + time_h + 12
+        cv2.rectangle(frame, (bx1, time_y - time_h - 4), (bx1 + time_w + 8, time_y + 4), (0, 200, 0), -1)
+        cv2.putText(frame, time_label, (bx1 + 4, time_y), font, font_scale_info, (255, 255, 255), thickness)
+    
         status_label = "LOCKED"
         (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale_info, thickness)
-        status_y = time_y + status_h + 15  # Increased spacing
-        cv2.rectangle(frame, (bx1, status_y - status_h - 8), (bx1 + status_w + 15, status_y + 8), (0, 150, 0), -1)
-        cv2.putText(frame, status_label, (bx1 + 8, status_y), font, font_scale_info, (255, 255, 255), thickness)
-    
+        status_y = time_y + status_h + 10
+        cv2.rectangle(frame, (bx1, status_y - status_h - 4), (bx1 + status_w + 8, status_y + 4), (0, 150, 0), -1)
+        cv2.putText(frame, status_label, (bx1 + 4, status_y), font, font_scale_info, (255, 255, 255), thickness)
+
     # Step 7: Draw UNLOCKED tracks (Yellow FACE boxes)
     for tr in tracks:
         if tr.get('is_locked') or tr.get('id') in locked_tracks:
@@ -3199,8 +3578,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             
         x1, y1, x2, y2 = face_box
         
-        # 🎯 BOLDER Yellow box for face scanning (thicker border)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 4)  # Increased thickness from 3 to 4
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
         
         display_name = tr.get('name', 'Unknown')
         confidence = tr.get('confidence', 0.0)
@@ -3209,74 +3587,81 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         font = cv2.FONT_HERSHEY_SIMPLEX
         
         # 🎯 LARGER TEXT settings
-        font_scale_name = 1.0  # Increased from 0.8
-        font_scale_info = 0.8  # Increased from 0.6
-        thickness = 3  # Increased from 2
+        font_scale_name = 0.5
+        font_scale_info = 0.4
+        thickness = 1
         
         # Draw name with larger text
         (name_w, name_h), _ = cv2.getTextSize(display_name, font, font_scale_name, thickness)
-        name_y = max(20, y1 - 15)  # Increased margin
-        cv2.rectangle(frame, (x1, name_y - name_h - 8), (x1 + name_w + 15, name_y + 8), (0, 0, 0), -1)
-        cv2.putText(frame, display_name, (x1 + 8, name_y), font, font_scale_name, (255, 255, 255), thickness)
-        
-        # Draw tracking time with larger text
+        name_y = max(16, y1 - 10)
+        cv2.rectangle(frame, (x1, name_y - name_h - 4), (x1 + name_w + 8, name_y + 4), (0, 0, 0), -1)
+        cv2.putText(frame, display_name, (x1 + 4, name_y), font, font_scale_name, (255, 255, 255), thickness)
+    
+        # Draw tracking time with thin text
         time_label = f"Time: {duration}s"
         (time_w, time_h), _ = cv2.getTextSize(time_label, font, font_scale_info, thickness)
-        time_y = y2 + time_h + 15  # Increased spacing
-        cv2.rectangle(frame, (x1, time_y - time_h - 8), (x1 + time_w + 12, time_y + 8), (0, 180, 180), -1)
-        cv2.putText(frame, time_label, (x1 + 6, time_y), font, font_scale_info, (255, 255, 255), thickness)
-        
-        # Draw confidence for unknown faces with larger text
+        time_y = y2 + time_h + 10
+        cv2.rectangle(frame, (x1, time_y - time_h - 4), (x1 + time_w + 8, time_y + 4), (0, 180, 180), -1)
+        cv2.putText(frame, time_label, (x1 + 4, time_y), font, font_scale_info, (255, 255, 255), thickness)
+    
+        # Draw confidence for unknown faces with thin text
         if display_name == "Unknown":
             conf_label = f"Conf: {confidence:.2f}"
             (conf_w, conf_h), _ = cv2.getTextSize(conf_label, font, font_scale_info, thickness)
-            conf_y = time_y + conf_h + 12  # Increased spacing
-            cv2.rectangle(frame, (x1, conf_y - conf_h - 8), (x1 + conf_w + 12, conf_y + 8), (0, 0, 0), -1)
-            cv2.putText(frame, conf_label, (x1 + 6, conf_y), font, font_scale_info, (255, 255, 255), thickness)
-        
-        # Draw status with larger text
+            conf_y = time_y + conf_h + 8
+            cv2.rectangle(frame, (x1, conf_y - conf_h - 4), (x1 + conf_w + 8, conf_y + 4), (0, 0, 0), -1)
+            cv2.putText(frame, conf_label, (x1 + 4, conf_y), font, font_scale_info, (255, 255, 255), thickness)
+    
+        # Draw status with thin text
         status_label = "SCANNING"
         (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale_info, thickness)
-        status_y = (conf_y if display_name == "Unknown" else time_y) + status_h + 12  # Increased spacing
-        cv2.rectangle(frame, (x1, status_y - status_h - 8), (x1 + status_w + 12, status_y + 8), (0, 150, 150), -1)
-        cv2.putText(frame, status_label, (x1 + 6, status_y), font, font_scale_info, (255, 255, 255), thickness)
+        status_y = (conf_y if display_name == "Unknown" else time_y) + status_h + 8
+        cv2.rectangle(frame, (x1, status_y - status_h - 4), (x1 + status_w + 8, status_y + 4), (0, 150, 150), -1)
+        cv2.putText(frame, status_label, (x1 + 4, status_y), font, font_scale_info, (255, 255, 255), thickness)
 
-    logger.info(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
+
+        logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
 
 
 @app.route('/video_feed')
 def video_feed():
-    """Stream video feed - RESTORED WORKING VERSION WITH DETECTION"""
+    """Stream video feed - OPTIMIZED FOR HIGH FPS"""
     def generate():
         global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
         frame_idx = 0
-        last_processing_time = time.time()
+        skip_counter = 0
         
         while not stop_flag:
             frame_start = time.time()
             
             try:
-                # 🎯 ORIGINAL FRAME ACCESS - KEEP THIS
                 if latest_frame is None:
-                    time.sleep(0.01)
+                    time.sleep(0.001)
                     continue
                 
-                frame = latest_frame.copy()
-                current_time = time.time()
+                # 🚀 CRITICAL: Resize to target resolution (USES STREAM_WIDTH, STREAM_HEIGHT)
+                frame = cv2.resize(latest_frame.copy(), (STREAM_WIDTH, STREAM_HEIGHT))
                 
-                # 🎯 CRITICAL: PROCESS DETECTION EVERY FRAME
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
-                # 🎯 ALWAYS RUN DETECTION - DON'T SKIP FRAMES
-                refresh_with_detections(frame, rgb, frame_idx)
+                # 🚀 CRITICAL: Frame skipping for high FPS (USES DETECT_EVERY)
+                skip_counter += 1
+                should_detect = (skip_counter % DETECT_EVERY == 0)
+                
+                if should_detect:
+                    refresh_with_detections(frame, rgb, frame_idx)
+                
                 update_trackers_with_body(rgb, frame, frame_idx)
                 
-                last_processing_time = current_time
                 frame_idx += 1
                 
-                # 🎯 OPTIMIZED ENCODING (keep this)
+                # 🚀 Clear GPU cache periodically
+                if frame_idx % 100 == 0:
+                    torch.cuda.empty_cache()
+                
+                # 🚀 Optimized encoding (USES JPEG_QUALITY)
                 ret, buffer = cv2.imencode('.jpg', frame, [
-                    cv2.IMWRITE_JPEG_QUALITY, 80,  # Good balance
+                    cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY,  # 🚀 USES CONFIG
                     cv2.IMWRITE_JPEG_OPTIMIZE, 1
                 ])
                 frame_bytes = buffer.tobytes()
@@ -3285,15 +3670,15 @@ def video_feed():
                       b'Content-Type: image/jpeg\r\n\r\n' + 
                       frame_bytes + b'\r\n')
                 
-                # 🎯 REASONABLE TIMING CONTROL
+                # 🚀 Target FPS (USES TARGET_FPS)
                 processing_time = time.time() - frame_start
-                target_frame_time = 0.033  # ~30 FPS
+                target_frame_time = 1.0 / TARGET_FPS  # 🚀 USES CONFIG
                 sleep_time = max(0.001, target_frame_time - processing_time)
                 time.sleep(sleep_time)
                 
             except Exception as e:
                 logger.error(f"Video feed error: {e}")
-                time.sleep(0.01)
+                time.sleep(0.001)
     
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
@@ -3371,27 +3756,25 @@ def cleanup_pending_confirmations(current_frame, timeout_frames=10):
 # ============================================
 
 def extract_reid_features(frame, body_box):
-    """Extract person re-id features from body crop - OPTIMIZED WITH FP16"""
+    """Extract person re-id features - OPTIMIZED FOR HIGH FPS"""
     if reid_model is None:
         return None
     try:
         x1, y1, x2, y2 = [int(v) for v in body_box]
         body_crop = frame[y1:y2, x1:x2]
         
-        if body_crop.shape[0] < 64 or body_crop.shape[1] < 32:
+        if body_crop.shape[0] < 32 or body_crop.shape[1] < 16:
             return None
         
-        body_crop_resized = cv2.resize(body_crop, (128, 256))
+        # 🚀 Smaller ReID input for speed (USES REID_IMG_SIZE)
+        body_crop_resized = cv2.resize(body_crop, REID_IMG_SIZE, interpolation=cv2.INTER_LINEAR)  # 🚀 USES CONFIG
         body_crop_normalized = body_crop_resized.astype(np.float32) / 255.0
         
-        # ✅ FIXED: CONSISTENT PRECISION HANDLING
         if torch.cuda.is_available():
-            # Convert to FP16 and move to GPU
             body_crop_tensor = torch.from_numpy(
                 np.transpose(body_crop_normalized, (2, 0, 1))
-            ).unsqueeze(0).half().cuda()  # ✅ FIXED: Consistent FP16 on GPU
+            ).unsqueeze(0).half().cuda()
         else:
-            # CPU fallback
             body_crop_tensor = torch.from_numpy(
                 np.transpose(body_crop_normalized, (2, 0, 1))
             ).unsqueeze(0).float()
@@ -3399,7 +3782,6 @@ def extract_reid_features(frame, body_box):
         with torch.no_grad():
             reid_features = reid_model(body_crop_tensor)
         
-        # ✅ FIXED: Always convert to CPU numpy for consistency
         return reid_features.cpu().numpy()[0]
     except Exception as e:
         logger.debug(f"Reid extraction error: {e}")
@@ -5843,9 +6225,15 @@ def register_student():
         conn.close()
         
         try:
-            load_known_faces_from_db()
+            add_face_to_memory(
+                id=student_id,
+                first_name=first_name,
+                last_name=last_name,
+                face_encoding=encoding_str,  # This is already your encoding string
+                person_type='student'
+            )
         except Exception as e:
-            logger.warning(f"Failed to reload known faces: {e}")
+            logger.error(f"Failed to add student {student_id} to memory: {e}")
         
         logger.info(f"Student registered successfully: {student_id} ({first_name} {last_name}) with curriculum {curriculum_id}")
         return jsonify({'success': True, 'message': 'Student registered successfully'})
@@ -5997,8 +6385,17 @@ def register_faculty():
             except Exception as e:
                 logger.error(f"Failed to update invite uses: {e}")
         
-        # Reload known faces
-        load_known_faculties_from_db()
+        try:
+            add_face_to_memory(
+                id=faculty_id,
+                first_name=first_name,
+                last_name=last_name,
+                face_encoding=encoding_str,  # This is already your encoding string
+                person_type='faculty'
+            )
+        except Exception as e:
+            logger.error(f"Failed to add faculty {faculty_id} to memory: {e}")
+        
         pose_embeddings.clear()
         
         logger.info(f"Faculty registered: {faculty_id} ({first_name} {last_name}) with role {role}")
@@ -7377,18 +7774,6 @@ def faculty_reg_page():
         logger.error(f"Error validating invite token: {e}")
         return redirect(url_for('login_page'))
 
-@app.route('/api/check_session', methods=['GET'])
-def check_session():
-    """Check if user has active session"""
-    user = get_current_user()
-    if user:
-        return jsonify({
-            'logged_in': True,
-            'user_type': user['user_type'],
-            'name': f"{user['first_name']} {user['last_name']}",
-            'redirect_url': '/StudentLP' if user['user_type'] == 'student' else '/AdminDB'
-        })
-    return jsonify({'logged_in': False})  
 
 @app.route('/subject')
 def subject_page():
@@ -10528,6 +10913,7 @@ def get_session_info():
                 cs.end_time,
                 cs.room,
                 cs.class_type,
+                cs.day_of_week,
                 s.subject_code,
                 s.subject_name,
                 ys.year_level,
@@ -10579,7 +10965,8 @@ def get_session_info():
                 'section_id': schedule['section_id'],
                 'program_id': schedule['program_id'],
                 'program_name': schedule['program_name'],
-                'room': schedule['room'],
+                'room': schedule['room'] or 'Unknown Room',
+                'day_of_week': schedule['day_of_week'] or 'Unknown Day',
                 'start_time': str(schedule['start_time']),
                 'end_time': str(schedule['end_time']),
                 'faculty_id': schedule['faculty_id'],
@@ -10591,6 +10978,8 @@ def get_session_info():
         }
         
         logger.info(f"✅ Session info loaded: {schedule['program_id']} {schedule['year_level']}{schedule['section_name']}, Faculty photo: {faculty_photo}")
+        logger.info(f"📚 Subject: {schedule['subject_code']}, Room: {schedule['room']}, Day: {schedule['day_of_week']}")
+        
         return jsonify(response)
         
     except Exception as e:
@@ -10657,8 +11046,7 @@ def initialize_session():
         
         # ✅ GENERATE UNIQUE SESSION ID
         import uuid
-        import datetime
-        unique_session_id = f"{schedule_id}_{uuid.uuid4().hex[:8]}_{int(datetime.datetime.now().timestamp())}"
+        unique_session_id = f"{schedule_id}_{uuid.uuid4().hex[:8]}_{int(datetime.now().timestamp())}"
         current_session_id = unique_session_id
         
         # Handle duration and threshold
@@ -10670,7 +11058,7 @@ def initialize_session():
             session_threshold_seconds = 900
         
         # ✅ SET SESSION START TIME
-        session_start_time = datetime.datetime.now()
+        session_start_time = datetime.now()
         
         logger.info(f"🎯 Generated unique session ID: {unique_session_id}")
         logger.info(f"✅ SESSION PARAMS - Duration: {session_total_duration_seconds}s, Threshold: {session_threshold_seconds}s")
@@ -10680,7 +11068,7 @@ def initialize_session():
         if not connection:
             return jsonify({'success': False, 'message': 'Failed to connect to database'}), 500
         
-        cursor = connection.cursor(dictionary=True)
+        cursor = connection.cursor(dictionary=True, buffered=True)
         
         # 🎯 CRITICAL FIX: CLEAR PREVIOUS TEMPORARY STUDENTS FOR THIS SESSION
         try:
@@ -10695,8 +11083,9 @@ def initialize_session():
         except Exception as e:
             logger.warning(f"⚠️ Could not clear temporary students: {e}")
         
-        # ✅ CORRECTED SECTION LOOKUP
+        # ✅ CORRECTED SECTION LOOKUP WITH CURRICULUM
         section_id = None
+        curriculum_info = None
         year_level = data.get('year_level', '')
         section_name = data.get('section', '')
         program_id = data.get('program', '')
@@ -10729,7 +11118,7 @@ def initialize_session():
                 
                 logger.info(f"🔍 Searching section with: Year={year_level_num}, Section={section_to_search}, Program={program_id_to_search}")
                 
-                # 🎯 USE THE CORRECT QUERY FROM YOUR DATABASE
+                # 🎯 UPDATED QUERY: INCLUDE CURRICULUM INFORMATION
                 cursor.execute("""
                     SELECT 
                         ys.section_id,
@@ -10739,9 +11128,13 @@ def initialize_session():
                         ys.section_name,
                         ys.semester_id,
                         ys.academic_year_id,
-                        ys.status
+                        ys.curriculum_id,
+                        ys.status,
+                        c.curriculum_year,
+                        c.curriculum_name
                     FROM year_sections ys
                     JOIN programs p ON ys.program_id = p.program_id
+                    LEFT JOIN curricula c ON ys.curriculum_id = c.curriculum_id
                     WHERE ys.program_id = %s AND ys.year_level = %s AND ys.section_name = %s
                     ORDER BY ys.section_id
                 """, (program_id_to_search, year_level_num, section_to_search))
@@ -10749,8 +11142,19 @@ def initialize_session():
                 section_result = cursor.fetchone()
                 if section_result:
                     section_id = section_result['section_id']
+                    
+                    # 🎯 STORE CURRICULUM INFO
+                    if section_result['curriculum_id']:
+                        curriculum_info = {
+                            'curriculum_id': section_result['curriculum_id'],
+                            'curriculum_year': section_result['curriculum_year'],
+                            'curriculum_name': section_result['curriculum_name']
+                        }
+                    
                     logger.info(f"✅ Found section_id: {section_id}")
                     logger.info(f"📋 Section details: Program={section_result['program_name']}, Year={section_result['year_level']}, Section={section_result['section_name']}")
+                    if curriculum_info:
+                        logger.info(f"🎓 Curriculum: {curriculum_info['curriculum_year']} - {curriculum_info['curriculum_name']}")
                 else:
                     logger.warning(f"⚠️ No section found for Program={program_id_to_search}, Year={year_level_num}, Section={section_to_search}")
                     
@@ -10771,124 +11175,99 @@ def initialize_session():
             except Exception as e:
                 logger.warning(f"⚠️ Error finding section: {e}")
         
-        # ✅ GET SUBJECT AND ROOM INFO - ENHANCED QUERY
+        # ✅ GET SUBJECT AND ROOM INFO FROM DATABASE - FIXED TO USE CORRECT SCHEDULE_ID
         subject_code = 'Unknown Subject'
         subject_name = 'Unknown Subject'
         room = 'Unknown Room'
+        class_type = 'lecture'
+        subject_curriculum_year = None
+        day_of_week = 'Unknown Day'
         
         try:
+            # First, try to find the schedule by schedule_id (from frontend)
+            logger.info(f"🔍 Looking for schedule_id in class_schedules: {schedule_id}")
+            
             cursor.execute("""
-                SELECT s.subject_code, s.subject_name, cs.room
+                SELECT cs.schedule_id, cs.subject_id, cs.room, cs.day_of_week, cs.class_type,
+                       s.subject_code, s.subject_name, c.curriculum_year
                 FROM class_schedules cs
                 JOIN subjects s ON cs.subject_id = s.subject_id
-                WHERE cs.schedule_id = %s
+                LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
+                WHERE cs.schedule_id = %s AND cs.status = 'active'
             """, (schedule_id,))
-            result = cursor.fetchone()
-            if result:
-                subject_code = result.get('subject_code', 'Unknown Subject')
-                subject_name = result.get('subject_name', 'Unknown Subject')
-                room = result.get('room', 'Unknown Room')
-                logger.info(f"📚 Subject info: {subject_code} - {subject_name} - {room}")
+            
+            schedule_info = cursor.fetchone()
+            
+            if schedule_info:
+                logger.info(f"✅ Found schedule in database: schedule_id={schedule_info['schedule_id']}")
+                subject_code = schedule_info.get('subject_code', 'Unknown Subject')
+                subject_name = schedule_info.get('subject_name', 'Unknown Subject')
+                room = schedule_info.get('room', 'Unknown Room')
+                class_type = schedule_info.get('class_type', 'lecture')
+                day_of_week = schedule_info.get('day_of_week', 'Unknown Day')
+                subject_curriculum_year = schedule_info.get('curriculum_year')
+                
+                logger.info(f"📚 Database values - Subject: {subject_code}, Room: {room}, Day: {day_of_week}")
             else:
-                logger.warning(f"⚠️ No subject found for schedule_id: {schedule_id}")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not fetch subject info: {e}")
-        
-        # ✅ SAVE SESSION TO DATABASE WITH UNIQUE SESSION ID AND BOTH MINUTES & SECONDS
-        try:
-            # First, try to get the next session instance number
-            cursor.execute("""
-                SELECT COALESCE(MAX(session_instance), 0) + 1 as next_instance 
-                FROM attendance_sessions 
-                WHERE original_schedule_id = %s
-            """, (schedule_id,))
-            instance_result = cursor.fetchone()
-            next_instance = instance_result['next_instance'] if instance_result else 1
-            
-            # 🎯 CRITICAL FIX: Store BOTH minutes AND seconds in database
-            cursor.execute("""
-                INSERT INTO attendance_sessions 
-                (session_id, class_name, subject_code, subject_name, room, started_at, 
-                 late_threshold_minutes, total_duration_minutes, 
-                 threshold_seconds_total, session_duration_seconds_total,
-                 created_by, status, section_id,
-                 original_schedule_id, session_instance)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)
-            """, (
-                unique_session_id,  # Use unique session ID
-                f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
-                subject_code,
-                subject_name,
-                room,
-                session_start_time,
-                session_threshold_seconds // 60,  # Store minutes
-                session_total_duration_seconds // 60,  # Store minutes
-                session_threshold_seconds,  # 🎯 STORE SECONDS
-                session_total_duration_seconds,  # 🎯 STORE SECONDS
-                data.get('instructor', 'System'),
-                section_id,
-                schedule_id,  # Store original schedule_id for reference
-                next_instance  # Session instance counter
-            ))
-            logger.info(f"💾 Session saved to database with unique ID: {unique_session_id}, instance: {next_instance}")
-            logger.info(f"⏰ STORED TIMING: Duration={session_total_duration_seconds}s, Threshold={session_threshold_seconds}s")
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Could not save session to database: {e}")
-            # If insert fails, try without instance number but STILL with seconds
-            try:
+                logger.warning(f"⚠️ No schedule found with schedule_id={schedule_id} in class_schedules table")
+                logger.info(f"🔍 Checking subjects table for subject_id={schedule_id}...")
+                
+                # Maybe the frontend is passing subject_id instead of schedule_id?
+                # Try to find subject by subject_id
                 cursor.execute("""
-                    INSERT INTO attendance_sessions 
-                    (session_id, class_name, subject_code, subject_name, room, started_at, 
-                     late_threshold_minutes, total_duration_minutes, 
-                     threshold_seconds_total, session_duration_seconds_total,
-                     created_by, status, section_id, original_schedule_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s)
-                """, (
-                    unique_session_id,
-                    f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
-                    subject_code,
-                    subject_name,
-                    room,
-                    session_start_time,
-                    session_threshold_seconds // 60,
-                    session_total_duration_seconds // 60,
-                    session_threshold_seconds,  # 🎯 STORE SECONDS
-                    session_total_duration_seconds,  # 🎯 STORE SECONDS
-                    data.get('instructor', 'System'),
-                    section_id,
-                    schedule_id
-                ))
-                logger.info(f"💾 Session saved without instance number: {unique_session_id}")
-            except Exception as retry_error:
-                logger.error(f"❌ Failed to save session even with retry: {retry_error}")
-                # If still failing, try basic insert but STILL with seconds
-                try:
+                    SELECT s.subject_code, s.subject_name, s.class_type, c.curriculum_year
+                    FROM subjects s
+                    LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
+                    WHERE s.subject_id = %s AND s.status = 'active'
+                """, (schedule_id,))
+                
+                subject_info = cursor.fetchone()
+                if subject_info:
+                    logger.info(f"✅ Found subject by subject_id: {schedule_id}")
+                    subject_code = subject_info.get('subject_code', 'Unknown Subject')
+                    subject_name = subject_info.get('subject_name', 'Unknown Subject')
+                    class_type = subject_info.get('class_type', 'lecture')
+                    subject_curriculum_year = subject_info.get('curriculum_year')
+                    
+                    # Try to find a room for this subject from class_schedules
                     cursor.execute("""
-                        INSERT INTO attendance_sessions 
-                        (session_id, class_name, subject_code, subject_name, room, started_at, 
-                         late_threshold_minutes, total_duration_minutes, 
-                         threshold_seconds_total, session_duration_seconds_total,
-                         created_by, status, section_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s)
-                    """, (
-                        unique_session_id,
-                        f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
-                        subject_code,
-                        subject_name,
-                        room,
-                        session_start_time,
-                        session_threshold_seconds // 60,
-                        session_total_duration_seconds // 60,
-                        session_threshold_seconds,  # 🎯 STORE SECONDS
-                        session_total_duration_seconds,  # 🎯 STORE SECONDS
-                        data.get('instructor', 'System'),
-                        section_id
-                    ))
-                    logger.info(f"💾 Session saved with basic insert: {unique_session_id}")
-                except Exception as final_error:
-                    logger.error(f"❌ All insert attempts failed: {final_error}")
-                    raise final_error
+                        SELECT room, day_of_week 
+                        FROM class_schedules 
+                        WHERE subject_id = %s AND status = 'active' 
+                        ORDER BY schedule_id DESC 
+                        LIMIT 1
+                    """, (schedule_id,))
+                    
+                    room_info = cursor.fetchone()
+                    if room_info:
+                        room = room_info.get('room', 'Unknown Room')
+                        day_of_week = room_info.get('day_of_week', 'Unknown Day')
+                    
+                    logger.info(f"📚 Subject info: {subject_code} - {subject_name}, Room: {room}")
+                else:
+                    logger.warning(f"⚠️ No subject found with subject_id={schedule_id} either")
+                    
+                    # Try to extract info from URL parameters as last resort
+                    subject_code = data.get('subject', 'Unknown Subject')
+                    subject_name = data.get('subject', 'Unknown Subject')
+                    
+                    logger.info(f"🔄 Using URL parameter values: subject={subject_code}")
+            
+            # If day_of_week is still unknown, get current day
+            if day_of_week == 'Unknown Day':
+                try:
+                    day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+                    current_day_index = datetime.now().weekday()
+                    day_of_week = day_names[current_day_index]
+                    logger.info(f"📅 Using current system day: {day_of_week}")
+                except Exception as day_error:
+                    logger.warning(f"⚠️ Could not determine day of week: {day_error}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Error fetching subject info: {e}", exc_info=True)
+            # Final fallback
+            subject_code = data.get('subject', 'Unknown Subject')
+            subject_name = data.get('subject', 'Unknown Subject')
         
         # ✅ GET FACULTY INFO
         faculty_name = data.get('instructor', 'Unknown Instructor')
@@ -10899,6 +11278,9 @@ def initialize_session():
             instructor_name = data.get('instructor', '')
             
             if instructor_name:
+                # Clear any unread results first
+                cursor.fetchall()
+                
                 cursor.execute("""
                     SELECT first_name, last_name, photo_path, role 
                     FROM faculty 
@@ -10911,6 +11293,9 @@ def initialize_session():
                 faculty_result = cursor.fetchone()
                 
                 if not faculty_result:
+                    # Clear again before next query
+                    cursor.fetchall()
+                    
                     cursor.execute("""
                         SELECT first_name, last_name, photo_path, role 
                         FROM admins 
@@ -10940,6 +11325,103 @@ def initialize_session():
         except Exception as e:
             logger.warning(f"⚠️ Could not fetch faculty info: {e}")
         
+        # ✅ SAVE SESSION TO DATABASE
+        try:
+            # First, try to get the next session instance number
+            cursor.execute("""
+                SELECT COALESCE(MAX(session_instance), 0) + 1 as next_instance 
+                FROM attendance_sessions 
+                WHERE original_schedule_id = %s
+            """, (schedule_id,))
+            instance_result = cursor.fetchone()
+            next_instance = instance_result['next_instance'] if instance_result else 1
+            
+            # Insert into attendance_sessions
+            cursor.execute("""
+                INSERT INTO attendance_sessions 
+                (session_id, class_name, subject_code, subject_name, room, started_at, 
+                 late_threshold_minutes, total_duration_minutes, 
+                 threshold_seconds_total, session_duration_seconds_total,
+                 created_by, status, section_id,
+                 original_schedule_id, session_instance)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)
+            """, (
+                unique_session_id,
+                f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
+                subject_code,
+                subject_name,
+                room,
+                session_start_time,
+                session_threshold_seconds // 60,
+                session_total_duration_seconds // 60,
+                session_threshold_seconds,
+                session_total_duration_seconds,
+                data.get('instructor', 'System'),
+                section_id,
+                schedule_id,
+                next_instance
+            ))
+            logger.info(f"💾 Session saved to database with unique ID: {unique_session_id}, instance: {next_instance}")
+            logger.info(f"⏰ STORED TIMING: Duration={session_total_duration_seconds}s, Threshold={session_threshold_seconds}s")
+            
+        except Exception as e:
+            logger.error(f"❌ Could not save session to database: {e}")
+            # Try simpler insert without instance number
+            try:
+                cursor.execute("""
+                    INSERT INTO attendance_sessions 
+                    (session_id, class_name, subject_code, subject_name, room, started_at, 
+                     late_threshold_minutes, total_duration_minutes, 
+                     threshold_seconds_total, session_duration_seconds_total,
+                     created_by, status, section_id, original_schedule_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s)
+                """, (
+                    unique_session_id,
+                    f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
+                    subject_code,
+                    subject_name,
+                    room,
+                    session_start_time,
+                    session_threshold_seconds // 60,
+                    session_total_duration_seconds // 60,
+                    session_threshold_seconds,
+                    session_total_duration_seconds,
+                    data.get('instructor', 'System'),
+                    section_id,
+                    schedule_id
+                ))
+                logger.info(f"💾 Session saved without instance number: {unique_session_id}")
+            except Exception as retry_error:
+                logger.error(f"❌ Failed to save session even with retry: {retry_error}")
+                # Basic insert with minimal fields
+                try:
+                    cursor.execute("""
+                        INSERT INTO attendance_sessions 
+                        (session_id, class_name, subject_code, subject_name, room, started_at, 
+                         late_threshold_minutes, total_duration_minutes, 
+                         threshold_seconds_total, session_duration_seconds_total,
+                         created_by, status, section_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s)
+                    """, (
+                        unique_session_id,
+                        f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
+                        subject_code,
+                        subject_name,
+                        room,
+                        session_start_time,
+                        session_threshold_seconds // 60,
+                        session_total_duration_seconds // 60,
+                        session_threshold_seconds,
+                        session_total_duration_seconds,
+                        data.get('instructor', 'System'),
+                        section_id
+                    ))
+                    logger.info(f"💾 Session saved with basic insert: {unique_session_id}")
+                except Exception as final_error:
+                    logger.error(f"❌ All insert attempts failed: {final_error}")
+                    # Don't raise error, just log it - session can continue without DB entry
+                    pass
+        
         # Format display times
         def format_time_display(seconds):
             hours = seconds // 3600
@@ -10965,37 +11447,78 @@ def initialize_session():
             
         program_display = get_program_display_name(data.get('program', ''))
         
+        # 🎯 FORMAT SUBJECT DISPLAY WITH CLASS TYPE
+        def format_subject_display(subject_code, class_type):
+            """Format subject display with class type indicator"""
+            if class_type == 'laboratory':
+                return f"{subject_code} (Lab)"
+            elif class_type == 'lecture':
+                return f"{subject_code} (Lec)"
+            else:
+                return subject_code
+        
+        subject_display = format_subject_display(subject_code, class_type)
+        
+        # ✅ FORMAT HEADER DISPLAY TEXT - NOW INCLUDES DAY OF WEEK (from system, not DB)
+        def format_header_display(subject_code, room, day_of_week):
+            """Format header display: Subject Code - Room (Day)"""
+            # If room is still 'Unknown Room', use a more generic display
+            if room == 'Unknown Room':
+                return f"{subject_code} ({day_of_week})"
+            return f"{subject_code} - {room} ({day_of_week})"
+        
+        header_display = format_header_display(subject_code, room, day_of_week)
+        
         # ✅ STORE SESSION DATA - USE UNIQUE SESSION ID
         session_data = {
-            'session_id': unique_session_id,  # 🎯 CRITICAL: Use unique session ID
-            'schedule_id': schedule_id,  # Keep original schedule_id for reference
+            'session_id': unique_session_id,
+            'schedule_id': schedule_id,
             'instructor': faculty_name,
             'subject_code': subject_code,
-            'subject_name': subject_name,  # ✅ ADD SUBJECT NAME
+            'subject_name': subject_name,
+            'subject_display': subject_display,
             'room': room,
+            'class_type': class_type,
+            'day_of_week': day_of_week,
+            'header_display': header_display,
             'role': faculty_role,
             'faculty_photo': faculty_photo,
             'year_level': data.get('year_level', ''),
             'program': data.get('program', ''),
-            'program_display': program_display,  # 🆕 ADD PROGRAM DISPLAY NAME
+            'program_display': program_display,
             'section': data.get('section', ''),
             'duration': session_total_duration_seconds,
             'duration_display': format_time_display(session_total_duration_seconds),
             'threshold': session_threshold_seconds,
             'threshold_display': format_time_display(session_threshold_seconds),
             'start_time': session_start_time.isoformat(),
-            'section_id': section_id  # ✅ ADD SECTION_ID TO RESPONSE
+            'section_id': section_id,
+            'curriculum_year': subject_curriculum_year
         }
         
-        connection.commit()
+        # ADD CURRICULUM INFO IF AVAILABLE
+        if curriculum_info:
+            session_data['curriculum_info'] = curriculum_info
+        
+        if connection and connection.is_connected():
+            try:
+                connection.commit()
+                logger.info("✅ Database changes committed successfully")
+            except Exception as commit_error:
+                logger.error(f"❌ Could not commit changes: {commit_error}")
+        
         logger.info(f"🔍 DEBUG: threshold input = {data.get('threshold')}")
         logger.info(f"🔍 DEBUG: session_threshold_seconds = {session_threshold_seconds}")
         logger.info(f"✅ SESSION INITIALIZED: {session_start_time}")
         logger.info(f"👤 Faculty: {faculty_name} - Role: {faculty_role}")
         logger.info(f"🏫 Class: {data.get('program')} {data.get('year_level')}{data.get('section')}")
-        logger.info(f"📚 Subject: {subject_code} - {subject_name} - {room}")
+        logger.info(f"📚 Subject: {subject_code} - {subject_name}")
+        logger.info(f"📍 Room: {room}")
+        logger.info(f"📅 Day: {day_of_week}")
+        logger.info(f"📚 Class Type: {class_type}")
         logger.info(f"🔗 Section ID: {section_id}")
         logger.info(f"🎯 Unique Session ID returned: {unique_session_id}")
+        logger.info(f"📋 Header Display: {header_display}")
         
         return jsonify({
             'success': True, 
@@ -11006,17 +11529,63 @@ def initialize_session():
     except Exception as e:
         logger.error(f"❌ Error in initialize_session: {e}", exc_info=True)
         if connection:
-            connection.rollback()
+            try:
+                connection.rollback()
+            except:
+                pass
         return jsonify({
             'success': False, 
             'message': f'Server error: {str(e)}'
         }), 500
     
     finally:
+        # ✅ FIX: Properly close cursor and connection
         if cursor:
-            cursor.close()
+            try:
+                cursor.close()
+            except:
+                pass
         if connection and connection.is_connected():
-            connection.close()
+            try:
+                connection.close()
+            except:
+                pass
+
+@app.route('/api/debug_schedule/<schedule_id>', methods=['GET'])
+def debug_schedule(schedule_id):
+    """Debug endpoint to check schedule info in database"""
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # Check class_schedules
+        cursor.execute("SELECT * FROM class_schedules WHERE schedule_id = %s", (schedule_id,))
+        schedule = cursor.fetchone()
+        
+        # Check attendance_sessions
+        cursor.execute("SELECT * FROM attendance_sessions WHERE original_schedule_id = %s ORDER BY started_at DESC", (schedule_id,))
+        sessions = cursor.fetchall()
+        
+        # Check subjects table
+        if schedule and schedule.get('subject_id'):
+            cursor.execute("SELECT * FROM subjects WHERE subject_id = %s", (schedule['subject_id'],))
+            subject = cursor.fetchone()
+        else:
+            subject = None
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'schedule_found': schedule is not None,
+            'schedule': schedule,
+            'subject': subject,
+            'sessions_count': len(sessions),
+            'sessions': sessions[:5]  # First 5 sessions
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/force_start_session', methods=['GET'])
 def force_start_session():
@@ -11094,7 +11663,8 @@ def get_class_students():
         if not connection:
             return jsonify({'success': False, 'message': 'Failed to connect to database'}), 500
         
-        cursor = connection.cursor(dictionary=True)
+        # 🎯 FIX: Use buffered cursor to prevent "Unread result found" error
+        cursor = connection.cursor(dictionary=True, buffered=True)
         
         # Get URL parameters
         program = request.args.get('program')
@@ -11142,7 +11712,8 @@ def get_class_students():
             return jsonify({'success': False, 'message': 'Section not found'}), 404
         
         # 🎯 STEP 2: GET REGULAR STUDENTS USING SECTION_ID (NOT PROGRAM/YEAR/SECTION)
-        regular_query = """
+        # 🎯 FIX: Ensure we fetch all results and close this query properly
+        cursor.execute("""
             SELECT 
                 s.student_id, 
                 s.first_name, 
@@ -11159,17 +11730,19 @@ def get_class_students():
             WHERE s.section_id = %s 
             AND s.status = 'active'
             ORDER BY s.last_name, s.first_name
-        """
+        """, (section_id,))
         
-        cursor.execute(regular_query, (section_id,))
         regular_students = cursor.fetchall()
+        
+        # 🎯 FIX: Consume any remaining results before next query
+        cursor.fetchall()
         
         logger.info(f"🔍 Found {len(regular_students)} regular students in section {section_id}")
         
-        # 🎯 STEP 3: GET TEMPORARY STUDENTS - FIXED: Query attendance table, not temporary_students
+        # 🎯 STEP 3: GET TEMPORARY STUDENTS - FIXED: Query attendance table
         temporary_students = []
         if session_id:
-            temp_query = """
+            cursor.execute("""
                 SELECT 
                     name,
                     status,
@@ -11179,9 +11752,10 @@ def get_class_students():
                 WHERE session_id = %s 
                 AND student_id IS NULL
                 ORDER BY timestamp DESC
-            """
-            cursor.execute(temp_query, (session_id,))
+            """, (session_id,))
+            
             temp_results = cursor.fetchall()
+            cursor.fetchall()  # Consume any remaining results
             
             for temp_student in temp_results:
                 # Extract ID from remarks if available, otherwise generate one
@@ -11192,7 +11766,7 @@ def get_class_students():
                     temp_id = temp_student['remarks'].split('temp_id:')[1].strip()
                 else:
                     # Generate ID from name and timestamp
-                    temp_id = f"temp_{hash(temp_student['name'] + str(temp_student['timestamp'])) % 10000}"
+                    temp_id = f"temp_{abs(hash(temp_student['name'] + str(temp_student['timestamp'])) % 10000)}"
                 
                 temporary_students.append({
                     'id': temp_id,
@@ -11228,19 +11802,22 @@ def get_class_students():
         for temp_student in temporary_students:
             formatted_students.append(temp_student)
         
-        # 🎯 STEP 5: UPDATE STATUSES FROM ATTENDANCE - FIXED: Handle temporary students
+        # 🎯 STEP 5: UPDATE STATUSES FROM ATTENDANCE
         if session_id:
-            # Update regular students
-            attendance_query = """
+            # 🎯 FIX: Clear any previous results before new query
+            cursor.fetchall()
+            
+            cursor.execute("""
                 SELECT student_id, status 
                 FROM attendance 
                 WHERE session_id = %s 
                 AND student_id IS NOT NULL
                 AND DATE(timestamp) = CURDATE()
                 ORDER BY timestamp DESC
-            """
-            cursor.execute(attendance_query, (session_id,))
+            """, (session_id,))
+            
             attendance_records = cursor.fetchall()
+            cursor.fetchall()  # Consume any remaining results
             
             # Create a mapping of student_id to latest status
             status_map = {}
@@ -11270,13 +11847,23 @@ def get_class_students():
         
     except Exception as e:
         logger.error(f"❌ Error fetching class students: {e}")
+        import traceback
+        logger.error(f"❌ Stack trace: {traceback.format_exc()}")
         return jsonify({'success': False, 'message': str(e)}), 500
     
     finally:
+        # 🎯 FIX: Proper cleanup
         if cursor:
-            cursor.close()
+            try:
+                cursor.close()
+            except Exception as e:
+                logger.warning(f"⚠️ Error closing cursor: {e}")
+        
         if connection and connection.is_connected():
-            connection.close()
+            try:
+                connection.close()
+            except Exception as e:
+                logger.warning(f"⚠️ Error closing connection: {e}")
 
 @app.route('/api/debug_section_students')
 def debug_section_students():
@@ -11339,20 +11926,14 @@ def debug_students():
         if cursor: cursor.close()
         if connection: connection.close()
 
-from flask import Flask, request, jsonify
-from datetime import datetime
-import re
-import logging
-
-# Assuming these are defined elsewhere
-logger = logging.getLogger(__name__)
-student_status = {}  # In-memory dictionary to track student status
-
 @app.route('/api/get_student_status')
 def get_student_status():
-    """Get current status of all students - FIXED: Proper missing/present logic"""
+    """Get current status of all students - FIXED: Correct JOIN query"""
     global session_start_time, session_threshold_seconds, current_session_id, student_presence_tracker
     global locked_tracks
+    
+    conn = None
+    cursor = None
     
     try:
         program = request.args.get('program')
@@ -11364,36 +11945,41 @@ def get_student_status():
         if not session_threshold_seconds and current_session_id:
             try:
                 conn = get_db_connection()
-                cursor = conn.cursor(dictionary=True)
+                cursor = conn.cursor(dictionary=True, buffered=True)
                 cursor.execute("""
                     SELECT threshold_seconds_total 
                     FROM attendance_sessions 
                     WHERE session_id = %s
                 """, (current_session_id,))
                 session_data = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                cursor = None
+                conn = None
+                
                 if session_data and session_data.get('threshold_seconds_total'):
                     session_threshold_seconds = session_data['threshold_seconds_total']
                     logger.info(f"🎯 Loaded threshold: {session_threshold_seconds} seconds")
                 else:
                     logger.warning(f"⚠️ No threshold found, using default 900s")
                     session_threshold_seconds = 900
-                cursor.close()
-                conn.close()
             except Exception as e:
                 logger.warning(f"⚠️ Could not load threshold: {e}")
                 session_threshold_seconds = 900
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+                cursor = None
+                conn = None
         
-        threshold_seconds = session_threshold_seconds
+        threshold_seconds = session_threshold_seconds or 900
         logger.info(f"⏰ Using threshold: {threshold_seconds} seconds")
         
-        if not threshold_seconds:
-            logger.warning("⚠️ No threshold set, using default 900 seconds")
-            threshold_seconds = 900
-        
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(dictionary=True, buffered=True)
         
-        # 🎯 CRITICAL FIX: GET SECTION_ID FROM ATTENDANCE_SESSIONS
+        # 🎯 GET SECTION_ID FROM ATTENDANCE_SESSIONS
         section_id = None
         cursor.execute("""
             SELECT section_id FROM attendance_sessions 
@@ -11406,7 +11992,8 @@ def get_student_status():
             logger.info(f"🎯 Using section_id from session: {section_id}")
         else:
             logger.warning(f"⚠️ No section_id found for session {session_id}, falling back to program/year/section lookup")
-            # Fallback to old method
+            
+            # Fallback: Find section_id from year_sections
             program_map = {
                 'Information Technology': 'IT',
                 'Computer Science': 'CS', 
@@ -11417,7 +12004,6 @@ def get_student_status():
             }
             program_id_to_search = program_map.get(program, program)
             
-            # Extract numeric year level
             year_level_clean = ''.join(filter(str.isdigit, year_level))
             year_level_num = int(year_level_clean) if year_level_clean else None
             section_to_search = section.upper() if section else None
@@ -11434,9 +12020,11 @@ def get_student_status():
         
         if not section_id:
             logger.error(f"❌ No section_id found for session {session_id}")
+            cursor.close()
+            conn.close()
             return jsonify({'success': False, 'message': 'Section not found'}), 404
         
-        # 🎯 CRITICAL FIX: GET STUDENTS BY SECTION_ID (NOT PROGRAM/YEAR/SECTION)
+        # 🔧 FIXED QUERY: Correct JOIN through curricula
         cursor.execute("""
             SELECT 
                 s.student_id, 
@@ -11448,16 +12036,20 @@ def get_student_status():
                 ys.section_name
             FROM students s
             JOIN year_sections ys ON s.section_id = ys.section_id
-            JOIN programs p ON ys.program_id = p.program_id
+            LEFT JOIN curricula c ON ys.curriculum_id = c.curriculum_id
+            LEFT JOIN programs p ON c.program_id = p.program_id
             WHERE s.section_id = %s 
             AND s.status = 'active'
         """, (section_id,))
         
         students = cursor.fetchall()
-        
         logger.info(f"🔍 Found {len(students)} students for section_id: {section_id}")
         
-        # ✅ CRITICAL FIX: Get temporary students from CURRENT SESSION only
+        # Close cursor before next query
+        cursor.close()
+        
+        # ✅ Get temporary students from CURRENT SESSION only
+        cursor = conn.cursor(dictionary=True, buffered=True)
         cursor.execute("""
             SELECT name, timestamp, status, remarks, session_id
             FROM attendance 
@@ -11466,43 +12058,47 @@ def get_student_status():
         """, (session_id,))
         
         temp_students = cursor.fetchall()
+        cursor.close()
         
         student_list = []
         detected_count = 0
         
-        # 🎯 CRITICAL FIX: Check missing periods - INITIALIZE as empty list
-        missing_student_ids = []  # Initialize as empty list to avoid None
+        # 🎯 Check missing periods
+        missing_student_ids = []
         currently_present_ids = set()
         
         if session_id:
             try:
-                # Check database for CURRENTLY missing students (not returned yet)
+                cursor = conn.cursor(dictionary=True, buffered=True)
                 cursor.execute("""
                     SELECT student_id FROM missing_periods 
                     WHERE session_id = %s AND returned = FALSE
                 """, (session_id,))
                 missing_records = cursor.fetchall()
-                missing_student_ids = [record['student_id'] for record in missing_records] if missing_records else []
+                cursor.close()
                 
-                logger.info(f"🔍 DB MISSING CHECK: Found {len(missing_student_ids)} CURRENTLY missing students: {missing_student_ids}")
+                missing_student_ids = [record['student_id'] for record in missing_records] if missing_records else []
+                logger.info(f"🔍 DB MISSING CHECK: Found {len(missing_student_ids)} CURRENTLY missing students")
                 
             except Exception as e:
                 logger.warning(f"⚠️ Error checking missing students: {e}")
-                missing_student_ids = []  # Ensure it's not None
+                missing_student_ids = []
+                if cursor:
+                    cursor.close()
         
-        # Check real-time tracking data for currently present students
+        # Check real-time tracking data
         try:
             if locked_tracks:
                 for person_id, lock_info in locked_tracks.items():
-                    if lock_info and isinstance(lock_info, dict) and lock_info.get('type') == 'student':  # ✅ Added type check
+                    if lock_info and isinstance(lock_info, dict) and lock_info.get('type') == 'student':
                         student_id = lock_info.get('id')
-                        if student_id and isinstance(student_id, str):  # ✅ Ensure student_id is string
+                        if student_id and isinstance(student_id, str):
                             currently_present_ids.add(student_id)
                 
-                logger.info(f"🔍 REAL-TIME CHECK: {len(currently_present_ids)} students currently tracked: {list(currently_present_ids)}")
+                logger.info(f"🔍 REAL-TIME CHECK: {len(currently_present_ids)} students currently tracked")
         except Exception as e:
             logger.warning(f"⚠️ Error checking locked_tracks: {e}")
-            currently_present_ids = set()  # Ensure it's not None
+            currently_present_ids = set()
         
         safe_missing_ids = list(missing_student_ids) if missing_student_ids is not None else []
         safe_present_ids = list(currently_present_ids) if currently_present_ids is not None else []
@@ -11513,7 +12109,8 @@ def get_student_status():
             student_id = student['student_id']
             student_name = f"{student['first_name']} {student['last_name']}"
             
-            # Priority 1: Check for MANUAL STATUS (excused, etc.) - HIGHEST PRIORITY
+            # Check for MANUAL STATUS
+            cursor = conn.cursor(dictionary=True, buffered=True)
             cursor.execute("""
                 SELECT status, session_id, remarks, timestamp FROM attendance 
                 WHERE student_id = %s AND session_id = %s
@@ -11521,6 +12118,7 @@ def get_student_status():
             """, (student_id, session_id))
             
             attendance_record = cursor.fetchone()
+            cursor.close()
             
             is_manual_status = False
             current_status = None
@@ -11531,83 +12129,79 @@ def get_student_status():
                 current_session = attendance_record.get('session_id')
                 remarks = attendance_record.get('remarks') or ''
                 
-                manual_excuse_sessions = ['manual_excuse']  # Only for excused students
-                manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
-                manual_statuses = ['excused']  # Only truly manual statuses
+                manual_excuse_sessions = ['manual_excuse']
+                manual_status_sessions = ['manual_status']
+                manual_statuses = ['excused']
                 
                 is_manual_status = (
-                    # Only specific manual session types (not manual_add)
                     current_session in manual_excuse_sessions or
                     current_session in manual_status_sessions or
-                    # Only specific manual statuses
                     current_status in manual_statuses or
-                    # Only specific manual remarks (not temp_id)
                     'Manually marked' in remarks or
                     'Manual status' in remarks or
                     'Manually marked as excused' in remarks
                 )
             
-            # Priority 1A: If manual status exists, use it and skip other checks
+            # Priority 1: Manual status (use it and skip other checks)
             if is_manual_status:
                 logger.info(f"🔒 MANUAL STATUS PROTECTED: {student_name} -> {current_status}")
                 student_list.append({
                     'id': student_id,
                     'name': student_name,
-                    'status': current_status,  # Use the manual status
+                    'status': current_status,
                     'type': 'regular',
                     'program': student.get('program_name', program),
                     'year_level': student.get('year_level'),
                     'section': student.get('section_name')
                 })
-                manual_status_students.add(student_id)  # Track manual status students
-                continue  
+                manual_status_students.add(student_id)
+                continue
             
-            # 🎯 FIXED LOGIC: Check if student is CURRENTLY DETECTED first (highest priority after manual)
+            # Priority 2: Currently detected (real-time tracking)
             if student_id in safe_present_ids:
-                # Student is currently being tracked - they CANNOT be missing!
                 current_status = 'present'
                 
-                # 🎯 Check if they were previously missing and need to be marked as returned
+                # Check if they were previously missing
                 if student_id in safe_missing_ids:
-                    # Student has returned from missing - restore original status
-                    try:
+                    cursor = conn.cursor(dictionary=True, buffered=True)
+                    cursor.execute("""
+                        SELECT original_status FROM missing_periods 
+                        WHERE student_id = %s AND session_id = %s AND returned = FALSE
+                        ORDER BY missing_start DESC LIMIT 1
+                    """, (student_id, session_id))
+                    
+                    missing_record = cursor.fetchone()
+                    cursor.close()
+                    
+                    if missing_record:
+                        original_status = missing_record['original_status']
+                        current_status = original_status
+                        
+                        # Mark as returned
+                        cursor = conn.cursor(dictionary=True, buffered=True)
                         cursor.execute("""
-                            SELECT original_status FROM missing_periods 
+                            UPDATE missing_periods 
+                            SET missing_end = NOW(), returned = TRUE
                             WHERE student_id = %s AND session_id = %s AND returned = FALSE
-                            ORDER BY missing_start DESC LIMIT 1
                         """, (student_id, session_id))
                         
-                        missing_record = cursor.fetchone()
-                        if missing_record:
-                            original_status = missing_record['original_status']
-                            current_status = original_status  # Restore their original status (present/late)
-                            
-                            # Mark the missing period as returned
-                            cursor.execute("""
-                                UPDATE missing_periods 
-                                SET missing_end = NOW(), returned = TRUE
-                                WHERE student_id = %s AND session_id = %s AND returned = FALSE
-                            """, (student_id, session_id))
-                            
-                            # Update attendance record to restore original status
-                            cursor.execute("""
-                                UPDATE attendance 
-                                SET status = %s, timestamp = NOW()
-                                WHERE student_id = %s AND session_id = %s
-                            """, (original_status, student_id, session_id))
-                            
-                            logger.info(f"🔄 STUDENT RETURNED: {student_name} -> {original_status}")
-                    except Exception as e:
-                        logger.error(f"❌ Error marking student as returned: {e}")
+                        cursor.execute("""
+                            UPDATE attendance 
+                            SET status = %s, timestamp = NOW()
+                            WHERE student_id = %s AND session_id = %s
+                        """, (original_status, student_id, session_id))
+                        cursor.close()
+                        
+                        logger.info(f"🔄 STUDENT RETURNED: {student_name} -> {original_status}")
                 
                 logger.info(f"✅ CURRENTLY PRESENT: {student_name}")
             
-            # Priority 3: Student is currently marked as missing in database
+            # Priority 3: Currently missing in database
             elif student_id in safe_missing_ids:
                 current_status = 'missing'
-                logger.info(f"🎯 CURRENTLY MISSING: {student_name} ({student_id})")
+                logger.info(f"🎯 CURRENTLY MISSING: {student_name}")
             
-            # Priority 4: Check attendance records for original status (fallback)
+            # Priority 4: Check attendance records (fallback)
             else:
                 if attendance_record:
                     current_status = attendance_record['status']
@@ -11623,11 +12217,15 @@ def get_student_status():
                         
                         if time_diff_seconds > threshold_seconds:
                             current_status = 'late'
+                            
+                            cursor = conn.cursor(dictionary=True, buffered=True)
                             cursor.execute("""
                                 UPDATE attendance 
                                 SET status = 'late' 
                                 WHERE student_id = %s AND session_id = %s AND timestamp = %s
                             """, (student_id, session_id, attendance_record['timestamp']))
+                            cursor.close()
+                            
                             logger.info(f"🔄 UPDATED TO LATE: {student_name}")
                 else:
                     current_status = 'absent'
@@ -11635,8 +12233,6 @@ def get_student_status():
             if current_status is None:
                 current_status = 'absent'
                 logger.warning(f"⚠️ Status was None for {student_name}, defaulting to 'absent'")
-            
-            logger.debug(f"🔍 FINAL STATUS: {student_name} -> {current_status}")
             
             if current_status in ['present', 'late']:
                 detected_count += 1
@@ -11651,6 +12247,7 @@ def get_student_status():
                 'section': student.get('section_name')
             })
         
+        # Process temporary students
         temp_counter = 1
         for temp_student in temp_students:
             temp_name = temp_student['name']
@@ -11659,17 +12256,13 @@ def get_student_status():
             temp_session_id = temp_student.get('session_id')
             
             if temp_session_id != session_id:
-                logger.debug(f"🔍 Skipping temporary student from different session: {temp_name} (session: {temp_session_id})")
                 continue
             
             is_manual_temp = False
-            temp_remarks = temp_student.get('remarks') or ''
-            
             if 'Manually marked' in temp_remarks or 'Manual status' in temp_remarks:
                 is_manual_temp = True
-                logger.info(f"🔒 MANUAL TEMPORARY STATUS: {temp_name} -> {current_status}")
             
-            # Only apply late conversion for non-manual temporary students
+            # Apply late conversion for non-manual temps
             if current_status == 'present' and session_start_time and not is_manual_temp:
                 arrival_time = temp_student['timestamp']
                 if isinstance(arrival_time, str):
@@ -11680,11 +12273,14 @@ def get_student_status():
                 
                 if time_diff_seconds > threshold_seconds:
                     current_status = 'late'
+                    
+                    cursor = conn.cursor(dictionary=True, buffered=True)
                     cursor.execute("""
                         UPDATE attendance 
                         SET status = 'late' 
                         WHERE name = %s AND session_id = %s AND timestamp = %s
                     """, (temp_name, session_id, temp_student['timestamp']))
+                    cursor.close()
             
             temp_id = None
             display_name = temp_name
@@ -11704,11 +12300,7 @@ def get_student_status():
                 temp_counter += 1
             
             existing_temp = next((s for s in student_list if s['id'] == temp_id and s['type'] == 'temporary'), None)
-            if existing_temp:
-                logger.warning(f"⚠️ DUPLICATE TEMPORARY STUDENT: {temp_id} - {display_name}")
-                existing_temp['status'] = current_status
-                existing_temp['name'] = display_name
-            else:
+            if not existing_temp:
                 student_list.append({
                     'id': temp_id,
                     'name': display_name,
@@ -11718,12 +12310,11 @@ def get_student_status():
                     'year_level': year_level,
                     'section': section
                 })
-            
-            if current_status in ['present', 'late']:
-                detected_count += 1
+                
+                if current_status in ['present', 'late']:
+                    detected_count += 1
         
         conn.commit()
-        cursor.close()
         conn.close()
         
         # Status summary
@@ -11731,7 +12322,7 @@ def get_student_status():
         for student in student_list:
             status_counts[student['status']] = status_counts.get(student['status'], 0) + 1
         
-        logger.info(f"📊 STATUS SUMMARY: {status_counts} | Real-time present: {len(safe_present_ids)}, DB missing: {len(safe_missing_ids)}, Manual protected: {len(manual_status_students)}")
+        logger.info(f"📊 STATUS SUMMARY: {status_counts}")
         
         return jsonify({
             'success': True,
@@ -11745,14 +12336,27 @@ def get_student_status():
             'missing_count_in_db': len(safe_missing_ids),
             'real_time_present_count': len(safe_present_ids),
             'manual_status_count': len(manual_status_students),
-            'section_id_used': section_id  # 🆕 ADD FOR DEBUGGING
+            'section_id_used': section_id
         })
         
     except Exception as e:
         logger.error(f"❌ Error getting student status: {e}")
         import traceback
         logger.error(f"❌ Stack trace: {traceback.format_exc()}")
-        return jsonify({'success': False, 'message': str(e)})
+        
+        # Cleanup on error
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
+        
+        return jsonify({'success': False, 'message': str(e)}), 500
     
 @app.route('/api/get_session_threshold')
 def get_session_threshold():
@@ -12555,129 +13159,392 @@ def set_session_start_time():
     session_start_time = datetime.now()
     logger.info(f"🕐 SESSION START TIME SET: {session_start_time}")
 
+# Add test routes to debug API
+@app.route('/api/test_simple', methods=['GET'])
+def test_simple():
+    return jsonify({'success': True, 'message': 'Simple test works!'})
+
+@app.route('/api/test_post', methods=['POST'])
+def test_post():
+    data = request.get_json()
+    return jsonify({
+        'success': True, 
+        'message': 'POST test works!',
+        'received_data': data
+    })
+
+@app.route('/api/routes', methods=['GET'])
+def list_routes():
+    """List all registered routes for debugging"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        if rule.rule.startswith('/api'):
+            routes.append({
+                'endpoint': rule.endpoint,
+                'methods': list(rule.methods),
+                'path': rule.rule
+            })
+    return jsonify({'routes': routes})
 
 @app.route('/api/adjust_session_time', methods=['POST'])
 def adjust_session_time():
-    global session_total_duration_seconds, session_threshold_seconds
-    
-    data = request.get_json()
-    schedule_id = data.get('schedule_id') 
-    adj_type = data.get('adjustment_type')
-    adj_minutes = data.get('adjustment_minutes', 0)
-    elapsed_minutes = data.get('elapsed_minutes', 0)
-
-    if not all([schedule_id, adj_type, isinstance(adj_minutes, int)]):
-        return jsonify({'success': False, 'message': 'Invalid input data.'}), 400
-
-    connection = get_db_connection()
-    if not connection:
-        return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-        
-    cursor = connection.cursor(dictionary=True)
+    """Adjust session duration or late threshold"""
+    print("🎯 DEBUG: /api/adjust_session_time endpoint HIT!")
+    logger.info("✅ /api/adjust_session_time endpoint called!")
     
     try:
-        # 1. Fetch current LIVE values from attendance_sessions
-        cursor.execute("""
-            SELECT total_duration_minutes, late_threshold_minutes,
-                   session_duration_seconds_total, threshold_seconds_total
-            FROM attendance_sessions 
-            WHERE session_id = %s AND status = 'active'
-        """, (schedule_id,))
-        live_session = cursor.fetchone()
+        # Get JSON data from request
+        data = request.get_json()
+        print(f"📦 DEBUG: Received data: {data}")
         
-        if not live_session:
-             return jsonify({'success': False, 'message': 'Active session not found.'}), 404
-
-        if live_session.get('session_duration_seconds_total'):
-            current_duration_seconds = live_session['session_duration_seconds_total']
-            current_threshold_seconds = live_session['threshold_seconds_total']
-            current_duration_minutes = current_duration_seconds // 60
-            current_threshold_minutes = current_threshold_seconds // 60
-        else:
-            current_duration_minutes = live_session['total_duration_minutes']
-            current_threshold_minutes = live_session['late_threshold_minutes']
-            current_duration_seconds = current_duration_minutes * 60
-            current_threshold_seconds = current_threshold_minutes * 60
-        
-        # 2. Calculate new values
-        new_duration_minutes = current_duration_minutes
-        new_threshold_minutes = current_threshold_minutes
-        
-        if adj_type == 'duration':
-            new_duration_minutes += adj_minutes
-        elif adj_type == 'threshold':
-            new_threshold_minutes += adj_minutes
-
-        new_duration_seconds = new_duration_minutes * 60
-        new_threshold_seconds = new_threshold_minutes * 60
-
-        # 3. Backend Constraints Check
-        if new_duration_seconds <= 0:
-            return jsonify({'success': False, 'message': 'Duration must be positive.'}), 400
-        
-        elapsed_seconds = elapsed_minutes * 60
-        if adj_type == 'duration' and adj_minutes < 0 and new_duration_seconds < elapsed_seconds:
-            return jsonify({'success': False, 'message': f'New Duration ({new_duration_minutes} min) cannot be less than the elapsed time ({elapsed_minutes} min).'}), 400
-
-        if new_threshold_seconds >= new_duration_seconds:
-            return jsonify({'success': False, 'message': 'Late Threshold must be less than the Class Duration.'}), 400
-
-        # 4. Perform the DUAL UPDATE
-        
-        # A) Update the LIVE session data in attendance_sessions (BOTH minutes and seconds)
-        if adj_type == 'duration':
-            update_live_sql = """
-                UPDATE attendance_sessions 
-                SET total_duration_minutes = %s, session_duration_seconds_total = %s
-                WHERE session_id = %s
-            """
-            cursor.execute(update_live_sql, (new_duration_minutes, new_duration_seconds, schedule_id))
-        elif adj_type == 'threshold':
-            update_live_sql = """
-                UPDATE attendance_sessions 
-                SET late_threshold_minutes = %s, threshold_seconds_total = %s
-                WHERE session_id = %s
-            """
-            cursor.execute(update_live_sql, (new_threshold_minutes, new_threshold_seconds, schedule_id))
+        if not data:
+            return jsonify({'success': False, 'message': 'No JSON data received'}), 400
             
+        # Extract parameters
+        session_id = data.get('session_id')
+        adj_type = data.get('adjustment_type')  # 'duration' or 'threshold'
+        adj_minutes = data.get('adjustment_minutes', 0)
+        elapsed_minutes = data.get('elapsed_minutes', 0)
         
-        # B) Update the DEFAULT settings in session_settings (UPSERT: Update or Insert)
-        upsert_config_sql = """
-        INSERT INTO session_settings (user_id, class_duration, late_threshold, video_quality)
-        VALUES (%s, %s, %s, '720')
-        ON DUPLICATE KEY UPDATE 
-            class_duration = VALUES(class_duration),
-            late_threshold = VALUES(late_threshold),
-            updated_at = CURRENT_TIMESTAMP()
-        """
-        cursor.execute(upsert_config_sql, (schedule_id, new_duration_minutes, new_threshold_minutes))
+        print(f"🔍 DEBUG: session_id={session_id}, adj_type={adj_type}, adj_minutes={adj_minutes}, elapsed_minutes={elapsed_minutes}")
         
-        connection.commit()
+        # Validate input
+        if not all([session_id, adj_type, isinstance(adj_minutes, (int, float))]):
+            return jsonify({'success': False, 'message': 'Invalid input data.'}), 400
+            
+        # Convert to integers
+        adj_minutes = int(adj_minutes)
+        elapsed_minutes = int(elapsed_minutes)
+        
+        # Get database connection
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        try:
+            # 1. Fetch current LIVE values from attendance_sessions
+            print(f"🔍 DEBUG: Querying attendance_sessions for session_id: {session_id}")
+            cursor.execute("""
+                SELECT total_duration_minutes, late_threshold_minutes,
+                       session_duration_seconds_total, threshold_seconds_total,
+                       original_schedule_id
+                FROM attendance_sessions 
+                WHERE session_id = %s AND status = 'active'
+            """, (session_id,))
+            live_session = cursor.fetchone()
+            
+            print(f"🔍 DEBUG: Query result: {live_session}")
+            
+            if not live_session:
+                print(f"❌ DEBUG: No active session found for session_id: {session_id}")
+                cursor.close()
+                connection.close()
+                return jsonify({'success': False, 'message': 'Active session not found.'}), 404
 
-        if adj_type == 'duration':
-            session_total_duration_seconds = new_duration_seconds
-        elif adj_type == 'threshold':
-            session_threshold_seconds = new_threshold_seconds
+            # Get current values
+            if live_session.get('session_duration_seconds_total'):
+                current_duration_seconds = live_session['session_duration_seconds_total']
+                current_threshold_seconds = live_session['threshold_seconds_total']
+                current_duration_minutes = current_duration_seconds // 60
+                current_threshold_minutes = current_threshold_seconds // 60
+            else:
+                current_duration_minutes = live_session['total_duration_minutes']
+                current_threshold_minutes = live_session['late_threshold_minutes']
+                current_duration_seconds = current_duration_minutes * 60
+                current_threshold_seconds = current_threshold_minutes * 60
+                
+            print(f"🔍 DEBUG: Current values - Duration: {current_duration_minutes}min, Threshold: {current_threshold_minutes}min")
+            
+            # 2. Calculate new values
+            new_duration_minutes = current_duration_minutes
+            new_threshold_minutes = current_threshold_minutes
+            
+            if adj_type == 'duration':
+                new_duration_minutes += adj_minutes
+                print(f"🔍 DEBUG: Adjusting duration: {current_duration_minutes} + {adj_minutes} = {new_duration_minutes}")
+            elif adj_type == 'threshold':
+                new_threshold_minutes += adj_minutes
+                print(f"🔍 DEBUG: Adjusting threshold: {current_threshold_minutes} + {adj_minutes} = {new_threshold_minutes}")
+            else:
+                cursor.close()
+                connection.close()
+                return jsonify({'success': False, 'message': 'Invalid adjustment type. Use "duration" or "threshold".'}), 400
 
-        logger.info(f"🎯 TIME ADJUSTED: {adj_type} -> Duration: {new_duration_seconds}s, Threshold: {new_threshold_seconds}s")
+            new_duration_seconds = new_duration_minutes * 60
+            new_threshold_seconds = new_threshold_minutes * 60
+            
+            print(f"🔍 DEBUG: New values - Duration: {new_duration_seconds}s ({new_duration_minutes}min), Threshold: {new_threshold_seconds}s ({new_threshold_minutes}min)")
 
-        # 5. Return the newly set values (in both minutes and seconds)
-        return jsonify({
-            'success': True, 
-            'message': f'Successfully adjusted {adj_type}.',
-            'new_duration_minutes': new_duration_minutes,
-            'new_threshold_minutes': new_threshold_minutes,
-            'new_duration_seconds': new_duration_seconds,
-            'new_threshold_seconds': new_threshold_seconds
-        })
+            # 3. Backend Constraints Check
+            if new_duration_seconds <= 0:
+                cursor.close()
+                connection.close()
+                return jsonify({'success': False, 'message': 'Duration must be positive.'}), 400
+            
+            elapsed_seconds = elapsed_minutes * 60
+            if adj_type == 'duration' and adj_minutes < 0 and new_duration_seconds < elapsed_seconds:
+                cursor.close()
+                connection.close()
+                return jsonify({
+                    'success': False, 
+                    'message': f'New Duration ({new_duration_minutes} min) cannot be less than the elapsed time ({elapsed_minutes} min).'
+                }), 400
 
+            if new_threshold_seconds >= new_duration_seconds:
+                cursor.close()
+                connection.close()
+                return jsonify({'success': False, 'message': 'Late Threshold must be less than the Class Duration.'}), 400
+
+            # 4. Perform the DUAL UPDATE
+            
+            # A) Update the LIVE session data in attendance_sessions
+            if adj_type == 'duration':
+                update_live_sql = """
+                    UPDATE attendance_sessions 
+                    SET total_duration_minutes = %s, session_duration_seconds_total = %s
+                    WHERE session_id = %s
+                """
+                cursor.execute(update_live_sql, (new_duration_minutes, new_duration_seconds, session_id))
+                print(f"✅ DEBUG: Updated attendance_sessions duration")
+            elif adj_type == 'threshold':
+                update_live_sql = """
+                    UPDATE attendance_sessions 
+                    SET late_threshold_minutes = %s, threshold_seconds_total = %s
+                    WHERE session_id = %s
+                """
+                cursor.execute(update_live_sql, (new_threshold_minutes, new_threshold_seconds, session_id))
+                print(f"✅ DEBUG: Updated attendance_sessions threshold")
+            
+            # B) Update the DEFAULT settings in session_settings using original_schedule_id
+            user_id_for_settings = live_session.get('original_schedule_id') or session_id
+            
+            upsert_config_sql = """
+            INSERT INTO session_settings (user_id, class_duration, late_threshold, video_quality)
+            VALUES (%s, %s, %s, '720')
+            ON DUPLICATE KEY UPDATE 
+                class_duration = VALUES(class_duration),
+                late_threshold = VALUES(late_threshold),
+                updated_at = CURRENT_TIMESTAMP()
+            """
+            cursor.execute(upsert_config_sql, (user_id_for_settings, new_duration_minutes, new_threshold_minutes))
+            print(f"✅ DEBUG: Updated session_settings for user: {user_id_for_settings}")
+            
+            connection.commit()
+            print(f"✅ DEBUG: Database commit successful")
+
+            # Update global variables
+            global session_total_duration_seconds, session_threshold_seconds
+            if adj_type == 'duration':
+                session_total_duration_seconds = new_duration_seconds
+            elif adj_type == 'threshold':
+                session_threshold_seconds = new_threshold_seconds
+
+            logger.info(f"🎯 TIME ADJUSTED: {adj_type} -> Duration: {new_duration_seconds}s, Threshold: {new_threshold_seconds}s")
+
+            # 5. Return success response
+            response_data = {
+                'success': True, 
+                'message': f'Successfully adjusted {adj_type}.',
+                'new_duration_minutes': new_duration_minutes,
+                'new_threshold_minutes': new_threshold_minutes,
+                'new_duration_seconds': new_duration_seconds,
+                'new_threshold_seconds': new_threshold_seconds
+            }
+            
+            print(f"✅ DEBUG: Returning success: {response_data}")
+            return jsonify(response_data)
+
+        except Exception as e:
+            connection.rollback()
+            logger.error(f"Database error during adjustment: {e}")
+            print(f"❌ DEBUG: Database error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'success': False, 'message': f'Database error: {str(e)}'}), 500
+            
+        finally:
+            cursor.close()
+            connection.close()
+            
     except Exception as e:
-        connection.rollback()
-        logger.error(f"Database error during adjustment: {e}")
-        return jsonify({'success': False, 'message': 'An internal server error occurred.'}), 500
-    finally:
+        logger.error(f"Error in adjust_session_time: {e}")
+        print(f"❌ DEBUG: General error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+    
+@app.route('/api/check_session/<session_id>', methods=['GET'])
+def check_session(session_id):
+    """Check if a session exists in database"""
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT session_id, status, started_at, total_duration_minutes, 
+                   late_threshold_minutes, session_duration_seconds_total,
+                   threshold_seconds_total
+            FROM attendance_sessions 
+            WHERE session_id = %s
+        """, (session_id,))
+        
+        session = cursor.fetchone()
         cursor.close()
         connection.close()
+        
+        if session:
+            return jsonify({
+                'success': True,
+                'exists': True,
+                'session': session
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'exists': False,
+                'message': f'Session {session_id} not found in database'
+            })
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/get_session_settings', methods=['GET'])
+def get_session_settings():
+    """Retrieve class settings: live duration/threshold and default video quality."""
+    global session_total_duration_seconds, session_threshold_seconds
+    
+    session_id = request.args.get('session_id')  # ✅ CHANGED: schedule_id -> session_id
+    if not session_id:
+        return jsonify({'success': False, 'message': 'Session ID required'}), 400
+        
+    connection = None
+    cursor = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # 1. Get LIVE settings from attendance_sessions
+        cursor.execute("""
+            SELECT total_duration_minutes, late_threshold_minutes,
+                   session_duration_seconds_total, threshold_seconds_total,
+                   original_schedule_id
+            FROM attendance_sessions
+            WHERE session_id = %s AND status = 'active'
+        """, (session_id,))
+        live_settings = cursor.fetchone()
+        
+        # Use original_schedule_id for session_settings lookup if available
+        user_id_for_settings = live_settings.get('original_schedule_id') if live_settings else session_id
+        
+        # 2. Get DEFAULT settings from session_settings
+        cursor.execute("""
+            SELECT class_duration, late_threshold, video_quality
+            FROM session_settings
+            WHERE user_id = %s
+            ORDER BY updated_at DESC
+            LIMIT 1
+        """, (user_id_for_settings,))
+        default_config = cursor.fetchone()
+        
+        if live_settings:
+            # Prefer seconds values if they exist in database
+            if live_settings.get('session_duration_seconds_total'):
+                live_duration_seconds = live_settings['session_duration_seconds_total']
+                live_threshold_seconds = live_settings['threshold_seconds_total']
+                live_duration_minutes = live_duration_seconds // 60
+                live_threshold_minutes = live_threshold_seconds // 60
+            else:
+                # Fallback to minutes conversion
+                live_duration_minutes = live_settings['total_duration_minutes']
+                live_threshold_minutes = live_settings['late_threshold_minutes']
+                live_duration_seconds = live_duration_minutes * 60
+                live_threshold_seconds = live_threshold_minutes * 60
+        else:
+            # Use default config or fallback values
+            live_duration_minutes = default_config['class_duration'] if default_config else 60
+            live_threshold_minutes = default_config['late_threshold'] if default_config else 15
+            live_duration_seconds = live_duration_minutes * 60
+            live_threshold_seconds = live_threshold_minutes * 60
+            
+            logger.warning(f"⚠️ No active attendance session found for {session_id}. Using default/config values.")
+
+        # 🎯 CRITICAL: Update global variables
+        session_total_duration_seconds = live_duration_seconds
+        session_threshold_seconds = live_threshold_seconds
+        
+        video_quality = default_config['video_quality'] if default_config else '720'
+
+        logger.info(f"🎯 SESSION SETTINGS LOADED: Duration={live_duration_seconds}s ({live_duration_minutes}min), Threshold={live_threshold_seconds}s ({live_threshold_minutes}min)")
+
+        return jsonify({
+            'success': True,
+            'settings': {
+                'live_duration_minutes': live_duration_minutes,
+                'live_threshold_minutes': live_threshold_minutes,
+                'live_duration_seconds': live_duration_seconds,
+                'live_threshold_seconds': live_threshold_seconds,
+                'video_quality': video_quality
+            }
+        })
+            
+    except Exception as e:
+        logger.error(f"❌ Error in get_session_settings: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500
+    finally:
+        if cursor: cursor.close()
+        if connection: connection.close()
+
+@app.route('/api/update_video_quality', methods=['POST'])
+def update_video_quality():
+    data = request.get_json()
+    session_id = data.get('session_id')  # ✅ CHANGED: schedule_id -> session_id
+    video_quality = data.get('video_quality')
+
+    if not all([session_id, video_quality]):
+        return jsonify({'success': False, 'message': 'Missing required fields.'}), 400
+
+    connection = None
+    cursor = None
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        # First get the original_schedule_id from attendance_sessions
+        cursor.execute("""
+            SELECT original_schedule_id 
+            FROM attendance_sessions 
+            WHERE session_id = %s
+        """, (session_id,))
+        session_data = cursor.fetchone()
+        
+        # Use original_schedule_id for session_settings if available
+        user_id_for_settings = session_data.get('original_schedule_id') if session_data else session_id
+
+        cursor.execute("""
+        INSERT INTO session_settings (user_id, video_quality)
+        VALUES (%s, %s)
+        ON DUPLICATE KEY UPDATE 
+            video_quality = VALUES(video_quality),
+            updated_at = CURRENT_TIMESTAMP()
+        """, (user_id_for_settings, video_quality))
+        
+        connection.commit()
+        logger.info(f"🎯 VIDEO QUALITY UPDATED: {user_id_for_settings} -> {video_quality}")
+        return jsonify({'success': True, 'message': 'Video Quality updated.'})
+
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        logger.error(f"Error updating video quality: {e}")
+        return jsonify({'success': False, 'message': 'Failed to update video quality.'}), 500
+    finally:
+        if cursor: cursor.close()
+        if connection: connection.close()
 
 @app.route('/api/end_session', methods=['POST'])
 def end_session():
@@ -12985,127 +13852,6 @@ def end_session():
             'message': f'A server error occurred: {str(e)}'
         }), 500
 
-# MODIFIED: New endpoint to GET both live and static settings
-@app.route('/api/get_session_settings', methods=['GET'])
-def get_session_settings():
-    """Retrieve class settings: live duration/threshold and default video quality."""
-    global session_total_duration_seconds, session_threshold_seconds
-    
-    schedule_id = request.args.get('schedule_id')
-    if not schedule_id:
-        return jsonify({'success': False, 'message': 'Schedule ID required'}), 400
-        
-    connection = None
-    cursor = None
-    try:
-        connection = get_db_connection()
-        if not connection:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
-        
-        cursor = connection.cursor(dictionary=True)
-        
-        # 1. Get LIVE settings from attendance_sessions
-        cursor.execute("""
-            SELECT total_duration_minutes, late_threshold_minutes,
-                   session_duration_seconds_total, threshold_seconds_total
-            FROM attendance_sessions
-            WHERE session_id = %s AND status = 'active'
-        """, (schedule_id,))
-        live_settings = cursor.fetchone()
-        
-        # 2. Get DEFAULT settings from session_settings
-        cursor.execute("""
-            SELECT class_duration, late_threshold, video_quality
-            FROM session_settings
-            WHERE user_id = %s
-            ORDER BY updated_at DESC
-            LIMIT 1
-        """, (schedule_id,))
-        default_config = cursor.fetchone()
-        
-        if live_settings:
-            # Prefer seconds values if they exist in database
-            if live_settings.get('session_duration_seconds_total'):
-                live_duration_seconds = live_settings['session_duration_seconds_total']
-                live_threshold_seconds = live_settings['threshold_seconds_total']
-                live_duration_minutes = live_duration_seconds // 60
-                live_threshold_minutes = live_threshold_seconds // 60
-            else:
-                # Fallback to minutes conversion
-                live_duration_minutes = live_settings['total_duration_minutes']
-                live_threshold_minutes = live_settings['late_threshold_minutes']
-                live_duration_seconds = live_duration_minutes * 60
-                live_threshold_seconds = live_threshold_minutes * 60
-        else:
-            # Use default config or fallback values
-            live_duration_minutes = default_config['class_duration'] if default_config else 60
-            live_threshold_minutes = default_config['late_threshold'] if default_config else 15
-            live_duration_seconds = live_duration_minutes * 60
-            live_threshold_seconds = live_threshold_minutes * 60
-            
-            logger.warning(f"⚠️ No active attendance session found for {schedule_id}. Using default/config values.")
-
-        # 🎯 CRITICAL: Update global variables
-        session_total_duration_seconds = live_duration_seconds
-        session_threshold_seconds = live_threshold_seconds
-        
-        video_quality = default_config['video_quality'] if default_config else '720'
-
-        logger.info(f"🎯 SESSION SETTINGS LOADED: Duration={live_duration_seconds}s ({live_duration_minutes}min), Threshold={live_threshold_seconds}s ({live_threshold_minutes}min)")
-
-        return jsonify({
-            'success': True,
-            'settings': {
-                'live_duration_minutes': live_duration_minutes,
-                'live_threshold_minutes': live_threshold_minutes,
-                'live_duration_seconds': live_duration_seconds,
-                'live_threshold_seconds': live_threshold_seconds,
-                'video_quality': video_quality
-            }
-        })
-            
-    except Exception as e:
-        logger.error(f"❌ Error in get_session_settings: {e}", exc_info=True)
-        return jsonify({'success': False, 'message': str(e)}), 500
-    finally:
-        if cursor: cursor.close()
-        if connection: connection.close()
-
-# New endpoint for static video quality update
-@app.route('/api/update_video_quality', methods=['POST'])
-def update_video_quality():
-    data = request.get_json()
-    schedule_id = data.get('schedule_id')
-    video_quality = data.get('video_quality')
-
-    if not all([schedule_id, video_quality]):
-        return jsonify({'success': False, 'message': 'Missing required fields.'}), 400
-
-    connection = None
-    cursor = None
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor()
-
-        cursor.execute("""
-        INSERT INTO session_settings (user_id, video_quality)
-        VALUES (%s, %s)
-        ON DUPLICATE KEY UPDATE 
-            video_quality = VALUES(video_quality),
-            updated_at = CURRENT_TIMESTAMP()
-        """, (schedule_id, video_quality))
-        
-        connection.commit()
-        logger.info(f"🎯 VIDEO QUALITY UPDATED: {schedule_id} -> {video_quality}")
-        return jsonify({'success': True, 'message': 'Video Quality updated.'})
-
-    except Exception as e:
-        connection.rollback()
-        logger.error(f"Error updating video quality: {e}")
-        return jsonify({'success': False, 'message': 'Failed to update video quality.'}), 500
-    finally:
-        if cursor: cursor.close()
-        if connection: connection.close()
 
 # 🎯 NEW: Function to initialize session timing
 def initialize_session_timing(schedule_id):
