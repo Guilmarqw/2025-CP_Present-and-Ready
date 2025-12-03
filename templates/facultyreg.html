@@ -716,11 +716,11 @@ function checkPose(result, poseId) {
         case 'left':
             return result.is_left || (result.yaw >= 5);
         case 'right':
-            return result.is_right || (result.yaw <= -5);
+            return result.is_right || (result.yaw <= -4);
         case 'up':
-            return result.is_up || (result.pitch <= -3);  // MORE SENSITIVE: -5° (was -10°)
+            return result.is_up || (result.pitch <= -1);  // MORE SENSITIVE: -5° (was -10°)
         case 'down':
-            return result.is_down || (result.pitch >= 2);  // MORE SENSITIVE: 4° (was 10°)
+            return result.is_down || (result.pitch >= 0.5);  // MORE SENSITIVE: 4° (was 10°)
         case 'mouth_open':
             return result.is_mouth_open || (result.mar >= 0.08);
         case 'eyes_closed':

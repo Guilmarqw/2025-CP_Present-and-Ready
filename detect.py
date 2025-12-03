@@ -5880,7 +5880,7 @@ def encode_face():
             'is_left': bool(yaw >= 5),
             'is_right': bool(yaw <= -4),
             'is_up': bool(pitch <= -1),   # LOWER threshold for up (more negative)
-            'is_down': bool(pitch >= 1),  # HIGHER threshold for down (more positive)
+            'is_down': bool(pitch >= 0.5),  # HIGHER threshold for down (more positive)
             'is_mouth_open': bool(mar >= 0.08),
             'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.35)
         }
