@@ -372,6 +372,8 @@
             z-index: 1;
         }
 
+
+
         .action-toggle {
             background: #4a6fa9;
             color: white;
@@ -1197,4 +1199,42 @@
     border-radius: 20px;
     font-size: 0.8rem;
     font-weight: 500;
+}
+
+
+.loading-students {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+    text-align: center;
+}
+
+.loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.loading-spinner p {
+    color: var(--gray);
+    font-size: 14px;
+    margin: 0;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Optional: Add skeleton loading for students */
+.student-row.skeleton {
+    opacity: 0.6;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.3; }
 }

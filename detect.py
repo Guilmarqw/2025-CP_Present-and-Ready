@@ -122,6 +122,10 @@ current_fps = 30.0
 frame_timestamps = []
 skip_frame_counter = 0
 
+MAX_UNKNOWN_MOVEMENT = 100  # Max pixels an unknown face can move per frame
+UNKNOWN_HISTORY_LENGTH = 10  # Keep last 10 positions
+unknown_face_history = {}
+
 session_start_time = None
 session_total_duration_seconds = 3600 
 session_threshold_seconds = 900       
@@ -1024,7 +1028,7 @@ def get_current_section_student_ids():
     global current_session_id
     
     if not current_session_id:
-        logger.warning("⚠️ No current session ID")
+        logger.debug("ℹ️ No current session ID - session not yet initialized")
         return []
     
     try:
@@ -1143,18 +1147,27 @@ def rebuild_known_faces_array():
         logger.info("No known faces loaded.")
 
 def load_known_faces_from_db():
+    """Load known faces from database, filtered by current section if available"""
     global known_face_encodings, known_face_names, known_face_ids, known_face_types
-
+    
     try:
-        # Get current section student IDs
-        current_section_students = get_current_section_student_ids()
+        # Clear previous data
+        known_face_encodings.clear()
+        known_face_names.clear()
+        known_face_ids.clear()
+        known_face_types.clear()
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
         loaded_count = 0
         
-        if current_section_students:
+        # Get current section student IDs
+        current_section_students = get_current_section_student_ids()
+        
+        logger.info(f"📊 Attempting to load faces. Current section has {len(current_section_students)} students")
+        
+        if current_section_students and len(current_section_students) > 0:
             # Load ONLY students from current section
             logger.info(f"🔍 Loading faces for {len(current_section_students)} students in current section")
             
@@ -1169,11 +1182,18 @@ def load_known_faces_from_db():
                 AND face_encoding IS NOT NULL
                 AND face_encoding != ''
                 AND TRIM(face_encoding) != ''
+                AND (status = 'active' OR status IS NULL)
             """
             
             cursor.execute(query, tuple(current_section_students))
+            results = cursor.fetchall()
             
-            for (id, first_name, last_name, face_encoding) in cursor:
+            if not results:
+                logger.warning("⚠️ No students with face encodings found in current section")
+            else:
+                logger.info(f"📋 Found {len(results)} students with face encodings in current section")
+            
+            for (id, first_name, last_name, face_encoding) in results:
                 try:
                     encoding = parse_face_encoding(face_encoding)
                     
@@ -1190,41 +1210,135 @@ def load_known_faces_from_db():
                 except Exception as e:
                     logger.error(f"❌ Error parsing encoding for student {id}: {e}")
         else:
-            # If no section filtering possible, load all students with faces
-            logger.warning("⚠️ No current section students found - loading all students with faces")
-            cursor.execute("""
-                SELECT student_id, first_name, last_name, face_encoding 
-                FROM students 
-                WHERE face_encoding IS NOT NULL 
-                AND face_encoding != ''
-                AND TRIM(face_encoding) != ''
-                AND (status = 'active' OR status IS NULL)
-            """)
-            
-            for (id, first_name, last_name, face_encoding) in cursor:
-                try:
-                    encoding = parse_face_encoding(face_encoding)
+            # If no current section students, check if we have a session ID
+            global current_session_id
+            if current_session_id:
+                logger.info("🔍 Current section has no enrolled students or section not set")
+                
+                # Try to get section_id from attendance_sessions
+                cursor.execute("""
+                    SELECT section_id 
+                    FROM attendance_sessions 
+                    WHERE session_id = %s
+                """, (current_session_id,))
+                
+                session_result = cursor.fetchone()
+                if session_result and session_result[0]:
+                    section_id = session_result[0]
+                    logger.info(f"📌 Found section_id {section_id} in attendance_sessions")
                     
-                    if encoding is not None and encoding.size == 512:
-                        known_face_encodings.append(encoding)
-                        full_name = f"{first_name} {last_name}"
-                        known_face_names.append(full_name)
-                        known_face_ids.append(id)
-                        known_face_types.append('student')
-                        loaded_count += 1
-                        logger.info(f"✅ Loaded student {full_name} ({id})")
+                    # Load students from this section
+                    cursor.execute("""
+                        SELECT student_id, first_name, last_name, face_encoding 
+                        FROM students 
+                        WHERE section_id = %s
+                        AND face_encoding IS NOT NULL
+                        AND face_encoding != ''
+                        AND TRIM(face_encoding) != ''
+                        AND (status = 'active' OR status IS NULL)
+                    """, (section_id,))
+                    
+                    section_results = cursor.fetchall()
+                    
+                    if section_results:
+                        logger.info(f"📋 Found {len(section_results)} students in section {section_id}")
+                        
+                        for (id, first_name, last_name, face_encoding) in section_results:
+                            try:
+                                encoding = parse_face_encoding(face_encoding)
+                                
+                                if encoding is not None and encoding.size == 512:
+                                    known_face_encodings.append(encoding)
+                                    full_name = f"{first_name} {last_name}"
+                                    known_face_names.append(full_name)
+                                    known_face_ids.append(id)
+                                    known_face_types.append('student')
+                                    loaded_count += 1
+                                    logger.info(f"✅ Loaded student {full_name} ({id}) from section {section_id}")
+                                else:
+                                    logger.warning(f"⚠️ Invalid encoding for student {id}")
+                            except Exception as e:
+                                logger.error(f"❌ Error parsing encoding for student {id}: {e}")
                     else:
-                        logger.warning(f"⚠️ Invalid encoding for student {id}")
-                except Exception as e:
-                    logger.error(f"❌ Error parsing encoding for student {id}: {e}")
+                        logger.warning(f"⚠️ No students with face encodings found in section {section_id}")
+                else:
+                    logger.warning("⚠️ No section_id found in attendance_sessions for current session")
+                    
+                    # Fallback: Load a limited number of all students (for testing)
+                    logger.warning("🔄 Loading limited sample of all students (fallback mode)")
+                    cursor.execute("""
+                        SELECT student_id, first_name, last_name, face_encoding 
+                        FROM students 
+                        WHERE face_encoding IS NOT NULL 
+                        AND face_encoding != ''
+                        AND TRIM(face_encoding) != ''
+                        AND (status = 'active' OR status IS NULL)
+                        LIMIT 50  # Limit to prevent memory issues
+                    """)
+                    
+                    fallback_results = cursor.fetchall()
+                    
+                    for (id, first_name, last_name, face_encoding) in fallback_results:
+                        try:
+                            encoding = parse_face_encoding(face_encoding)
+                            
+                            if encoding is not None and encoding.size == 512:
+                                known_face_encodings.append(encoding)
+                                full_name = f"{first_name} {last_name}"
+                                known_face_names.append(full_name)
+                                known_face_ids.append(id)
+                                known_face_types.append('student')
+                                loaded_count += 1
+                                logger.info(f"✅ Loaded student {full_name} ({id}) [FALLBACK]")
+                            else:
+                                logger.warning(f"⚠️ Invalid encoding for student {id}")
+                        except Exception as e:
+                            logger.error(f"❌ Error parsing encoding for student {id}: {e}")
+            else:
+                # No session at all - this is expected on startup
+                logger.info("ℹ️ No active session - faces will be loaded when session starts")
+                return
+        
+        # Also load faculty faces (always load these)
+        cursor.execute("""
+            SELECT faculty_id, first_name, last_name, face_encoding 
+            FROM faculty 
+            WHERE face_encoding IS NOT NULL 
+            AND face_encoding != ''
+            AND TRIM(face_encoding) != ''
+            AND (status = 'active' OR status IS NULL)
+        """)
+        
+        faculty_count = 0
+        for (id, first_name, last_name, face_encoding) in cursor:
+            try:
+                encoding = parse_face_encoding(face_encoding)
+                
+                if encoding is not None and encoding.size == 512:
+                    known_face_encodings.append(encoding)
+                    full_name = f"{first_name} {last_name}"
+                    known_face_names.append(full_name)
+                    known_face_ids.append(id)
+                    known_face_types.append('faculty')
+                    faculty_count += 1
+                    logger.info(f"👤 Loaded faculty {full_name} ({id})")
+                else:
+                    logger.warning(f"⚠️ Invalid encoding for faculty {id}")
+            except Exception as e:
+                logger.error(f"❌ Error parsing encoding for faculty {id}: {e}")
         
         cursor.close()
         conn.close()
         
-        logger.info(f"📊 Total loaded student faces: {loaded_count}")
+        logger.info(f"📊 Loaded {loaded_count} student faces and {faculty_count} faculty faces")
+        logger.info(f"📊 Total faces in memory: {len(known_face_encodings)}")
+        
+        # If no faces loaded at all, log warning
+        if len(known_face_encodings) == 0:
+            logger.warning("🚨 No faces loaded from database! Face recognition will not work.")
             
     except Exception as e:
-        logger.error(f"❌ Failed to load student faces from database: {e}")
+        logger.error(f"❌ Failed to load faces from database: {e}")
         import traceback
         logger.error(traceback.format_exc())
 
@@ -1369,13 +1483,13 @@ def debug_loaded_faces():
         'current_section_students': get_current_section_student_ids()
     })
 
-# Initialize known faces
-known_face_encodings, known_face_names, known_face_ids, known_face_types = [], [], [], []
-load_known_faces_from_db()
-load_known_faculties_from_db()
-rebuild_known_faces_array()  # CHANGED from finalize_known_faces()
-
-
+def initialize_faces_for_session():
+    """Initialize faces after session is created"""
+    logger.info("🔄 Initializing faces for new session...")
+    load_known_faces_from_db()
+    load_known_faculties_from_db()
+    rebuild_known_faces_array()
+    logger.info(f"✅ Loaded {len(known_face_names)} faces for session")
 
 # =========================
 # OPTIMIZED CAMERA CAPTURE
@@ -2197,20 +2311,41 @@ def calculate_late_status(attendance_time, session_start, threshold_minutes):
 
 def refresh_with_detections(frame, rgb, frame_idx):
     """
-    FIXED: ByteTrack coordinate extraction - was treating bbox as track_id
-    FIXED: Strong anti-swapping with strict ReID + spatial validation
-    PRESERVED: Fast recognition and instant locking system
-    UPDATED: Now filters recognition to only current section students
+    🛡️ ULTRA STRONG ANTI-SWAPPING: Prevents identity swapping even during overlaps
+    ✅ FIXED: ByteTrack coordinate extraction - was treating bbox as track_id
+    ✅ ADDED: Force field protection for locked tracks with overlapping detection
+    ✅ ADDED: Body shape signature verification to prevent swapping
+    ✅ ADDED: Movement prediction and path consistency validation
+    ✅ ADDED: Temporal consistency with frame history
+    ✅ PRESERVED: Fast recognition and instant locking system
+    ✅ UPDATED: Filters recognition to only current section students
+    ✅ ENHANCED: Improved tracking for half-bodies and far-away persons
+    ✅ FIXED: Proper body signature initialization to prevent 'min_width' error
     """
     logger.debug(f"🔍 refresh_with_detections CALLED - Frame {frame_idx}")
     global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
     global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
+    
+    # 🆕 ANTI-SWAP: Initialize tracking history for movement prediction
+    global locked_track_history, locked_track_predictions, locked_track_signatures
+    
     if detectionStopped:
         return
+    
+    # Initialize anti-swap tracking systems
+    if 'locked_track_history' not in globals():
+        locked_track_history = {}  # Stores past positions for movement prediction
+    if 'locked_track_predictions' not in globals():
+        locked_track_predictions = {}  # Stores next predicted positions
+    if 'locked_track_signatures' not in globals():
+        locked_track_signatures = {}  # Stores body shape signatures
+    
     # Skip every other frame if FPS is too low
     if current_fps < 10 and frame_idx % 2 == 0:
         return
+    
     h, w = frame.shape[:2]
+    
     # Dynamic detection frequency
     if len(tracks) > MAX_TRACKS:
         locked_track_count = len(locked_tracks)
@@ -2219,17 +2354,21 @@ def refresh_with_detections(frame, rgb, frame_idx):
         unlocked_tracks = unlocked_tracks[:MAX_UNLOCKED_TRACKS]
         tracks[:] = unlocked_tracks
         logger.info(f"Track cleanup: {locked_track_count} locked + {len(unlocked_tracks)} unlocked")
+    
     # Cleanup stale pending confirmations
     cleanup_pending_confirmations(frame_idx, timeout_frames=15)
+    
     # Step 1: Face detection
     try:
         faces = face_analysis.get(rgb)
     except Exception as e:
         logger.error(f"Face detection failed: {e}")
         return
+    
     # Step 2: Body detection
     body_detections = detect_bodies(frame)
-    # Step 3: Use ByteTrack for BODY tracking - FIXED COORDINATE EXTRACTION
+    
+    # Step 3: Use ByteTrack for BODY tracking - FIXED ERROR HERE
     body_tracks = []
     if len(body_detections) > 0:
         # Convert to proper ByteTrack format
@@ -2239,20 +2378,21 @@ def refresh_with_detections(frame, rgb, frame_idx):
             x1, y1, x2, y2 = body_box
             conf = body_det['confidence']
         
-            # Filter small bodies
-            if (x2 - x1) < 50 or (y2 - y1) < 100:
+            # 🆕 ENHANCED: Allow half-bodies (reduced from 50px to 30px width)
+            if (x2 - x1) < 30 or (y2 - y1) < 80:
                 continue
             
             detections_list.append([x1, y1, x2, y2, conf])
     
         if detections_list:
+            # 🛡️ FIX: Convert list to numpy array BEFORE slicing
             detections_array = np.array(detections_list)
         
             try:
-                # Use sv.Detections
+                # Use sv.Detections - NOW THIS WORKS because detections_array is numpy
                 supervision_detections = sv.Detections(
-                    xyxy=detections_array[:, :4],
-                    confidence=detections_array[:, 4],
+                    xyxy=detections_array[:, :4],  # ← FIXED: Use numpy array, not list
+                    confidence=detections_array[:, 4],  # ← FIXED: Use numpy array, not list
                     class_id=np.array([0] * len(detections_array))
                 )
             
@@ -2261,7 +2401,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 )
             
                 if tracks_byte is not None and hasattr(tracks_byte, 'xyxy'):
-                    # ByteTrack returns a Detections object with tracker_id attribute
                     xyxy = tracks_byte.xyxy
                     tracker_ids = tracks_byte.tracker_id if hasattr(tracks_byte, 'tracker_id') else None
                     confidences = tracks_byte.confidence if hasattr(tracks_byte, 'confidence') else np.array([0.8] * len(xyxy))
@@ -2278,11 +2417,23 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 # Extract ReID features
                                 reid_features = extract_reid_features(frame, body_box)
                                 
+                                # 🆕 ANTI-SWAP: Calculate body shape signature
+                                body_width = x2 - x1
+                                body_height = y2 - y1
+                                aspect_ratio = body_width / body_height if body_height > 0 else 0
+                                body_area = body_width * body_height
+                                
                                 body_tracks.append({
                                     'track_id': track_id,
                                     'body_box': body_box,
                                     'confidence': confidence,
-                                    'reid_features': reid_features
+                                    'reid_features': reid_features,
+                                    'signature': {
+                                        'width': body_width,
+                                        'height': body_height,
+                                        'aspect_ratio': aspect_ratio,
+                                        'area': body_area
+                                    }
                                 })
                             except Exception as e:
                                 logger.warning(f"Error processing track {idx}: {e}")
@@ -2297,11 +2448,22 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             body_box = (int(x1), int(y1), int(x2), int(y2))
                             reid_features = extract_reid_features(frame, body_box)
                             
+                            body_width = x2 - x1
+                            body_height = y2 - y1
+                            aspect_ratio = body_width / body_height if body_height > 0 else 0
+                            body_area = body_width * body_height
+                            
                             body_tracks.append({
                                 'track_id': frame_idx * 1000 + idx,
                                 'body_box': body_box,
                                 'confidence': confidence,
-                                'reid_features': reid_features
+                                'reid_features': reid_features,
+                                'signature': {
+                                    'width': body_width,
+                                    'height': body_height,
+                                    'aspect_ratio': aspect_ratio,
+                                    'area': body_area
+                                }
                             })
             
                 logger.debug(f"✅ ByteTrack: {len(body_tracks)} body tracks")
@@ -2314,21 +2476,208 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 for i, det in enumerate(detections_list):
                     body_box = (int(det[0]), int(det[1]), int(det[2]), int(det[3]))
                     reid_features = extract_reid_features(frame, body_box)
+                    
+                    body_width = body_box[2] - body_box[0]
+                    body_height = body_box[3] - body_box[1]
+                    aspect_ratio = body_width / body_height if body_height > 0 else 0
+                    body_area = body_width * body_height
                 
                     body_tracks.append({
                         'track_id': i + frame_idx * 1000,
                         'body_box': body_box,
                         'confidence': det[4],
-                        'reid_features': reid_features
+                        'reid_features': reid_features,
+                        'signature': {
+                            'width': body_width,
+                            'height': body_height,
+                            'aspect_ratio': aspect_ratio,
+                            'area': body_area
+                        }
                     })
                 logger.info(f"✅ Fallback: {len(body_tracks)} body tracks")
+    
+    # ============================================
+    # 🛡️ ULTRA STRONG ANTI-SWAPPING SYSTEM
+    # ============================================
+    
+    # 🆕 1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
+    for person_id, lock_info in locked_tracks.items():
+        current_body_box = lock_info.get('body_box')
+        if current_body_box:
+            # Update movement history
+            if person_id not in locked_track_history:
+                locked_track_history[person_id] = []
+            
+            # Add current position to history
+            locked_track_history[person_id].append({
+                'frame': frame_idx,
+                'body_box': current_body_box,
+                'center_x': (current_body_box[0] + current_body_box[2]) // 2,
+                'center_y': (current_body_box[1] + current_body_box[3]) // 2
+            })
+            
+            # Keep only last 15 frames of history
+            if len(locked_track_history[person_id]) > 15:
+                locked_track_history[person_id].pop(0)
+            
+            # 🆕 IMPROVED PREDICTION for far-away tracking
+            if len(locked_track_history[person_id]) >= 3:
+                last_positions = locked_track_history[person_id][-3:]
+                dx = 0
+                dy = 0
+                
+                for i in range(1, len(last_positions)):
+                    prev = last_positions[i-1]
+                    curr = last_positions[i]
+                    dx += curr['center_x'] - prev['center_x']
+                    dy += curr['center_y'] - prev['center_y']
+                
+                avg_dx = dx / (len(last_positions) - 1)
+                avg_dy = dy / (len(last_positions) - 1)
+                
+                # Predict next position with variable momentum
+                current_center_x = (current_body_box[0] + current_body_box[2]) // 2
+                current_center_y = (current_body_box[1] + current_body_box[3]) // 2
+                
+                # Calculate distance from center
+                frame_center_x = w // 2
+                frame_center_y = h // 2
+                distance_from_center = np.sqrt(
+                    (current_center_x - frame_center_x)**2 + 
+                    (current_center_y - frame_center_y)**2
+                )
+                
+                momentum_factor = 1.3 if distance_from_center > 300 else 1.1
+                predicted_center_x = current_center_x + int(avg_dx * momentum_factor)
+                predicted_center_y = current_center_y + int(avg_dy * momentum_factor)
+                
+                # Create predicted box
+                box_width = current_body_box[2] - current_body_box[0]
+                box_height = current_body_box[3] - current_body_box[1]
+                predicted_box = (
+                    max(0, predicted_center_x - box_width // 2),
+                    max(0, predicted_center_y - box_height // 2),
+                    min(w, predicted_center_x + box_width // 2),
+                    min(h, predicted_center_y + box_height // 2)
+                )
+                
+                locked_track_predictions[person_id] = {
+                    'predicted_box': predicted_box,
+                    'predicted_center': (predicted_center_x, predicted_center_y),
+                    'movement_vector': (avg_dx, avg_dy),
+                    'momentum_factor': momentum_factor,
+                    'confidence': min(0.9, len(locked_track_history[person_id]) / 15.0)
+                }
+            
+            # 🆕 2. UPDATE BODY SHAPE SIGNATURE for this locked track
+            body_width = current_body_box[2] - current_body_box[0]
+            body_height = current_body_box[3] - current_body_box[1]
+            aspect_ratio = body_width / body_height if body_height > 0 else 0
+            body_area = body_width * body_height
+            
+            if person_id not in locked_track_signatures:
+                # 🛡️ FIX: Initialize with all required fields
+                locked_track_signatures[person_id] = {
+                    'width': body_width,
+                    'height': body_height,
+                    'aspect_ratio': aspect_ratio,
+                    'area': body_area,
+                    'avg_width': body_width,
+                    'avg_height': body_height,
+                    'samples': 1,
+                    'min_width': body_width,
+                    'max_width': body_width,
+                    'min_height': body_height,
+                    'max_height': body_height,
+                    'initialized': True
+                }
+            else:
+                sig = locked_track_signatures[person_id]
+                # 🛡️ FIX: Ensure all required fields exist
+                if 'min_width' not in sig:
+                    sig['min_width'] = body_width
+                if 'max_width' not in sig:
+                    sig['max_width'] = body_width
+                if 'min_height' not in sig:
+                    sig['min_height'] = body_height
+                if 'max_height' not in sig:
+                    sig['max_height'] = body_height
+                
+                # Update rolling average
+                alpha = 0.8
+                sig['avg_width'] = (sig['avg_width'] * (1 - alpha)) + (body_width * alpha)
+                sig['avg_height'] = (sig['avg_height'] * (1 - alpha)) + (body_height * alpha)
+                sig['samples'] += 1
+                
+                # Update min/max ranges
+                sig['min_width'] = min(sig['min_width'], body_width)
+                sig['max_width'] = max(sig['max_width'], body_width)
+                sig['min_height'] = min(sig['min_height'], body_height)
+                sig['max_height'] = max(sig['max_height'], body_height)
+    
+    # 🆕 3. CREATE FORCE FIELD PROTECTION ZONES for locked tracks
+    locked_track_protection_zones = {}
+    
+    for person_id, lock_info in locked_tracks.items():
+        body_box = lock_info.get('body_box')
+        if body_box:
+            bx1, by1, bx2, by2 = body_box
+            body_center_x = (bx1 + bx2) // 2
+            body_center_y = (by1 + by2) // 2
+            
+            # 🛡️ INNER PROTECTION ZONE
+            distance_from_center = np.sqrt((body_center_x - w//2)**2 + (body_center_y - h//2)**2)
+            distance_factor = 1.0 + (distance_from_center / 500)
+            
+            inner_margin_x = int((bx2 - bx1) * 0.25 * distance_factor)
+            inner_margin_y = int((by2 - by1) * 0.25 * distance_factor)
+            inner_protection_zone = (
+                max(0, bx1 - inner_margin_x),
+                max(0, by1 - inner_margin_y),
+                min(w, bx2 + inner_margin_x),
+                min(h, by2 + inner_margin_y)
+            )
+            
+            # 🛡️ OUTER EXCLUSION ZONE
+            outer_margin_x = int((bx2 - bx1) * 0.5 * distance_factor)
+            outer_margin_y = int((by2 - by1) * 0.5 * distance_factor)
+            outer_exclusion_zone = (
+                max(0, bx1 - outer_margin_x),
+                max(0, by1 - outer_margin_y),
+                min(w, bx2 + outer_margin_x),
+                min(h, by2 + outer_margin_y)
+            )
+            
+            # 🛡️ ADD PREDICTION ZONE
+            prediction_zone = None
+            if person_id in locked_track_predictions:
+                pred_box = locked_track_predictions[person_id]['predicted_box']
+                pred_margin_x = int((pred_box[2] - pred_box[0]) * 0.4)
+                pred_margin_y = int((pred_box[3] - pred_box[1]) * 0.4)
+                prediction_zone = (
+                    max(0, pred_box[0] - pred_margin_x),
+                    max(0, pred_box[1] - pred_margin_y),
+                    min(w, pred_box[2] + pred_margin_x),
+                    min(h, pred_box[3] + pred_margin_y)
+                )
+            
+            locked_track_protection_zones[person_id] = {
+                'inner_zone': inner_protection_zone,
+                'outer_zone': outer_exclusion_zone,
+                'prediction_zone': prediction_zone,
+                'body_box': body_box,
+                'body_center': (body_center_x, body_center_y),
+                'lock_info': lock_info,
+                'distance_factor': distance_factor
+            }
+    
     # Filter out locked faces
     locked_body_boxes = []
     for person_id, lock_info in locked_tracks.items():
         body_box = lock_info.get('body_box')
         if body_box:
             bx1, by1, bx2, by2 = body_box
-            expand_margin = 8
+            expand_margin = 12
             expanded_body_box = (
                 max(0, bx1 - expand_margin),
                 max(0, by1 - expand_margin),
@@ -2336,6 +2685,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 min(h, by2 + expand_margin)
             )
             locked_body_boxes.append((person_id, expanded_body_box, lock_info.get('name', person_id)))
+    
     # Check if locked students who were missing are now detected
     for person_id, lock_info in locked_tracks.items():
         if (lock_info.get('type') == 'student' and
@@ -2357,8 +2707,15 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             break
                 except Exception as e:
                     continue
+    
+    # ============================================
+    # 🎯 PROCESS FACE DETECTIONS WITH ANTI-SWAPPING
+    # ============================================
+    
+    # Step 4: Process face detections with ANTI-SWAPPING protection
     dets = []
     face_embeddings = []
+    
     for idx, face in enumerate(faces):
         face_idx = idx
         face_obj = face
@@ -2373,11 +2730,61 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     box_height = y2 - y1
                 
                     if box_width >= 30 and box_height >= 30:
-                    
-                        is_locked_face = False
                         face_center_x = (x1 + x2) // 2
                         face_center_y = (y1 + y2) // 2
-                    
+                        face_box = (x1, y1, x2, y2)
+                        
+                        # 🛡️ ANTI-SWAP: Check if this face violates any protection zones
+                        should_reject_face = False
+                        rejection_reason = ""
+                        
+                        for person_id, zone_info in locked_track_protection_zones.items():
+                            inner_zone = zone_info['inner_zone']
+                            outer_zone = zone_info['outer_zone']
+                            prediction_zone = zone_info['prediction_zone']
+                            locked_body_box = zone_info['body_box']
+                            
+                            # 🛡️ 1. Check INNER ZONE
+                            iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
+                            if (iz_x1 <= face_center_x <= iz_x2 and iz_y1 <= face_center_y <= iz_y2):
+                                face_iou = iou(face_box, locked_body_box)
+                                distance_factor = zone_info.get('distance_factor', 1.0)
+                                iou_threshold = 0.4 if distance_factor > 1.5 else 0.5
+                                
+                                if face_iou < iou_threshold:
+                                    should_reject_face = True
+                                    rejection_reason = f"inner zone violation (IoU: {face_iou:.2f})"
+                                    break
+                            
+                            # 🛡️ 2. Check OUTER ZONE
+                            if not should_reject_face:
+                                oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
+                                if (oz_x1 <= face_center_x <= oz_x2 and oz_y1 <= face_center_y <= oz_y2):
+                                    distance_to_center = np.sqrt(
+                                        (face_center_x - zone_info['body_center'][0])**2 + 
+                                        (face_center_y - zone_info['body_center'][1])**2
+                                    )
+                                    max_allowed_distance = (locked_body_box[2] - locked_body_box[0]) * 0.8
+                                    
+                                    if distance_to_center < max_allowed_distance:
+                                        should_reject_face = True
+                                        rejection_reason = f"too close to locked person ({int(distance_to_center)}px)"
+                                        break
+                            
+                            # 🛡️ 3. Check PREDICTION ZONE
+                            if not should_reject_face and prediction_zone:
+                                pz_x1, pz_y1, pz_x2, pz_y2 = prediction_zone
+                                if (pz_x1 <= face_center_x <= pz_x2 and pz_y1 <= face_center_y <= pz_y2):
+                                    should_reject_face = True
+                                    rejection_reason = "in predicted movement path"
+                                    break
+                        
+                        if should_reject_face:
+                            logger.debug(f"🚫 Rejecting face in {rejection_reason}")
+                            continue
+                        
+                        # Original locked face check
+                        is_locked_face = False
                         for locked_person_id, locked_body_box, locked_name in locked_body_boxes:
                             bx1, by1, bx2, by2 = locked_body_box
                         
@@ -2390,11 +2797,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 face_area = box_width * box_height
                                 body_area = body_width * body_height
                             
-                                if (face_relative_y < body_height * 0.4 and
-                                    face_relative_x > body_width * 0.15 and
-                                    face_relative_x < body_width * 0.85 and
-                                    face_area > body_area * 0.015 and
-                                    face_area < body_area * 0.2):
+                                if (face_relative_y < body_height * 0.5 and
+                                    face_relative_x > body_width * 0.1 and
+                                    face_relative_x < body_width * 0.9 and
+                                    face_area > body_area * 0.01 and
+                                    face_area < body_area * 0.25):
                                     is_locked_face = True
                                     break
                     
@@ -2410,12 +2817,18 @@ def refresh_with_detections(frame, rgb, frame_idx):
         except Exception as e:
             logger.error(f"Error processing face detection (idx: {face_idx}): {e}")
             continue
-    logger.debug(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces") 
-    # Step 4: ULTRA STRONG ReID MATCHING FOR LOCKED TRACKS (Anti-Swapping)
+    
+    logger.debug(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces after anti-swap filtering") 
+    
+    # ============================================
+    # 🎯 ULTRA STRONG ReID MATCHING FOR LOCKED TRACKS
+    # ============================================
+    
     new_tracks = []
     used_detections = set()
     used_body_tracks = set()
-    # 🆕 IMPROVED: Ultra-strict ReID matching with multi-validation
+    
+    # 🛡️ IMPROVED: Ultra-strict ReID matching with BODY SIGNATURE verification
     for person_id, lock_info in locked_tracks.items():
         last_reid_features = lock_info.get('reid_features')
         last_body_box = lock_info.get('body_box')
@@ -2424,7 +2837,9 @@ def refresh_with_detections(frame, rgb, frame_idx):
             best_match_idx = None
             best_reid_distance = 0.15
             
-        
+            # 🆕 Get body signature for this locked track
+            body_signature = locked_track_signatures.get(person_id)
+            
             # Try ReID matching with multi-stage validation
             for idx, body_track in enumerate(body_tracks):
                 if idx in used_body_tracks:
@@ -2434,62 +2849,97 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 if current_reid_features is None:
                     continue
             
-                # Stage 1: Calculate ReID distance
+                # 🛡️ STAGE 1: Calculate ReID distance
                 reid_dist = calculate_reid_distance(last_reid_features, current_reid_features)
                 if reid_dist >= best_reid_distance:
                     continue
             
-                # Stage 2: 🆕 STRICT SPATIAL CONSTRAINT - Movement limit
+                # 🛡️ STAGE 2: ENHANCED SPATIAL CONSTRAINT
                 if last_body_box:
                     movement = calculate_box_distance(last_body_box, body_track['body_box'])
-                    # 🆕 Maximum 60 pixels movement (stricter than before)
-                    if movement > 60:
-                        continue
-            
-                # Stage 3: 🆕 STRICT SIZE CONSISTENCY - Prevent body size jumps
-                if last_body_box:
-                    last_area = (last_body_box[2] - last_body_box[0]) * (last_body_box[3] - last_body_box[1])
-                    new_area = (body_track['body_box'][2] - body_track['body_box'][0]) * (body_track['body_box'][3] - body_track['body_box'][1])
-
-                    if max(last_area, new_area) == 0:
-                       continue
                     
-                    area_ratio = min(last_area, new_area) / max(last_area, new_area)
-                    # 🆕 Body size must be within 70% similarity (stricter)
-                    if area_ratio < 0.85:
-                        logger.debug(f"❌ Rejected: area ratio too different ({area_ratio:.2f})")
-                        continue
-                
-                # Stage 4: 🆕 ASPECT RATIO VALIDATION - Prevent shape distortion
-                if last_body_box:
-                    last_width = last_body_box[2] - last_body_box[0]
-                    last_height = last_body_box[3] - last_body_box[1]
-                    new_width = body_track['body_box'][2] - body_track['body_box'][0]
-                    new_height = body_track['body_box'][3] - body_track['body_box'][1]
+                    last_center_x = (last_body_box[0] + last_body_box[2]) // 2
+                    last_center_y = (last_body_box[1] + last_body_box[3]) // 2
+                    distance_from_center = np.sqrt((last_center_x - w//2)**2 + (last_center_y - h//2)**2)
                     
-                    if last_height > 0 and new_height > 0:
-                        last_aspect = last_width / last_height
-                        new_aspect = new_width / new_height
-                        aspect_diff = abs(last_aspect - new_aspect)
-                        # 🆕 Aspect ratio change must be minimal
-                        if aspect_diff > 0.1:
-                            logger.debug(f"❌ Rejected: aspect ratio changed too much ({aspect_diff:.2f})")
+                    max_movement = 80 if distance_from_center > 300 else 50
+                    if movement > max_movement:
+                        continue
+                    
+                    # Check movement prediction
+                    if person_id in locked_track_predictions:
+                        pred_box = locked_track_predictions[person_id]['predicted_box']
+                        pred_distance = calculate_box_distance(pred_box, body_track['body_box'])
+                        max_pred_distance = 60 if distance_from_center > 300 else 40
+                        if pred_distance > max_pred_distance:
                             continue
+            
+                # 🛡️ STAGE 3: ENHANCED BODY SIGNATURE VERIFICATION
+                if body_signature and 'signature' in body_track:
+                    current_sig = body_track['signature']
+                    
+                    # 🛡️ FIX: Check if min_width/max_width exist before using them
+                    if ('min_width' in body_signature and 'max_width' in body_signature and 
+                        body_signature['min_width'] > 0 and body_signature['max_width'] > 0):
+                        if current_sig['width'] < body_signature['min_width'] * 0.7 or \
+                           current_sig['width'] > body_signature['max_width'] * 1.3:
+                            logger.debug(f"❌ Rejected: width out of range ({current_sig['width']} vs [{body_signature['min_width']}-{body_signature['max_width']}])")
+                            continue
+                    
+                    # 🛡️ FIX: Check if min_height/max_height exist
+                    if ('min_height' in body_signature and 'max_height' in body_signature and
+                        body_signature['min_height'] > 0 and body_signature['max_height'] > 0):
+                        if current_sig['height'] < body_signature['min_height'] * 0.7 or \
+                           current_sig['height'] > body_signature['max_height'] * 1.3:
+                            logger.debug(f"❌ Rejected: height out of range ({current_sig['height']} vs [{body_signature['min_height']}-{body_signature['max_height']}])")
+                            continue
+                
+                # 🛡️ STAGE 4: TEMPORAL CONSISTENCY
+                if last_body_box and person_id in locked_track_history:
+                    hist_positions = locked_track_history[person_id]
+                    if len(hist_positions) >= 2:
+                        avg_movement_x = 0
+                        avg_movement_y = 0
+                        
+                        for i in range(1, len(hist_positions)):
+                            prev = hist_positions[i-1]
+                            curr = hist_positions[i]
+                            avg_movement_x += curr['center_x'] - prev['center_x']
+                            avg_movement_y += curr['center_y'] - prev['center_y']
+                        
+                        if len(hist_positions) > 1:
+                            avg_movement_x /= (len(hist_positions) - 1)
+                            avg_movement_y /= (len(hist_positions) - 1)
+                            
+                            current_center_x = (body_track['body_box'][0] + body_track['body_box'][2]) // 2
+                            current_center_y = (body_track['body_box'][1] + body_track['body_box'][3]) // 2
+                            last_center_x = (last_body_box[0] + last_body_box[2]) // 2
+                            last_center_y = (last_body_box[1] + last_body_box[3]) // 2
+                            
+                            actual_movement_x = current_center_x - last_center_x
+                            actual_movement_y = current_center_y - last_center_y
+                            
+                            movement_factor = 2.0 if distance_from_center > 300 else 1.5
+                            if (abs(actual_movement_x) > abs(avg_movement_x) * movement_factor or 
+                                abs(actual_movement_y) > abs(avg_movement_y) * movement_factor):
+                                logger.debug(f"❌ Rejected: movement too abrupt")
+                                continue
+                
+                # 🛡️ STAGE 5: OVERLAP VALIDATION
                 if last_body_box:
                     overlap = iou(tuple(body_track['body_box']), last_body_box)
-                 # 🛡️ Require at least 20% overlap with previous position
-                    if overlap < 0.2:
+                    min_overlap = 0.15 if distance_from_center > 300 else 0.25
+                    if overlap < min_overlap:
                         logger.debug(f"❌ Rejected: insufficient overlap ({overlap:.2f})")
                         continue        
             
-                # All validations passed - this is the best match
+                # All validations passed
                 best_reid_distance = reid_dist
                 best_match_idx = idx
-                logger.debug(f"✅ Match passed all checks: ReID={reid_dist:.3f}, Movement={movement:.1f}px, AreaRatio={area_ratio:.2f}")
+                logger.debug(f"✅ All checks passed: ReID={reid_dist:.3f}, Movement={movement:.1f}px")
     
-        
             if best_match_idx is not None:
-                # Found matching body via strict ReID + spatial validation
+                # Found matching body
                 matched_body = body_tracks[best_match_idx]
                 used_body_tracks.add(best_match_idx)
             
@@ -2498,7 +2948,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 lock_info['missed_detections'] = 0
                 
                 if matched_body['reid_features'] is not None:
-                    alpha = 0.95
+                    distance_from_center = np.sqrt(
+                        ((matched_body['body_box'][0] + matched_body['body_box'][2])//2 - w//2)**2 +
+                        ((matched_body['body_box'][1] + matched_body['body_box'][3])//2 - h//2)**2
+                    )
+                    alpha = 0.9 if distance_from_center > 300 else 0.97
                     lock_info['reid_features'] = (
                         alpha * last_reid_features +
                         (1 - alpha) * matched_body['reid_features']
@@ -2506,10 +2960,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
             
                 logger.debug(f"✅ Locked {lock_info.get('name', person_id)} updated via ReID (dist: {best_reid_distance:.3f})")
             else:
-                # No match - preserve last position and count miss
+                # No match
                 lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
                 logger.debug(f"⚠️ No match for {lock_info.get('name', person_id)} - Preserving last position")
 
+    # Add existing locked tracks to new_tracks
     for person_id, lock_info in locked_tracks.items():
         lock_start = lock_info.get('lock_start', frame_idx)
         tracking_seconds = (frame_idx - lock_start) // 30
@@ -2526,6 +2981,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
             'lock_start': lock_start
         }
         new_tracks.append(locked_track_obj)
+    
+    # Update existing unlocked tracks
     for tr in tracks:
         if tr.get('id') in locked_tracks:
             continue
@@ -2535,7 +2992,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             continue
     
         best_detection = None
-        best_iou = 0.4
+        best_iou = 0.0
         best_idx = -1
         tr_box = tr.get('box')
         if tr_box:
@@ -2556,10 +3013,16 @@ def refresh_with_detections(frame, rgb, frame_idx):
             else:
                 if frames_since_seen < 8:
                     new_tracks.append(tr)
-    # Step 5: Process NEW face detections (PRESERVED: Fast recognition)
+    
+    # ============================================
+    # 🎯 PROCESS NEW FACE DETECTIONS WITH ANTI-SWAPPING
+    # ============================================
+    
+    # Step 5: Process NEW face detections with anti-swapping protection
     for idx_det, (x1, y1, x2, y2, conf, face_idx_val, face_obj) in enumerate(dets):
         if idx_det in used_detections:
             continue
+        
         # Check overlap with existing tracks
         overlaps_existing = False
         for existing_tr in new_tracks:
@@ -2568,7 +3031,34 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 break
         if overlaps_existing:
             continue
-        # Face Recognition (PRESERVED: Fast instant recognition) - UPDATED with section filtering
+        
+        # 🛡️ ANTI-SWAPPING: Check if this face is in any protected zone
+        face_center_x = (x1 + x2) // 2
+        face_center_y = (y1 + y2) // 2
+        face_too_close_to_locked = False
+        
+        for person_id, zone_info in locked_track_protection_zones.items():
+            inner_zone = zone_info['inner_zone']
+            outer_zone = zone_info['outer_zone']
+            
+            iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
+            oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
+            
+            if (iz_x1 <= face_center_x <= iz_x2 and iz_y1 <= face_center_y <= iz_y2):
+                locked_body_box = zone_info['body_box']
+                face_box = (x1, y1, x2, y2)
+                face_iou = iou(face_box, locked_body_box)
+                
+                if face_iou < 0.4:
+                    face_too_close_to_locked = True
+                    logger.debug(f"🚫 Face rejected: in locked person's inner zone")
+                    break
+        
+        if face_too_close_to_locked:
+            used_detections.add(idx_det)
+            continue
+        
+        # Face Recognition
         name = "Unknown"
         person_id = None
         ptype = None
@@ -2584,10 +3074,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     logger.warning("No known faces loaded for recognition")
                     name = "Unknown"
                 else:
-                    # 🎯 ADDED: Get current section students for filtering
                     current_section_students = get_current_section_student_ids()
                     logger.debug(f"📊 Current section has {len(current_section_students)} students")
-                    logger.debug(f"📊 Total known faces in memory: {len(known_face_names)}")
                     
                     dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
                     norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
@@ -2600,8 +3088,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         best_match_index = int(np.argmax(similarities))
                         best_similarity = float(similarities[best_match_index])
                         
-                        if best_similarity >= 0.50:  # PRESERVED: Fast recognition threshold
-                            # 🎯 UPDATED: Check if matched student is in current section
+                        if best_similarity >= 0.50:
                             matched_id = known_face_ids[best_match_index]
                             matched_type = known_face_types[best_match_index]
                             matched_name = known_face_names[best_match_index]
@@ -2609,7 +3096,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             logger.info(f"🎯 Potential match: {matched_name} ({matched_id}) - Type: {matched_type} - Similarity: {best_similarity:.3f}")
                             
                             if matched_type == 'faculty':
-                                # Always accept faculty (they can be in any class)
                                 name = f"Faculty: {matched_name}"
                                 person_id = matched_id
                                 ptype = 'faculty'
@@ -2617,19 +3103,15 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 logger.info(f"✅ FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
                             
                             elif matched_type == 'student':
-                                # Check if student is enrolled in current section
                                 if current_section_students and matched_id in current_section_students:
-                                    # Student is in current section - accept recognition
                                     name = matched_name
                                     person_id = matched_id
                                     ptype = 'student'
                                     confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
                                     logger.info(f"✅ STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
                                 else:
-                                    # Student not in current section - mark as unknown
                                     logger.info(f"❌ STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
                                     name = "Unknown - Wrong Section"
-                                    # Still store the embedding for unknown face capture
                                     if face_embedding is not None:
                                         try:
                                             face_crop = frame[y1:y2, x1:x2]
@@ -2650,7 +3132,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 import traceback
                 logger.error(traceback.format_exc())
                 name = "Unknown"
-        # Handle unknown faces (for faces that didn't match or weren't recognized)
+        
+        # Handle unknown faces
         if name == "Unknown" and face_embedding is not None and not name.startswith("Unknown - Wrong Section"):
             try:
                 face_crop = frame[y1:y2, x1:x2]
@@ -2662,7 +3145,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             logger.info(f"📸 CAPTURED UNKNOWN FACE - Added to enrollment system")
             except Exception as e:
                 logger.error(f"❌ Error capturing unknown face: {e}")
-        # Match face to body with 🆕 ANTI-SWAP validation
+        
+        # Match face to body
         matched_body_track = None
         face_center_x = (x1 + x2) // 2
         face_center_y = (y1 + y2) // 2
@@ -2674,26 +3158,49 @@ def refresh_with_detections(frame, rgb, frame_idx):
             body_box = body_track['body_box']
             bx1, by1, bx2, by2 = body_box
         
-            # Check if face is within upper body region
             body_height = by2 - by1
-            upper_body_y1 = by1
-            upper_body_y2 = by1 + int(body_height * 0.6)
-        
-            if (bx1 <= face_center_x <= bx2 and
+            upper_body_y1 = max(by1, by1 - int(body_height * 0.1))
+            upper_body_y2 = by1 + int(body_height * 0.7)
+            
+            distance_from_center = np.sqrt((face_center_x - w//2)**2 + (face_center_y - h//2)**2)
+            horizontal_margin = int((bx2 - bx1) * 0.2) if distance_from_center > 300 else int((bx2 - bx1) * 0.1)
+            
+            if (bx1 - horizontal_margin <= face_center_x <= bx2 + horizontal_margin and
                 upper_body_y1 <= face_center_y <= upper_body_y2):
                 
-                # 🆕 ADDITIONAL: Validate face-body size ratio (anti-swap)
                 face_area = (x2 - x1) * (y2 - y1)
                 body_area = (bx2 - bx1) * (by2 - by1)
                 face_body_ratio = face_area / body_area if body_area > 0 else 0
                 
-                # Face should be 1.5% to 20% of body area
-                if 0.015 <= face_body_ratio <= 0.20:
-                    matched_body_track = body_track
-                    used_body_tracks.add(body_track['track_id'])
-                    logger.info(f"✅ Face-Body matched: track_id={body_track['track_id']}, ratio={face_body_ratio:.3f}")
-                    break
-        # If still unknown after recognition attempt (or wrong section student)
+                min_ratio = 0.01 if distance_from_center > 300 else 0.015
+                max_ratio = 0.25 if distance_from_center > 300 else 0.20
+                
+                if min_ratio <= face_body_ratio <= max_ratio:
+                    body_center_x = (bx1 + bx2) // 2
+                    body_center_y = (by1 + by2) // 2
+                    
+                    body_in_protected_zone = False
+                    for locked_person_id, zone_info in locked_track_protection_zones.items():
+                        inner_zone = zone_info['inner_zone']
+                        iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
+                        
+                        if (iz_x1 <= body_center_x <= iz_x2 and iz_y1 <= body_center_y <= iz_y2):
+                            locked_body_box = zone_info['body_box']
+                            overlap_iou = iou(tuple(body_box), locked_body_box)
+                            
+                            min_iou = 0.4 if distance_from_center > 300 else 0.5
+                            if overlap_iou < min_iou:
+                                logger.warning(f"🚫 ANTI-SWAP: Body detected in {zone_info['lock_info'].get('name', locked_person_id)}'s protection zone - REJECTING")
+                                body_in_protected_zone = True
+                                break
+                    
+                    if not body_in_protected_zone:
+                        matched_body_track = body_track
+                        used_body_tracks.add(body_track['track_id'])
+                        logger.info(f"✅ Face-Body matched: track_id={body_track['track_id']}, ratio={face_body_ratio:.3f}")
+                        break
+        
+        # If still unknown after recognition attempt
         if person_id is None:
             unique_id = f"U-{frame_idx}-{x1}"
         
@@ -2726,7 +3233,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 })
                 logger.info(f"📍 Unknown face without body")
         else:
-            # Known person (PRESERVED: Fast locking) - Only for recognized current section students/faculty
+            # Known person
             if matched_body_track and person_id not in locked_tracks:
                 if person_id not in pending_confirmations:
                     pending_confirmations[person_id] = {
@@ -2760,7 +3267,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
             
                 logger.info(f"🔄 PENDING PROGRESS: {name} - Frames: {consecutive_frames}, Avg Similarity: {avg_similarity:.3f}")
             
-                # PRESERVED: Fast confirmation for instant locking
                 if (consecutive_frames >= max(3, CONFIRMATION_FRAMES_REQUIRED - 2) and
                     avg_similarity >= CONFIRMATION_SIMILARITY_THRESHOLD - 0.05):
                 
@@ -2791,7 +3297,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     }
                     new_tracks.append(locked_track_obj)
                 
-                    # Only mark attendance for current section students and faculty
                     if ptype == 'faculty' or (ptype == 'student' and current_section_students and person_id in current_section_students):
                         mark_attendance(name, person_id, ptype)
                         logger.info(f"🔒 LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
@@ -2813,7 +3318,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     }
                     new_tracks.append(temp_track)
             else:
-                # No body match or already locked
                 if person_id not in locked_tracks:
                     logger.info(f"⚠️ {name} recognized but no body match")
                 new_tracks.append({
@@ -2824,32 +3328,65 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'is_locked': False,
                     'name': name
                 })
+    
     # Confidence decay for unlocked tracks
     for tr in new_tracks[:]:
         if not tr.get('is_locked'):
             tr['confidence'] = max(0.1, tr.get('confidence', 0.5) * 0.85)
             if tr['confidence'] < 0.2 and frame_idx - tr.get('last_seen', 0) > 10:
                 new_tracks.remove(tr)
+    
     tracks[:] = new_tracks
+    
     # Cleanup old unknown tracks
     current_tracks = [
         tr for tr in tracks
         if not (tr.get('name') == "Unknown" and frame_idx - tr.get('last_seen', 0) > 30)
     ]
     tracks[:] = current_tracks
+    
+    # 🆕 Cleanup old tracking history
+    expired_history_keys = []
+    for person_id in list(locked_track_history.keys()):
+        if person_id not in locked_tracks:
+            expired_history_keys.append(person_id)
+    
+    for key in expired_history_keys:
+        del locked_track_history[key]
+        if key in locked_track_predictions:
+            del locked_track_predictions[key]
+        if key in locked_track_signatures:
+            del locked_track_signatures[key]
+    
     logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
-
+    
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
-    Update trackers with body-only tracking for LOCKED tracks.
-    ✅ FIXED: JSON serialization issues and better error handling
+    🛡️ ULTRA STRONG ANTI-SWAPPING: Body-only tracking for LOCKED tracks with force field protection
+    ✅ FIXED: Prevents bounding boxes from jumping to unknown/scanning people
+    ✅ ADDED: Body shape signature verification for each locked track
+    ✅ ADDED: Movement prediction and path consistency validation
+    ✅ ADDED: Temporal consistency with frame history
+    ✅ ADDED: Force field protection zones with overlapping rejection
+    ✅ ENHANCED: Real-time FPS calculation and optimization
     """
     global tracks, locked_tracks, pending_confirmations, current_fps
-    global detectionStopped, student_presence_tracker, current_session_id
+    global detectionStopped, student_presence_tracker, current_session_id, locked_track_reid_features
+    
+    # 🆕 ANTI-SWAP: Initialize advanced tracking systems
+    global locked_track_history, locked_track_predictions, locked_track_signatures
     
     # Stop detection if session ended
     if detectionStopped:
         return
+    
+    # Initialize anti-swap tracking systems
+    if 'locked_track_history' not in globals():
+        locked_track_history = {}  # Stores past positions for movement prediction
+    if 'locked_track_predictions' not in globals():
+        locked_track_predictions = {}  # Stores next predicted positions
+    if 'locked_track_signatures' not in globals():
+        locked_track_signatures = {}  # Stores body shape signatures
     
     # Calculate real FPS
     real_fps = calculate_real_fps()
@@ -2858,14 +3395,14 @@ def update_trackers_with_body(rgb, frame, frame_idx):
 
     h, w = frame.shape[:2]
     
-    # 🎯 CRITICAL FIX: Clean up student_presence_tracker from invalid entries at the start
+    # 🎯 CRITICAL FIX: Clean up student_presence_tracker from invalid entries
     invalid_entries = []
     for student_id, track_info in list(student_presence_tracker.items()):
         if not student_id or not isinstance(student_id, str) or not student_id.startswith(('20', '19', '21')):
             invalid_entries.append(student_id)
 
     for invalid_id in invalid_entries:
-        logger.warning(f"🚮 Removing invalid student_presence_tracker entry at start: {invalid_id}")
+        logger.warning(f"🚮 Removing invalid student_presence_tracker entry: {invalid_id}")
         del student_presence_tracker[invalid_id]
     
     # Step 1: Detect bodies FIRST - this is critical
@@ -2875,67 +3412,389 @@ def update_trackers_with_body(rgb, frame, frame_idx):
     # 🎯 CRITICAL FIX: Check for missing bodies IMMEDIATELY every frame
     current_time = datetime.now()
     
-    # Track which locked tracks have matching bodies in CURRENT frame
-    locked_tracks_with_bodies = set()
-    
-    # Step 2: Extract ReID features for ALL bodies first
+    # Step 2: Extract ReID features and body signatures for ALL bodies
     body_reid_features = []
     body_boxes_clean = []
+    body_signatures = []
     
     for body_det in body_detections:
         body_box = tuple(body_det['box'])
         bx1, by1, bx2, by2 = body_box
+        
+        # Filter small bodies
         if (bx2 - bx1) < 50 or (by2 - by1) < 100:
             continue
             
+        # Extract ReID features
         reid_feature = extract_reid_features(frame, body_box)
         body_reid_features.append(reid_feature)
         body_boxes_clean.append(body_det)
+        
+        # 🆕 Calculate body signature
+        body_width = bx2 - bx1
+        body_height = by2 - by1
+        aspect_ratio = body_width / body_height if body_height > 0 else 0
+        body_area = body_width * body_height
+        
+        body_signatures.append({
+            'width': body_width,
+            'height': body_height,
+            'aspect_ratio': aspect_ratio,
+            'area': body_area,
+            'center_x': (bx1 + bx2) // 2,
+            'center_y': (by1 + by2) // 2
+        })
     
     body_detections = body_boxes_clean
     matched_body_indices = set()
     
-    # 🎯 CRITICAL FIX: IMMEDIATE BODY MATCHING - Check every frame
+    # ============================================
+    # 🛡️ ULTRA STRONG ANTI-SWAPPING SYSTEM
+    # ============================================
+    
+    # 🆕 1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
+    for person_id, lock_info in locked_tracks.items():
+        current_body_box = lock_info.get('body_box')
+        if current_body_box:
+            # Update movement history
+            if person_id not in locked_track_history:
+                locked_track_history[person_id] = []
+            
+            # Add current position to history
+            center_x = (current_body_box[0] + current_body_box[2]) // 2
+            center_y = (current_body_box[1] + current_body_box[3]) // 2
+            
+            locked_track_history[person_id].append({
+                'frame': frame_idx,
+                'body_box': current_body_box,
+                'center_x': center_x,
+                'center_y': center_y,
+                'width': current_body_box[2] - current_body_box[0],
+                'height': current_body_box[3] - current_body_box[1]
+            })
+            
+            # Keep only last 8 frames of history
+            if len(locked_track_history[person_id]) > 8:
+                locked_track_history[person_id].pop(0)
+            
+            # 🆕 PREDICT NEXT POSITION based on movement history
+            if len(locked_track_history[person_id]) >= 3:
+                last_3_positions = locked_track_history[person_id][-3:]
+                dx = 0
+                dy = 0
+                
+                for i in range(1, len(last_3_positions)):
+                    prev = last_3_positions[i-1]
+                    curr = last_3_positions[i]
+                    dx += curr['center_x'] - prev['center_x']
+                    dy += curr['center_y'] - prev['center_y']
+                
+                avg_dx = dx / (len(last_3_positions) - 1)
+                avg_dy = dy / (len(last_3_positions) - 1)
+                
+                # Predict next position with 1.1x momentum (conservative)
+                predicted_center_x = center_x + int(avg_dx * 1.1)
+                predicted_center_y = center_y + int(avg_dy * 1.1)
+                
+                # Create predicted box (same size, new position)
+                box_width = current_body_box[2] - current_body_box[0]
+                box_height = current_body_box[3] - current_body_box[1]
+                predicted_box = (
+                    max(0, predicted_center_x - box_width // 2),
+                    max(0, predicted_center_y - box_height // 2),
+                    min(w, predicted_center_x + box_width // 2),
+                    min(h, predicted_center_y + box_height // 2)
+                )
+                
+                locked_track_predictions[person_id] = {
+                    'predicted_box': predicted_box,
+                    'predicted_center': (predicted_center_x, predicted_center_y),
+                    'movement_vector': (avg_dx, avg_dy),
+                    'confidence': min(0.85, len(locked_track_history[person_id]) / 8.0)
+                }
+            
+            # 🆕 2. UPDATE BODY SHAPE SIGNATURE for this locked track
+            body_width = current_body_box[2] - current_body_box[0]
+            body_height = current_body_box[3] - current_body_box[1]
+            aspect_ratio = body_width / body_height if body_height > 0 else 0
+            body_area = body_width * body_height
+            
+            if person_id not in locked_track_signatures:
+                locked_track_signatures[person_id] = {
+                    'width': body_width,
+                    'height': body_height,
+                    'aspect_ratio': aspect_ratio,
+                    'area': body_area,
+                    'avg_width': body_width,
+                    'avg_height': body_height,
+                    'samples': 1,
+                    'stable_count': 0
+                }
+            else:
+                sig = locked_track_signatures[person_id]
+                
+                # Check if body size is stable (within 10% change)
+                width_diff = abs(sig['avg_width'] - body_width) / max(sig['avg_width'], body_width)
+                height_diff = abs(sig['avg_height'] - body_height) / max(sig['avg_height'], body_height)
+                
+                if width_diff < 0.1 and height_diff < 0.1:
+                    sig['stable_count'] = min(10, sig['stable_count'] + 1)
+                else:
+                    sig['stable_count'] = max(0, sig['stable_count'] - 2)
+                
+                # Update rolling average (weighted by stability)
+                weight = 0.7 if sig['stable_count'] > 5 else 0.3
+                sig['avg_width'] = (sig['avg_width'] * (1 - weight)) + (body_width * weight)
+                sig['avg_height'] = (sig['avg_height'] * (1 - weight)) + (body_height * weight)
+                sig['samples'] += 1
+    
+    # 🆕 3. CREATE FORCE FIELD PROTECTION ZONES for locked tracks
+    locked_track_protection_zones = {}
+    
+    for person_id, lock_info in locked_tracks.items():
+        last_body_box = lock_info.get('body_box')
+        if last_body_box:
+            bx1, by1, bx2, by2 = last_body_box
+            body_center_x = (bx1 + bx2) // 2
+            body_center_y = (by1 + by2) // 2
+            
+            # 🛡️ INNER PROTECTION ZONE (where ONLY this person can be)
+            # 40% larger than body - VERY STRICT
+            inner_margin_x = int((bx2 - bx1) * 0.2)
+            inner_margin_y = int((by2 - by1) * 0.2)
+            inner_protection_zone = (
+                max(0, bx1 - inner_margin_x),
+                max(0, by1 - inner_margin_y),
+                min(w, bx2 + inner_margin_x),
+                min(h, by2 + inner_margin_y)
+            )
+            
+            # 🛡️ OUTER EXCLUSION ZONE (where unknown bodies are rejected)
+            # 60% larger than body - prevents unknowns from getting close
+            outer_margin_x = int((bx2 - bx1) * 0.3)
+            outer_margin_y = int((by2 - by1) * 0.3)
+            outer_exclusion_zone = (
+                max(0, bx1 - outer_margin_x),
+                max(0, by1 - outer_margin_y),
+                min(w, bx2 + outer_margin_x),
+                min(h, by2 + outer_margin_y)
+            )
+            
+            # 🛡️ ADD PREDICTION ZONE if we have movement prediction
+            prediction_zone = None
+            if person_id in locked_track_predictions:
+                pred_box = locked_track_predictions[person_id]['predicted_box']
+                pred_margin_x = int((pred_box[2] - pred_box[0]) * 0.25)
+                pred_margin_y = int((pred_box[3] - pred_box[1]) * 0.25)
+                prediction_zone = (
+                    max(0, pred_box[0] - pred_margin_x),
+                    max(0, pred_box[1] - pred_margin_y),
+                    min(w, pred_box[2] + pred_margin_x),
+                    min(h, pred_box[3] + pred_margin_y)
+                )
+            
+            locked_track_protection_zones[person_id] = {
+                'inner_zone': inner_protection_zone,
+                'outer_zone': outer_exclusion_zone,
+                'prediction_zone': prediction_zone,
+                'body_box': last_body_box,
+                'body_center': (body_center_x, body_center_y),
+                'lock_info': lock_info,
+                'protected': False
+            }
+    
+    # 🎯 FIRST: Protect LOCKED tracks from being stolen by unknown bodies
+    # Check for bodies that might be trying to steal locked track IDs
+    for idx, body_det in enumerate(body_detections):
+        if idx in matched_body_indices:
+            continue
+            
+        body_box = body_det['box']
+        body_center_x = (body_box[0] + body_box[2]) // 2
+        body_center_y = (body_box[1] + body_box[3]) // 2
+        
+        # Check if this body is in any locked track's protection zone
+        for person_id, zone_info in locked_track_protection_zones.items():
+            if zone_info['protected']:
+                continue
+                
+            inner_zone = zone_info['inner_zone']
+            outer_zone = zone_info['outer_zone']
+            prediction_zone = zone_info['prediction_zone']
+            
+            # 🛡️ Check INNER ZONE first (strictest protection)
+            iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
+            if (iz_x1 <= body_center_x <= iz_x2 and iz_y1 <= body_center_y <= iz_y2):
+                # Body is in inner zone - check if it's the same person
+                locked_body_box = zone_info['body_box']
+                overlap_iou = iou(tuple(body_box), locked_body_box)
+                
+                # 🛡️ STRICT RULE: If IoU > 0.5, it's probably the same person
+                if overlap_iou > 0.5:
+                    # This is likely the locked person, update their position
+                    lock_info = locked_tracks[person_id]
+                    lock_info['body_box'] = tuple(body_box)
+                    lock_info['last_seen'] = frame_idx
+                    lock_info['missed_detections'] = 0
+                    
+                    # 🆕 Update ReID features if available
+                    if idx < len(body_reid_features) and body_reid_features[idx] is not None:
+                        if person_id not in locked_track_reid_features:
+                            locked_track_reid_features[person_id] = body_reid_features[idx]
+                        else:
+                            # Weighted update for stability
+                            alpha = 0.9
+                            locked_track_reid_features[person_id] = (
+                                alpha * locked_track_reid_features[person_id] +
+                                (1 - alpha) * body_reid_features[idx]
+                            )
+                    
+                    matched_body_indices.add(idx)
+                    zone_info['protected'] = True
+                    
+                    # Update presence tracker
+                    if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
+                        student_presence_tracker[lock_info['id']]['last_body_seen'] = current_time
+                        student_presence_tracker[lock_info['id']]['last_seen'] = current_time
+                        student_presence_tracker[lock_info['id']]['present'] = True
+                    
+                    logger.info(f"✅ ANTI-SWAP: Updated {lock_info.get('name', person_id)} position (IoU: {overlap_iou:.2f})")
+                else:
+                    # 🛡️ Different person in inner zone - REJECT this body
+                    # But don't mark as used, just skip for this locked person
+                    logger.warning(f"🚫 ANTI-SWAP: Different body in {zone_info['lock_info'].get('name', person_id)}'s inner zone - Skipping")
+                
+                break  # Move to next body detection
+            
+            # 🛡️ Check OUTER ZONE (less strict but still protective)
+            oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
+            if (oz_x1 <= body_center_x <= oz_x2 and oz_y1 <= body_center_y <= oz_y2):
+                # Body is in outer zone - check if it's dangerously close
+                locked_body_box = zone_info['body_box']
+                distance_to_center = np.sqrt(
+                    (body_center_x - zone_info['body_center'][0])**2 + 
+                    (body_center_y - zone_info['body_center'][1])**2
+                )
+                max_allowed_distance = (locked_body_box[2] - locked_body_box[0]) * 0.7
+                
+                if distance_to_center < max_allowed_distance:
+                    # Too close to locked person - check body signature
+                    if person_id in locked_track_signatures and idx < len(body_signatures):
+                        current_sig = body_signatures[idx]
+                        locked_sig = locked_track_signatures[person_id]
+                        
+                        # Check body size similarity
+                        width_diff = abs(locked_sig['avg_width'] - current_sig['width']) / max(locked_sig['avg_width'], current_sig['width'])
+                        height_diff = abs(locked_sig['avg_height'] - current_sig['height']) / max(locked_sig['avg_height'], current_sig['height'])
+                        
+                        if width_diff > 0.25 or height_diff > 0.25:
+                            # 🛡️ Very different body size - REJECT for this locked track
+                            logger.warning(f"🚫 ANTI-SWAP: Different sized body near {zone_info['lock_info'].get('name', person_id)} - Rejecting")
+                            # Don't add to matched indices - let it be available for other checks
+                            continue
+                
+                break  # Move to next body detection
+    
+    # ============================================
+    # 🎯 CONTINUE WITH UPDATED ANTI-SWAP LOGIC
+    # ============================================
+    
+    # 🎯 IMMEDIATE BODY MATCHING - Check every frame with enhanced anti-swap
     to_remove_locks = []
+    locked_tracks_with_bodies = set()
     
     for person_id, lock_info in list(locked_tracks.items()):
         frames_since_seen = frame_idx - lock_info.get('last_seen', frame_idx)
         
-        # 🎯 IMMEDIATE CHECK: If no body found in current frame, start counting immediately
+        # If this track was already updated via anti-swap logic, skip
+        if person_id in locked_track_protection_zones and locked_track_protection_zones[person_id]['protected']:
+            locked_tracks_with_bodies.add(person_id)
+            continue
+            
+        # 🎯 ENHANCED CHECK: If no body found in current frame, start counting immediately
         body_found_in_current_frame = False
         last_body_box = lock_info.get('body_box')
         
         if last_body_box and body_detections:
-            # Try to match with current frame bodies
+            # 🆕 Get body signature for this locked track
+            body_signature = locked_track_signatures.get(person_id)
+            
+            # Try to match with current frame bodies (excluding already matched)
             for idx, body_det in enumerate(body_detections):
                 if idx in matched_body_indices:
                     continue
                     
                 body_box = body_det['box']
                 
-                # Quick spatial matching
+                # 🛡️ STAGE 1: Quick spatial matching with higher threshold
                 overlap_iou = iou(tuple(body_box), last_body_box)
-                if overlap_iou > 0.1:  # Low threshold for quick matching
-                    body_found_in_current_frame = True
-                    matched_body_indices.add(idx)
+                if overlap_iou > 0.25:  # Higher threshold for better accuracy
                     
-                    lock_info['body_box'] = tuple(body_box)
-                    lock_info['last_seen'] = frame_idx
-                    lock_info['missed_detections'] = 0
+                    # 🛡️ STAGE 2: Validate body size consistency with signature
+                    if body_signature and idx < len(body_signatures):
+                        current_sig = body_signatures[idx]
+                        
+                        # Width similarity (must be within 20%)
+                        width_diff = abs(body_signature['avg_width'] - current_sig['width']) / max(body_signature['avg_width'], current_sig['width'])
+                        if width_diff > 0.2:
+                            continue
+                        
+                        # Height similarity (must be within 20%)
+                        height_diff = abs(body_signature['avg_height'] - current_sig['height']) / max(body_signature['avg_height'], current_sig['height'])
+                        if height_diff > 0.2:
+                            continue
                     
-                    if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
-                        student_presence_tracker[lock_info['id']]['last_body_seen'] = current_time
-                        student_presence_tracker[lock_info['id']]['last_seen'] = current_time
-                        student_presence_tracker[lock_info['id']]['present'] = True
+                    # 🛡️ STAGE 3: Check movement prediction (if available)
+                    if person_id in locked_track_predictions:
+                        pred_box = locked_track_predictions[person_id]['predicted_box']
+                        pred_distance = calculate_box_distance(pred_box, body_box)
+                        if pred_distance > 60:  # Too far from predicted position
+                            continue
                     
-                    locked_tracks_with_bodies.add(person_id)
-                    break
+                    # 🛡️ STAGE 4: Validate body size ratio
+                    last_width = last_body_box[2] - last_body_box[0]
+                    last_height = last_body_box[3] - last_body_box[1]
+                    new_width = body_box[2] - body_box[0]
+                    new_height = body_box[3] - body_box[1]
+                    
+                    # Body size should be similar (within 35% change)
+                    width_ratio = min(last_width, new_width) / max(last_width, new_width)
+                    height_ratio = min(last_height, new_height) / max(last_height, new_height)
+                    
+                    if width_ratio > 0.65 and height_ratio > 0.65:
+                        body_found_in_current_frame = True
+                        matched_body_indices.add(idx)
+                        
+                        lock_info['body_box'] = tuple(body_box)
+                        lock_info['last_seen'] = frame_idx
+                        lock_info['missed_detections'] = 0
+                        
+                        # 🆕 Update ReID features
+                        if idx < len(body_reid_features) and body_reid_features[idx] is not None:
+                            if person_id not in locked_track_reid_features:
+                                locked_track_reid_features[person_id] = body_reid_features[idx]
+                            else:
+                                # Weighted update
+                                alpha = 0.85
+                                locked_track_reid_features[person_id] = (
+                                    alpha * locked_track_reid_features[person_id] +
+                                    (1 - alpha) * body_reid_features[idx]
+                                )
+                        
+                        if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
+                            student_presence_tracker[lock_info['id']]['last_body_seen'] = current_time
+                            student_presence_tracker[lock_info['id']]['last_seen'] = current_time
+                            student_presence_tracker[lock_info['id']]['present'] = True
+                        
+                        locked_tracks_with_bodies.add(person_id)
+                        logger.info(f"✅ LOCKED TRACK UPDATED: {lock_info.get('name', person_id)} (IoU: {overlap_iou:.2f})")
+                        break
         
         # 🎯 CRITICAL: If no body found in current frame, mark for immediate removal
         if not body_found_in_current_frame:
             lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
             
-            # 🎯 IMMEDIATE REMOVAL: Remove after just 1-2 seconds (not 10 seconds)
+            # 🎯 IMMEDIATE REMOVAL: Remove after just 1-2 seconds
             if lock_info['missed_detections'] > 30:  # 1 second at 30fps
                 to_remove_locks.append(person_id)
                 logger.info(f"❌ IMMEDIATE REMOVAL: {lock_info.get('name', person_id)} - no body for 1 second")
@@ -2977,32 +3836,27 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 if attendance_record:
                     current_status = attendance_record['status']
                     current_session = attendance_record.get('session_id')
-                    remarks = attendance_record.get('remarks') or ''  # Ensure string
+                    remarks = attendance_record.get('remarks') or ''
                     
                     # 🎯 FIXED: Handle None values properly
                     if current_session is None:
                         current_session = ''
                     
                     # 🎯 BETTER MANUAL STATUS DETECTION - More specific
-                    manual_excuse_sessions = ['manual_excuse']  # Only for excused students
-                    manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
-                    manual_statuses = ['excused']  # Only truly manual statuses
+                    manual_excuse_sessions = ['manual_excuse']
+                    manual_status_sessions = ['manual_status']
+                    manual_statuses = ['excused']
                     
                     is_manual_status = (
-                        # Only specific manual session types (not manual_add)
                         current_session in manual_excuse_sessions or
                         current_session in manual_status_sessions or
-                        # Only specific manual statuses
                         current_status in manual_statuses or
-                        # Only specific manual remarks (not temp_id)
-                        'Manually marked' in str(remarks) or  # FIXED: Convert to string
-                        'Manual status' in str(remarks)       # FIXED: Convert to string
+                        'Manually marked' in str(remarks) or
+                        'Manual status' in str(remarks)
                     )
                     
                     if is_manual_status:
                         logger.info(f"🔒 SKIPPING MISSING: {student_name} has manual status '{current_status}'")
-                        # Don't call student_left API for manual status students
-                        # Just update presence tracker and continue
                         if student_id in student_presence_tracker:
                             student_presence_tracker[student_id]['present'] = False
                             student_presence_tracker[student_id]['last_seen'] = current_time
@@ -3010,7 +3864,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         locked_tracks.pop(person_id, None)
                         locked_track_reid_features.pop(person_id, None)
                         logger.info(f"🔓 IMMEDIATE UNLOCK (MANUAL STATUS): {person_id}")
-                        continue  # Skip the API call entirely
+                        continue
                     else:
                         logger.info(f"🔄 AUTO STATUS: {student_name} can be marked as missing")
                 
@@ -3049,11 +3903,10 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                             success = True
                             break
                         elif response.status_code == 400:
-                            # Parse the actual error message
                             try:
                                 error_data = response.json()
                                 logger.warning(f"⚠️ API returned {response.status_code}: {error_data.get('message', 'Unknown error')}")
-                                success = True  # Consider success if already marked
+                                success = True
                             except:
                                 logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
                             break
@@ -3085,10 +3938,10 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         locked_track_reid_features.pop(person_id, None)
         logger.info(f"🔓 IMMEDIATE UNLOCK: {person_id}")
     
+    # 🎯 Periodic backup check for missing students
     if frame_idx % 15 == 0 and current_session_id:
         for student_id, track_info in list(student_presence_tracker.items()):
-            # 🎯 CRITICAL FIX: Validate student_id is actually a string, not the built-in id function
-            if student_id and isinstance(student_id, str) and student_id.startswith(('20', '19', '21')):  # Adjust pattern based on your student ID format
+            if student_id and isinstance(student_id, str) and student_id.startswith(('20', '19', '21')):
                 if track_info.get('present'):
                     # 🎯 FIXED: Check if this student has any active locked track
                     has_active_body = False
@@ -3107,7 +3960,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                 track_info['present'] = False
                                 track_info['last_seen'] = current_time
                                 
-                                # 🎯 ADDED: BETTER Manual Status Detection before marking as missing
+                                # 🎯 ADDED: BETTER Manual Status Detection
                                 try:
                                     conn = get_db_connection()
                                     cursor = conn.cursor(dictionary=True)
@@ -3127,21 +3980,21 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                         remarks = attendance_record.get('remarks') or ''
                                         
                                         # 🎯 BETTER MANUAL STATUS DETECTION
-                                        manual_excuse_sessions = ['manual_excuse']  # Only for excused students
-                                        manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
-                                        manual_statuses = ['excused']  # Only truly manual statuses
+                                        manual_excuse_sessions = ['manual_excuse']
+                                        manual_status_sessions = ['manual_status']
+                                        manual_statuses = ['excused']
                                         
                                         is_manual_status = (
                                             current_session in manual_excuse_sessions or
                                             current_session in manual_status_sessions or
                                             current_status in manual_statuses or
-                                            'Manually marked' in str(remarks) or  # FIXED: Convert to string
-                                            'Manual status' in str(remarks)       # FIXED: Convert to string
+                                            'Manually marked' in str(remarks) or
+                                            'Manual status' in str(remarks)
                                         )
                                         
                                         if is_manual_status:
                                             logger.info(f"🔒 SKIPPING MISSING: {track_info['name']} has manual status '{current_status}'")
-                                            continue  # Skip API call for manual status students
+                                            continue
                                         else:
                                             logger.info(f"🔄 AUTO STATUS: {track_info['name']} can be marked as missing")
                                     
@@ -3154,14 +4007,13 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                     import urllib3
                                     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                                     
-                                    # 🎯 FIXED: Proper data format with validation
                                     if student_id and isinstance(student_id, str) and student_id.startswith(('20', '19', '21')):
                                         api_data = {
                                             'student_id': str(student_id),
                                             'session_id': str(current_session_id)
                                         }
                                         response = requests.post(
-                                            'http://localhost:5000/api/student_left',  # FIXED: Use localhost
+                                            'https://192.168.0.100:5000/api/student_left', 
                                             json=api_data,
                                             timeout=2
                                         )
@@ -3170,7 +4022,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                 except Exception as e:
                                     logger.warning(f"⚠️ API call failed: {e}")
             else:
-                # 🎯 CLEANUP: Remove invalid entries from student_presence_tracker
+                # 🎯 CLEANUP: Remove invalid entries
                 logger.warning(f"🚮 Removing invalid student_presence_tracker entry: {student_id}")
                 del student_presence_tracker[student_id]
         
@@ -3198,10 +4050,10 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         last_reid_feature = locked_track_reid_features.get(person_id)
         matched = False
         
-        # Try ReID matching
+        # 🆕 Try ReID matching with ANTI-SWAP validation
         if last_reid_feature is not None and body_detections:
             best_reid_match_idx = None
-            best_reid_distance = 0.35
+            best_reid_distance = 0.3  # Stricter threshold
             
             for idx, body_det in enumerate(body_detections):
                 if idx in matched_body_indices:
@@ -3216,7 +4068,22 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 body_box = body_det['box']
                 if last_body_box:
                     movement = calculate_box_distance(last_body_box, body_box)
-                    if movement > 200:
+                    if movement > 120:  # Reduced from 150 to 120 for stricter tracking
+                        continue
+                
+                # 🆕 Check body signature if available
+                if person_id in locked_track_signatures and idx < len(body_signatures):
+                    current_sig = body_signatures[idx]
+                    locked_sig = locked_track_signatures[person_id]
+                    
+                    # Width similarity (must be within 25%)
+                    width_diff = abs(locked_sig['avg_width'] - current_sig['width']) / max(locked_sig['avg_width'], current_sig['width'])
+                    if width_diff > 0.25:
+                        continue
+                    
+                    # Height similarity (must be within 25%)
+                    height_diff = abs(locked_sig['avg_height'] - current_sig['height']) / max(locked_sig['avg_height'], current_sig['height'])
+                    if height_diff > 0.25:
                         continue
                 
                 if reid_dist < best_reid_distance:
@@ -3241,10 +4108,10 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 
                 matched = True
         
-        # Fall back to spatial matching
+        # 🆕 Fall back to spatial matching with ANTI-SWAP validation
         if not matched and last_body_box and body_detections:
             best_match_idx = None
-            best_iou = 0.2
+            best_iou = 0.35  # Increased from 0.3 to 0.35 for stricter matching
             
             for idx, body_det in enumerate(body_detections):
                 if idx in matched_body_indices:
@@ -3254,6 +4121,21 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 overlap_iou = iou(tuple(body_box), last_body_box)
                 
                 if overlap_iou > best_iou:
+                    # 🆕 Check body signature if available
+                    if person_id in locked_track_signatures and idx < len(body_signatures):
+                        current_sig = body_signatures[idx]
+                        locked_sig = locked_track_signatures[person_id]
+                        
+                        # Width similarity (must be within 30%)
+                        width_diff = abs(locked_sig['avg_width'] - current_sig['width']) / max(locked_sig['avg_width'], current_sig['width'])
+                        if width_diff > 0.30:
+                            continue
+                        
+                        # Height similarity (must be within 30%)
+                        height_diff = abs(locked_sig['avg_height'] - current_sig['height']) / max(locked_sig['avg_height'], current_sig['height'])
+                        if height_diff > 0.30:
+                            continue
+                    
                     best_iou = overlap_iou
                     best_match_idx = idx
             
@@ -3266,7 +4148,6 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 lock_info['last_seen'] = frame_idx
                 lock_info['missed_detections'] = 0
                 
-                # 🎯 SIMPLE: Update presence tracker when body detected
                 if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
                     student_presence_tracker[lock_info['id']]['last_body_seen'] = datetime.now()
                     student_presence_tracker[lock_info['id']]['last_seen'] = datetime.now()
@@ -3282,7 +4163,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             if lock_info['missed_detections'] > 150:
                 to_remove_locks.append(person_id)
     
-    # Remove expired locks
+    # Remove expired locks with ANTI-SWAP cleanup
     for person_id in to_remove_locks:
         lock_info = locked_tracks.get(person_id)
         if lock_info and lock_info.get('type') == 'student':
@@ -3300,7 +4181,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 logger.info(f"🔓 Unlocked track for {person_id} (INVALID ID)")
                 continue
             
-            # 🎯 FIXED: BETTER Manual Status Detection BEFORE calling student_left API
+            # 🎯 FIXED: BETTER Manual Status Detection
             is_manual_status = False
             try:
                 conn = get_db_connection()
@@ -3318,29 +4199,26 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 if attendance_record:
                     current_status = attendance_record['status']
                     current_session = attendance_record.get('session_id')
-                    remarks = attendance_record.get('remarks') or ''  # Ensure string
+                    remarks = attendance_record.get('remarks') or ''
                     
-                    # 🎯 FIXED: Handle None values properly
                     if current_session is None:
                         current_session = ''
                     
                     # 🎯 BETTER MANUAL STATUS DETECTION
-                    manual_excuse_sessions = ['manual_excuse']  # Only for excused students
-                    manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
-                    manual_statuses = ['excused']  # Only truly manual statuses
+                    manual_excuse_sessions = ['manual_excuse']
+                    manual_status_sessions = ['manual_status']
+                    manual_statuses = ['excused']
                     
                     is_manual_status = (
                         current_session in manual_excuse_sessions or
                         current_session in manual_status_sessions or
                         current_status in manual_statuses or
-                        'Manually marked' in str(remarks) or  # FIXED: Convert to string
-                        'Manual status' in str(remarks)       # FIXED: Convert to string
+                        'Manually marked' in str(remarks) or
+                        'Manual status' in str(remarks)
                     )
                     
                     if is_manual_status:
                         logger.info(f"🔒 SKIPPING MISSING: {student_name} has manual status '{current_status}'")
-                        # Don't call student_left API for manual status students
-                        # Just update presence tracker and continue
                         if student_id in student_presence_tracker:
                             student_presence_tracker[student_id]['present'] = False
                             student_presence_tracker[student_id]['last_seen'] = datetime.now()
@@ -3348,7 +4226,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         locked_tracks.pop(person_id, None)
                         locked_track_reid_features.pop(person_id, None)
                         logger.info(f"🔓 Unlocked track for {person_id} (MANUAL STATUS)")
-                        continue  # Skip the API call entirely
+                        continue
                     else:
                         logger.info(f"🔄 AUTO STATUS: {student_name} can be marked as missing")
                 
@@ -3359,24 +4237,22 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 student_presence_tracker[student_id]['present'] = False
                 student_presence_tracker[student_id]['last_seen'] = datetime.now()
             
-            # 🎯 SIMPLE: Call API to mark as missing WITH RETRY LOGIC (only if not manual status)
+            # 🎯 SIMPLE: Call API to mark as missing WITH RETRY LOGIC
             try:
                 import requests
                 import time
                 
-                # 🎯 FIXED: Proper data format
                 api_data = {
-                    'student_id': str(student_id),  # FIXED: Ensure string
-                    'session_id': str(current_session_id)  # FIXED: Ensure string
+                    'student_id': str(student_id),
+                    'session_id': str(current_session_id)
                 }
                 
-                # Try 3 times with better connection handling
                 success = False
                 for attempt in range(3):
                     try:
                         response = requests.post(
-                            'https://192.168.0.100:5000/api/student_left',  # FIXED: Use localhost
-                            json=api_data,  # FIXED: Use json parameter
+                            'https://192.168.0.100:5000/api/student_left',  
+                            json=api_data,
                             timeout=3,
                             headers={'Connection': 'close'}
                         )
@@ -3387,7 +4263,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                             break
                         elif response.status_code == 400:
                             logger.warning(f"⚠️ API returned {response.status_code}: Student already marked as missing")
-                            success = True  # Consider success
+                            success = True
                             break
                         else:
                             logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
@@ -3413,6 +4289,17 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         locked_track_reid_features.pop(person_id, None)
         logger.info(f"🔓 Unlocked track for {person_id}")
     
+    # 🆕 Cleanup tracking history for removed locks
+    for person_id in list(locked_track_history.keys()):
+        if person_id not in locked_tracks:
+            del locked_track_history[person_id]
+    for person_id in list(locked_track_predictions.keys()):
+        if person_id not in locked_tracks:
+            del locked_track_predictions[person_id]
+    for person_id in list(locked_track_signatures.keys()):
+        if person_id not in locked_tracks:
+            del locked_track_signatures[person_id]
+    
     current_tracks = []
     
     for person_id, lock_info in locked_tracks.items():
@@ -3434,6 +4321,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         }
         current_tracks.append(locked_track)
     
+    # Update unlocked tracks
     for tr in list(tracks):
         if tr.get('id') in locked_tracks:
             continue
@@ -3491,7 +4379,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
     ]
     tracks[:] = current_tracks
     
-    # 🎯 ENHANCED DRAWING: BOLDER BOXES and LARGER TEXT
+    # 🎯 ENHANCED DRAWING WITH ANTI-SWAP VISUALIZATION
     
     # Step 5: Draw PENDING CONFIRMATIONS (Orange BODY boxes)
     active_pending = {pid: data for pid, data in pending_confirmations.items() 
@@ -3502,7 +4390,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             body_box = conf_data['body_boxes'][-1]
             bx1, by1, bx2, by2 = body_box
             
-            # 🎯 BOLDER Orange box for confirmation phase (thicker border)
+            # 🎯 BOLDER Orange box for confirmation phase
             cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 165, 255), 2)
             
             display_name = conf_data.get('name', f'Person {person_id}')
@@ -3527,7 +4415,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             cv2.rectangle(frame, (bx1, status_y - status_h - 4), (bx1 + status_w + 8, status_y + 4), (0, 140, 255), -1)
             cv2.putText(frame, status_label, (bx1 + 4, status_y), font, font_scale_status, (255, 255, 255), thickness)
    
-    # Step 6: Draw LOCKED tracks (Green BODY boxes only)
+    # Step 6: Draw LOCKED tracks (Green BODY boxes with protection zones)
     for person_id, lock_info in locked_tracks.items():
         body_box = lock_info.get('body_box')
         if not body_box:
@@ -3535,7 +4423,20 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         
         bx1, by1, bx2, by2 = body_box
         
-        # 🎯 BOLDER Green box for locked body tracking (thicker border)
+        # 🛡️ Draw protection zones (visual feedback)
+        if frame_idx % 30 == 0:  # Draw zones every 30 frames for performance
+            # Get protection zone info
+            if person_id in locked_track_protection_zones:
+                zone_info = locked_track_protection_zones[person_id]
+                
+                # Draw outer exclusion zone (semi-transparent red)
+                if 'outer_zone' in zone_info:
+                    oz_x1, oz_y1, oz_x2, oz_y2 = zone_info['outer_zone']
+                    overlay = frame.copy()
+                    cv2.rectangle(overlay, (oz_x1, oz_y1), (oz_x2, oz_y2), (0, 0, 255), 1)
+                    cv2.addWeighted(overlay, 0.1, frame, 0.9, 0, frame)
+        
+        # 🎯 BOLDER Green box for locked body tracking
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
         
         display_name = lock_info.get('name', f'Person {person_id}')
@@ -3597,14 +4498,14 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         cv2.rectangle(frame, (x1, name_y - name_h - 4), (x1 + name_w + 8, name_y + 4), (0, 0, 0), -1)
         cv2.putText(frame, display_name, (x1 + 4, name_y), font, font_scale_name, (255, 255, 255), thickness)
     
-        # Draw tracking time with thin text
+        # Draw tracking time
         time_label = f"Time: {duration}s"
         (time_w, time_h), _ = cv2.getTextSize(time_label, font, font_scale_info, thickness)
         time_y = y2 + time_h + 10
         cv2.rectangle(frame, (x1, time_y - time_h - 4), (x1 + time_w + 8, time_y + 4), (0, 180, 180), -1)
         cv2.putText(frame, time_label, (x1 + 4, time_y), font, font_scale_info, (255, 255, 255), thickness)
     
-        # Draw confidence for unknown faces with thin text
+        # Draw confidence for unknown faces
         if display_name == "Unknown":
             conf_label = f"Conf: {confidence:.2f}"
             (conf_w, conf_h), _ = cv2.getTextSize(conf_label, font, font_scale_info, thickness)
@@ -3612,16 +4513,14 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             cv2.rectangle(frame, (x1, conf_y - conf_h - 4), (x1 + conf_w + 8, conf_y + 4), (0, 0, 0), -1)
             cv2.putText(frame, conf_label, (x1 + 4, conf_y), font, font_scale_info, (255, 255, 255), thickness)
     
-        # Draw status with thin text
+        # Draw status
         status_label = "SCANNING"
         (status_w, status_h), _ = cv2.getTextSize(status_label, font, font_scale_info, thickness)
         status_y = (conf_y if display_name == "Unknown" else time_y) + status_h + 8
         cv2.rectangle(frame, (x1, status_y - status_h - 4), (x1 + status_w + 8, status_y + 4), (0, 150, 150), -1)
         cv2.putText(frame, status_label, (x1 + 4, status_y), font, font_scale_info, (255, 255, 255), thickness)
 
-
-        logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
-
+    logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
 
 @app.route('/video_feed')
 def video_feed():
@@ -3686,7 +4585,7 @@ def get_current_session_id():
     """Get the current active session ID for face capture"""
     global current_session_id
     if current_session_id is None:
-        logger.warning("⚠️ current_session_id is None - faces won't be saved to database!")
+        logger.debug("ℹ️ current_session_id is None - waiting for session initialization")  # Changed to debug
     else:
         logger.info(f"🔍 get_current_session_id returning: {current_session_id}")
     return current_session_id
@@ -7053,7 +7952,7 @@ def summary_page():
 @app.route('/api/summary_data')
 @login_required
 def get_summary_data():
-    """Get complete summary data for the latest session - FIXED: Handles empty status and missing students"""
+    """Get complete summary data for the latest session - UPDATED with proper photo handling"""
     try:
         user_id = session.get('user_id')
         
@@ -7114,151 +8013,17 @@ def get_summary_data():
             subject_code = session_data.get('subject_code', 'IT99')
             subject_name = session_data.get('subject_name', 'AMBUTT UY')
             room = session_data.get('room', 'Unknown Room')
-            
-            # 🎯 FIXED: Get attendance records and convert empty/missing status to 'absent'
-            cursor.execute("""
-                WITH LatestAttendance AS (
-                    SELECT 
-                        a.student_id,
-                        a.name as student_name,
-                        CASE 
-                            WHEN a.status IS NULL OR a.status = '' OR a.status = 'missing' THEN 'absent'
-                            ELSE a.status
-                        END as status,
-                        a.timestamp,
-                        a.session_id,
-                        a.subject_code,
-                        a.subject_name,
-                        a.room,
-                        s.photo_path,
-                        CASE 
-                            WHEN a.student_id IS NULL OR a.student_id = '' THEN TRUE 
-                            WHEN NOT EXISTS (SELECT 1 FROM students WHERE student_id = a.student_id) THEN TRUE
-                            ELSE FALSE 
-                        END as is_temporary,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY a.student_id 
-                            ORDER BY a.timestamp DESC
-                        ) as rn
-                    FROM attendance a
-                    LEFT JOIN students s ON a.student_id = s.student_id
-                    WHERE a.session_id = %s
-                    AND a.person_type = 'student'
-                )
-                SELECT * FROM LatestAttendance WHERE rn = 1
-                ORDER BY 
-                    CASE 
-                        WHEN status = 'present' THEN 1
-                        WHEN status = 'late' THEN 2
-                        WHEN status = 'excused' THEN 3
-                        WHEN status = 'absent' THEN 4
-                        ELSE 5
-                    END,
-                    student_name
-            """, (session_id,))
-            
-            unique_attendance_records = cursor.fetchall()
-            
-            print(f"🔍 DEBUG Found {len(unique_attendance_records)} UNIQUE attendance records")
-            
-            # Get regular students from the actual section
-            cursor.execute("""
-                SELECT student_id, first_name, last_name, photo_path 
-                FROM students 
-                WHERE section_id = %s AND status = 'active'
-            """, (section_id,))
-            
-            all_section_students = cursor.fetchall()
-            
-            # Get list of students who have attendance records
-            attended_student_ids = set()
-            for r in unique_attendance_records:
-                if r['student_id'] and not r['is_temporary']:
-                    attended_student_ids.add(r['student_id'])
-            
-            print(f"🔍 DEBUG Regular students in section {section_id}: {len(all_section_students)}")
-            print(f"🔍 DEBUG Students with attendance records: {len(attended_student_ids)}")
-            
-            # Create complete student list
-            complete_student_list = []
-            
-            # Add all attendance records (includes converted absent from empty/missing status)
-            for record in unique_attendance_records:
-                student_id = record['student_id']
-                
-                # Handle temporary students (manually added)
-                if record['is_temporary']:
-                    if not student_id and 'ID:' in record['student_name']:
-                        try:
-                            student_id = record['student_name'].split('ID:')[-1].split(')')[0].strip()
-                        except:
-                            student_id = 'temp'
-                    
-                    photo_path = f"/static/images/student_photos/{student_id}.jpg" if student_id and student_id != 'temp' else '/static/images/default-avatar.jpg'
-                else:
-                    photo_path = record['photo_path'] or f"/static/images/student_photos/{student_id}.jpg"
-                
-                complete_student_list.append({
-                    'student_id': student_id or 'temp',
-                    'name': record['student_name'],
-                    'status': record['status'],  # Already converted to 'absent' if it was empty/missing
-                    'timestamp': record['timestamp'],
-                    'photo': photo_path or '/static/images/default-avatar.jpg',
-                    'is_temporary': record['is_temporary'],
-                    'subject_code': record['subject_code'] or subject_code,
-                    'subject_name': record['subject_name'] or subject_name,
-                    'room': record['room'] or room
-                })
-                
-                print(f"🔍 DEBUG Added from records: {student_id} - Status: {record['status']}")
-            
-            # Add students who have NO attendance record at all (never detected)
-            absent_count_added = 0
-            for student in all_section_students:
-                student_id = student['student_id']
-                
-                # Only add if student has NO attendance record for this session
-                if student_id not in attended_student_ids:
-                    complete_student_list.append({
-                        'student_id': student_id,
-                        'name': f"{student['first_name']} {student['last_name']}",
-                        'status': 'absent',
-                        'timestamp': ended_at,
-                        'photo': student['photo_path'] or f"/static/images/student_photos/{student_id}.jpg",
-                        'is_temporary': False,
-                        'subject_code': subject_code,
-                        'subject_name': subject_name,
-                        'room': room
-                    })
-                    absent_count_added += 1
-                    print(f"🔍 DEBUG Added never-detected student as absent: {student_id}")
-            
-            print(f"🔍 DEBUG Added {absent_count_added} never-detected students as absent")
-            
-            # Calculate counts from FINAL list
-            present_count = len([s for s in complete_student_list if s['status'] == 'present'])
-            late_count = len([s for s in complete_student_list if s['status'] == 'late'])
-            absent_count = len([s for s in complete_student_list if s['status'] == 'absent'])
-            excused_count = len([s for s in complete_student_list if s['status'] == 'excused'])
-            total_students = len(complete_student_list)
-            
-            # Count temporary students for debugging
-            temp_count = len([s for s in complete_student_list if s.get('is_temporary')])
-            print(f"🔍 DEBUG FINAL Student breakdown: {temp_count} temporary, {total_students - temp_count} regular")
-            print(f"🔍 DEBUG FINAL Status breakdown: Present: {present_count}, Late: {late_count}, Absent: {absent_count}, Excused: {excused_count}")
-            
-            # Format course display
             class_name = session_data['class_name']
-            program_display = "BSIT"
             
-            if 'Information Technology' in class_name:
+            # Get program and section display from class_name
+            program_display = "BSIT"
+            if 'Associate in Computer Technology' in class_name:
+                program_display = 'ACT'
+            elif 'Information Technology' in class_name:
                 program_display = 'BSIT'
             elif 'Computer Science' in class_name:
                 program_display = 'BSCS'
-            elif 'Associate in Computer Technology' in class_name:
-                program_display = 'ACT'
             
-            # Extract section
             section_display = "4C"
             if '4th Year' in class_name:
                 section_part = class_name.split('4th Year')[-1].strip()
@@ -7269,7 +8034,209 @@ def get_summary_data():
                 if section_part:
                     section_display = f"2{section_part[0]}"
             
+            # ✅ FIXED: PROPER QUERY WITH PHOTO_PATH HANDLING
+            cursor.execute("""
+                WITH attendance_records AS (
+                    -- Get attendance records with status cleanup
+                    SELECT 
+                        a.student_id,
+                        a.name as student_name,
+                        CASE 
+                            WHEN a.status IS NULL OR a.status = '' OR a.status = 'missing' THEN 'absent'
+                            ELSE a.status
+                        END as status,
+                        a.timestamp,
+                        a.subject_code,
+                        a.subject_name,
+                        a.room,
+                        a.remarks,
+                        CASE 
+                            WHEN a.student_id IS NULL OR a.student_id = '' THEN TRUE
+                            ELSE FALSE
+                        END as is_temporary
+                    FROM attendance a
+                    WHERE a.session_id = %s
+                    AND a.person_type = 'student'
+                ),
+                all_students AS (
+                    -- Regular students from section (with their attendance or marked absent)
+                    SELECT 
+                        s.student_id,
+                        CONCAT(s.first_name, ' ', s.last_name) as student_name,
+                        COALESCE(ar.status, 'absent') as status,
+                        COALESCE(ar.timestamp, %s) as attendance_timestamp,
+                        FALSE as is_temporary,
+                        s.photo_path,
+                        COALESCE(ar.subject_code, %s) as subject_code,
+                        COALESCE(ar.subject_name, %s) as subject_name,
+                        COALESCE(ar.room, %s) as room,
+                        ar.remarks
+                    FROM students s
+                    LEFT JOIN attendance_records ar ON s.student_id = ar.student_id AND ar.is_temporary = FALSE
+                    WHERE s.section_id = %s AND s.status = 'active'
+                    
+                    UNION ALL
+                    
+                    -- Temporary students (manually added)
+                    SELECT 
+                        CASE 
+                            WHEN ar.student_name LIKE '%(ID: %' THEN 
+                                TRIM(SUBSTRING(
+                                    ar.student_name, 
+                                    LOCATE('(ID: ', ar.student_name) + 5,
+                                    LOCATE(')', ar.student_name, LOCATE('(ID: ', ar.student_name)) - (LOCATE('(ID: ', ar.student_name) + 5)
+                                ))
+                            ELSE CONCAT('TEMP-', LPAD(ROW_NUMBER() OVER (), 4, '0'))
+                        END as student_id,
+                        CASE 
+                            WHEN ar.student_name LIKE '%(ID: %' THEN 
+                                TRIM(SUBSTRING(ar.student_name, 1, LOCATE('(ID: ', ar.student_name) - 1))
+                            ELSE ar.student_name 
+                        END as student_name,
+                        ar.status,
+                        ar.timestamp as attendance_timestamp,
+                        TRUE as is_temporary,
+                        NULL as photo_path,
+                        COALESCE(ar.subject_code, %s) as subject_code,
+                        COALESCE(ar.subject_name, %s) as subject_name,
+                        COALESCE(ar.room, %s) as room,
+                        ar.remarks
+                    FROM attendance_records ar
+                    WHERE ar.is_temporary = TRUE
+                )
+                
+                SELECT 
+                    student_id,
+                    student_name,
+                    status,
+                    attendance_timestamp,
+                    is_temporary,
+                    photo_path,
+                    subject_code,
+                    subject_name,
+                    room,
+                    remarks
+                FROM all_students
+                ORDER BY student_name ASC
+            """, (
+                session_id,
+                ended_at,
+                subject_code, subject_name, room,
+                section_id,
+                subject_code, subject_name, room
+            ))
+            
+            all_student_records = cursor.fetchall()
+            
+            print(f"🔍 DEBUG SUMMARY: Found {len(all_student_records)} total students (regular + temporary)")
+            
+            # Convert to proper format with photo handling
+            complete_student_list = []
+            for record in all_student_records:
+                # Handle photo path
+                if record['is_temporary']:
+                    # Temporary students get default avatar
+                    photo_path = '/static/images/default-avatar.jpg'
+                else:
+                    # Regular students - get photo_path from database
+                    photo_path = record['photo_path']
+                    
+                    # Fix photo path based on your database entry
+                    if not photo_path:
+                        # No photo path in database, use default
+                        photo_path = f"/static/images/student_photos/{record['student_id']}.jpg"
+                    else:
+                        # Clean and fix the photo path
+                        photo_path = photo_path.strip()
+                        
+                        # Fix common path issues
+                        if photo_path.startswith('static/images/'):
+                            # Has 'static/images/' without leading slash
+                            photo_path = '/' + photo_path
+                        elif photo_path.startswith('images/'):
+                            # Has 'images/' without static
+                            photo_path = '/static/' + photo_path
+                        elif photo_path.startswith('student_photos/'):
+                            # Has only 'student_photos/'
+                            photo_path = f"/static/images/{photo_path}"
+                        elif '/' not in photo_path and '.' in photo_path:
+                            # Just a filename like "2022-01376.jpg"
+                            photo_path = f"/static/images/student_photos/{photo_path}"
+                        elif not photo_path.startswith('/') and not photo_path.startswith('http'):
+                            # Some other relative path, prepend /static
+                            photo_path = f"/static/{photo_path}"
+                
+                # Handle timestamp
+                timestamp = record['attendance_timestamp']
+                if record['status'] == 'absent' and not timestamp:
+                    display_timestamp = ended_at
+                else:
+                    display_timestamp = timestamp or ended_at
+                
+                # Get clean student ID for temporary students
+                student_id = record['student_id']
+                if record['is_temporary'] and (not student_id or student_id.startswith('TEMP')):
+                    # Create a temporary ID based on name hash
+                    import hashlib
+                    name_hash = hashlib.md5(record['student_name'].encode()).hexdigest()[:8]
+                    student_id = f"TEMP-{name_hash}"
+                
+                # Debug photo info
+                print(f"🔍 DEBUG Photo for {student_id}: {photo_path}")
+                
+                complete_student_list.append({
+                    'student_id': student_id,
+                    'name': record['student_name'],
+                    'status': record['status'],
+                    'timestamp': display_timestamp,
+                    'photo': photo_path or '/static/images/default-avatar.jpg',
+                    'is_temporary': bool(record['is_temporary']),
+                    'subject_code': record['subject_code'] or subject_code,
+                    'subject_name': record['subject_name'] or subject_name,
+                    'room': record['room'] or room,
+                    'remarks': record.get('remarks', '')
+                })
+            
+            # Calculate counts
+            present_count = len([s for s in complete_student_list if s['status'] == 'present'])
+            late_count = len([s for s in complete_student_list if s['status'] == 'late'])
+            absent_count = len([s for s in complete_student_list if s['status'] == 'absent'])
+            excused_count = len([s for s in complete_student_list if s['status'] == 'excused'])
+            total_students = len(complete_student_list)
+            
+            # Count temporary vs regular
+            temp_count = len([s for s in complete_student_list if s['is_temporary']])
+            regular_count = total_students - temp_count
+            
+            print(f"🔍 DEBUG FINAL SUMMARY BREAKDOWN:")
+            print(f"   - Total: {total_students}")
+            print(f"   - Regular: {regular_count}")
+            print(f"   - Temporary: {temp_count}")
+            print(f"   - Present: {present_count}")
+            print(f"   - Late: {late_count}")
+            print(f"   - Absent: {absent_count}")
+            print(f"   - Excused: {excused_count}")
+            
+            # Debug first few students
+            print(f"🔍 DEBUG First 10 Students (Alphabetical):")
+            for i, student in enumerate(complete_student_list[:10]):
+                print(f"   {i+1}. {student['name']} ({student['student_id']}) - {student['status']} - Photo: {student['photo']}")
+            
+            # Format course display
             course_section_display = f"{program_display}-{section_display}"
+            
+            # Format user photo
+            user_photo = user['photo_path'] or '/static/images/default-avatar.jpg'
+            if user_photo:
+                user_photo = user_photo.strip()
+                if user_photo.startswith('static/images/'):
+                    user_photo = '/' + user_photo
+                elif user_photo.startswith('images/'):
+                    user_photo = '/static/' + user_photo
+                elif '/' not in user_photo and '.' in user_photo:
+                    user_photo = f"/static/images/admin_photos/{user_photo}"
+                elif not user_photo.startswith('/') and not user_photo.startswith('http'):
+                    user_photo = f"/static/{user_photo}"
             
             summary_data = {
                 'success': True,
@@ -7287,13 +8254,15 @@ def get_summary_data():
                     'excused_count': excused_count,
                     'subject_code': subject_code,
                     'subject_name': subject_name,
-                    'room': room
+                    'room': room,
+                    'regular_students': regular_count,
+                    'temporary_students': temp_count
                 },
                 'user': {
                     'name': f"{user['first_name']} {user['last_name']}",
                     'role': user['role'],
                     'username': user['admin_id'],
-                    'photo_path': user['photo_path'] or '/static/images/default-avatar.jpg'
+                    'photo_path': user_photo
                 },
                 'subject': {
                     'code': subject_code,
@@ -7304,7 +8273,8 @@ def get_summary_data():
                 'attendance': complete_student_list
             }
             
-            print(f"✅ FINAL SUMMARY: {total_students} total students, {present_count} present, {late_count} late, {absent_count} absent, {excused_count} excused")
+            print(f"✅ FINAL SUMMARY: {total_students} total students ({regular_count} regular, {temp_count} temporary)")
+            print(f"   Present: {present_count}, Late: {late_count}, Absent: {absent_count}, Excused: {excused_count}")
             
             return jsonify(summary_data)
             
@@ -11040,15 +12010,27 @@ def initialize_session():
         
         logger.info(f"📦 Received data: {data}")
         
+        # IMPORTANT FIX: Handle both schedule_id and subject_id
         schedule_id = data.get('schedule_id')
-        if not schedule_id:
-            return jsonify({'success': False, 'message': 'Missing schedule_id'}), 400
+        subject_id = data.get('subject_id')
+        
+        if not schedule_id and not subject_id:
+            return jsonify({'success': False, 'message': 'Missing schedule_id or subject_id'}), 400
+        
+        logger.info(f"🔍 Received IDs - schedule_id: {schedule_id}, subject_id: {subject_id}")
         
         # ✅ GENERATE UNIQUE SESSION ID
         import uuid
-        unique_session_id = f"{schedule_id}_{uuid.uuid4().hex[:8]}_{int(datetime.now().timestamp())}"
-        current_session_id = unique_session_id
+        import datetime as dt
         
+        if schedule_id:
+            unique_session_id = f"sch_{schedule_id}_{uuid.uuid4().hex[:8]}_{int(dt.datetime.now().timestamp())}"
+        else:
+            unique_session_id = f"sub_{subject_id}_{uuid.uuid4().hex[:8]}_{int(dt.datetime.now().timestamp())}"
+        
+        current_session_id = unique_session_id
+
+        initialize_faces_for_session()
         # Handle duration and threshold
         try:
             session_total_duration_seconds = int(data.get('duration', 3600))
@@ -11058,7 +12040,7 @@ def initialize_session():
             session_threshold_seconds = 900
         
         # ✅ SET SESSION START TIME
-        session_start_time = datetime.now()
+        session_start_time = dt.datetime.now()
         
         logger.info(f"🎯 Generated unique session ID: {unique_session_id}")
         logger.info(f"✅ SESSION PARAMS - Duration: {session_total_duration_seconds}s, Threshold: {session_threshold_seconds}s")
@@ -11175,97 +12157,155 @@ def initialize_session():
             except Exception as e:
                 logger.warning(f"⚠️ Error finding section: {e}")
         
-        # ✅ GET SUBJECT AND ROOM INFO FROM DATABASE - FIXED TO USE CORRECT SCHEDULE_ID
+        # ✅ GET SUBJECT AND ROOM INFO FROM DATABASE - IMPROVED LOGIC
         subject_code = 'Unknown Subject'
         subject_name = 'Unknown Subject'
         room = 'Unknown Room'
         class_type = 'lecture'
         subject_curriculum_year = None
         day_of_week = 'Unknown Day'
+        actual_schedule_id = None
+        db_subject_id = None
         
         try:
-            # First, try to find the schedule by schedule_id (from frontend)
-            logger.info(f"🔍 Looking for schedule_id in class_schedules: {schedule_id}")
-            
-            cursor.execute("""
-                SELECT cs.schedule_id, cs.subject_id, cs.room, cs.day_of_week, cs.class_type,
-                       s.subject_code, s.subject_name, c.curriculum_year
-                FROM class_schedules cs
-                JOIN subjects s ON cs.subject_id = s.subject_id
-                LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
-                WHERE cs.schedule_id = %s AND cs.status = 'active'
-            """, (schedule_id,))
-            
-            schedule_info = cursor.fetchone()
-            
-            if schedule_info:
-                logger.info(f"✅ Found schedule in database: schedule_id={schedule_info['schedule_id']}")
-                subject_code = schedule_info.get('subject_code', 'Unknown Subject')
-                subject_name = schedule_info.get('subject_name', 'Unknown Subject')
-                room = schedule_info.get('room', 'Unknown Room')
-                class_type = schedule_info.get('class_type', 'lecture')
-                day_of_week = schedule_info.get('day_of_week', 'Unknown Day')
-                subject_curriculum_year = schedule_info.get('curriculum_year')
+            # FIRST: Check if schedule_id exists in class_schedules
+            if schedule_id:
+                logger.info(f"🔍 Looking for schedule_id in class_schedules: {schedule_id}")
                 
-                logger.info(f"📚 Database values - Subject: {subject_code}, Room: {room}, Day: {day_of_week}")
-            else:
-                logger.warning(f"⚠️ No schedule found with schedule_id={schedule_id} in class_schedules table")
-                logger.info(f"🔍 Checking subjects table for subject_id={schedule_id}...")
-                
-                # Maybe the frontend is passing subject_id instead of schedule_id?
-                # Try to find subject by subject_id
                 cursor.execute("""
-                    SELECT s.subject_code, s.subject_name, s.class_type, c.curriculum_year
+                    SELECT cs.schedule_id, cs.subject_id, cs.room, cs.day_of_week, cs.class_type,
+                           s.subject_code, s.subject_name, c.curriculum_year,
+                           cs.section_id, cs.start_time, cs.end_time
+                    FROM class_schedules cs
+                    JOIN subjects s ON cs.subject_id = s.subject_id
+                    LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
+                    WHERE cs.schedule_id = %s AND cs.status = 'active'
+                """, (schedule_id,))
+                
+                schedule_info = cursor.fetchone()
+                
+                if schedule_info:
+                    logger.info(f"✅ Found schedule in database: schedule_id={schedule_info['schedule_id']}")
+                    actual_schedule_id = schedule_info['schedule_id']
+                    db_subject_id = schedule_info['subject_id']
+                    subject_code = schedule_info.get('subject_code', 'Unknown Subject')
+                    subject_name = schedule_info.get('subject_name', 'Unknown Subject')
+                    room = schedule_info.get('room', 'Unknown Room')
+                    class_type = schedule_info.get('class_type', 'lecture')
+                    day_of_week = schedule_info.get('day_of_week', 'Unknown Day')
+                    subject_curriculum_year = schedule_info.get('curriculum_year')
+                    
+                    # Get current day and check if it matches the schedule
+                    try:
+                        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                        current_day_index = dt.datetime.now().weekday()
+                        current_day = day_names[current_day_index]
+                        
+                        # If schedule day doesn't match current day, log a warning
+                        if day_of_week != current_day and current_day != 'Sunday':
+                            logger.warning(f"⚠️ Schedule is for {day_of_week}, but today is {current_day}")
+                    except Exception as day_error:
+                        logger.warning(f"⚠️ Could not determine day match: {day_error}")
+                    
+                    logger.info(f"📚 Database values - Subject: {subject_code}, Room: {room}, Day: {day_of_week}")
+                    
+                    # Use this schedule's section_id if not already found
+                    if schedule_info.get('section_id') and section_id is None:
+                        section_id = schedule_info['section_id']
+                        logger.info(f"📌 Using section_id from schedule: {section_id}")
+                else:
+                    logger.warning(f"⚠️ No schedule found with schedule_id={schedule_id}")
+                    # Check if this might be a subject_id instead
+                    if schedule_id and schedule_id.isdigit():
+                        logger.info(f"🔄 schedule_id {schedule_id} not found in class_schedules, checking if it's a subject_id...")
+                        subject_id = schedule_id
+            
+            # SECOND: If we have subject_id or schedule_id was actually a subject_id
+            if subject_id or (schedule_id and not actual_schedule_id and schedule_id.isdigit()):
+                subject_id_to_check = subject_id if subject_id else schedule_id
+                
+                logger.info(f"🔍 Looking for subject_id in subjects table: {subject_id_to_check}")
+                
+                cursor.execute("""
+                    SELECT s.subject_id, s.subject_code, s.subject_name, s.class_type, 
+                           c.curriculum_year, s.curriculum_id
                     FROM subjects s
                     LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
                     WHERE s.subject_id = %s AND s.status = 'active'
-                """, (schedule_id,))
+                """, (subject_id_to_check,))
                 
                 subject_info = cursor.fetchone()
+                
                 if subject_info:
-                    logger.info(f"✅ Found subject by subject_id: {schedule_id}")
+                    logger.info(f"✅ Found subject by ID: {subject_info['subject_id']}")
+                    db_subject_id = subject_info['subject_id']
                     subject_code = subject_info.get('subject_code', 'Unknown Subject')
                     subject_name = subject_info.get('subject_name', 'Unknown Subject')
                     class_type = subject_info.get('class_type', 'lecture')
                     subject_curriculum_year = subject_info.get('curriculum_year')
                     
-                    # Try to find a room for this subject from class_schedules
+                    # Try to find the most recent active schedule for this subject
                     cursor.execute("""
-                        SELECT room, day_of_week 
-                        FROM class_schedules 
-                        WHERE subject_id = %s AND status = 'active' 
-                        ORDER BY schedule_id DESC 
+                        SELECT cs.schedule_id, cs.room, cs.day_of_week, cs.section_id,
+                               cs.start_time, cs.end_time
+                        FROM class_schedules cs
+                        WHERE cs.subject_id = %s AND cs.status = 'active'
+                        ORDER BY cs.schedule_id DESC 
                         LIMIT 1
-                    """, (schedule_id,))
+                    """, (db_subject_id,))
                     
-                    room_info = cursor.fetchone()
-                    if room_info:
-                        room = room_info.get('room', 'Unknown Room')
-                        day_of_week = room_info.get('day_of_week', 'Unknown Day')
-                    
-                    logger.info(f"📚 Subject info: {subject_code} - {subject_name}, Room: {room}")
+                    schedule_info = cursor.fetchone()
+                    if schedule_info:
+                        actual_schedule_id = schedule_info['schedule_id']
+                        room = schedule_info.get('room', 'Unknown Room')
+                        day_of_week = schedule_info.get('day_of_week', 'Unknown Day')
+                        
+                        # Use this schedule's section_id if not already found
+                        if schedule_info.get('section_id') and section_id is None:
+                            section_id = schedule_info['section_id']
+                            logger.info(f"📌 Using section_id from subject's schedule: {section_id}")
+                        
+                        logger.info(f"📚 Found schedule for subject: Room={room}, Day={day_of_week}, Schedule ID={actual_schedule_id}")
+                    else:
+                        logger.warning("⚠️ No active schedule found for this subject")
+                        
+                        # Try to find ANY schedule for this subject
+                        cursor.execute("""
+                            SELECT room, day_of_week, section_id, schedule_id
+                            FROM class_schedules 
+                            WHERE subject_id = %s
+                            ORDER BY schedule_id DESC 
+                            LIMIT 1
+                        """, (db_subject_id,))
+                        
+                        any_schedule = cursor.fetchone()
+                        if any_schedule:
+                            actual_schedule_id = any_schedule.get('schedule_id')
+                            room = any_schedule.get('room', 'Unknown Room')
+                            day_of_week = any_schedule.get('day_of_week', 'Unknown Day')
+                            logger.info(f"📚 Using last known schedule: Room={room}, Schedule ID={actual_schedule_id}")
                 else:
-                    logger.warning(f"⚠️ No subject found with subject_id={schedule_id} either")
-                    
-                    # Try to extract info from URL parameters as last resort
-                    subject_code = data.get('subject', 'Unknown Subject')
-                    subject_name = data.get('subject', 'Unknown Subject')
-                    
-                    logger.info(f"🔄 Using URL parameter values: subject={subject_code}")
+                    logger.warning(f"⚠️ No subject found with ID={subject_id_to_check}")
             
-            # If day_of_week is still unknown, get current day
+            # THIRD: If still no info, extract from URL parameters
+            if subject_code == 'Unknown Subject' and data.get('subject'):
+                subject_code = data.get('subject', 'Unknown Subject')
+                subject_name = data.get('subject', 'Unknown Subject')
+                logger.info(f"🔄 Using URL parameter for subject: {subject_code}")
+            
+            # FINAL: Get current day if still unknown
             if day_of_week == 'Unknown Day':
                 try:
-                    day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-                    current_day_index = datetime.now().weekday()
+                    day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                    current_day_index = dt.datetime.now().weekday()
                     day_of_week = day_names[current_day_index]
                     logger.info(f"📅 Using current system day: {day_of_week}")
                 except Exception as day_error:
                     logger.warning(f"⚠️ Could not determine day of week: {day_error}")
                     
         except Exception as e:
-            logger.error(f"❌ Error fetching subject info: {e}", exc_info=True)
-            # Final fallback
+            logger.error(f"❌ Error fetching subject/schedule info: {e}", exc_info=True)
+            # Fallback to URL parameters
             subject_code = data.get('subject', 'Unknown Subject')
             subject_name = data.get('subject', 'Unknown Subject')
         
@@ -11326,13 +12366,15 @@ def initialize_session():
             logger.warning(f"⚠️ Could not fetch faculty info: {e}")
         
         # ✅ SAVE SESSION TO DATABASE
+        original_schedule_id = actual_schedule_id if actual_schedule_id else schedule_id
+        
         try:
             # First, try to get the next session instance number
             cursor.execute("""
                 SELECT COALESCE(MAX(session_instance), 0) + 1 as next_instance 
                 FROM attendance_sessions 
                 WHERE original_schedule_id = %s
-            """, (schedule_id,))
+            """, (original_schedule_id,))
             instance_result = cursor.fetchone()
             next_instance = instance_result['next_instance'] if instance_result else 1
             
@@ -11343,8 +12385,8 @@ def initialize_session():
                  late_threshold_minutes, total_duration_minutes, 
                  threshold_seconds_total, session_duration_seconds_total,
                  created_by, status, section_id,
-                 original_schedule_id, session_instance)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)
+                 original_schedule_id, session_instance, subject_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s, %s)
             """, (
                 unique_session_id,
                 f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
@@ -11358,11 +12400,12 @@ def initialize_session():
                 session_total_duration_seconds,
                 data.get('instructor', 'System'),
                 section_id,
-                schedule_id,
-                next_instance
+                original_schedule_id,
+                next_instance,
+                db_subject_id
             ))
             logger.info(f"💾 Session saved to database with unique ID: {unique_session_id}, instance: {next_instance}")
-            logger.info(f"⏰ STORED TIMING: Duration={session_total_duration_seconds}s, Threshold={session_threshold_seconds}s")
+            logger.info(f"📋 Database fields - Schedule ID: {original_schedule_id}, Subject ID: {db_subject_id}, Section ID: {section_id}")
             
         except Exception as e:
             logger.error(f"❌ Could not save session to database: {e}")
@@ -11373,8 +12416,8 @@ def initialize_session():
                     (session_id, class_name, subject_code, subject_name, room, started_at, 
                      late_threshold_minutes, total_duration_minutes, 
                      threshold_seconds_total, session_duration_seconds_total,
-                     created_by, status, section_id, original_schedule_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s)
+                     created_by, status, section_id, original_schedule_id, subject_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)
                 """, (
                     unique_session_id,
                     f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
@@ -11388,7 +12431,8 @@ def initialize_session():
                     session_total_duration_seconds,
                     data.get('instructor', 'System'),
                     section_id,
-                    schedule_id
+                    original_schedule_id,
+                    db_subject_id
                 ))
                 logger.info(f"💾 Session saved without instance number: {unique_session_id}")
             except Exception as retry_error:
@@ -11459,20 +12503,21 @@ def initialize_session():
         
         subject_display = format_subject_display(subject_code, class_type)
         
-        # ✅ FORMAT HEADER DISPLAY TEXT - NOW INCLUDES DAY OF WEEK (from system, not DB)
-        def format_header_display(subject_code, room, day_of_week):
+        # ✅ FORMAT HEADER DISPLAY TEXT
+        def format_header_display(subject_code, room):
             """Format header display: Subject Code - Room (Day)"""
             # If room is still 'Unknown Room', use a more generic display
             if room == 'Unknown Room':
-                return f"{subject_code} ({day_of_week})"
-            return f"{subject_code} - {room} ({day_of_week})"
+                return f"{subject_code}"
+            return f"{subject_code} - {room}"
         
-        header_display = format_header_display(subject_code, room, day_of_week)
+        header_display = format_header_display(subject_code, room)
         
         # ✅ STORE SESSION DATA - USE UNIQUE SESSION ID
         session_data = {
             'session_id': unique_session_id,
-            'schedule_id': schedule_id,
+            'schedule_id': original_schedule_id,
+            'subject_id': db_subject_id,
             'instructor': faculty_name,
             'subject_code': subject_code,
             'subject_name': subject_name,
@@ -11517,6 +12562,7 @@ def initialize_session():
         logger.info(f"📅 Day: {day_of_week}")
         logger.info(f"📚 Class Type: {class_type}")
         logger.info(f"🔗 Section ID: {section_id}")
+        logger.info(f"🔗 Subject ID: {db_subject_id}")
         logger.info(f"🎯 Unique Session ID returned: {unique_session_id}")
         logger.info(f"📋 Header Display: {header_display}")
         
@@ -11550,42 +12596,6 @@ def initialize_session():
                 connection.close()
             except:
                 pass
-
-@app.route('/api/debug_schedule/<schedule_id>', methods=['GET'])
-def debug_schedule(schedule_id):
-    """Debug endpoint to check schedule info in database"""
-    try:
-        connection = get_db_connection()
-        cursor = connection.cursor(dictionary=True)
-        
-        # Check class_schedules
-        cursor.execute("SELECT * FROM class_schedules WHERE schedule_id = %s", (schedule_id,))
-        schedule = cursor.fetchone()
-        
-        # Check attendance_sessions
-        cursor.execute("SELECT * FROM attendance_sessions WHERE original_schedule_id = %s ORDER BY started_at DESC", (schedule_id,))
-        sessions = cursor.fetchall()
-        
-        # Check subjects table
-        if schedule and schedule.get('subject_id'):
-            cursor.execute("SELECT * FROM subjects WHERE subject_id = %s", (schedule['subject_id'],))
-            subject = cursor.fetchone()
-        else:
-            subject = None
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({
-            'schedule_found': schedule is not None,
-            'schedule': schedule,
-            'subject': subject,
-            'sessions_count': len(sessions),
-            'sessions': sessions[:5]  # First 5 sessions
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/force_start_session', methods=['GET'])
 def force_start_session():
