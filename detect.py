@@ -7,6 +7,8 @@ import gc
 import cv2
 import time
 import dlib
+import queue
+from sympy import im
 import torch
 import numpy as np
 import datetime
@@ -46,7 +48,59 @@ from supervision import ByteTrack
 from supervision.tracker.byte_tracker.core import ByteTrack
 import supervision as sv
 from typing import List, Dict, Any, Tuple
+import subprocess
 
+
+os.environ['PATH'] = r'C:\libjpeg-turbo-gcc64\bin;' + os.environ['PATH']
+
+# Try to import turbojpeg for faster encoding
+USE_TURBOJPEG = False
+jpeg = None
+
+try:
+    from turbojpeg import TurboJPEG
+    print("✅ PyTurboJPEG imported successfully")
+    
+    # Use the correct DLL - libturbojpeg.dll
+    dll_path = r'C:\libjpeg-turbo-gcc64\bin\libturbojpeg.dll'
+    
+    if os.path.exists(dll_path):
+        print(f"✅ Found: {dll_path}")
+        print(f"   Size: {os.path.getsize(dll_path):,} bytes")
+        
+        try:
+            # Load TurboJPEG with the DLL
+            jpeg = TurboJPEG(dll_path)
+            USE_TURBOJPEG = True
+            
+            # Quick test to confirm it works
+            import numpy as np
+            test_img = np.zeros((100, 100, 3), dtype=np.uint8)
+            test_img[:, :, 0] = 255  # Red image
+            
+            encoded = jpeg.encode(test_img, quality=85)
+            print(f"✅ TurboJPEG test passed! Encoded {len(encoded):,} bytes")
+            
+        except Exception as e:
+            print(f"❌ Error loading TurboJPEG: {e}")
+            print("Trying auto-detect as fallback...")
+            
+            try:
+                jpeg = TurboJPEG()  # Auto-detect
+                USE_TURBOJPEG = True
+                print("✅ TurboJPEG auto-detected successfully!")
+            except Exception as e2:
+                print(f"❌ Auto-detect also failed: {e2}")
+    else:
+        print(f"❌ DLL not found at: {dll_path}")
+        
+except ImportError as e:
+    print(f"❌ PyTurboJPEG not installed: {e}")
+    print("Install with: pip install PyTurboJPEG")
+except Exception as e:
+    print(f"❌ Unexpected error: {e}")
+
+print(f"\nTurboJPEG status: {'ENABLED ✅' if USE_TURBOJPEG else 'DISABLED ⚠️ (using OpenCV)'}")
 
 
 # =========================
@@ -59,6 +113,8 @@ app.static_folder = 'static'
 CORS(app)
 
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback-secret-key-change-in-production')
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # =========================
 # OPTIMIZED CONFIG FOR FIXED CODE
@@ -104,18 +160,30 @@ if torch.cuda.is_available():
     torch.cuda.empty_cache()  # Clear GPU cache after each YOLO call
 
 face_scan_start_time = None
-
+pose_attempts = {}
 student_presence_tracker = {}  # Tracks when students are present/missing
 current_session_id = None  
 DEBUG_MODE = False
-# Camera test stream variables
-test_camera_lock = threading.Lock()
+
+# Global variables
 test_camera_cap = None
 test_camera_active = False
-test_frame = None
+test_camera_lock = threading.Lock()
+test_frame_queue = queue.Queue(maxsize=3)  # Keep only latest frames
+test_encoded_queue = queue.Queue(maxsize=10)  # Pre-encoded frames
+test_camera_thread = None
+test_encoder_thread = None
+
+# Global variables for fast streaming
+stream_buffer = None
+stream_buffer_lock = threading.Lock()
+last_stream_time = 0
+
+KNOWN_FACE_ENCODINGS_NORMALIZED = False
 # Initialize FaceAnalysis with SCRFD
 face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 face_analysis.prepare(ctx_id=0, det_size=(320, 320))  
+
 
 FRAME_BUFFER = []
 ACTIVE_FACE_TRACKS = {}
@@ -142,7 +210,7 @@ student_status = {}  # {student_id: 'absent' | 'present' | 'late'}
 current_session_students = []  # List of student IDs for current class
 
 CONFIRMATION_FRAMES_REQUIRED = 2  # 2 consecutive frames = ~0.067 seconds
-CONFIRMATION_SIMILARITY_THRESHOLD = 0.50  # Balanced threshold (not too strict, not too loose)
+CONFIRMATION_SIMILARITY_THRESHOLD = 0.60  # Balanced threshold (not too strict, not too loose)
 BODY_MATCH_IOU_THRESHOLD = 0.1
 FACE_TO_BODY_VERTICAL_RATIO = 0.7  # Face should be in upper 60% of body
 REID_DISTANCE_THRESHOLD = 0.15
@@ -416,7 +484,7 @@ try:
     face_analysis.prepare(
         ctx_id=ctx_id,
         det_size=FACE_DET_SIZE,  #   Uses config (256, 256) instead of (320, 320)
-        det_thresh=0.65  #   Higher threshold for fewer false positives
+        det_thresh=0.6  #   Higher threshold for fewer false positives
     )
 
     if DEBUG_MODE: 
@@ -1146,7 +1214,7 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
         return False
 
 def parse_face_encoding(face_encoding):
-    """Parse face encoding from TEXT field"""
+    """Parse face encoding from TEXT field and normalize it"""
     if face_encoding is None:
         return None
     
@@ -1164,12 +1232,37 @@ def parse_face_encoding(face_encoding):
                 parts = encoding_str.split()
             
             encoding = np.array([float(x) for x in parts], dtype=np.float32)
+            
+            # 🆕 CRITICAL: Normalize the encoding
+            norm = np.linalg.norm(encoding)
+            if norm > 0:
+                encoding = encoding / norm
+            else:
+                logger.warning("Zero norm encoding found in database")
+                return None
+            
             return encoding
             
         elif isinstance(face_encoding, (bytes, bytearray)):
-            return np.frombuffer(face_encoding, dtype=np.float32)
+            encoding = np.frombuffer(face_encoding, dtype=np.float32)
+            # Normalize
+            norm = np.linalg.norm(encoding)
+            if norm > 0:
+                encoding = encoding / norm
+            else:
+                logger.warning("Zero norm encoding found in database (bytes)")
+                return None
+            return encoding
         elif isinstance(face_encoding, list):
-            return np.array(face_encoding, dtype=np.float32)
+            encoding = np.array(face_encoding, dtype=np.float32)
+            # Normalize
+            norm = np.linalg.norm(encoding)
+            if norm > 0:
+                encoding = encoding / norm
+            else:
+                logger.warning("Zero norm encoding found in database (list)")
+                return None
+            return encoding
         else:
             logger.error(f"Unknown encoding type: {type(face_encoding)}")
             return None
@@ -1177,18 +1270,64 @@ def parse_face_encoding(face_encoding):
     except Exception as e:
         logger.error(f"Failed to parse encoding: {e}")
         return None
-
+    
 def rebuild_known_faces_array():
-    """Rebuild the consolidated array"""
-    global KNOWN_FACE_ENCODINGS_ARRAY
+    """Rebuild the consolidated array - WITH NORMALIZATION"""
+    global KNOWN_FACE_ENCODINGS_ARRAY, KNOWN_FACE_ENCODINGS_NORMALIZED
+    
     if known_face_encodings:
         KNOWN_FACE_ENCODINGS_ARRAY = np.vstack(known_face_encodings)
-        if DEBUG_MODE: 
-            logger.debug(f"Rebuilt KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+        
+        # 🆕 NORMALIZE the array
+        try:
+            norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
+            norms[norms == 0] = 1  # Avoid division by zero
+            KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
+            KNOWN_FACE_ENCODINGS_NORMALIZED = True
+            if DEBUG_MODE: 
+                logger.debug(f"✅ Normalized KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+        except Exception as e:
+            logger.error(f"❌ Failed to normalize embeddings: {e}")
+            KNOWN_FACE_ENCODINGS_NORMALIZED = False
     else:
         KNOWN_FACE_ENCODINGS_ARRAY = np.array([])
+        KNOWN_FACE_ENCODINGS_NORMALIZED = False
         if DEBUG_MODE: 
             logger.debug("No known faces loaded.")
+
+def debug_embedding_quality():
+    """Debug the quality of loaded embeddings"""
+    if DEBUG_MODE: 
+        logger.debug("=== EMBEDDING QUALITY DEBUG ===")
+    
+    if KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
+        # Check norms
+        norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
+        if DEBUG_MODE: 
+            logger.debug(f"Embedding norms: min={norms.min():.4f}, max={norms.max():.4f}, mean={norms.mean():.4f}")
+        
+        # Check if any embeddings are zero
+        zero_count = np.sum(norms == 0)
+        if zero_count > 0:
+            logger.error(f"❌ Found {zero_count} zero-norm embeddings!")
+        
+        # Check if normalized
+        if np.allclose(norms, 1.0, atol=0.01):
+            if DEBUG_MODE: 
+                logger.debug("✅ Embeddings are normalized")
+        else:
+            logger.warning("⚠️ Embeddings are NOT normalized!")
+            
+        # Sample first few embeddings
+        for i in range(min(3, len(known_face_names))):
+            if DEBUG_MODE: 
+                logger.debug(f"  {known_face_names[i]}: norm={norms[i]:.4f}")
+    
+    if DEBUG_MODE: 
+        logger.debug("=== END DEBUG ===")
+
+# Call this after loading faces
+debug_embedding_quality()            
 
 def load_known_faces_from_db():
     """Load known faces from database, filtered by current section if available"""
@@ -1569,7 +1708,7 @@ def initialize_faces_for_session():
         logger.debug(f"   Loaded {len(known_face_names)} faces for session")
 
 # =========================
-# OPTIMIZED CAMERA CAPTURE
+# OPTIMIZED CAMERA CAPTURE - FIXED VERSION
 # =========================
 cap_lock = threading.Lock()
 cap = None
@@ -1598,54 +1737,120 @@ def open_stream(rtsp_url=None):
             if DEBUG_MODE:         
                 logger.debug(f"Connecting to RTSP: {rtsp_url}")
             
-            # CRITICAL: Use CAP_FFMPEG for direct RTSP
-            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+            # **FIX: Use proper OpenCV backend with optimized settings**
+            # Try different backends in order of preference
+            backends_to_try = [
+                (cv2.CAP_FFMPEG, 'FFMPEG'),
+                (cv2.CAP_ANY, 'ANY'),  # Auto-detect
+                (cv2.CAP_DSHOW, 'DSHOW'),  # Windows only
+                (cv2.CAP_V4L2, 'V4L2')  # Linux only
+            ]
             
-            # CRITICAL FIX: Minimal buffering for direct connection
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Changed from 2 to 1
-            cap.set(cv2.CAP_PROP_FPS, 30)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)  # Changed from 480 to 360 (sub-stream)
+            cap = None
+            backend_used = None
             
-            # Quick connection test
-            start_time = time.time()
-            while time.time() - start_time < 2:  # Reduced from 3 to 2
-                if cap.isOpened():
-                    ret, test_frame = cap.read()
-                    if ret and test_frame is not None:
+            for backend_code, backend_name in backends_to_try:
+                try:
+                    # **IMPORTANT: Add RTSP parameters for low latency**
+                    full_url = rtsp_url
+                    if "rtsp://" in rtsp_url.lower():
+                        # Add RTSP parameters for better performance
+                        if "?" not in rtsp_url:
+                            full_url = f"{rtsp_url}?rtsp_transport=tcp&buffer_size=65536&tune=zerolatency"
+                        elif "rtsp_transport" not in rtsp_url:
+                            full_url = f"{rtsp_url}&rtsp_transport=tcp&buffer_size=65536&tune=zerolatency"
+                    
+                    cap = cv2.VideoCapture(full_url, backend_code)
+                    
+                    if cap.isOpened():
+                        backend_used = backend_name
+                        
+                        # **FIX: Set proper camera properties BEFORE reading**
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # Small buffer, not 1 (1 can cause issues)
+                        cap.set(cv2.CAP_PROP_FPS, 30)
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+                        
+                        # Try to set for low latency if supported
+                        try:
+                            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+                            cap.set(cv2.CAP_PROP_LOW_LATENCY, 1)
+                        except:
+                            pass
+                        
+                        logger.info(f"✓ Camera connected using {backend_name} backend: 640x360 @ 30 FPS")
+                        break
+                    
+                    # Close if failed
+                    if cap:
+                        cap.release()
+                        cap = None
+                        
+                except Exception as e:
+                    if cap:
+                        cap.release()
+                        cap = None
+                    continue
+            
+            if cap is None or not cap.isOpened():
+                raise Exception(f"Failed to connect with any backend")
+            
+            # Quick connection test - read a few frames to ensure it works
+            success_count = 0
+            for _ in range(10):  # Try up to 10 times
+                ret, test_frame = cap.read()
+                if ret and test_frame is not None:
+                    success_count += 1
+                    if success_count >= 2:  # Need at least 2 successful reads
                         camera_available = True
                         use_dummy_feed = False
                         current_rtsp_url = rtsp_url
-                        if DEBUG_MODE: 
-                            logger.debug(f"✓ Camera connected: 640x360 @ 30 FPS")
+                        
+                        # **FIX: Read and discard first few frames to clear buffer**
+                        for _ in range(3):
+                            cap.read()
+                        
+                        logger.info(f"Camera connection successful - {backend_used} backend")
                         return True
-                time.sleep(0.05)  # Reduced from 0.1
+                time.sleep(0.01)
             
+            # If we got here, connection failed
             cap.release()
             cap = None
-            raise Exception("Camera connection timeout")
+            raise Exception("Camera connection timeout - frames not readable")
                 
     except Exception as e:
         logger.warning(f"✗ Camera connection failed: {e}")
         camera_available = False
         use_dummy_feed = True
         if cap is not None:
-            cap.release()
+            try:
+                cap.release()
+            except:
+                pass
             cap = None
         return False
 
 def grabber():
-    """CRITICAL FIX: Always grab LATEST frame, skip old buffered frames"""
+    """FIXED: Smooth, low-latency frame grabbing without stuttering"""
     global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url, last_frame_time
     empty_count = 0
     consecutive_failures = 0
     
+    # **FIX: Target frame rate matching**
+    TARGET_FPS = 30
+    TARGET_FRAME_TIME = 1.0 / TARGET_FPS
+    
+    # **FIX: Performance counters**
+    frame_counter = 0
+    last_log_time = time.time()
+    
     while not stop_flag:
-        grab_start = time.time()
+        frame_start_time = time.time()
         
         if use_dummy_feed:
             latest_frame = create_dummy_frame()
-            time.sleep(0.033)
+            time.sleep(TARGET_FRAME_TIME)  # Match dummy to real timing
             continue
             
         with cap_lock:
@@ -1653,44 +1858,70 @@ def grabber():
                 time.sleep(0.01)
                 continue
             
-            # *** CRITICAL FIX: Flush old frames ***
-            # This is why VLC is smooth but your app was delayed
-            for _ in range(2):  # Skip 2 old buffered frames
-                cap.grab()
-            
-            # Now retrieve the LATEST frame
+            # **FIX: REMOVED frame skipping! Don't use cap.grab()**
+            # Just read the latest frame directly
             ok, frame = cap.read()
             
         if not ok or frame is None:
             empty_count += 1
             consecutive_failures += 1
             
-            if empty_count > 10 or consecutive_failures > 5:
-                logger.warning("Camera connection issues, switching to dummy feed")
+            # **FIX: Better error handling with progressive backoff**
+            if empty_count > 5:
+                logger.warning(f"Camera feed empty ({empty_count} consecutive frames)")
+                
+            if consecutive_failures > 10:
+                logger.error("Camera connection lost, switching to dummy feed")
                 camera_available = False
                 use_dummy_feed = True
                 consecutive_failures = 0
                 
+                # Try to reconnect in background
                 if current_rtsp_url:
                     def attempt_recovery():
-                        time.sleep(2.0)
+                        time.sleep(1.0)  # Wait before reconnection
                         if DEBUG_MODE: 
                             logger.debug("Attempting camera reconnection...")
                         open_stream(current_rtsp_url)
                     
                     recovery_thread = threading.Thread(target=attempt_recovery, daemon=True)
                     recovery_thread.start()
-            else:
-                time.sleep(0.01)
+            
+            # Progressive backoff for temporary issues
+            backoff_time = min(0.1, 0.01 * (2 ** min(empty_count, 10)))
+            time.sleep(backoff_time)
             continue
                
+        # **FIX: Reset counters on successful frame**
         empty_count = 0
         consecutive_failures = 0
+        
+        # Store the latest frame
         latest_frame = frame
         last_frame_time = time.time()
+        frame_counter += 1
         
-        # Minimal sleep - we want fresh frames
-        time.sleep(0.001)  # Changed from dynamic calculation
+        # **FIX: Maintain proper frame timing**
+        frame_end_time = time.time()
+        frame_elapsed = frame_end_time - frame_start_time
+        
+        # Log performance periodically
+        current_time = time.time()
+        if current_time - last_log_time > 5.0:  # Every 5 seconds
+            if frame_counter > 0:
+                actual_fps = frame_counter / (current_time - last_log_time)
+                if DEBUG_MODE: 
+                    logger.debug(f"Grabber FPS: {actual_fps:.1f} (target: {TARGET_FPS})")
+            frame_counter = 0
+            last_log_time = current_time
+        
+        # **FIX: Proper sleep to maintain target FPS and reduce CPU usage**
+        if frame_elapsed < TARGET_FRAME_TIME:
+            time_to_sleep = TARGET_FRAME_TIME - frame_elapsed
+            time.sleep(time_to_sleep)
+        else:
+            # We're running behind - skip sleep but add tiny yield
+            time.sleep(0.0001)  # Tiny sleep to yield CPU
 
 # =========================
 # Tracking & attendance
@@ -2418,26 +2649,25 @@ def calculate_late_status(attendance_time, session_start, threshold_minutes):
 
 def refresh_with_detections(frame, rgb, frame_idx):
     """
-    🛡️ ULTRA STRONG ANTI-SWAPPING: Prevents identity swapping even during overlaps
-      FIXED: ByteTrack coordinate extraction - was treating bbox as track_id
-      ADDED: Force field protection for locked tracks with overlapping detection
-      ADDED: Body shape signature verification to prevent swapping
-      ADDED: Movement prediction and path consistency validation
-      ADDED: Temporal consistency with frame history
-      PRESERVED: Fast recognition and instant locking system
-      UPDATED: Filters recognition to only current section students
-      ENHANCED: Improved tracking for half-bodies and far-away persons
-      FIXED: Proper body signature initialization to prevent 'min_width' error
+    🎯 IMPROVED FOLLOWING: Allows green bounding boxes to follow people even when far away or partially visible
+      RELAXED: Less strict protection zones for better tracking
+      ENHANCED: Better far-away tracking with adaptive thresholds
+      FIXED: Allows tracking through obstacles and partial occlusion
+      RETAINED: Still prevents identity swapping but with more flexibility
     """
     if DEBUG_MODE: 
         logger.debug(f"  refresh_with_detections CALLED - Frame {frame_idx}")
     global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
     global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
+    global KNOWN_FACE_ENCODINGS_NORMALIZED
     
     #   ANTI-SWAP: Initialize tracking history for movement prediction
     global locked_track_history, locked_track_predictions, locked_track_signatures
     
     if detectionStopped:
+        return
+    
+    if frame_idx % 3 != 0: 
         return
     
     # Initialize anti-swap tracking systems
@@ -2477,7 +2707,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
     # Step 2: Body detection
     body_detections = detect_bodies(frame)
     
-    # Step 3: Use ByteTrack for BODY tracking - FIXED ERROR HERE
+    # Step 3: Use ByteTrack for BODY tracking
     body_tracks = []
     if len(body_detections) > 0:
         # Convert to proper ByteTrack format
@@ -2487,21 +2717,19 @@ def refresh_with_detections(frame, rgb, frame_idx):
             x1, y1, x2, y2 = body_box
             conf = body_det['confidence']
         
-            #   ENHANCED: Allow half-bodies (reduced from 50px to 30px width)
-            if (x2 - x1) < 30 or (y2 - y1) < 80:
+            #   ENHANCED: Allow half-bodies (reduced from 50px to 25px width)
+            if (x2 - x1) < 25 or (y2 - y1) < 60:
                 continue
             
             detections_list.append([x1, y1, x2, y2, conf])
     
         if detections_list:
-            # 🛡️ FIX: Convert list to numpy array BEFORE slicing
             detections_array = np.array(detections_list)
         
             try:
-                # Use sv.Detections - NOW THIS WORKS because detections_array is numpy
                 supervision_detections = sv.Detections(
-                    xyxy=detections_array[:, :4],  # ← FIXED: Use numpy array, not list
-                    confidence=detections_array[:, 4],  # ← FIXED: Use numpy array, not list
+                    xyxy=detections_array[:, :4],
+                    confidence=detections_array[:, 4],
                     class_id=np.array([0] * len(detections_array))
                 )
             
@@ -2526,7 +2754,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 # Extract ReID features
                                 reid_features = extract_reid_features(frame, body_box)
                                 
-                                #   ANTI-SWAP: Calculate body shape signature
+                                # Calculate body shape signature
                                 body_width = x2 - x1
                                 body_height = y2 - y1
                                 aspect_ratio = body_width / body_height if body_height > 0 else 0
@@ -2607,7 +2835,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         logger.debug(f"  Fallback: {len(body_tracks)} body tracks")
     
     # ============================================
-    # 🛡️ ULTRA STRONG ANTI-SWAPPING SYSTEM
+    # 🎯 FLEXIBLE ANTI-SWAPPING WITH BETTER FOLLOWING
     # ============================================
     
     #   1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
@@ -2626,58 +2854,74 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 'center_y': (current_body_box[1] + current_body_box[3]) // 2
             })
             
-            # Keep only last 15 frames of history
-            if len(locked_track_history[person_id]) > 15:
+            # Keep more history for better prediction (increased from 15 to 20)
+            if len(locked_track_history[person_id]) > 20:
                 locked_track_history[person_id].pop(0)
             
-            #   IMPROVED PREDICTION for far-away tracking
-            if len(locked_track_history[person_id]) >= 3:
-                last_positions = locked_track_history[person_id][-3:]
-                dx = 0
-                dy = 0
+            # 🎯 IMPROVED PREDICTION for far-away and obstacle tracking
+            if len(locked_track_history[person_id]) >= 2:  # Reduced from 3 to 2 for quicker adaptation
+                last_positions = locked_track_history[person_id][-2:]  # Just last 2 positions
                 
-                for i in range(1, len(last_positions)):
-                    prev = last_positions[i-1]
-                    curr = last_positions[i]
-                    dx += curr['center_x'] - prev['center_x']
-                    dy += curr['center_y'] - prev['center_y']
-                
-                avg_dx = dx / (len(last_positions) - 1)
-                avg_dy = dy / (len(last_positions) - 1)
-                
-                # Predict next position with variable momentum
-                current_center_x = (current_body_box[0] + current_body_box[2]) // 2
-                current_center_y = (current_body_box[1] + current_body_box[3]) // 2
-                
-                # Calculate distance from center
-                frame_center_x = w // 2
-                frame_center_y = h // 2
-                distance_from_center = np.sqrt(
-                    (current_center_x - frame_center_x)**2 + 
-                    (current_center_y - frame_center_y)**2
-                )
-                
-                momentum_factor = 1.3 if distance_from_center > 300 else 1.1
-                predicted_center_x = current_center_x + int(avg_dx * momentum_factor)
-                predicted_center_y = current_center_y + int(avg_dy * momentum_factor)
-                
-                # Create predicted box
-                box_width = current_body_box[2] - current_body_box[0]
-                box_height = current_body_box[3] - current_body_box[1]
-                predicted_box = (
-                    max(0, predicted_center_x - box_width // 2),
-                    max(0, predicted_center_y - box_height // 2),
-                    min(w, predicted_center_x + box_width // 2),
-                    min(h, predicted_center_y + box_height // 2)
-                )
-                
-                locked_track_predictions[person_id] = {
-                    'predicted_box': predicted_box,
-                    'predicted_center': (predicted_center_x, predicted_center_y),
-                    'movement_vector': (avg_dx, avg_dy),
-                    'momentum_factor': momentum_factor,
-                    'confidence': min(0.9, len(locked_track_history[person_id]) / 15.0)
-                }
+                # Calculate movement vector
+                if len(last_positions) >= 2:
+                    prev = last_positions[-2]
+                    curr = last_positions[-1]
+                    dx = curr['center_x'] - prev['center_x']
+                    dy = curr['center_y'] - prev['center_y']
+                    
+                    # 🎯 ADAPTIVE MOMENTUM for far-away tracking
+                    current_center_x = (current_body_box[0] + current_body_box[2]) // 2
+                    current_center_y = (current_body_box[1] + current_body_box[3]) // 2
+                    
+                    # Calculate distance from center
+                    frame_center_x = w // 2
+                    frame_center_y = h // 2
+                    distance_from_center = np.sqrt(
+                        (current_center_x - frame_center_x)**2 + 
+                        (current_center_y - frame_center_y)**2
+                    )
+                    
+                    # 🎯 MORE AGGRESSIVE PREDICTION for far-away people
+                    if distance_from_center > 400:  # Very far
+                        momentum_factor = 1.8
+                        prediction_distance = 120  # pixels to search
+                    elif distance_from_center > 300:  # Far
+                        momentum_factor = 1.5
+                        prediction_distance = 90
+                    elif distance_from_center > 200:  # Medium distance
+                        momentum_factor = 1.3
+                        prediction_distance = 70
+                    else:  # Close
+                        momentum_factor = 1.1
+                        prediction_distance = 50
+                    
+                    predicted_center_x = current_center_x + int(dx * momentum_factor)
+                    predicted_center_y = current_center_y + int(dy * momentum_factor)
+                    
+                    # Create predicted box with EXPANDED search area
+                    box_width = current_body_box[2] - current_body_box[0]
+                    box_height = current_body_box[3] - current_body_box[1]
+                    
+                    # 🎯 ALLOW HALF-BODY DETECTION: Reduce minimum size requirements
+                    min_width = max(25, int(box_width * 0.4))  # Allow 40% of original width
+                    min_height = max(50, int(box_height * 0.4))  # Allow 40% of original height
+                    
+                    predicted_box = (
+                        max(0, predicted_center_x - min_width // 2),
+                        max(0, predicted_center_y - min_height // 2),
+                        min(w, predicted_center_x + min_width // 2),
+                        min(h, predicted_center_y + min_height // 2)
+                    )
+                    
+                    locked_track_predictions[person_id] = {
+                        'predicted_box': predicted_box,
+                        'predicted_center': (predicted_center_x, predicted_center_y),
+                        'movement_vector': (dx, dy),
+                        'momentum_factor': momentum_factor,
+                        'search_distance': prediction_distance,  # How far to search
+                        'allow_half_body': True,  # Allow partial detection
+                        'confidence': min(0.95, len(locked_track_history[person_id]) / 20.0)
+                    }
             
             #   2. UPDATE BODY SHAPE SIGNATURE for this locked track
             body_width = current_body_box[2] - current_body_box[0]
@@ -2686,7 +2930,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             body_area = body_width * body_height
             
             if person_id not in locked_track_signatures:
-                # 🛡️ FIX: Initialize with all required fields
+                # Initialize with all required fields
                 locked_track_signatures[person_id] = {
                     'width': body_width,
                     'height': body_height,
@@ -2695,37 +2939,50 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'avg_width': body_width,
                     'avg_height': body_height,
                     'samples': 1,
-                    'min_width': body_width,
-                    'max_width': body_width,
-                    'min_height': body_height,
-                    'max_height': body_height,
+                    'min_width': max(25, int(body_width * 0.5)),  # Allow 50% reduction for half-body
+                    'max_width': int(body_width * 1.5),  # Allow 50% expansion
+                    'min_height': max(50, int(body_height * 0.5)),  # Allow 50% reduction for half-body
+                    'max_height': int(body_height * 1.5),  # Allow 50% expansion
                     'initialized': True
                 }
             else:
                 sig = locked_track_signatures[person_id]
-                # 🛡️ FIX: Ensure all required fields exist
+                # Ensure all required fields exist
                 if 'min_width' not in sig:
-                    sig['min_width'] = body_width
+                    sig['min_width'] = max(25, int(body_width * 0.5))
                 if 'max_width' not in sig:
-                    sig['max_width'] = body_width
+                    sig['max_width'] = int(body_width * 1.5)
                 if 'min_height' not in sig:
-                    sig['min_height'] = body_height
+                    sig['min_height'] = max(50, int(body_height * 0.5))
                 if 'max_height' not in sig:
-                    sig['max_height'] = body_height
+                    sig['max_height'] = int(body_height * 1.5)
                 
-                # Update rolling average
-                alpha = 0.8
+                # Update rolling average with slower adaptation for stability
+                alpha = 0.9  # Increased from 0.8 for more stable tracking
                 sig['avg_width'] = (sig['avg_width'] * (1 - alpha)) + (body_width * alpha)
                 sig['avg_height'] = (sig['avg_height'] * (1 - alpha)) + (body_height * alpha)
                 sig['samples'] += 1
                 
-                # Update min/max ranges
-                sig['min_width'] = min(sig['min_width'], body_width)
-                sig['max_width'] = max(sig['max_width'], body_width)
-                sig['min_height'] = min(sig['min_height'], body_height)
-                sig['max_height'] = max(sig['max_height'], body_height)
+                # Update min/max ranges with more flexibility for far-away people
+                distance_from_center = np.sqrt(
+                    ((current_body_box[0] + current_body_box[2])//2 - w//2)**2 +
+                    ((current_body_box[1] + current_body_box[3])//2 - h//2)**2
+                )
+                
+                if distance_from_center > 300:
+                    # Far away - allow more size variation
+                    sig['min_width'] = min(sig['min_width'], max(25, int(body_width * 0.4)))
+                    sig['max_width'] = max(sig['max_width'], int(body_width * 1.6))
+                    sig['min_height'] = min(sig['min_height'], max(50, int(body_height * 0.4)))
+                    sig['max_height'] = max(sig['max_height'], int(body_height * 1.6))
+                else:
+                    # Close - more precise
+                    sig['min_width'] = min(sig['min_width'], max(30, int(body_width * 0.6)))
+                    sig['max_width'] = max(sig['max_width'], int(body_width * 1.4))
+                    sig['min_height'] = min(sig['min_height'], max(60, int(body_height * 0.6)))
+                    sig['max_height'] = max(sig['max_height'], int(body_height * 1.4))
     
-    #   3. CREATE FORCE FIELD PROTECTION ZONES for locked tracks
+    #   2. CREATE FLEXIBLE PROTECTION ZONES for locked tracks
     locked_track_protection_zones = {}
     
     for person_id, lock_info in locked_tracks.items():
@@ -2735,12 +2992,29 @@ def refresh_with_detections(frame, rgb, frame_idx):
             body_center_x = (bx1 + bx2) // 2
             body_center_y = (by1 + by2) // 2
             
-            # 🛡️ INNER PROTECTION ZONE
+            # Calculate distance from center for adaptive thresholds
             distance_from_center = np.sqrt((body_center_x - w//2)**2 + (body_center_y - h//2)**2)
-            distance_factor = 1.0 + (distance_from_center / 500)
             
-            inner_margin_x = int((bx2 - bx1) * 0.25 * distance_factor)
-            inner_margin_y = int((by2 - by1) * 0.25 * distance_factor)
+            # 🎯 ADAPTIVE MARGINS based on distance
+            if distance_from_center > 400:
+                # Very far - use larger margins for better tracking
+                inner_margin_multiplier = 0.3  # Reduced from 0.4
+                outer_margin_multiplier = 0.5  # Reduced from 0.7
+                iou_threshold = 0.15  # Lower IoU requirement for far away
+            elif distance_from_center > 300:
+                # Far - moderate margins
+                inner_margin_multiplier = 0.2  # Reduced from 0.3
+                outer_margin_multiplier = 0.3  # Reduced from 0.5
+                iou_threshold = 0.25
+            else:
+                # Close - tighter margins
+                inner_margin_multiplier = 0.15  # Reduced from 0.2
+                outer_margin_multiplier = 0.2  # Reduced from 0.3
+                iou_threshold = 0.35  # Reduced from 0.4
+            
+            # 🛡️ INNER PROTECTION ZONE
+            inner_margin_x = int((bx2 - bx1) * inner_margin_multiplier)
+            inner_margin_y = int((by2 - by1) * inner_margin_multiplier)
             inner_protection_zone = (
                 max(0, bx1 - inner_margin_x),
                 max(0, by1 - inner_margin_y),
@@ -2749,8 +3023,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
             )
             
             # 🛡️ OUTER EXCLUSION ZONE
-            outer_margin_x = int((bx2 - bx1) * 0.5 * distance_factor)
-            outer_margin_y = int((by2 - by1) * 0.5 * distance_factor)
+            outer_margin_x = int((bx2 - bx1) * outer_margin_multiplier)
+            outer_margin_y = int((by2 - by1) * outer_margin_multiplier)
             outer_exclusion_zone = (
                 max(0, bx1 - outer_margin_x),
                 max(0, by1 - outer_margin_y),
@@ -2762,8 +3036,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
             prediction_zone = None
             if person_id in locked_track_predictions:
                 pred_box = locked_track_predictions[person_id]['predicted_box']
-                pred_margin_x = int((pred_box[2] - pred_box[0]) * 0.4)
-                pred_margin_y = int((pred_box[3] - pred_box[1]) * 0.4)
+                pred_margin_x = int((pred_box[2] - pred_box[0]) * 0.35)  # Increased from 0.4
+                pred_margin_y = int((pred_box[3] - pred_box[1]) * 0.35)  # Increased from 0.4
                 prediction_zone = (
                     max(0, pred_box[0] - pred_margin_x),
                     max(0, pred_box[1] - pred_margin_y),
@@ -2778,7 +3052,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 'body_box': body_box,
                 'body_center': (body_center_x, body_center_y),
                 'lock_info': lock_info,
-                'distance_factor': distance_factor
+                'distance_factor': distance_from_center,
+                'iou_threshold': iou_threshold  # Store adaptive threshold
             }
     
     # Filter out locked faces
@@ -2787,7 +3062,14 @@ def refresh_with_detections(frame, rgb, frame_idx):
         body_box = lock_info.get('body_box')
         if body_box:
             bx1, by1, bx2, by2 = body_box
-            expand_margin = 12
+            # 🎯 INCREASED EXPANSION for better matching when far away
+            distance_from_center = np.sqrt(((bx1+bx2)//2 - w//2)**2 + ((by1+by2)//2 - h//2)**2)
+            
+            if distance_from_center > 300:
+                expand_margin = 20  # Larger margin for far away
+            else:
+                expand_margin = 15  # Standard margin
+            
             expanded_body_box = (
                 max(0, bx1 - expand_margin),
                 max(0, by1 - expand_margin),
@@ -2820,10 +3102,10 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     continue
     
     # ============================================
-    #   PROCESS FACE DETECTIONS WITH ANTI-SWAPPING
+    #   PROCESS FACE DETECTIONS WITH RELAXED PROTECTION
     # ============================================
     
-    # Step 4: Process face detections with ANTI-SWAPPING protection
+    # Step 4: Process face detections with RELAXED protection
     dets = []
     face_embeddings = []
     
@@ -2845,7 +3127,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         face_center_y = (y1 + y2) // 2
                         face_box = (x1, y1, x2, y2)
                         
-                        # 🛡️ ANTI-SWAP: Check if this face violates any protection zones
+                        # 🎯 RELAXED: Check if this face violates any protection zones
                         should_reject_face = False
                         rejection_reason = ""
                         
@@ -2854,20 +3136,30 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             outer_zone = zone_info['outer_zone']
                             prediction_zone = zone_info['prediction_zone']
                             locked_body_box = zone_info['body_box']
+                            adaptive_iou_threshold = zone_info.get('iou_threshold', 0.4)
                             
-                            # 🛡️ 1. Check INNER ZONE
+                            # 🎯 1. Check INNER ZONE (more lenient)
                             iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
                             if (iz_x1 <= face_center_x <= iz_x2 and iz_y1 <= face_center_y <= iz_y2):
                                 face_iou = iou(face_box, locked_body_box)
-                                distance_factor = zone_info.get('distance_factor', 1.0)
-                                iou_threshold = 0.4 if distance_factor > 1.5 else 0.5
                                 
-                                if face_iou < iou_threshold:
-                                    should_reject_face = True
-                                    rejection_reason = f"inner zone violation (IoU: {face_iou:.2f})"
-                                    break
+                                # Use adaptive threshold based on distance
+                                if face_iou < adaptive_iou_threshold:
+                                    # Check if this might be the same person (half-body case)
+                                    face_area = (x2 - x1) * (y2 - y1)
+                                    body_area = (locked_body_box[2] - locked_body_box[0]) * (locked_body_box[3] - locked_body_box[1])
+                                    face_to_body_ratio = face_area / body_area if body_area > 0 else 0
+                                    
+                                    # If face is within reasonable size ratio, allow it
+                                    if 0.02 <= face_to_body_ratio <= 0.3:
+                                        # Might be the same person, don't reject
+                                        pass
+                                    else:
+                                        should_reject_face = True
+                                        rejection_reason = f"inner zone violation (IoU: {face_iou:.2f}, threshold: {adaptive_iou_threshold})"
+                                        break
                             
-                            # 🛡️ 2. Check OUTER ZONE
+                            # 🎯 2. Check OUTER ZONE (more lenient)
                             if not should_reject_face:
                                 oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
                                 if (oz_x1 <= face_center_x <= oz_x2 and oz_y1 <= face_center_y <= oz_y2):
@@ -2875,20 +3167,22 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                         (face_center_x - zone_info['body_center'][0])**2 + 
                                         (face_center_y - zone_info['body_center'][1])**2
                                     )
-                                    max_allowed_distance = (locked_body_box[2] - locked_body_box[0]) * 0.8
+                                    max_allowed_distance = (locked_body_box[2] - locked_body_box[0]) * 1.0  # Increased from 0.8
                                     
                                     if distance_to_center < max_allowed_distance:
-                                        should_reject_face = True
-                                        rejection_reason = f"too close to locked person ({int(distance_to_center)}px)"
-                                        break
+                                        # Check if face might belong to this body
+                                        face_iou = iou(face_box, locked_body_box)
+                                        if face_iou < 0.1:  # Very low overlap
+                                            should_reject_face = True
+                                            rejection_reason = f"close to locked person but no overlap ({int(distance_to_center)}px)"
+                                            break
                             
-                            # 🛡️ 3. Check PREDICTION ZONE
+                            # 🎯 3. Check PREDICTION ZONE (allow faces in prediction path)
                             if not should_reject_face and prediction_zone:
                                 pz_x1, pz_y1, pz_x2, pz_y2 = prediction_zone
                                 if (pz_x1 <= face_center_x <= pz_x2 and pz_y1 <= face_center_y <= pz_y2):
-                                    should_reject_face = True
-                                    rejection_reason = "in predicted movement path"
-                                    break
+                                    # Faces in prediction zone are OK - they might be the person moving
+                                    pass
                         
                         if should_reject_face:
                             if DEBUG_MODE: 
@@ -2909,10 +3203,20 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 face_area = box_width * box_height
                                 body_area = body_width * body_height
                             
-                                if (face_relative_y < body_height * 0.5 and
-                                    face_relative_x > body_width * 0.1 and
+                                # 🎯 MORE LENIENT thresholds for far-away/half-body
+                                if distance_from_center > 300:
+                                    height_threshold = 0.6  # Increased from 0.5
+                                    width_min = 0.05  # Reduced from 0.1
+                                    area_min = 0.008  # Reduced from 0.01
+                                else:
+                                    height_threshold = 0.5
+                                    width_min = 0.1
+                                    area_min = 0.01
+                                
+                                if (face_relative_y < body_height * height_threshold and
+                                    face_relative_x > body_width * width_min and
                                     face_relative_x < body_width * 0.9 and
-                                    face_area > body_area * 0.01 and
+                                    face_area > body_area * area_min and
                                     face_area < body_area * 0.25):
                                     is_locked_face = True
                                     break
@@ -2929,30 +3233,31 @@ def refresh_with_detections(frame, rgb, frame_idx):
         except Exception as e:
             logger.error(f"Error processing face detection (idx: {face_idx}): {e}")
             continue
+    
     if DEBUG_MODE: 
-        logger.debug(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces after anti-swap filtering") 
+        logger.debug(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces after relaxed filtering") 
     
     # ============================================
-    #   ULTRA STRONG ReID MATCHING FOR LOCKED TRACKS
+    #   IMPROVED ReID MATCHING FOR LOCKED TRACKS
     # ============================================
     
     new_tracks = []
     used_detections = set()
     used_body_tracks = set()
     
-    # 🛡️ IMPROVED: Ultra-strict ReID matching with BODY SIGNATURE verification
+    # 🎯 IMPROVED: More flexible ReID matching for better following
     for person_id, lock_info in locked_tracks.items():
         last_reid_features = lock_info.get('reid_features')
         last_body_box = lock_info.get('body_box')
     
         if last_reid_features is not None and body_tracks:
             best_match_idx = None
-            best_reid_distance = 0.15
+            best_reid_distance = 0.25  # Increased from 0.15 for better matching
             
-            #   Get body signature for this locked track
+            # Get body signature for this locked track
             body_signature = locked_track_signatures.get(person_id)
             
-            # Try ReID matching with multi-stage validation
+            # Try ReID matching with more flexible validation
             for idx, body_track in enumerate(body_tracks):
                 if idx in used_body_tracks:
                     continue
@@ -2961,12 +3266,12 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 if current_reid_features is None:
                     continue
             
-                # 🛡️ STAGE 1: Calculate ReID distance
+                # 🎯 STAGE 1: Calculate ReID distance (more lenient)
                 reid_dist = calculate_reid_distance(last_reid_features, current_reid_features)
                 if reid_dist >= best_reid_distance:
                     continue
             
-                # 🛡️ STAGE 2: ENHANCED SPATIAL CONSTRAINT
+                # 🎯 STAGE 2: FLEXIBLE SPATIAL CONSTRAINT
                 if last_body_box:
                     movement = calculate_box_distance(last_body_box, body_track['body_box'])
                     
@@ -2974,7 +3279,14 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     last_center_y = (last_body_box[1] + last_body_box[3]) // 2
                     distance_from_center = np.sqrt((last_center_x - w//2)**2 + (last_center_y - h//2)**2)
                     
-                    max_movement = 80 if distance_from_center > 300 else 50
+                    # 🎯 ALLOW MORE MOVEMENT for far-away people
+                    if distance_from_center > 300:
+                        max_movement = 120  # Increased from 80
+                    elif distance_from_center > 200:
+                        max_movement = 90   # Increased from 80
+                    else:
+                        max_movement = 70   # Increased from 50
+                    
                     if movement > max_movement:
                         continue
                     
@@ -2982,33 +3294,35 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     if person_id in locked_track_predictions:
                         pred_box = locked_track_predictions[person_id]['predicted_box']
                         pred_distance = calculate_box_distance(pred_box, body_track['body_box'])
-                        max_pred_distance = 60 if distance_from_center > 300 else 40
+                        max_pred_distance = 80 if distance_from_center > 300 else 60  # Increased
                         if pred_distance > max_pred_distance:
                             continue
             
-                # 🛡️ STAGE 3: ENHANCED BODY SIGNATURE VERIFICATION
+                # 🎯 STAGE 3: FLEXIBLE BODY SIGNATURE VERIFICATION
                 if body_signature and 'signature' in body_track:
                     current_sig = body_track['signature']
                     
-                    # 🛡️ FIX: Check if min_width/max_width exist before using them
+                    # Check if min_width/max_width exist before using them
                     if ('min_width' in body_signature and 'max_width' in body_signature and 
                         body_signature['min_width'] > 0 and body_signature['max_width'] > 0):
-                        if current_sig['width'] < body_signature['min_width'] * 0.7 or \
-                           current_sig['width'] > body_signature['max_width'] * 1.3:
+                        # 🎯 ALLOW MORE SIZE VARIATION
+                        width_ratio = current_sig['width'] / body_signature['avg_width'] if body_signature['avg_width'] > 0 else 1.0
+                        if width_ratio < 0.4 or width_ratio > 1.8:  # More flexible than 0.7-1.3
                             if DEBUG_MODE: 
-                                logger.debug(f"  Rejected: width out of range ({current_sig['width']} vs [{body_signature['min_width']}-{body_signature['max_width']}])")
-                            continue
+                                logger.debug(f"  Warning: width ratio {width_ratio:.2f} out of range, but allowing for tracking")
+                            # Don't reject immediately for far-away tracking
                     
-                    # 🛡️ FIX: Check if min_height/max_height exist
+                    # Check if min_height/max_height exist
                     if ('min_height' in body_signature and 'max_height' in body_signature and
                         body_signature['min_height'] > 0 and body_signature['max_height'] > 0):
-                        if current_sig['height'] < body_signature['min_height'] * 0.7 or \
-                           current_sig['height'] > body_signature['max_height'] * 1.3:
+                        # 🎯 ALLOW MORE SIZE VARIATION
+                        height_ratio = current_sig['height'] / body_signature['avg_height'] if body_signature['avg_height'] > 0 else 1.0
+                        if height_ratio < 0.4 or height_ratio > 1.8:  # More flexible
                             if DEBUG_MODE: 
-                                logger.debug(f"  Rejected: height out of range ({current_sig['height']} vs [{body_signature['min_height']}-{body_signature['max_height']}])")
-                            continue
+                                logger.debug(f"  Warning: height ratio {height_ratio:.2f} out of range, but allowing for tracking")
+                            # Don't reject immediately
                 
-                # 🛡️ STAGE 4: TEMPORAL CONSISTENCY
+                # 🎯 STAGE 4: TEMPORAL CONSISTENCY (more lenient)
                 if last_body_box and person_id in locked_track_history:
                     hist_positions = locked_track_history[person_id]
                     if len(hist_positions) >= 2:
@@ -3033,27 +3347,40 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             actual_movement_x = current_center_x - last_center_x
                             actual_movement_y = current_center_y - last_center_y
                             
-                            movement_factor = 2.0 if distance_from_center > 300 else 1.5
+                            # 🎯 ALLOW MORE ABRUPT MOVEMENT for far-away
+                            movement_factor = 3.0 if distance_from_center > 300 else 2.0  # Increased
                             if (abs(actual_movement_x) > abs(avg_movement_x) * movement_factor or 
                                 abs(actual_movement_y) > abs(avg_movement_y) * movement_factor):
                                 if DEBUG_MODE: 
-                                    logger.debug(f"  Rejected: movement too abrupt")
-                                continue
+                                    logger.debug(f"  Warning: movement abrupt but allowing for tracking")
+                                # Don't reject - might be sudden movement
                 
-                # 🛡️ STAGE 5: OVERLAP VALIDATION
+                # 🎯 STAGE 5: OVERLAP VALIDATION (more lenient)
                 if last_body_box:
                     overlap = iou(tuple(body_track['body_box']), last_body_box)
-                    min_overlap = 0.15 if distance_from_center > 300 else 0.25
+                    distance_from_center = np.sqrt(
+                        ((last_body_box[0] + last_body_box[2])//2 - w//2)**2 +
+                        ((last_body_box[1] + last_body_box[3])//2 - h//2)**2
+                    )
+                    
+                    # 🎯 LOWER OVERLAP REQUIREMENTS for far-away
+                    if distance_from_center > 300:
+                        min_overlap = 0.1  # Reduced from 0.15
+                    elif distance_from_center > 200:
+                        min_overlap = 0.15  # Reduced from 0.25
+                    else:
+                        min_overlap = 0.2   # Reduced from 0.25
+                    
                     if overlap < min_overlap:
                         if DEBUG_MODE: 
-                            logger.debug(f"  Rejected: insufficient overlap ({overlap:.2f})")
-                        continue        
-            
-                # All validations passed
+                            logger.debug(f"  Warning: low overlap ({overlap:.2f}) but allowing for tracking")
+                        # Don't reject - might be partial occlusion
+        
+                # All validations passed (or warnings only)
                 best_reid_distance = reid_dist
                 best_match_idx = idx
                 if DEBUG_MODE: 
-                    logger.debug(f"  All checks passed: ReID={reid_dist:.3f}, Movement={movement:.1f}px")
+                    logger.debug(f"  Good match: ReID={reid_dist:.3f}, Movement={movement:.1f}px")
     
             if best_match_idx is not None:
                 # Found matching body
@@ -3065,11 +3392,20 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 lock_info['missed_detections'] = 0
                 
                 if matched_body['reid_features'] is not None:
+                    # Update ReID features with slower adaptation for stability
                     distance_from_center = np.sqrt(
                         ((matched_body['body_box'][0] + matched_body['body_box'][2])//2 - w//2)**2 +
                         ((matched_body['body_box'][1] + matched_body['body_box'][3])//2 - h//2)**2
                     )
-                    alpha = 0.9 if distance_from_center > 300 else 0.97
+                    
+                    # 🎯 SLOWER ADAPTATION for far-away tracking
+                    if distance_from_center > 300:
+                        alpha = 0.95  # Very slow adaptation
+                    elif distance_from_center > 200:
+                        alpha = 0.93  # Slow adaptation
+                    else:
+                        alpha = 0.9   # Standard adaptation
+                    
                     lock_info['reid_features'] = (
                         alpha * last_reid_features +
                         (1 - alpha) * matched_body['reid_features']
@@ -3077,10 +3413,10 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 if DEBUG_MODE: 
                     logger.debug(f"  Locked {lock_info.get('name', person_id)} updated via ReID (dist: {best_reid_distance:.3f})")
             else:
-                # No match
+                # No match - but be more tolerant
                 lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
-                if DEBUG_MODE: 
-                    logger.debug(f"  No match for {lock_info.get('name', person_id)} - Preserving last position")
+                if DEBUG_MODE and lock_info['missed_detections'] % 10 == 0:
+                    logger.debug(f"  No match for {lock_info.get('name', person_id)} - Missed: {lock_info['missed_detections']}")
 
     # Add existing locked tracks to new_tracks
     for person_id, lock_info in locked_tracks.items():
@@ -3133,10 +3469,10 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     new_tracks.append(tr)
     
     # ============================================
-    #   PROCESS NEW FACE DETECTIONS WITH ANTI-SWAPPING
+    #   PROCESS NEW FACE DETECTIONS WITH RELAXED PROTECTION
     # ============================================
     
-    # Step 5: Process NEW face detections with anti-swapping protection
+    # Step 5: Process NEW face detections with relaxed protection
     for idx_det, (x1, y1, x2, y2, conf, face_idx_val, face_obj) in enumerate(dets):
         if idx_det in used_detections:
             continue
@@ -3150,7 +3486,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if overlaps_existing:
             continue
         
-        # 🛡️ ANTI-SWAPPING: Check if this face is in any protected zone
+        # 🎯 RELAXED: Check if this face is in any protected zone
         face_center_x = (x1 + x2) // 2
         face_center_y = (y1 + y2) // 2
         face_too_close_to_locked = False
@@ -3162,22 +3498,26 @@ def refresh_with_detections(frame, rgb, frame_idx):
             iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
             oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
             
+            # 🎯 Only reject if clearly in inner zone with no overlap
             if (iz_x1 <= face_center_x <= iz_x2 and iz_y1 <= face_center_y <= iz_y2):
                 locked_body_box = zone_info['body_box']
                 face_box = (x1, y1, x2, y2)
                 face_iou = iou(face_box, locked_body_box)
                 
-                if face_iou < 0.4:
+                adaptive_threshold = zone_info.get('iou_threshold', 0.4)
+                if face_iou < adaptive_threshold * 0.8:  # Even more lenient
                     face_too_close_to_locked = True
                     if DEBUG_MODE: 
-                        logger.debug(f"  Face rejected: in locked person's inner zone")
+                        logger.debug(f"  Face rejected: in locked person's inner zone (IoU: {face_iou:.2f})")
                     break
         
         if face_too_close_to_locked:
             used_detections.add(idx_det)
             continue
         
-        # Face Recognition
+        # ============================================
+        #   ENHANCED FACE RECOGNITION SECTION
+        # ============================================
         name = "Unknown"
         person_id = None
         ptype = None
@@ -3188,6 +3528,22 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if conf >= 0.20 and KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
             try:
                 face_embedding = face_obj.embedding
+        
+                # Normalize the live face embedding
+                face_norm = np.linalg.norm(face_embedding)
+                if face_norm > 0:
+                    face_embedding = face_embedding / face_norm
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Normalized live face: norm={face_norm:.4f}")
+                else:
+                    if DEBUG_MODE: 
+                        logger.debug("  Zero norm face embedding")
+                    name = "Unknown"
+                    face_embedding = None
+        
+                if face_embedding is None:
+                    # Skip if normalization failed
+                    continue
             
                 if len(known_face_names) == 0 or len(KNOWN_FACE_ENCODINGS_ARRAY) == 0:
                     logger.warning("No known faces loaded for recognition")
@@ -3196,142 +3552,75 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     current_section_students = get_current_section_student_ids()
                     if DEBUG_MODE: 
                         logger.debug(f"  Current section has {len(current_section_students)} students")
-                    
-                    # ENHANCED: Face quality checks before recognition
+            
+                    # Check face quality
                     face_width = x2 - x1
                     face_height = y2 - y1
-                    
-                    # Skip very small faces (less reliable)
-                    if face_width < 45 or face_height < 45:
+                    face_area = face_width * face_height
+            
+                    if face_width < 40 or face_height < 40:
                         if DEBUG_MODE: 
-                            logger.debug(f"  Face too small for reliable recognition: {face_width}x{face_height}")
+                            logger.debug(f"  Face too small: {face_width}x{face_height}")
                         name = "Unknown - Face too small"
                     else:
-                        dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
-                        norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
-                        norm_b = np.linalg.norm(face_embedding)
-                        denominator = norm_a * norm_b
-                        similarities = np.divide(dot_products, denominator,
-                                                 out=np.zeros_like(dot_products, dtype=float),
-                                                 where=denominator != 0)
-                        
+                        # ENSURE embeddings are normalized
+                        if not KNOWN_FACE_ENCODINGS_NORMALIZED:
+                            # Normalize on the fly
+                            norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
+                            norms[norms == 0] = 1
+                            KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
+                            KNOWN_FACE_ENCODINGS_NORMALIZED = True
+                            if DEBUG_MODE: 
+                                logger.debug("  Normalized known embeddings on the fly")
+                
+                        # Calculate cosine similarity
+                        similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Similarities: min={similarities.min():.3f}, max={similarities.max():.3f}")
+                
                         if similarities.size > 0:
                             best_match_index = int(np.argmax(similarities))
                             best_similarity = float(similarities[best_match_index])
-                            
-                            # ENHANCED: DYNAMIC THRESHOLD with ambiguity check
-                            base_threshold = 0.65  # Increased from 0.50
-                            
-                            # Adjust threshold based on face size
-                            if face_width > 70 and face_height > 70:
-                                # Large clear face - higher threshold
-                                recognition_threshold = base_threshold + 0.05  # 0.70
-                            elif face_width < 50 or face_height < 50:
-                                # Small face - even higher threshold (more conservative)
-                                recognition_threshold = base_threshold + 0.08  # 0.73
-                            else:
-                                # Medium face
-                                recognition_threshold = base_threshold  # 0.65
-                            
-                            # ENHANCED: Check for ambiguous matches (similar faces)
+                    
+                            # SIMPLIFIED THRESHOLD
+                            recognition_threshold = 0.55  # Much lower for better recognition
+                    
+                            # Adjust for face size
+                            if face_width < 60 or face_height < 60:
+                                recognition_threshold = 0.50  # Even lower for small faces
+                    
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Best match: {known_face_names[best_match_index]} - Similarity: {best_similarity:.3f}, Threshold: {recognition_threshold:.3f}")
+                    
                             if best_similarity >= recognition_threshold:
-                                # Get top 2 matches to check ambiguity
-                                top_indices = np.argsort(similarities)[-2:][::-1]
-                                
-                                if len(top_indices) >= 2:
-                                    second_best_similarity = float(similarities[top_indices[1]])
-                                    similarity_gap = best_similarity - second_best_similarity
-                                    
-                                    # ENHANCED: Check if match is ambiguous
-                                    # If second best is too close, reject the match
-                                    if similarity_gap < 0.12:  # Only 0.12 difference
-                                        if DEBUG_MODE: 
-                                            logger.debug(f"  AMBIGUOUS MATCH: Best {best_similarity:.3f} vs Second {second_best_similarity:.3f} (gap: {similarity_gap:.3f})")
-                                        name = "Unknown - Ambiguous Match"
-                                    else:
-                                        # Clear match, proceed
-                                        matched_id = known_face_ids[best_match_index]
-                                        matched_type = known_face_types[best_match_index]
-                                        matched_name = known_face_names[best_match_index]
-                                        
-                                        if DEBUG_MODE: 
-                                            logger.debug(f"  CLEAR MATCH: {matched_name} - Similarity: {best_similarity:.3f}, Gap: {similarity_gap:.3f}")
-                                        
-                                        if matched_type == 'faculty':
-                                            name = f"Faculty: {matched_name}"
-                                            person_id = matched_id
-                                            ptype = 'faculty'
-                                            confidence = min(1.0, (conf * 0.3) + (best_similarity * 0.7))
-                                            if DEBUG_MODE: 
-                                                logger.debug(f"  FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
-                                        
-                                        elif matched_type == 'student':
-                                            if current_section_students and matched_id in current_section_students:
-                                                name = matched_name
-                                                person_id = matched_id
-                                                ptype = 'student'
-                                                confidence = min(1.0, (conf * 0.3) + (best_similarity * 0.7))
-                                                if DEBUG_MODE: 
-                                                    logger.debug(f"  STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
-                                            else:
-                                                if DEBUG_MODE: 
-                                                    logger.debug(f"  STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
-                                                name = "Unknown - Wrong Section"
-                                                if face_embedding is not None:
-                                                    try:
-                                                        face_crop = frame[y1:y2, x1:x2]
-                                                        if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
-                                                            session_id = get_current_session_id()
-                                                            if session_id:
-                                                                success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
-                                                                if success:
-                                                                    if DEBUG_MODE: 
-                                                                        logger.debug(f"📸 CAPTURED OUT-OF-SECTION FACE - Added to enrollment system")
-                                                    except Exception as capture_error:
-                                                        logger.error(f"Error capturing out-of-section face: {capture_error}")
-                                else:
-                                    # Single match case
-                                    matched_id = known_face_ids[best_match_index]
-                                    matched_type = known_face_types[best_match_index]
-                                    matched_name = known_face_names[best_match_index]
-                                    
-                                    if matched_type == 'faculty':
-                                        name = f"Faculty: {matched_name}"
+                                matched_id = known_face_ids[best_match_index]
+                                matched_type = known_face_types[best_match_index]
+                                matched_name = known_face_names[best_match_index]
+                        
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  ✅ MATCH: {matched_name} ({matched_id}) - Type: {matched_type}")
+                        
+                                if matched_type == 'faculty':
+                                    name = f"Faculty: {matched_name}"
+                                    person_id = matched_id
+                                    ptype = 'faculty'
+                                    confidence = best_similarity
+                        
+                                elif matched_type == 'student':
+                                    if current_section_students and matched_id in current_section_students:
+                                        name = matched_name
                                         person_id = matched_id
-                                        ptype = 'faculty'
-                                        confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
+                                        ptype = 'student'
+                                        confidence = best_similarity
+                                    else:
+                                        name = "Unknown - Wrong Section"
                                         if DEBUG_MODE: 
-                                            logger.debug(f"  FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
-                                    
-                                    elif matched_type == 'student':
-                                        if current_section_students and matched_id in current_section_students:
-                                            name = matched_name
-                                            person_id = matched_id
-                                            ptype = 'student'
-                                            confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
-                                            if DEBUG_MODE: 
-                                                logger.debug(f"  STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
-                                        else:
-                                            if DEBUG_MODE: 
-                                                logger.debug(f"  STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
-                                            name = "Unknown - Wrong Section"
-                                            if face_embedding is not None:
-                                                try:
-                                                    face_crop = frame[y1:y2, x1:x2]
-                                                    if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
-                                                        session_id = get_current_session_id()
-                                                        if session_id:
-                                                            success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
-                                                            if success:
-                                                                if DEBUG_MODE: 
-                                                                    logger.debug(f"📸 CAPTURED OUT-OF-SECTION FACE - Added to enrollment system")
-                                                except Exception as capture_error:
-                                                    logger.error(f"Error capturing out-of-section face: {capture_error}")
+                                            logger.debug(f"  ❌ Student {matched_name} not in current section")
                             else:
                                 if DEBUG_MODE: 
-                                    logger.debug(f"  NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.2f}")
+                                    logger.debug(f"  ❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
                                 name = "Unknown"
-                        
             except Exception as e:
                 logger.error(f"  Error in recognition: {e}")
                 import traceback
@@ -3369,7 +3658,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             upper_body_y2 = by1 + int(body_height * 0.7)
             
             distance_from_center = np.sqrt((face_center_x - w//2)**2 + (face_center_y - h//2)**2)
-            horizontal_margin = int((bx2 - bx1) * 0.2) if distance_from_center > 300 else int((bx2 - bx1) * 0.1)
+            horizontal_margin = int((bx2 - bx1) * 0.25) if distance_from_center > 300 else int((bx2 - bx1) * 0.15)  # Increased
             
             if (bx1 - horizontal_margin <= face_center_x <= bx2 + horizontal_margin and
                 upper_body_y1 <= face_center_y <= upper_body_y2):
@@ -3378,8 +3667,13 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 body_area = (bx2 - bx1) * (by2 - by1)
                 face_body_ratio = face_area / body_area if body_area > 0 else 0
                 
-                min_ratio = 0.01 if distance_from_center > 300 else 0.015
-                max_ratio = 0.25 if distance_from_center > 300 else 0.20
+                # 🎯 MORE LENIENT RATIOS for far-away/half-body
+                if distance_from_center > 300:
+                    min_ratio = 0.008  # Reduced from 0.01
+                    max_ratio = 0.3    # Increased from 0.25
+                else:
+                    min_ratio = 0.012  # Reduced from 0.015
+                    max_ratio = 0.25   # Increased from 0.20
                 
                 if min_ratio <= face_body_ratio <= max_ratio:
                     body_center_x = (bx1 + bx2) // 2
@@ -3394,9 +3688,15 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             locked_body_box = zone_info['body_box']
                             overlap_iou = iou(tuple(body_box), locked_body_box)
                             
-                            min_iou = 0.4 if distance_from_center > 300 else 0.5
+                            # 🎯 MORE LENIENT for far-away
+                            if distance_from_center > 300:
+                                min_iou = 0.3  # Reduced from 0.4
+                            else:
+                                min_iou = 0.4  # Reduced from 0.5
+                            
                             if overlap_iou < min_iou:
-                                logger.warning(f"  ANTI-SWAP: Body detected in {zone_info['lock_info'].get('name', locked_person_id)}'s protection zone - REJECTING")
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  Body in protection zone but low overlap ({overlap_iou:.2f})")
                                 body_in_protected_zone = True
                                 break
                     
@@ -3558,7 +3858,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
     ]
     tracks[:] = current_tracks
     
-    #   Cleanup old tracking history
+    # Cleanup old tracking history
     expired_history_keys = []
     for person_id in list(locked_track_history.keys()):
         if person_id not in locked_tracks:
@@ -3570,7 +3870,18 @@ def refresh_with_detections(frame, rgb, frame_idx):
             del locked_track_predictions[key]
         if key in locked_track_signatures:
             del locked_track_signatures[key]
+
+def enhance_face_recognition_settings():
+    """Apply optimal settings for better recognition"""
+    global CONFIRMATION_SIMILARITY_THRESHOLD, CONFIRMATION_FRAMES_REQUIRED
     
+    # Optimize for easier recognition
+    CONFIRMATION_SIMILARITY_THRESHOLD = 0.58  # Lowered for better recognition
+    CONFIRMATION_FRAMES_REQUIRED = 3  # Reduced for faster locking
+    
+    if DEBUG_MODE: 
+        logger.debug(f"Enhanced recognition: threshold={CONFIRMATION_SIMILARITY_THRESHOLD}, frames={CONFIRMATION_FRAMES_REQUIRED}")
+
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
     🛡️ ULTRA STRONG ANTI-SWAPPING: Body-only tracking for LOCKED tracks with force field protection
@@ -3972,7 +4283,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     width_ratio = min(last_width, new_width) / max(last_width, new_width)
                     height_ratio = min(last_height, new_height) / max(last_height, new_height)
                     
-                    if width_ratio > 0.65 and height_ratio > 0.65:
+                    if width_ratio > 0.6 and height_ratio > 0.6:
                         body_found_in_current_frame = True
                         matched_body_indices.add(idx)
                         
@@ -4756,71 +5067,214 @@ def update_trackers_with_body(rgb, frame, frame_idx):
 
 @app.route('/video_feed')
 def video_feed():
-    """Stream video feed - OPTIMIZED FOR LOW LATENCY"""
+    """Stream video feed - ULTRA LOW LATENCY with proper frame timing"""
     def generate():
         global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
-        frame_idx = 0
-        skip_counter = 0
-        last_encode_time = time.time()
+        global detectionStopped, current_fps
         
-        while not stop_flag:
-            frame_start = time.time()
+        frame_idx = 0
+        last_frame_time = time.time()
+        fps_counter = 0
+        last_fps_log = time.time()
+        
+        # **FIX: Separate counters for detection vs display**
+        display_counter = 0
+        detection_counter = 0
+        
+        # **FIX: Performance monitoring**
+        encode_times = []
+        total_times = []
+        
+        while not stop_flag and not detectionStopped:
+            frame_start_time = time.time()
             
             try:
+                # **FIX: Get frame WITHOUT processing delay**
                 if latest_frame is None:
-                    time.sleep(0.001)
+                    pass
                     continue
                 
-                # Use latest frame directly (already 640x360 from camera)
+                # **FIX: Minimal frame copying**
                 frame = latest_frame.copy()
                 
-                # Only resize if dimensions don't match
-                if frame.shape[1] != STREAM_WIDTH or frame.shape[0] != STREAM_HEIGHT:
+                # **FIX: Skip resizing if possible (camera already provides 640x360)**
+                current_height, current_width = frame.shape[:2]
+                if current_width != STREAM_WIDTH or current_height != STREAM_HEIGHT:
+                    # Only resize if absolutely necessary
                     frame = cv2.resize(frame, (STREAM_WIDTH, STREAM_HEIGHT), 
                                      interpolation=cv2.INTER_LINEAR)
                 
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # **FIX: DECOUPLE detection from streaming**
+                # Run detection in separate thread or less frequently
+                detection_counter += 1
                 
-                skip_counter += 1
-                should_detect = (skip_counter % DETECT_EVERY == 0)
+                # Only run detection every 2nd frame for streaming (30fps -> 15fps detection)
+                if detection_counter % 2 == 0:
+                    try:
+                        # Quick RGB conversion
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        
+                        # Run minimal detection
+                        refresh_with_detections(frame, rgb, frame_idx)
+                    except:
+                        pass
                 
-                if should_detect:
-                    refresh_with_detections(frame, rgb, frame_idx)
-                
-                update_trackers_with_body(rgb, frame, frame_idx)
+                # **FIX: Update tracking more frequently but lightweight**
+                if frame_idx % 3 == 0:  # Every 3rd frame
+                    try:
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        update_trackers_with_body(rgb, frame, frame_idx)
+                    except:
+                        pass
                 
                 frame_idx += 1
+                display_counter += 1
                 
-                if frame_idx % 100 == 0:
-                    torch.cuda.empty_cache()
+                # **FIX: Draw tracking boxes ONCE per frame (not in detection function)**
+                # Draw locked tracks (green boxes)
+                for person_id, lock_info in locked_tracks.items():
+                    body_box = lock_info.get('body_box')
+                    if body_box:
+                        bx1, by1, bx2, by2 = body_box
+                        # Scale box coordinates if frame was resized
+                        if current_width != STREAM_WIDTH:
+                            scale_w = STREAM_WIDTH / current_width
+                            scale_h = STREAM_HEIGHT / current_height
+                            bx1 = int(bx1 * scale_w)
+                            by1 = int(by1 * scale_h)
+                            bx2 = int(bx2 * scale_w)
+                            by2 = int(by2 * scale_h)
+                        
+                        # Draw green box for locked tracks
+                        cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
+                        
+                        # Draw name
+                        name = lock_info.get('name', f'Person {person_id}')
+                        cv2.putText(frame, name, (bx1, max(20, by1 - 10)), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                        cv2.putText(frame, name, (bx1, max(20, by1 - 10)), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
                 
-                # Fast JPEG encoding
+                # **FIX: Draw pending confirmations (orange boxes)**
+                for person_id, conf_data in pending_confirmations.items():
+                    if conf_data.get('body_boxes'):
+                        body_box = conf_data['body_boxes'][-1]
+                        bx1, by1, bx2, by2 = body_box
+                        
+                        # Scale if needed
+                        if current_width != STREAM_WIDTH:
+                            scale_w = STREAM_WIDTH / current_width
+                            scale_h = STREAM_HEIGHT / current_height
+                            bx1 = int(bx1 * scale_w)
+                            by1 = int(by1 * scale_h)
+                            bx2 = int(bx2 * scale_w)
+                            by2 = int(by2 * scale_h)
+                        
+                        cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 165, 255), 2)
+                
+                # **FIX: Draw unlocked tracks (yellow boxes)**
+                for tr in tracks:
+                    if tr.get('is_locked') or tr.get('id') in locked_tracks:
+                        continue
+                    
+                    face_box = tr.get('box')
+                    if face_box:
+                        fx1, fy1, fx2, fy2 = face_box
+                        
+                        # Scale if needed
+                        if current_width != STREAM_WIDTH:
+                            scale_w = STREAM_WIDTH / current_width
+                            scale_h = STREAM_HEIGHT / current_height
+                            fx1 = int(fx1 * scale_w)
+                            fy1 = int(fy1 * scale_h)
+                            fx2 = int(fx2 * scale_w)
+                            fy2 = int(fy2 * scale_h)
+                        
+                        cv2.rectangle(frame, (fx1, fy1), (fx2, fy2), (0, 255, 255), 2)
+                
+                # **FIX: Display FPS counter**
+                current_time = time.time()
+                fps_counter += 1
+                
+                if current_time - last_fps_log >= 1.0:
+                    stream_fps = fps_counter / (current_time - last_fps_log)
+                    fps_counter = 0
+                    last_fps_log = current_time
+                    
+                    # Display FPS on frame
+                    fps_text = f"FPS: {stream_fps:.1f}"
+                    cv2.putText(frame, fps_text, (STREAM_WIDTH - 120, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                # **FIX: FASTER JPEG encoding with optimized parameters**
+                encode_start = time.time()
                 ret, buffer = cv2.imencode('.jpg', frame, [
-                    cv2.IMWRITE_JPEG_QUALITY, 75,  # Increased from JPEG_QUALITY for clarity
-                    cv2.IMWRITE_JPEG_OPTIMIZE, 0   # Disable optimization for speed
+                    cv2.IMWRITE_JPEG_QUALITY, 70,  # Lower quality = faster encoding
+                    cv2.IMWRITE_JPEG_PROGRESSIVE, 0,  # Disable progressive
+                    cv2.IMWRITE_JPEG_OPTIMIZE, 0,  # Disable optimization
+                    cv2.IMWRITE_JPEG_SAMPLING_FACTOR, 1  # Minimal sampling
                 ])
-                frame_bytes = buffer.tobytes()
+                encode_time = time.time() - encode_start
+                encode_times.append(encode_time)
                 
+                if len(encode_times) > 30:
+                    encode_times.pop(0)
+                
+                # Yield the frame
+                frame_bytes = buffer.tobytes()
                 yield (b'--frame\r\n'
                       b'Content-Type: image/jpeg\r\n\r\n' + 
                       frame_bytes + b'\r\n')
                 
-                # Target 30 FPS output
-                processing_time = time.time() - frame_start
-                sleep_time = max(0.001, 0.033 - processing_time)  # 33ms = 30 FPS
-                time.sleep(sleep_time)
+                # **FIX: DYNAMIC SLEEP for consistent 30 FPS**
+                frame_end_time = time.time()
+                total_time = frame_end_time - frame_start_time
+                total_times.append(total_time)
+                
+                if len(total_times) > 30:
+                    total_times.pop(0)
+                
+                # Target 30 FPS (33.3ms per frame)
+                target_time = 0.0333
+                sleep_needed = max(0.0005, target_time - total_time)
+                
+
+                
+                # **FIX: Memory cleanup every 100 frames**
+                if display_counter % 100 == 0:
+                    # Clear some lists to prevent memory growth
+                    if len(total_times) > 30:
+                        total_times = total_times[-30:]
+                    if len(encode_times) > 30:
+                        encode_times = encode_times[-30:]
+                    
+                    # Optional GPU cleanup
+                    try:
+                        if DEVICE == "cuda":
+                            torch.cuda.empty_cache()
+                    except:
+                        pass
                 
             except Exception as e:
                 logger.error(f"Video feed error: {e}")
-                time.sleep(0.001)
+                import traceback
+                logger.error(traceback.format_exc())
+          
     
-    response = Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
-    
-    # CRITICAL: Disable ALL buffering
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    response.headers['X-Accel-Buffering'] = 'no'
+    # **FIX: Add streaming headers for even better performance**
+    response = Response(
+        generate(),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={
+            'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'X-Accel-Buffering': 'no',
+            'X-Accel-Redirect': 'no',
+            'Transfer-Encoding': 'chunked',
+            'Connection': 'keep-alive'
+        }
+    )
     
     return response
 
@@ -7037,11 +7491,36 @@ def encode_face():
         
         face = faces[0]
         face_embedding = face.embedding
+        
+        # 🆕 CRITICAL FIX: Normalize the face embedding before storing
+        face_norm = np.linalg.norm(face_embedding)
+        if face_norm > 0:
+            face_embedding = face_embedding / face_norm
+            if DEBUG_MODE: 
+                logger.debug(f"Normalized face embedding: norm={face_norm:.2f} → normalized")
+        else:
+            logger.warning("Zero norm face embedding detected")
+            return jsonify({
+                'success': False,
+                'message': 'Face embedding error. Please try again.',
+                'current_pose': current_pose,
+                'next_pose': current_pose
+            }), 400
+        
         yaw, pitch, roll = face.pose
+        raw_yaw, raw_pitch = yaw, pitch  # Store raw values for debugging
         landmarks = face.landmark_2d_106
+        
+        # 🆕 IMPORTANT: FIRST LOG RAW VALUES BEFORE MIRROR CORRECTION
+        if DEBUG_MODE: 
+            logger.debug(f"RAW POSE VALUES - yaw: {yaw:.1f}°, pitch: {pitch:.1f}°, roll: {roll:.1f}°")
         
         # ENHANCED: Mirror correction
         yaw = -yaw  # Correct left/right for mirror
+        
+        # 🆕 DEBUG: Show corrected values
+        if DEBUG_MODE: 
+            logger.debug(f"CORRECTED POSE VALUES (after mirror) - yaw: {yaw:.1f}°, pitch: {pitch:.1f}°")
         
         left_eye_indices = [96, 97, 98, 99, 100, 101]
         left_ear = calculate_ear(landmarks, left_eye_indices)
@@ -7050,168 +7529,199 @@ def encode_face():
         mouth_indices = [76, 77, 78, 79, 80, 81, 82, 83]
         mar = calculate_mar(landmarks, mouth_indices)
         
-        # ENHANCED: More lenient pose detection thresholds
+        # 🆕 FIX: CONSISTENT POSE DETECTION THRESHOLDS
+        # The issue might be that 'up' and 'down' are reversed
         pose_results = {
-            'is_frontal': bool(abs(yaw) <= 15 and abs(pitch) <= 12),  # Reduced from 20/15
-            'is_left': bool(yaw >= 8),  # Increased from 6
-            'is_right': bool(yaw <= -8),  # More consistent with left
-            'is_up': bool(pitch <= -8),  # More lenient from -3
-            'is_down': bool(pitch >= 8),  # More lenient from 0.5
-            'is_mouth_open': bool(mar >= 0.07),  # Reduced from 0.08
-            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.25)  # Reduced from 0.35
+            'is_frontal': bool(abs(yaw) <= 15 and abs(pitch) <= 15),
+            'is_left': bool(yaw >= 8),      # Positive yaw = head turned left
+            'is_right': bool(yaw <= -8),    # Negative yaw = head turned right
+            'is_up': bool(pitch <= -10),    # Negative pitch = looking up
+            'is_down': bool(pitch >= 10),   # Positive pitch = looking down
+            'is_mouth_open': bool(mar >= 0.07),
+            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.35)
         }
         
         if DEBUG_MODE: 
-            logger.debug(f"Pose results for {current_pose}: yaw={yaw:.1f}, pitch={pitch:.1f}, mar={mar:.2f}, ear_avg={(left_ear + right_ear)/2:.2f}")
+            logger.debug(f"POSE CHECK for {current_pose}:")
+            logger.debug(f"  yaw={yaw:.1f}° (need {'>=8' if current_pose=='left' else '<=-8' if current_pose=='right' else '|yaw|<=15'})")
+            logger.debug(f"  pitch={pitch:.1f}° (need {'<=-10' if current_pose=='up' else '>=10' if current_pose=='down' else '|pitch|<=15'})")
+            logger.debug(f"  mar={mar:.2f}, ear_avg={(left_ear + right_ear)/2:.2f}")
         
         pose_satisfied = False
         message = ""
         
-        # ENHANCED: Clearer, more consistent pose checking
+        # 🆕 SIMPLIFIED POSE CHECKING WITH DEBUG INFO
         if current_pose == 'frontal':
-            if abs(yaw) <= 5 and abs(pitch) <= 5:
+            if abs(yaw) <= 8 and abs(pitch) <= 8:
                 pose_satisfied = True
-                message = "✅ Perfect! Face perfectly centered."
-            elif abs(yaw) <= 12 and abs(pitch) <= 10:
+                message = "✅ Perfect! Face centered."
+            elif abs(yaw) <= 15 and abs(pitch) <= 15:
                 pose_satisfied = True
                 message = "👌 Good! Face centered enough."
             else:
-                if abs(yaw) > 12:
+                if abs(yaw) > 15:
                     direction = "left" if yaw > 0 else "right"
                     message = f"↔️ Face the camera. You're facing {direction} (yaw: {abs(yaw):.1f}°)"
-                elif abs(pitch) > 10:
+                elif abs(pitch) > 15:
                     direction = "up" if pitch < 0 else "down"
                     message = f"↕️ Keep head level. You're looking {direction} (pitch: {abs(pitch):.1f}°)"
                 else:
                     message = "📸 Look straight at the camera"
         
         elif current_pose == 'left':
-            # ENHANCED: More consistent thresholds
+            # DEBUG: Check what's actually happening
+            if DEBUG_MODE:
+                logger.debug(f"LEFT POSE CHECK: yaw={yaw:.1f}°, condition: yaw >= 8 = {yaw >= 8}")
+            
             if yaw >= 20:
                 pose_satisfied = True
-                message = "✅ Perfect! Good left turn."
-            elif yaw >= 12:
+                message = "✅ Perfect! Great left turn."
+            elif yaw >= 15:
                 pose_satisfied = True
-                message = "👍 Good! Left turn detected."
+                message = "✅ Good! Left turn detected."
             elif yaw >= 8:
                 pose_satisfied = True
                 message = "👌 Acceptable. Left movement detected."
             else:
                 if yaw < 0:
-                    message = "❌ Wrong direction! Turn LEFT"
+                    message = f"❌ Wrong direction! You're turning RIGHT (yaw: {yaw:.1f}°). Turn LEFT"
                 elif yaw < 5:
-                    message = "↩️ Turn your head more to the LEFT"
+                    message = f"↩️ Turn your head more to the LEFT (currently {yaw:.1f}°, need at least 8°)"
                 else:
-                    message = "↪️ Turn a bit more left (current: {:.1f}°)".format(yaw)
+                    message = f"↪️ Turn a bit more left (current: {yaw:.1f}°, need 8°)"
         
         elif current_pose == 'right':
-            # ENHANCED: Consistent with left
+            if DEBUG_MODE:
+                logger.debug(f"RIGHT POSE CHECK: yaw={yaw:.1f}°, condition: yaw <= -8 = {yaw <= -8}")
+            
             if yaw <= -20:
                 pose_satisfied = True
-                message = "✅ Perfect! Good right turn."
-            elif yaw <= -12:
+                message = "✅ Perfect! Great right turn."
+            elif yaw <= -15:
                 pose_satisfied = True
-                message = "👍 Good! Right turn detected."
+                message = "✅ Good! Right turn detected."
             elif yaw <= -8:
                 pose_satisfied = True
                 message = "👌 Acceptable. Right movement detected."
             else:
                 if yaw > 0:
-                    message = "❌ Wrong direction! Turn RIGHT"
+                    message = f"❌ Wrong direction! You're turning LEFT (yaw: {yaw:.1f}°). Turn RIGHT"
                 elif yaw > -5:
-                    message = "↪️ Turn your head more to the RIGHT"
+                    message = f"↪️ Turn your head more to the RIGHT (currently {yaw:.1f}°, need at most -8°)"
                 else:
-                    message = "↩️ Turn a bit more right (current: {:.1f}°)".format(yaw)
+                    message = f"↩️ Turn a bit more right (current: {yaw:.1f}°, need -8°)"
         
         elif current_pose == 'up':
-            # ENHANCED: Much more lenient for up
+            if DEBUG_MODE:
+                logger.debug(f"UP POSE CHECK: pitch={pitch:.1f}°, condition: pitch <= -10 = {pitch <= -10}")
+            
             if pitch <= -25:
                 pose_satisfied = True
                 message = "✅ Perfect! Great upward tilt."
-            elif pitch <= -15:
+            elif pitch <= -20:
                 pose_satisfied = True
-                message = "👍 Excellent! Upward tilt detected."
-            elif pitch <= -8:
+                message = "✅ Good! Upward tilt detected."
+            elif pitch <= -10:
                 pose_satisfied = True
-                message = "👌 Good! Upward movement detected."
+                message = "👌 Acceptable. Upward movement detected."
             else:
-                if pitch > 5:
-                    message = "🔼 Tilt your head UP (chin up, look at ceiling)"
-                elif pitch > 0:
-                    message = "⬆️ Tilt more upward (current: {:.1f}°)".format(pitch)
+                if pitch > 0:
+                    message = f"🔼 Tilt your head UP (currently looking down: {pitch:.1f}°). Chin up!"
+                elif pitch > -5:
+                    message = f"⬆️ Tilt more upward (current: {pitch:.1f}°, need at least -10°)"
                 else:
-                    message = "👆 A bit more upward (current: {:.1f}°)".format(pitch)
+                    message = f"👆 A bit more upward (current: {pitch:.1f}°, need -10°)"
         
         elif current_pose == 'down':
-            # ENHANCED: Much more lenient for down
+            if DEBUG_MODE:
+                logger.debug(f"DOWN POSE CHECK: pitch={pitch:.1f}°, condition: pitch >= 10 = {pitch >= 10}")
+            
             if pitch >= 25:
                 pose_satisfied = True
                 message = "✅ Perfect! Great downward tilt."
-            elif pitch >= 15:
+            elif pitch >= 20:
                 pose_satisfied = True
-                message = "👍 Excellent! Downward tilt detected."
-            elif pitch >= 8:
+                message = "✅ Good! Downward tilt detected."
+            elif pitch >= 10:
                 pose_satisfied = True
-                message = "👌 Good! Downward movement detected."
+                message = "👌 Acceptable. Downward movement detected."
             else:
-                if pitch < -5:
-                    message = "🔽 Tilt your head DOWN (chin down, look at floor)"
-                elif pitch < 0:
-                    message = "⬇️ Tilt more downward (current: {:.1f}°)".format(pitch)
+                if pitch < 0:
+                    message = f"🔽 Tilt your head DOWN (currently looking up: {pitch:.1f}°). Chin down!"
+                elif pitch < 5:
+                    message = f"⬇️ Tilt more downward (current: {pitch:.1f}°, need at least 10°)"
                 else:
-                    message = "👇 A bit more downward (current: {:.1f}°)".format(pitch)
+                    message = f"👇 A bit more downward (current: {pitch:.1f}°, need 10°)"
         
         elif current_pose == 'mouth_open':
-            # ENHANCED: More lenient mouth detection
             if mar >= 0.15:
                 pose_satisfied = True
                 message = "✅ Perfect! Mouth clearly open."
             elif mar >= 0.10:
                 pose_satisfied = True
                 message = "👍 Good! Mouth open detected."
-            elif mar >= 0.07:
+            elif mar >= 0.06:
                 pose_satisfied = True
                 message = "👌 Acceptable. Mouth slightly open."
             else:
-                message = "😮 Open your mouth slightly (like saying 'ahh')"
+                message = f"😮 Open your mouth slightly (current: {mar:.2f}, need at least 0.06)"
         
         elif current_pose == 'eyes_closed':
-            # ENHANCED: More lenient eye closure
             avg_ear = (left_ear + right_ear) / 2
             if avg_ear <= 0.15:
                 pose_satisfied = True
                 message = "✅ Perfect! Eyes clearly closed."
-            elif avg_ear <= 0.20:
+            elif avg_ear <= 0.18:
                 pose_satisfied = True
                 message = "👍 Good! Eyes closed detected."
-            elif avg_ear <= 0.25:
+            elif avg_ear <= 0.20:
                 pose_satisfied = True
                 message = "👌 Acceptable. Eyes mostly closed."
             else:
-                message = "😌 Close your eyes gently (don't squint)"
+                message = f"😌 Close your eyes gently (current EAR: {avg_ear:.2f}, need at most 0.20)"
         
-        # ENHANCED: Progressive assistance for stuck poses
-        if not pose_satisfied:
-            # Track how many times this pose has failed
-            if 'pose_attempts' not in globals():
-                pose_attempts = {}
-            if current_pose not in pose_attempts:
-                pose_attempts[current_pose] = 0
-            pose_attempts[current_pose] += 1
+        # 🆕 TEST: If still not satisfied for left/up/down, try checking without mirror correction
+        if not pose_satisfied and current_pose in ['left', 'right', 'up', 'down']:
+            # Try with raw values (no mirror correction) to see if that's the issue
+            test_raw_yaw = raw_yaw
+            test_raw_pitch = raw_pitch
             
-            # After 3 failed attempts, give more specific guidance
-            if pose_attempts[current_pose] >= 3:
-                if current_pose in ['up', 'down']:
-                    message += f" Tilt your head more ({abs(pitch):.1f}° currently)"
-                elif current_pose in ['left', 'right']:
-                    message += f" Turn your head more ({abs(yaw):.1f}° currently)"
+            if current_pose == 'left' and test_raw_yaw <= -8:
+                if DEBUG_MODE:
+                    logger.debug(f"LEFT POSE MIGHT BE REVERSED: Raw yaw={test_raw_yaw:.1f}° suggests you might need to turn opposite direction")
+                message += " (Try turning opposite direction - mirror might be inverted)"
+            
+            elif current_pose == 'right' and test_raw_yaw >= 8:
+                if DEBUG_MODE:
+                    logger.debug(f"RIGHT POSE MIGHT BE REVERSED: Raw yaw={test_raw_yaw:.1f}° suggests you might need to turn opposite direction")
+                message += " (Try turning opposite direction - mirror might be inverted)"
+            
+            elif current_pose == 'up' and test_raw_pitch >= 10:
+                if DEBUG_MODE:
+                    logger.debug(f"UP POSE MIGHT BE REVERSED: Raw pitch={test_raw_pitch:.1f}° suggests 'up' might mean looking down")
+                message += " (Try looking opposite direction - 'up' might mean chin down)"
+            
+            elif current_pose == 'down' and test_raw_pitch <= -10:
+                if DEBUG_MODE:
+                    logger.debug(f"DOWN POSE MIGHT BE REVERSED: Raw pitch={test_raw_pitch:.1f}° suggests 'down' might mean looking up")
+                message += " (Try looking opposite direction - 'down' might mean chin up)"
         
         if pose_satisfied:
             # Reset attempts counter for this pose
             if 'pose_attempts' in globals() and current_pose in pose_attempts:
                 pose_attempts[current_pose] = 0
             
+            # Store normalized embedding
             pose_embeddings[current_pose] = face_embedding.tolist()
+            
+            # 🆕 DEBUG: Log the normalized embedding stats
+            if DEBUG_MODE:
+                embedding_array = np.array(face_embedding)
+                embedding_norm = np.linalg.norm(embedding_array)
+                embedding_mean = np.mean(embedding_array)
+                embedding_std = np.std(embedding_array)
+                logger.debug(f"Stored normalized embedding for {current_pose}: norm={embedding_norm:.4f}, mean={embedding_mean:.4f}, std={embedding_std:.4f}")
+            
             next_pose_index = min(current_pose_index + 1, len(POSE_SEQUENCE) - 1)
             next_pose = POSE_SEQUENCE[next_pose_index]
             
@@ -7222,8 +7732,10 @@ def encode_face():
             if DEBUG_MODE: 
                 logger.debug(f"Pose {current_pose} not satisfied, retrying")
         
+        # Return normalized embedding
         encoding_response = face_embedding.tolist() if current_pose == 'frontal' else []
         
+        # 🆕 RETURN BOTH RAW AND CORRECTED VALUES FOR DEBUGGING
         return jsonify({
             'success': bool(pose_satisfied),
             'message': str(message),
@@ -7243,7 +7755,16 @@ def encode_face():
             'is_down': bool(pose_results['is_down']),
             'is_mouth_open': bool(pose_results['is_mouth_open']),
             'is_eyes_closed': bool(pose_results['is_eyes_closed']),
-            'current_angle': float(yaw if current_pose in ['left', 'right'] else pitch if current_pose in ['up', 'down'] else 0)
+            'current_angle': float(yaw if current_pose in ['left', 'right'] else pitch if current_pose in ['up', 'down'] else 0),
+            # 🆕 Add raw values for debugging
+            'raw_yaw': float(raw_yaw),
+            'raw_pitch': float(raw_pitch),
+            'embedding_norm': float(np.linalg.norm(face_embedding)) if face_embedding is not None else 0.0,
+            # 🆕 Add pose requirements for debugging
+            'required_yaw_min': 8 if current_pose == 'left' else None,
+            'required_yaw_max': -8 if current_pose == 'right' else None,
+            'required_pitch_min': 10 if current_pose == 'down' else None,
+            'required_pitch_max': -10 if current_pose == 'up' else None
         })
     except Exception as e:
         logger.error(f"Error encoding face: {str(e)}")
@@ -14133,25 +14654,16 @@ def manage_student():
             
             if student:
                 student_name = f"{student[0]} {student[1]}"
-                cursor.execute("""
-                    UPDATE students 
-                    SET status = 'inactive' 
-                    WHERE student_id = %s
-                """, (student_id,))
-                
-                conn.commit()
+
                 cursor.close()
                 conn.close()
-                
-                if student_id in student_status:
-                    del student_status[student_id]
                 
                 if DEBUG_MODE: 
                     logger.debug(f"🗑️ REGULAR STUDENT REMOVED: {student_id}")
                 return jsonify({
                     'success': True, 
-                    'title': 'Student Removed',
-                    'message': f'Student {student_name} has been removed from the class'
+                    'title': 'Action Restricted',
+                    'message': f'Cannot remove {student_name}. Regular students belong to this class and cannot be removed. You can only remove temporary students.'
                 })
             else:
                 cursor.execute("""
@@ -14180,6 +14692,7 @@ def manage_student():
         elif action == 'transfer':
             student_id = student_data.get('student_id')
             new_section = student_data.get('new_section')
+            target_section_id = student_data.get('target_section_id')
             
             if not student_id or not new_section:
                 return jsonify({
@@ -14206,10 +14719,15 @@ def manage_student():
             
             #    CORRECTED: Get student info with proper schema
             cursor.execute("""
-                SELECT s.first_name, s.last_name, ys.section_id
+                 SELECT 
+                    s.first_name, 
+                    s.last_name, 
+                    s.section_id as current_section_id,
+                    ys.section_name as current_section_name,
+                    ys.year_level as current_year_level
                 FROM students s
                 JOIN year_sections ys ON s.section_id = ys.section_id
-                WHERE s.student_id = %s
+                WHERE s.student_id = %s AND s.status = 'active'
             """, (student_id,))
             
             student = cursor.fetchone()
@@ -14220,19 +14738,43 @@ def manage_student():
                 return jsonify({
                     'success': False, 
                     'title': 'Student Not Found',
-                    'message': f'Student with ID {student_id} was not found'
+                    'message': f'Student with ID {student_id} was not found or is not active'
                 })
             
             student_name = f"{student['first_name']} {student['last_name']}"
+            current_section_display = f"Year {student['current_year_level']}{student['current_section_name']}"
+
+            if target_section_id and int(target_section_id) == student['current_section_id']:
+                cursor.close()
+                conn.close()
+                return jsonify({
+                    'success': False, 
+                    'title': 'No Change',
+                    'message': f'Student {student_name} is already in {current_section_display}'
+                })
+            
+            if target_section_id:
             
             # Find the target section_id
-            cursor.execute("""
-                SELECT section_id FROM year_sections 
-                WHERE program_id = %s AND year_level = %s AND section_name = %s
-                LIMIT 1
-            """, (program_id, year_level, section_name))
-            
+                cursor.execute("""
+                    SELECT section_id, section_name, year_level
+                    FROM year_sections  
+                    WHERE section_id = %s AND status = 'active'
+            """, (target_section_id,))
+                
+            else:
+
+                cursor.execute("""
+                    SELECT section_id, section_name, year_level 
+                    FROM year_sections 
+                    WHERE program_id = %s 
+                    AND year_level = %s 
+                    AND section_name = %s
+                    AND status = 'active'
+                    LIMIT 1
+                """, (program_id, year_level, section_name))
             target_section = cursor.fetchone()
+
             
             if not target_section:
                 cursor.close()
@@ -14240,7 +14782,7 @@ def manage_student():
                 return jsonify({
                     'success': False, 
                     'title': 'Section Not Found',
-                    'message': f'Section {program_id} {year_level}{section_name} was not found'
+                    'message': f'Section {program_id} {year_level}{section_name} was not found or is not active'
                 })
             
             #    CORRECTED: Update student's section_id
@@ -14258,11 +14800,11 @@ def manage_student():
                 del student_status[student_id]
             
             if DEBUG_MODE: 
-                logger.debug(f"  STUDENT TRANSFERRED: {student_id} to {program_id} {year_level}{section_name}")
+                logger.debug(f"  STUDENT TRANSFERRED: {student_name} ({student_id}) from {current_section_display} to {program_id} {year_level}{section_name}")
             return jsonify({
                 'success': True, 
                 'title': 'Transfer Successful',
-                'message': f'Student {student_name} has been transferred to {program_id} {year_level}{section_name}'
+                'message': f'Student {student_name} has been transferred from {current_section_display} to {program_id} {year_level}{section_name}'
             })
             
         elif action == 'excused':
@@ -17630,265 +18172,890 @@ def get_curriculum_details():
         }), 500
     
 def open_test_camera(rtsp_url):
-    """Open camera with ZERO buffering"""
+    """Open test camera with correct authentication format"""
     global test_camera_cap, test_camera_active
     
     try:
         with test_camera_lock:
             if test_camera_cap is not None:
                 test_camera_cap.release()
+                test_camera_cap = None
             
-            test_camera_cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+            # Clear queues
+            while not test_frame_queue.empty():
+                try:
+                    test_frame_queue.get_nowait()
+                except:
+                    break
+            while not test_encoded_queue.empty():
+                try:
+                    test_encoded_queue.get_nowait()
+                except:
+                    break
             
-            # CRITICAL FIX: Minimal buffering
-            test_camera_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            test_camera_cap.set(cv2.CAP_PROP_FPS, 30)
-            test_camera_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            test_camera_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+            print(f"📡 Connecting to: {rtsp_url[:100]}...")
             
-            # Test connection
-            ret, frame = test_camera_cap.read()
-            if not ret:
+            # Try multiple approaches with the CORRECT authentication format
+            connection_attempts = [
+                # 1. Direct with TCP optimization
+                lambda: cv2.VideoCapture(optimize_rtsp_url(rtsp_url), cv2.CAP_FFMPEG),
+                
+                # 2. Direct without optimization
+                lambda: cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG),
+                
+                # 3. Try alternative authentication format (without extra @)
+                lambda: cv2.VideoCapture(rtsp_url.replace("admin:@101Pok3r5610", "admin:101Pok3r5610"), cv2.CAP_FFMPEG),
+            ]
+            
+            success = False
+            for i, attempt in enumerate(connection_attempts):
+                try:
+                    print(f"  Attempt {i+1}...")
+                    test_camera_cap = attempt()
+                    
+                    if test_camera_cap and test_camera_cap.isOpened():
+                        # Quick test read
+                        ret, frame = test_camera_cap.read()
+                        if ret and frame is not None:
+                            success = True
+                            print(f"  ✅ Connected with attempt {i+1}")
+                            break
+                        else:
+                            test_camera_cap.release()
+                            test_camera_cap = None
+                except Exception as e:
+                    print(f"  ❌ Attempt {i+1} failed: {e}")
+                    if test_camera_cap:
+                        test_camera_cap.release()
+                        test_camera_cap = None
+            
+            if not success:
+                print("❌ All connection attempts failed")
                 return False
             
-            test_camera_active = True
-            return True
+            # Get camera specs
+            orig_width = int(test_camera_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            orig_height = int(test_camera_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            orig_fps = test_camera_cap.get(cv2.CAP_PROP_FPS)
+            
+            print(f"📊 Camera specs: {orig_width}x{orig_height} @ {orig_fps:.1f} FPS")
+            
+            # Set optimal buffer size for low latency
+            test_camera_cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+            
+            # For face recognition, prefer 720p or lower
+            if orig_width > 1280:
+                test_camera_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                test_camera_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                print("📷 Set to 720p for face recognition optimization")
+            elif orig_width > 640:
+                test_camera_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                test_camera_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+                print("📷 Set to 640x360 for optimal face recognition")
+            
+            # Test with a few frames
+            success_count = 0
+            for i in range(10):
+                ret, frame = test_camera_cap.read()
+                if ret and frame is not None:
+                    success_count += 1
+                    h, w = frame.shape[:2]
+                    if i == 0:
+                        print(f"  First frame: {w}x{h}")
+                time.sleep(0.01)
+            
+            if success_count >= 3:
+                test_camera_active = True
+                print(f"✅ Camera ready ({success_count}/10 frames OK)")
+                return True
+            else:
+                test_camera_cap.release()
+                test_camera_cap = None
+                print("❌ Camera not responding consistently")
+                return False
             
     except Exception as e:
-        print(f"Camera error: {e}")
+        print(f"❌ Camera error: {e}")
+        if test_camera_cap:
+            test_camera_cap.release()
+            test_camera_cap = None
         return False
 
+def optimize_rtsp_url(rtsp_url):
+    """Add VLC-like optimization parameters to RTSP URL"""
+    if "rtsp://" not in rtsp_url.lower():
+        return rtsp_url
+    
+    # Remove existing query params
+    base_url = rtsp_url.split('?')[0]
+    
+    # VLC-like optimization parameters
+    params = {
+        'tcp': '',  # Use TCP for reliability
+        'buffer_size': '3000000',  # 3MB buffer (VLC uses ~3MB)
+        'rtsp_transport': 'tcp',
+        'stimeout': '10000000',  # 10 second timeout (generous)
+        'max_delay': '1000000',  # 1 second max delay
+        'analyzeduration': '1000000',  # 1 second analysis
+        'probesize': '500000',  # 500KB probe size
+        'fps': '30',  # Request 30 FPS
+        'reorder_queue_size': '1000',  # Handle packet reordering
+    }
+    
+    # Build URL with parameters
+    param_str = '&'.join([f'{k}={v}' if v else k for k, v in params.items()])
+    return f"{base_url}?{param_str}"
+
 def test_camera_grabber():
-    """Grab frames - ALWAYS get latest frame"""
-    global test_frame, test_camera_active, test_camera_cap
+    """Optimized frame grabbing with VLC-like buffering"""
+    global test_camera_active, test_camera_cap, test_frame_queue
+    
+    frame_counter = 0
+    last_log_time = time.time()
+    error_count = 0
+    last_success_time = time.time()
+    buffer_size = 5  # Increased buffer for smoothness
+    
+    print("🎥 Grabber started (VLC-like buffering)")
     
     while test_camera_active:
         try:
+            ret = False
+            frame = None
+            
             with test_camera_lock:
                 if test_camera_cap and test_camera_cap.isOpened():
-                    # CRITICAL: Flush old frames - skip 2 is enough
-                    for _ in range(2):  # Changed from 3 to 2
-                        test_camera_cap.grab()
-                    
-                    # Get latest frame
                     ret, frame = test_camera_cap.read()
-                    if ret:
-                        test_frame = frame
-                        
+            
+            if ret and frame is not None:
+                error_count = 0
+                frame_counter += 1
+                last_success_time = time.time()
+                
+                # Get frame size
+                h, w = frame.shape[:2]
+                
+                # VLC-LIKE BUFFERING: Keep more frames in queue for smooth playback
+                # Don't clear the queue immediately - let it build up to buffer_size
+                if test_frame_queue.qsize() < buffer_size:
+                    try:
+                        test_frame_queue.put_nowait(frame)
+                    except queue.Full:
+                        # If queue is full, replace oldest frame
+                        try:
+                            test_frame_queue.get_nowait()  # Remove oldest
+                            test_frame_queue.put_nowait(frame)  # Add newest
+                        except:
+                            pass
+                else:
+                    # Queue has enough frames, we can add more
+                    try:
+                        test_frame_queue.put_nowait(frame)
+                    except queue.Full:
+                        pass
+                    
+            else:
+                error_count += 1
+                
+                # VLC behavior: Continue for a while even with errors
+                if error_count > 50:  # Increased tolerance
+                    print(f"❌ Grabber: Too many consecutive errors ({error_count})")
+                    if time.time() - last_success_time > 10.0:  # 10 seconds no frames
+                        print("❌ Connection lost for 10+ seconds")
+                        test_camera_active = False
+                        break
+                
+                time.sleep(0.01)  # Slightly longer sleep on error
+            
+            current_time = time.time()
+            if current_time - last_log_time >= 2.0:
+                fps = frame_counter / (current_time - last_log_time)
+                queue_size = test_frame_queue.qsize()
+                print(f"🎥 Grab: {fps:.1f} FPS | Q:{queue_size} | {w}x{h}")
+                frame_counter = 0
+                last_log_time = current_time
+                
         except Exception as e:
-            print(f"Grab error: {e}")
-        
-        time.sleep(0.001)  # Very short sleep
-
-def create_test_placeholder():
-    """Create a simple placeholder frame"""
-    frame = np.zeros((360, 640, 3), dtype=np.uint8)
-    timestamp = time.strftime("%H:%M:%S")
-    cv2.putText(frame, f"TEST FEED - {timestamp}", (180, 180), 
-               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-    return frame
-
-def generate_test_frames():
-    """Generate frames with minimal delay"""
-    global test_frame, test_camera_active
+            print(f"❌ Grabber error: {e}")
+            time.sleep(0.01)  # Recoverable error
     
-    last_sent = time.time()
+    print("🛑 Grabber stopped")
+
+def test_frame_encoder():
+    """Smooth encoding with buffer management like VLC"""
+    global test_camera_active, test_frame_queue, test_encoded_queue
+    
+    encode_counter = 0
+    last_log_time = time.time()
+    total_encode_time = 0
+    
+    # Dynamic quality based on resolution
+    # For main stream (4K): lower quality for speed
+    # For sub stream (640x360): higher quality
+    
+    print(f"⚙️ Encoder started (VLC-like adaptive quality)")
+    
+    # Initial values, will be adjusted based on frame size
+    TARGET_WIDTH = 1280
+    TARGET_HEIGHT = 720
+    QUALITY = 85
+    
+    # Buffer management
+    max_encoded_queue_size = 10  # Increased buffer for smoothness
     
     while test_camera_active:
         try:
-            current_time = time.time()
-            
-            # Limit to 30 FPS output
-            if current_time - last_sent < 0.033:
-                time.sleep(0.001)
+            # Get frame with reasonable timeout
+            try:
+                frame = test_frame_queue.get(timeout=0.05)  # 50ms timeout
+            except queue.Empty:
+                # No frame available, sleep a bit
+                time.sleep(0.01)
                 continue
             
-            if test_frame is not None:
-                # Faster encoding - quality 70 is good balance
-                ret, buffer = cv2.imencode('.jpg', test_frame, 
-                                         [cv2.IMWRITE_JPEG_QUALITY, 70,  # Increased from 60
-                                          cv2.IMWRITE_JPEG_OPTIMIZE, 0])  # Disable optimization
-                if ret:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + 
-                           buffer.tobytes() + b'\r\n')
-                    last_sent = current_time
+            # Get original dimensions
+            h, w = frame.shape[:2]
+            
+            # DYNAMIC SETTINGS BASED ON RESOLUTION
+            if w >= 1920:  # Main stream (HD/4K)
+                # Downscale for performance
+                TARGET_WIDTH = 1280
+                TARGET_HEIGHT = 720
+                QUALITY = 75  # Lower quality for speed
+                interpolation = cv2.INTER_LINEAR  # Faster resize
+            else:  # Sub stream (640x360 or similar)
+                # Keep original or slight upscale
+                TARGET_WIDTH = 640
+                TARGET_HEIGHT = 360
+                QUALITY = 85  # Higher quality
+                interpolation = cv2.INTER_LANCZOS4  # Better quality resize
+            
+            # Only resize if necessary
+            if w != TARGET_WIDTH or h != TARGET_HEIGHT:
+                frame_resized = cv2.resize(frame, (TARGET_WIDTH, TARGET_HEIGHT), 
+                                         interpolation=interpolation)
             else:
-                time.sleep(0.001)
+                frame_resized = frame
+            
+            # Encode with appropriate quality
+            encode_start = time.time()
+            
+            if USE_TURBOJPEG:
+                frame_bytes = jpeg.encode(frame_resized, quality=QUALITY, 
+                                         jpeg_subsample=2 if QUALITY >= 80 else 1)
+            else:
+                encode_params = [cv2.IMWRITE_JPEG_QUALITY, QUALITY]
+                success, buffer = cv2.imencode('.jpg', frame_resized, encode_params)
+                if not success:
+                    continue
+                frame_bytes = buffer.tobytes()
+            
+            encode_time = (time.time() - encode_start) * 1000
+            total_encode_time += encode_time
+            encode_counter += 1
+            
+            # VLC-LIKE BUFFERING: Manage encoded queue size
+            # Keep more frames for smooth playback, but not too many
+            if test_encoded_queue.qsize() >= max_encoded_queue_size:
+                # Remove oldest frames to make room
+                frames_to_remove = test_encoded_queue.qsize() - max_encoded_queue_size + 3
+                for _ in range(frames_to_remove):
+                    try:
+                        test_encoded_queue.get_nowait()
+                    except:
+                        break
+            
+            try:
+                test_encoded_queue.put_nowait(frame_bytes)
+            except queue.Full:
+                pass
+            
+            # Log every 2 seconds
+            current_time = time.time()
+            if current_time - last_log_time >= 2.0:
+                fps = encode_counter / (current_time - last_log_time)
+                avg_ms = total_encode_time / encode_counter if encode_counter > 0 else 0
+                frame_size = len(frame_bytes) / 1024  # KB
+                
+                print(f"⚙️ Encode: {fps:.1f} FPS | {avg_ms:.1f}ms | {frame_size:.1f}KB | {w}x{h}→{TARGET_WIDTH}x{TARGET_HEIGHT} Q:{QUALITY}")
+                encode_counter = 0
+                total_encode_time = 0
+                last_log_time = current_time
+                
+        except Exception as e:
+            print(f"❌ Encoder error: {e}")
+            time.sleep(0.01)
+    
+    print("🛑 Encoder stopped")
+
+def create_test_placeholder():
+    """Create HD placeholder frame"""
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    
+    # Gradient background
+    for i in range(1280):
+        color = int(30 + (i / 1280) * 80)
+        frame[:, i] = (color, color, color + 30)
+    
+    cv2.putText(frame, "CAMERA TEST", (450, 280), 
+               cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
+    cv2.putText(frame, "Connecting to camera...", (460, 350), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (180, 200, 255), 2)
+    
+    # Add resolution info
+    cv2.putText(frame, "1280x720 @ 85 Quality", (500, 400), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+    
+    return frame
+
+# Pre-encode placeholder with high quality
+_PLACEHOLDER_FRAME = create_test_placeholder()
+if USE_TURBOJPEG:
+    _PLACEHOLDER_ENCODED = jpeg.encode(_PLACEHOLDER_FRAME, quality=85)
+else:
+    _, _placeholder_buffer = cv2.imencode('.jpg', _PLACEHOLDER_FRAME, 
+                                          [cv2.IMWRITE_JPEG_QUALITY, 85])
+    _PLACEHOLDER_ENCODED = _placeholder_buffer.tobytes()
+
+def generate_test_frames():
+    """VLC-like smooth streaming generator with proper buffering"""
+    global test_camera_active, test_encoded_queue
+    
+    frame_counter = 0
+    last_fps_time = time.time()
+    last_valid_frame = _PLACEHOLDER_ENCODED
+    buffer_duration = 0.5  # Target 0.5 second buffer (like VLC)
+    target_buffer_frames = 15  # Target frames in buffer
+    
+    print("📡 Stream started (VLC-like with 0.5s buffer)")
+    
+    # Initial: wait for buffer to fill
+    while test_camera_active and test_encoded_queue.qsize() < 5:
+        time.sleep(0.01)
+    
+    while test_camera_active:
+        try:
+            frame_bytes = None
+            
+            # Get frame with priority on buffer fullness
+            try:
+                current_buffer = test_encoded_queue.qsize()
+                
+                # VLC-like adaptive delay based on buffer
+                if current_buffer >= target_buffer_frames:
+                    # Buffer is full, minimal delay
+                    timeout = 0.01
+                elif current_buffer >= 10:
+                    # Good buffer, normal delay
+                    timeout = 0.02
+                elif current_buffer >= 5:
+                    # Low buffer, wait longer
+                    timeout = 0.05
+                else:
+                    # Very low buffer, wait for frames
+                    timeout = 0.1
+                
+                frame_bytes = test_encoded_queue.get(timeout=timeout)
+                last_valid_frame = frame_bytes
+                
+            except queue.Empty:
+                # Buffer empty, use last frame with warning
+                frame_bytes = last_valid_frame
+                print("⚠️ Buffer empty, using last frame")
+                time.sleep(0.05)  # Slow down when buffer is empty
+                continue
+            
+            # Calculate FPS control for smooth playback
+            current_time = time.time()
+            target_fps = 30  # Target frame rate
+            frame_delay = 1.0 / target_fps
+            
+            # Send the frame
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + 
+                   frame_bytes + b'\r\n')
+            
+            frame_counter += 1
+            
+            # VLC-like timing: Maintain consistent frame rate
+            elapsed = time.time() - current_time
+            sleep_time = max(0.001, frame_delay - elapsed)
+            time.sleep(sleep_time)
+            
+            # Monitor and log
+            current_log_time = time.time()
+            if current_log_time - last_fps_time >= 2.0:
+                fps = frame_counter / (current_log_time - last_fps_time)
+                queue_size = test_encoded_queue.qsize()
+                buffer_time = queue_size * frame_delay  # Estimated buffer in seconds
+                
+                # Log with buffer info
+                status = "STABLE" if queue_size >= 8 else "LOW_BUFFER"
+                print(f"📡 Stream: {fps:.1f} FPS | Buffer: {queue_size} frames ({buffer_time:.2f}s) | {status}")
+                frame_counter = 0
+                last_fps_time = current_log_time
                 
         except GeneratorExit:
+            print("📡 Stream: Client disconnected")
             break
         except Exception as e:
-            print(f"Frame gen error: {e}")
+            print(f"📡 Stream error: {e}")
             time.sleep(0.01)
-
+    
+    print("🛑 Stream stopped")
 
 @app.route('/api/test_camera')
 def test_camera():
-    """Endpoint for testing camera feed in modal"""
+    """Test camera page with HD streaming"""
     rtsp_url = request.args.get('rtsp', '')
     
-    # Start test camera stream
-    global test_camera_active, test_camera_thread
+    global test_camera_active, test_camera_thread, test_encoder_thread
     
-    # Stop existing test camera
+    # Stop existing
     test_camera_active = False
-    if 'test_camera_thread' in globals() and test_camera_thread.is_alive():
+    
+    if test_camera_thread and test_camera_thread.is_alive():
         test_camera_thread.join(timeout=1.0)
+    if test_encoder_thread and test_encoder_thread.is_alive():
+        test_encoder_thread.join(timeout=1.0)
     
-    # Open new test camera
-    success = open_test_camera(rtsp_url)
+    # Clear queues
+    while not test_frame_queue.empty():
+        try:
+            test_frame_queue.get_nowait()
+        except:
+            break
+    while not test_encoded_queue.empty():
+        try:
+            test_encoded_queue.get_nowait()
+        except:
+            break
     
-    # Start grabber thread if successful
+    success = False
+    if rtsp_url:
+        success = open_test_camera(rtsp_url)
+    
     if success:
         test_camera_active = True
         test_camera_thread = threading.Thread(target=test_camera_grabber, daemon=True)
         test_camera_thread.start()
+        time.sleep(0.1)  # Small delay before starting encoder
+        test_encoder_thread = threading.Thread(target=test_frame_encoder, daemon=True)
+        test_encoder_thread.start()
     
-    # Return the test page
     html = f'''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Camera Test</title>
+    <title>Camera Test - HD Real-Time Stream</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{ 
-            margin: 0; 
-            padding: 0; 
             background: #000;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             height: 100vh;
             overflow: hidden;
-        }}
-        #status {{
             color: white;
-            text-align: center;
-            margin: 5px;
-            font-family: monospace;
-            font-size: 12px;
-            padding: 5px 10px;
-            background: rgba(0, 0, 0, 0.7);
-            border-radius: 3px;
         }}
-        #latency {{
-            color: #0f0;
-            font-family: monospace;
+        .container {{
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 10px;
+        }}
+        .header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: rgba(20, 20, 20, 0.95);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #333;
+        }}
+        .status-box {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+        .status-led {{
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: {'#0f0' if success else '#f00'};
+            box-shadow: 0 0 15px {'#0f0' if success else '#f00'};
+            animation: pulse 1.5s infinite;
+        }}
+        @keyframes pulse {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.4; }}
+        }}
+        .status-text {{
+            font-size: 16px;
+            font-weight: 600;
+            color: {'#0f0' if success else '#f00'};
+        }}
+        .camera-info {{
+            font-size: 12px;
+            color: #aaa;
+            margin-left: 10px;
+        }}
+        .metrics {{
+            display: flex;
+            gap: 25px;
+        }}
+        .metric {{
+            text-align: center;
+            min-width: 80px;
+        }}
+        .metric-label {{
             font-size: 11px;
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 3px 6px;
-            border-radius: 3px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .metric-value {{
+            font-size: 20px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            margin-top: 2px;
+        }}
+        .fps-excellent {{ color: #0f0; }}
+        .fps-good {{ color: #9f0; }}
+        .fps-fair {{ color: #ff0; }}
+        .fps-poor {{ color: #f60; }}
+        .video-container {{
+            flex: 1;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid #333;
         }}
         #cameraFeed {{
             width: 100%;
-            height: calc(100% - 40px);
+            height: 100%;
             object-fit: contain;
+            image-rendering: crisp-edges;
+        }}
+        .quality-bars {{
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 4px;
+            padding: 8px 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 8px;
+            border: 1px solid #444;
+        }}
+        .bar {{
+            width: 4px;
+            height: 20px;
+            background: #222;
+            border-radius: 2px;
+            transition: all 0.2s;
+        }}
+        .bar.active {{
+            background: linear-gradient(to top, #0f0, #9f0);
+            box-shadow: 0 0 8px #0f0;
+        }}
+        .latency-warning {{
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            padding: 6px 12px;
+            background: rgba(255, 100, 0, 0.9);
+            border-radius: 6px;
+            font-size: 12px;
+            display: none;
+        }}
+        
+        /* NEW: Buffer status display (VLC-like) */
+        .buffer-status {{
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 10;
+        }}
+        .buffer-bar {{
+            width: 100px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            overflow: hidden;
+        }}
+        .buffer-fill {{
+            height: 100%;
+            background: linear-gradient(to right, #f00, #ff0, #0f0);
+            width: 0%;
+            transition: width 0.3s;
+        }}
+        .buffer-text {{
+            color: white;
+            font-size: 12px;
+            min-width: 80px;
+        }}
+        
+        /* Stream quality indicator */
+        .stream-quality {{
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #ccc;
         }}
     </style>
 </head>
 <body>
-    <div id="status">Connecting...</div>
-    <div id="latency">0 ms</div>
-    <img id="cameraFeed" crossorigin="anonymous" 
-         src="/api/test_camera_stream?t={int(time.time())}" 
-         alt="Camera Feed">
-    
+    <div class="container">
+        <div class="header">
+            <div class="status-box">
+                <div class="status-led"></div>
+                <div class="status-text" id="status">{'🟢 HD LIVE STREAM' if success else '🔴 OFFLINE'}</div>
+                <div class="camera-info" id="cameraInfo">VLC-like buffering • Adaptive quality</div>
+            </div>
+            <div class="metrics">
+                <div class="metric">
+                    <div class="metric-label">FPS</div>
+                    <div class="metric-value fps-excellent" id="fps">--</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Latency</div>
+                    <div class="metric-value fps-excellent" id="latency">--ms</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Buffer</div>
+                    <div class="metric-value fps-excellent" id="bufferDisplay">0.0s</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="video-container">
+            <img id="cameraFeed" src="/api/test_camera_stream?t={int(time.time())}" alt="Camera Feed">
+            
+            <!-- NEW: Buffer Status Indicator -->
+            <div class="buffer-status">
+                <div class="buffer-bar">
+                    <div class="buffer-fill" id="bufferFill"></div>
+                </div>
+                <div class="buffer-text" id="bufferText">Buffer: 0.0s</div>
+            </div>
+            
+            <div class="quality-bars">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+            </div>
+            
+            <div class="latency-warning" id="latencyWarning">
+                ⚠️ High Latency Detected
+            </div>
+            
+            <!-- NEW: Stream Quality Display -->
+            <div class="stream-quality" id="streamQuality">
+                Stream: --
+            </div>
+        </div>
+    </div>
+
     <script>
-        let retryCount = 0;
-        const maxRetries = 3;
-        const statusElement = document.getElementById('status');
-        const latencyElement = document.getElementById('latency');
-        let frameTimes = [];
-        let lastFrameTime = Date.now();
-        let refreshTimer = null;
-        
-        function updateStatus(text, isError = false) {{
-            statusElement.textContent = text;
-            statusElement.style.color = isError ? '#ff6b6b' : '#0f0';
-        }}
-        
-        function updateLatency() {{
-            const now = Date.now();
-            const latency = now - lastFrameTime;
-            
-            // Keep last 10 measurements
-            frameTimes.push(latency);
-            if (frameTimes.length > 10) frameTimes.shift();
-            
-            // Calculate average
-            const avgLatency = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
-            
-            // Display
-            latencyElement.textContent = Math.round(avgLatency) + ' ms';
-            
-            // Color coding
-            if (avgLatency < 150) {{
-                latencyElement.style.color = '#0f0';  // Green
-            }} else if (avgLatency < 300) {{
-                latencyElement.style.color = '#ff0';  // Yellow
-            }} else {{
-                latencyElement.style.color = '#f00';  // Red
-            }}
-            
-            return avgLatency;
-        }}
-        
         const img = document.getElementById('cameraFeed');
+        const statusText = document.getElementById('status');
+        const fpsEl = document.getElementById('fps');
+        const latencyEl = document.getElementById('latency');
+        const bufferEl = document.getElementById('bufferDisplay');
+        const bufferFill = document.getElementById('bufferFill');
+        const bufferText = document.getElementById('bufferText');
+        const cameraInfo = document.getElementById('cameraInfo');
+        const bars = document.querySelectorAll('.bar');
+        const latencyWarning = document.getElementById('latencyWarning');
+        const streamQuality = document.getElementById('streamQuality');
         
-        // Track when new frame loads
-        img.addEventListener('load', function() {{
-            lastFrameTime = Date.now();
-            retryCount = 0;
-            
-            const avgLatency = updateLatency();
-            
-            if (avgLatency < 150) {{
-                updateStatus('✓ LIVE - Good latency');
-            }} else {{
-                updateStatus('✓ LIVE - Moderate latency');
-            }}
-            
-            // Don't refresh too fast! This causes the errors
-            // Clear any existing timer
-            if (refreshTimer) clearTimeout(refreshTimer);
-            
-            // Refresh only if latency is bad
-            if (avgLatency > 500) {{
-                refreshTimer = setTimeout(() => {{
-                    img.src = '/api/test_camera_stream?t=' + Date.now();
-                }}, 1000);
-            }}
-        }});
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let lastFrameTime = performance.now();
+        let latencies = [];
+        let highLatencyCount = 0;
+        let bufferEstimate = 0;
+        let bufferHealth = 0; // 0-100
+        let streamType = 'Unknown';
         
-        img.addEventListener('error', function() {{
-            retryCount++;
-            if (retryCount < maxRetries) {{
-                updateStatus('Retrying (' + retryCount + '/' + maxRetries + ')', true);
-                setTimeout(() => {{
-                    img.src = '/api/test_camera_stream?t=' + Date.now();
-                }}, 500);
+        // Buffer simulation (in real app, this would come from server)
+        function simulateBufferUpdate(fps, latency) {{
+            if (fps >= 25 && latency < 100) {{
+                // Good conditions: buffer fills quickly
+                bufferHealth = Math.min(100, bufferHealth + 5);
+                bufferEstimate = Math.min(1.0, bufferEstimate + 0.05);
+            }} else if (fps >= 15 && latency < 300) {{
+                // Fair conditions: buffer fills slowly
+                bufferHealth = Math.min(100, bufferHealth + 2);
+                bufferEstimate = Math.min(1.0, bufferEstimate + 0.02);
             }} else {{
-                updateStatus('✗ Connection failed', true);
-                latencyElement.textContent = 'OFFLINE';
-                latencyElement.style.color = '#f00';
+                // Poor conditions: buffer drains
+                bufferHealth = Math.max(0, bufferHealth - 10);
+                bufferEstimate = Math.max(0, bufferEstimate - 0.1);
             }}
-        }});
+            
+            // Update buffer display
+            bufferFill.style.width = bufferHealth + '%';
+            bufferText.textContent = `Buffer: ${{bufferEstimate.toFixed(1)}}s`;
+            bufferEl.textContent = `${{bufferEstimate.toFixed(1)}}s`;
+            
+            // Update buffer color based on health
+            if (bufferHealth >= 70) {{
+                bufferFill.style.background = 'linear-gradient(to right, #0f0, #9f0)';
+                bufferEl.className = 'metric-value fps-excellent';
+            }} else if (bufferHealth >= 40) {{
+                bufferFill.style.background = 'linear-gradient(to right, #ff0, #f90)';
+                bufferEl.className = 'metric-value fps-fair';
+            }} else {{
+                bufferFill.style.background = 'linear-gradient(to right, #f00, #f60)';
+                bufferEl.className = 'metric-value fps-poor';
+            }}
+            
+            // Show warning if buffer is low
+            if (bufferHealth < 30 && bufferEstimate < 0.3) {{
+                latencyWarning.style.display = 'block';
+                latencyWarning.textContent = `⚠️ Low Buffer (${{bufferEstimate.toFixed(1)}}s)`;
+                latencyWarning.style.background = 'rgba(255, 50, 0, 0.9)';
+            }} else {{
+                latencyWarning.style.display = 'none';
+            }}
+        }}
+        
+        function updateQuality(fps, latency) {{
+            // Update quality bars
+            let activeBars = 0;
+            if (fps >= 28 && latency < 80) activeBars = 5;
+            else if (fps >= 24 && latency < 120) activeBars = 4;
+            else if (fps >= 20 && latency < 200) activeBars = 3;
+            else if (fps >= 15) activeBars = 2;
+            else if (fps >= 10) activeBars = 1;
+            
+            bars.forEach((bar, i) => bar.classList.toggle('active', i < activeBars));
+            
+            // Update stream quality display
+            if (fps >= 25 && latency < 100) {{
+                streamQuality.textContent = 'Stream: Excellent (VLC-like)';
+                streamQuality.style.color = '#0f0';
+            }} else if (fps >= 20 && latency < 200) {{
+                streamQuality.textContent = 'Stream: Good';
+                streamQuality.style.color = '#9f0';
+            }} else if (fps >= 15 && latency < 300) {{
+                streamQuality.textContent = 'Stream: Fair';
+                streamQuality.style.color = '#ff0';
+            }} else {{
+                streamQuality.textContent = 'Stream: Poor';
+                streamQuality.style.color = '#f60';
+            }}
+            
+            // Update status colors
+            if (fps >= 25 && latency < 100) {{
+                fpsEl.className = 'metric-value fps-excellent';
+                latencyEl.className = 'metric-value fps-excellent';
+                statusText.textContent = '🟢 HD LIVE STREAM';
+                highLatencyCount = 0;
+            }} else if (fps >= 20 && latency < 200) {{
+                fpsEl.className = 'metric-value fps-good';
+                latencyEl.className = 'metric-value fps-good';
+                statusText.textContent = '🟢 LIVE STREAM';
+                highLatencyCount = 0;
+            }} else if (fps >= 15 && latency < 300) {{
+                fpsEl.className = 'metric-value fps-fair';
+                latencyEl.className = 'metric-value fps-fair';
+                statusText.textContent = '🟡 LIVE STREAM';
+                highLatencyCount = 0;
+            }} else {{
+                fpsEl.className = 'metric-value fps-poor';
+                latencyEl.className = 'metric-value fps-poor';
+                statusText.textContent = '🟠 LIVE STREAM';
+                
+                // Show warning after 3 consecutive high latency frames
+                if (latency > 300) {{
+                    highLatencyCount++;
+                    if (highLatencyCount > 3) {{
+                        latencyWarning.style.display = 'block';
+                        latencyWarning.textContent = `⚠️ High Latency: ${{latency}}ms`;
+                        latencyWarning.style.background = 'rgba(255, 100, 0, 0.9)';
+                    }}
+                }} else {{
+                    highLatencyCount = 0;
+                }}
+            }}
+            
+            // Update buffer simulation
+            simulateBufferUpdate(fps, latency);
+        }}
+        
+        img.onload = function() {{
+            const now = performance.now();
+            const latency = now - lastFrameTime;
+            lastFrameTime = now;
+            
+            // Store latency (keep last 20 samples)
+            latencies.push(latency);
+            if (latencies.length > 20) latencies.shift();
+            
+            frameCount++;
+            
+            // Update every second
+            if (now - lastTime >= 1000) {{
+                const fps = Math.round((frameCount * 1000) / (now - lastTime));
+                
+                // Calculate average latency (exclude outliers)
+                const sortedLatencies = [...latencies].sort((a, b) => a - b);
+                const middleLatencies = sortedLatencies.slice(5, 15); // Middle 10 samples
+                const avgLatency = middleLatencies.length > 0 
+                    ? Math.round(middleLatencies.reduce((a, b) => a + b) / middleLatencies.length)
+                    : Math.round(latency);
+                
+                fpsEl.textContent = fps;
+                latencyEl.textContent = avgLatency;
+                
+                updateQuality(fps, avgLatency);
+                
+                frameCount = 0;
+                lastTime = now;
+            }}
+        }};
+        
+        img.onerror = function() {{
+            statusText.textContent = '🔴 RECONNECTING...';
+            statusText.className = 'status-text';
+            fpsEl.textContent = '--';
+            latencyEl.textContent = '--ms';
+            bufferEl.textContent = '0.0s';
+            streamQuality.textContent = 'Stream: Disconnected';
+            
+            // Reset buffer
+            bufferFill.style.width = '0%';
+            bufferText.textContent = 'Buffer: 0.0s';
+            
+            // Try to reconnect
+            setTimeout(() => {{
+                img.src = '/api/test_camera_stream?t=' + Date.now();
+            }}, 2000);
+        }};
+        
+        // Initial buffer state
+        bufferFill.style.width = '0%';
+        bufferText.textContent = 'Buffer: 0.0s';
         
         // Initial load
-        updateStatus('Connecting to camera...');
-        
-        // Update latency display every 200ms
-        setInterval(updateLatency, 200);
-        
-        // Keep-alive: refresh every 10 seconds to prevent timeout
-        setInterval(() => {{
-            img.src = '/api/test_camera_stream?t=' + Date.now();
-        }}, 10000);
+        img.onload();
     </script>
 </body>
 </html>
@@ -17898,18 +19065,18 @@ def test_camera():
 
 @app.route('/api/test_camera_stream')
 def test_camera_stream():
-    """MJPEG stream for test camera - LOW LATENCY"""
-    response = Response(generate_test_frames(),
-                       mimetype='multipart/x-mixed-replace; boundary=frame')
-    
-    # CRITICAL: Disable all buffering
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    response.headers['X-Accel-Buffering'] = 'no'
-    response.headers['Connection'] = 'keep-alive'
-    
-    return response
+    """MJPEG stream endpoint"""
+    return Response(
+        generate_test_frames(),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        }
+    )
 
 if __name__ == "__main__":
     latest_frame = None
@@ -17958,7 +19125,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.0.100", 
+            host="192.168.56.1", 
             port=5000,
             debug=False,
             threaded=True,

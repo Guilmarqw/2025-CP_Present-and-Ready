@@ -34,21 +34,23 @@
     <!-- Stream Type Selection -->
     <div class="stream-type-selector">
         <label class="radio-label">
-            <input type="radio" name="streamType" value="main" checked>
+            <input type="radio" name="streamType" value="main">
             <span>Main Stream (4K) - High Quality</span>
         </label>
         <label class="radio-label">
-            <input type="radio" name="streamType" value="sub">
+            <input type="radio" name="streamType" value="sub" checked>
             <span>Sub-Stream (640x360) - Recommended for Face Recognition</span>
         </label>
     </div>
     
     <div class="input-group">
-        <input type="text" id="rtspUrl" placeholder="Enter RTSP URL (e.g., rtsp://admin:@101Pok3r5610@192.168.1.64:554/cam/realmonitor?channel=1&subtype=0)" value="rtsp://admin:@101Pok3r5610@192.168.1.64:554/cam/realmonitor?channel=1&subtype=1">
+        <input type="text" id="rtspUrl" placeholder="Enter RTSP URL" 
+               value="rtsp://admin:@101Pok3r5610@192.168.1.64:554/Streaming/Channels/102">
         <button type="button" id="testRtspBtn" class="test-btn">Test Camera</button>
     </div>
-    <small class="rtsp-hint">Sub-stream recommended: subtype=1 (640x360 @ 30 FPS)</small>
+    <small class="rtsp-hint">Sub-stream recommended: Channel 102 (640x360 @ 30 FPS)</small>
 </div>
+
         <div class="timer-container">
             <div class="main-timer-container">
                 <h3 class="group-title">Class Session Timer</h3>
@@ -713,22 +715,25 @@ function loadCameraTest(rtspUrl) {
 }
 
 
+// Update the RTSP handling in your timer.html JavaScript
 document.addEventListener('DOMContentLoaded', function() {
     const rtspUrlInput = document.getElementById('rtspUrl');
     const streamTypeRadios = document.querySelectorAll('input[name="streamType"]');
     const testRtspBtn = document.getElementById('testRtspBtn');
     
-    // Base URL without subtype
-    let baseUrl = 'rtsp://admin:@101Pok3r5610@192.168.1.64:554/cam/realmonitor?channel=1';
+    // Base URL without channel - CORRECT FORMAT
+    let baseUrl = 'rtsp://admin:@101Pok3r5610@192.168.1.64:554';
     
     // Function to update URL based on selected stream type
     function updateRtspUrl() {
         const selectedType = document.querySelector('input[name="streamType"]:checked').value;
         
         if (selectedType === 'main') {
-            rtspUrlInput.value = baseUrl + '&subtype=0';  // Main stream
+            // Main stream (4K) - Channel 101
+            rtspUrlInput.value = baseUrl + '/Streaming/Channels/101';
         } else {
-            rtspUrlInput.value = baseUrl + '&subtype=1';  // Sub-stream (recommended)
+            // Sub-stream (640x360) - Channel 102 - Recommended for face recognition
+            rtspUrlInput.value = baseUrl + '/Streaming/Channels/102';
         }
     }
     
@@ -737,11 +742,11 @@ document.addEventListener('DOMContentLoaded', function() {
         radio.addEventListener('change', updateRtspUrl);
     });
     
-    // Initialize with sub-stream (recommended for face recognition)
+    // Initialize with sub-stream (recommended)
     document.querySelector('input[name="streamType"][value="sub"]').checked = true;
     updateRtspUrl();
     
-    // Enhanced Test Camera function
+    // Enhanced Test Camera function with CORRECT authentication
     testRtspBtn.addEventListener('click', async function() {
         const rtspUrl = rtspUrlInput.value.trim();
         const streamType = document.querySelector('input[name="streamType"]:checked').value;
@@ -753,6 +758,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         try {
             showLoading(`Testing ${streamType === 'main' ? 'Main Stream (4K)' : 'Sub-Stream (640x360)'}...`);
+            
+            // Log the URL being tested
+            console.log('Testing RTSP URL:', rtspUrl);
             
             const response = await fetch('/api/set_rtsp_url', {
                 method: 'POST',
@@ -770,48 +778,41 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (data.success) {
                 if (streamType === 'main') {
-                    showModal('Warning', 
-                        '⚠️ Main Stream (4K) Connected\n\n' +
-                        'Performance may be slow. For best face recognition:\n' +
-                        '• Switch to Sub-Stream (subtype=1)\n' +
-                        '• Or expect lower FPS (15-20 FPS)\n\n' +
-                        'Continue with Main Stream?',
-                        function() {
-                            showModal('Success', 'Using Main Stream (4K)', null, false, 2000);
-                        },
-                        true
+                    showModal('Success', 
+                        '✅ Main Stream (4K) Connected\n\n' +
+                        'Resolution: ' + (data.resolution || '3840x2160') + '\n' +
+                        'FPS: ' + (data.fps ? data.fps.toFixed(1) : '30') + '\n\n' +
+                        'Note: For face recognition, Sub-Stream is recommended for better performance.',
+                        null, false, 3000
                     );
                 } else {
                     showModal('Success', 
                         '✅ Sub-Stream Connected\n\n' +
-                        'Perfect for face recognition:\n' +
-                        '• 640x360 resolution\n' +
-                        '• 30 FPS\n' +
-                        '• Optimized for 60+ FPS face recognition',
+                        'Resolution: ' + (data.resolution || '640x360') + '\n' +
+                        'FPS: ' + (data.fps ? data.fps.toFixed(1) : '30') + '\n\n' +
+                        'Perfect for face recognition!',
                         null, false, 3000
                     );
                 }
             } else {
-                // Try the other stream type as fallback
-                const fallbackType = streamType === 'main' ? 'sub' : 'main';
-                const fallbackUrl = baseUrl + (fallbackType === 'main' ? '&subtype=0' : '&subtype=1');
+                // Show specific error message
+                let errorMsg = 'Failed to connect to camera:\n';
                 
-                const tryFallback = confirm(
-                    `Failed to connect to ${streamType} stream.\n\n` +
-                    `Try ${fallbackType === 'main' ? 'Main Stream (4K)' : 'Sub-Stream (640x360)'} instead?`
-                );
-                
-                if (tryFallback) {
-                    rtspUrlInput.value = fallbackUrl;
-                    document.querySelector(`input[name="streamType"][value="${fallbackType}"]`).checked = true;
-                    testRtspBtn.click(); // Retry
+                if (data.message && data.message.includes('401')) {
+                    errorMsg += '• Authentication failed (401 Unauthorized)\n';
+                    errorMsg += '• Check username/password format\n';
+                    errorMsg += '• Current format: admin:@101Pok3r5610\n';
+                } else {
+                    errorMsg += data.message || 'Check your network and camera settings';
                 }
+                
+                showModal('Connection Error', errorMsg);
             }
             
         } catch (error) {
             hideLoading();
             console.error('Error testing RTSP:', error);
-            showModal('Error', 'Failed to test camera connection');
+            showModal('Error', 'Failed to test camera connection: ' + error.message);
         }
     });
 });

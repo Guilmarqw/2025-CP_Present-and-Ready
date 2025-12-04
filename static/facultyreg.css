@@ -1,330 +1,416 @@
 * {
-      box-sizing: border-box;
-    }
-    #termsModal {
-      display: flex;
-      position: fixed;
-      z-index: 2000;
-      left: 0; top: 0;
-      width: 100%; height: 100%;
-      background: rgba(0,0,0,0.7);
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-    .terms-content {
-      background: white;
-      border-radius: 12px;
-      max-width: 500px;
-      width: 100%;
-      max-height: 85vh;
-      overflow-y: auto;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      padding: 25px;
-      text-align: left;
-    }
-    .terms-header {
-      text-align: center;
-      font-size: 20px;
-      font-weight: bold;
-      color: #2eb774;
-      margin-bottom: 15px;
-    }
-    .terms-body {
-      font-size: 14px;
-      line-height: 1.6;
-      color: #444;
-      margin-bottom: 20px;
-    }
-    .terms-footer {
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-    }
-    .terms-footer button {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 6px;
-      font-size: 15px;
-      cursor: pointer;
-      min-width: 100px;
-    }
-    #acceptTerms {
-      background: #2eb774;
-      color: white;
-    }
-    #declineTerms {
-      background: #ccc;
-      color: #333;
-    }
-    #acceptTerms:hover { background: #317d57; }
-    #declineTerms:hover { background: #bbb; }
-
-    /* Disable body scroll when modal is open */
-    body.modal-open {
-      overflow: hidden;
-    }
-    body {
-      font-family: Arial, sans-serif;
-      background: #f8f9fa;
-      margin: 0;
-      padding: 20px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-    }
-    .container {
-      width: 100%;
-      max-width: 500px;
-      background: #fff;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-      overflow: hidden;
-    }
-    .header {
-      background: #238e5a;
-      color: white;
-      text-align: center;
-      padding: 14px;
-      font-size: 16px;
-      font-weight: bold;
-    }
-    .content {
-      padding: 25px 20px;
-      text-align: center;
-    }
-    h2 {
-      font-size: 18px;
-      margin-bottom: 20px;
-      color: #333;
-    }
-    input[type="email"], input[type="text"], input[type="file"], select, input[type="password"] {
-      width: 100%;
-      padding: 12px;
-      margin: 8px 0;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-      font-size: 15px;
-    }
-    .name-fields {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 8px;
-    }
-    .name-fields input {
-      flex: 1;
-    }
-    .otp-boxes, .pin-boxes {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin: 15px 0;
-    }
-    .otp-boxes input, .pin-boxes input {
-      width: 45px;
-      height: 50px;
-      text-align: center;
-      font-size: 22px;
-    }
-    .resend-otp {
-      margin: 15px 0;
-      color: #238e5a;
-      cursor: pointer;
-      text-decoration: underline;
-    }
-    button {
-      background: #238e5a;
-      color: white;
-      border: none;
-      padding: 12px 20px;
-      border-radius: 6px;
-      font-size: 16px;
-      cursor: pointer;
-      margin-top: 15px;
-      width: 100%;
-    }
-    button:hover {
-      background: #317d57;
-    }
-    button:disabled {
-      background: #cccccc;
-      cursor: not-allowed;
-    }
-    .hidden {
-      display: none;
-    }
-    .face-scan {
-      width: 220px;
-      height: 220px;
-      border: 4px solid #3a86ff;
-      border-radius: 50%;
-      margin: 20px auto;
-      overflow: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .id-card {
-      border: 2px solid #238e5a;
-      border-radius: 8px;
-      padding: 15px;
-      background: #f9f9f9;
-      text-align: left;
-    }
-    .id-header {
-      background: #238e5a;
-      color: white;
-      padding: 8px;
-      border-radius: 6px 6px 0 0;
-      font-size: 14px;
-      text-align: center;
-    }
-    .id-photo {
-      width: 120px;
-      height: 120px;
-      border-radius: 50%;
-      background: #ccc;
-      margin: 15px auto;
-      overflow: hidden;
-    }
-    .id-photo img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .success {
-      font-size: 70px;
-      color: green;
-      margin-bottom: 10px;
-    }
-    .scan-instruction {
-      margin: 15px 0;
-      font-weight: bold;
-      color: #685A45;
-      min-height: 24px;
-    }
-    .scan-progress {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      margin: 15px 0;
-    }
-    .progress-step {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background-color: #ccc;
-    }
-    .progress-step.active {
-      background-color: oklch(86.732% 0.2936 142.29);
-    }
-    .upload-container {
-      position: relative;
-      width: 120px;
-      height: 120px;
-      margin: 10px auto;
-    }
-    .upload-preview {
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      overflow: hidden;
-      border: 2px solid #238e5a;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background-color: #f8f8f8;
-      cursor: pointer;
-    }
-    .upload-preview img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .upload-preview span {
-      color: #888;
-      font-size: 14px;
-    }
-    .upload-input {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0;
-      cursor: pointer;
-      z-index: 10;
-    }
-    .pin-label {
-      display: block;
-      text-align: left;
-      margin: 15px 0 5px;
-      font-weight: bold;
-      color: #555;
-    }
-    /* Modal */
-    .modal {
-      display: none;
-      position: fixed;
-      z-index: 1000;
-      left: 0; top: 0;
-      width: 100%; height: 100%;
-      background: rgba(0,0,0,0.5);
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-content {
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      max-width: 350px;
-      text-align: center;
-    }
-    .modal-content h3 {
-      margin: 0 0 10px;
-      font-size: 18px;
-      color: #238e5a;
-    }
-    .modal-content button {
-      margin-top: 15px;
-      width: auto;
-    }
-    @media (max-width: 600px) {
-      .container {
-        margin: 0 10px;
-      }
-      .otp-boxes input, .pin-boxes input {
-        width: 40px;
-        height: 45px;
-        font-size: 20px;
-      }
-      .face-scan {
-        width: 180px;
-        height: 180px;
-      }
-      .name-fields {
-        flex-direction: column;
-        gap: 8px;
-      }
-    }
-
-#video {
-    width: 100%;
-    height: auto;
-    border-radius: 10px;
-    background: #000;
-    transform: scaleX(-1); /* Mirror effect */
+  box-sizing: border-box;
 }
 
+/* -------------------------------------------------
+   TERMS MODAL
+   ------------------------------------------------- */
+#termsModal {
+  display: flex;
+  position: fixed;
+  z-index: 2000;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7);
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+.terms-content {
+  background: white;
+  border-radius: 12px;
+  max-width: 500px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  padding: 25px;
+  text-align: left;
+}
+.terms-header {
+  text-align: center;
+  font-size: 20px;
+  font-weight: bold;
+  color: #2eb774;
+  margin-bottom: 15px;
+}
+.terms-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #444;
+  margin-bottom: 20px;
+}
+.terms-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: nowrap !important;
+}
+.terms-footer button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 80px;
+  white-space: nowrap;
+}
+#acceptTerms { background: #2eb774; color: white; }
+#declineTerms { background: #ccc; color: #333; }
+#acceptTerms:hover { background: #317d57; }
+#declineTerms:hover { background: #bbb; }
+
+/* -------------------------------------------------
+   PAGE LAYOUT
+   ------------------------------------------------- */
+body {
+  font-family: Arial, sans-serif;
+  background: #f8f9fa;
+  margin: 0;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+body.modal-open { overflow: hidden; }
+
+.container {
+  width: 100%;
+  max-width: 500px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+.header {
+  background: #238e5a;
+  color: white;
+  text-align: center;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: bold;
+}
+.content {
+  padding: 25px 20px;
+  text-align: center;
+}
+h2 {
+  font-size: 18px;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+/* -------------------------------------------------
+   FORM INPUTS
+   ------------------------------------------------- */
+input[type="email"],
+input[type="text"],
+input[type="file"],
+select,
+input[type="password"] {
+  width: 100%;
+  padding: 12px;
+  margin: 8px 0;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 15px;
+}
+.name-fields {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.name-fields input { flex: 1; }
+
+/* -------------------------------------------------
+   OTP / PIN BOXES
+   ------------------------------------------------- */
+.otp-boxes, .pin-boxes {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  padding: 10px 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  margin: 15px 0;
+  -webkit-overflow-scrolling: touch;
+}
+.otp-boxes::-webkit-scrollbar,
+.pin-boxes::-webkit-scrollbar {
+  display: none;
+}
+
+.otp-boxes input,
+.pin-boxes input {
+  width: 48px;
+  height: 56px;
+  text-align: center;
+  font-size: 24px;
+  flex-shrink: 0;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+/* 375px – iPhone SE / common small mobile */
+@media (max-width: 380px) {
+  .otp-boxes, .pin-boxes {
+    gap: 6px;
+  }
+  .otp-boxes input,
+  .pin-boxes input {
+    width: 42px;
+    height: 50px;
+    font-size: 22px;
+  }
+}
+
+/* 320px – ultra-narrow (safe fallback) */
+@media (max-width: 340px) {
+  .otp-boxes, .pin-boxes {
+    gap: 4px;
+  }
+  .otp-boxes input,
+  .pin-boxes input {
+    width: 38px !important;
+    height: 44px !important;
+    font-size: 18px !important;
+    border-radius: 6px;
+  }
+}
+
+/* -------------------------------------------------
+   BUTTONS
+   ------------------------------------------------- */
+button {
+  background: #238e5a;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  margin-top: 15px;
+  width: 100%;
+}
+button:hover { background: #317d57; }
+button:disabled { background: #cccccc; cursor: not-allowed; }
+
+.resend-otp {
+  margin: 15px 0;
+  color: #238e5a;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* -------------------------------------------------
+   FACE SCAN & UPLOAD
+   ------------------------------------------------- */
+.face-scan {
+  width: 220px;
+  height: 220px;
+  border: 4px solid #3a86ff;
+  border-radius: 50%;
+  margin: 20px auto;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+video { width: 100%; height: 100%; object-fit: cover; }
+
+.upload-container {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 10px auto;
+}
+.upload-preview {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid #238e5a;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f8f8f8;
+  cursor: pointer;
+}
+.upload-preview img { width: 100%; height: 100%; object-fit: cover; }
+.upload-preview span { color: #888; font-size: 14px; }
+.upload-input {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 10;
+}
+
+/* -------------------------------------------------
+   ID CARD
+   ------------------------------------------------- */
+.id-card {
+  border: 2px solid #238e5a;
+  border-radius: 8px;
+  padding: 15px;
+  background: #f9f9f9;
+  text-align: left;
+}
+.id-header {
+  background: #238e5a;
+  color: white;
+  padding: 8px;
+  border-radius: 6px 6px 0 0;
+  font-size: 14px;
+  text-align: center;
+}
+.id-photo {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: #ccc;
+  margin: 15px auto;
+  overflow: hidden;
+}
+.id-photo img { width: 100%; height: 100%; object-fit: cover; }
+
+/* -------------------------------------------------
+   PROGRESS & MISC
+   ------------------------------------------------- */
+.success { font-size: 70px; color: green; margin-bottom: 10px; }
+.scan-instruction { margin: 15px 0; font-weight: bold; color: #685A45; min-height: 24px; }
+.scan-progress { display: flex; justify-content: center; gap: 10px; margin: 15px 0; }
+.progress-step { width: 12px; height: 12px; border-radius: 50%; background-color: #ccc; }
+.progress-step.active { background-color: oklch(86.732% 0.2936 142.29); }
+.pin-label { display: block; text-align: left; margin: 15px 0 5px; font-weight: bold; color: #555; }
+
+/* -------------------------------------------------
+   GENERIC MODAL (OTP, etc.)
+   ------------------------------------------------- */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5);
+  justify-content: center;
+  align-items: center;
+}
+.modal-content {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 350px;
+  text-align: center;
+}
+.modal-content h3 { margin: 0 0 10px; font-size: 18px; color: #238e5a; }
+.modal-content button { margin-top: 15px; width: auto; }
+
+/* -------------------------------------------------
+   VIDEO / CANVAS (face capture)
+   ------------------------------------------------- */
+#video,
 #canvas {
-    width: 100%;
-    height: auto;
-    transform: scaleX(-1); /* Mirror effect for canvas if needed */
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  background: #000;
+  transform: scaleX(-1);
 }
+
+/* -------------------------------------------------
+   RESPONSIVE ADJUSTMENTS
+   ------------------------------------------------- */
+@media (max-width: 600px) {
+  .container { margin: 0 10px; }
+  .otp-boxes input, .pin-boxes input { width: 40px; height: 45px; font-size: 20px; }
+  .face-scan { width: 180px; height: 180px; }
+  .name-fields { flex-direction: column; gap: 8px; }
+}
+
+/* -------------------------------------------------
+   320 px – ultra-narrow layout
+   ------------------------------------------------- */
+@media (max-width: 340px) {
+  html, body { font-size: 14px; }
+
+  body { padding: 10px; }
+
+  .terms-content,
+  .modal-content {
+    max-width: 100% !important;
+    margin: 0 auto;
+    padding: 15px 12px;
+    border-radius: 8px;
+  }
+
+  .header { padding: 10px; font-size: 14px; }
+  .content { padding: 15px 10px; }
+  h2 { font-size: 16px; margin-bottom: 12px; }
+
+  input[type="email"],
+  input[type="text"],
+  input[type="password"],
+  input[type="file"],
+  select { padding: 10px; font-size: 14px; }
+
+  .name-fields { flex-direction: column; gap: 6px; }
+
+  .otp-boxes, .pin-boxes {
+    gap: 4px;
+    padding: 8px 0;
+    justify-content: center;
+  }
+  .otp-boxes input,
+  .pin-boxes input {
+    width: 38px !important;
+    height: 44px !important;
+    font-size: 18px !important;
+    border-radius: 6px;
+  }
+
+  button {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  .face-scan { width: 160px; height: 160px; margin: 15px auto; }
+  .upload-container { width: 100px; height: 100px; }
+
+  #termsModal,
+  .modal { padding: 10px; }
+
+  .terms-header { font-size: 16px; margin-bottom: 10px; }
+  .terms-body { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
+
+  /* Terms buttons – stay in one line */
+  .terms-footer {
+    gap: 6px;
+  }
+  .terms-footer button {
+    padding: 8px 10px;
+    font-size: 13px;
+    min-width: 70px;
+  }
+}
+
+/* -------------------------------------------------
+   Force OTP line to stay on one line (even at 320 px)
+   ------------------------------------------------- */
+.otp-boxes,
+.pin-boxes {
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* -------------------------------------------------
+   HIDDEN CLASS
+   ------------------------------------------------- */
+.hidden { display: none; }

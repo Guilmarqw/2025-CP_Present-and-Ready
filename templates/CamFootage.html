@@ -153,10 +153,6 @@
                         <span class="material-icons">swap_horiz</span>
                         Transfer
                     </button>
-                    <button onclick="handleAction('excused')">
-                        <span class="material-icons">schedule</span>
-                        Excused
-                    </button>
                     <button onclick="toggleActionMenu()">
                         <span class="material-icons">arrow_back</span>
                         Back
@@ -233,15 +229,17 @@
                            onkeypress="return /[A-Za-z\s]/.test(event.key)"
                            oninput="this.value = this.value.replace(/[^A-Za-z\s]/g, '')">
                 </div>
-                <div class="form-group">
-                    <label for="studentId">Student ID</label>
-                    <input type="text" 
-                           id="studentId" 
-                           placeholder="Enter student ID" 
-                           pattern="[0-9-]*"
-                           onkeypress="return event.charCode >= 48 && event.charCode <= 57 || event.charCode === 45"
-                           oninput="this.value = this.value.replace(/[^0-9-]/g, '')">
-                </div>
+<div class="form-group">
+    <label for="studentId">Student ID</label>
+    <input type="text" 
+           id="studentId" 
+           placeholder="YYYY-XXXXX (e.g., 2022-01376)" 
+           maxlength="10"
+           pattern="\d{4}-\d{5}"
+           title="Format: YYYY-XXXXX (e.g., 2022-01376)"
+           oninput="formatStudentId(this)"
+           onkeydown="handleStudentIdKeydown(event)">
+</div>
             </div>
             <div class="modal-footer">
                 <button class="btn-cancel" onclick="closeModal('addStudentModal')">Cancel</button>
@@ -250,65 +248,107 @@
         </div>
     </div>
 
-    <!-- Delete Student Modal -->
-    <div class="modal" id="deleteStudentModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Remove Student</h3>
-                <button class="close-modal" onclick="closeModal('deleteStudentModal')">
-                    <span class="material-icons">close</span>
-                </button>
+<!-- Delete Student Modal -->
+<div class="modal" id="deleteStudentModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Remove Temporary Student</h3>
+            <button class="close-modal" onclick="closeModal('deleteStudentModal')">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="deleteStudentSelect">Select Temporary Student</label>
+                <select id="deleteStudentSelect">
+                    <option value="">Select a temporary student to remove...</option>
+                </select>
             </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="deleteStudentSelect">Select Student</label>
-                    <select id="deleteStudentSelect">
-                        <option value="">Select a student to remove...</option>
-                    </select>
-                </div>
-                <p style="color: var(--danger); margin-top: 1rem;">
-                    Warning: This action cannot be undone.
-                </p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-cancel" onclick="closeModal('deleteStudentModal')">Cancel</button>
-                <button class="btn-submit" style="background: red !important" onclick="submitDeleteStudent()">Remove</button>
-            </div>
+            <p style="color: var(--warning); margin-top: 1rem;">
+                <span class="material-icons" style="vertical-align: middle;">info</span>
+                Only temporary students added during this session can be removed.
+            </p>
+            <p style="color: var(--danger); margin-top: 0.5rem;">
+                <span class="material-icons" style="vertical-align: middle;">warning</span>
+                Warning: This action cannot be undone.
+            </p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-cancel" onclick="closeModal('deleteStudentModal')">Cancel</button>
+            <button class="btn-submit" style="background: red !important" onclick="submitDeleteStudent()">Remove Temporary Student</button>
         </div>
     </div>
+</div>
 
-    <!-- Transfer Student Modal -->
-    <div class="modal" id="transferStudentModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Transfer Student</h3>
-                <button class="close-modal" onclick="closeModal('transferStudentModal')">
-                    <span class="material-icons">close</span>
-                </button>
+<!-- Transfer Student Modal -->
+<div class="modal" id="transferStudentModal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h3 class="modal-title">
+                <span class="material-icons" style="vertical-align: middle; margin-right: 8px;">swap_horiz</span>
+                Transfer Student to Different Section
+            </h3>
+            <button class="close-modal" onclick="closeModal('transferStudentModal')">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="transferStudent">
+                    <span class="material-icons" style="vertical-align: middle; font-size: 18px;">person</span>
+                    Select Student
+                </label>
+                <select id="transferStudent" class="form-select">
+                    <option value="">Select a student...</option>
+                </select>
+                <small class="text-muted">All active students from all sections</small>
             </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="transferStudent">Select Student</label>
-                    <select id="transferStudent">
-                        <option value="">Select a student...</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="transferSection">Target Section</label>
-                    <select id="transferSection">
-                        <option value="">Select target section...</option>
-                        <option value="BSCS 3B">BSCS 3B</option>
-                        <option value="BSCS 3C">BSCS 3C</option>
-                        <option value="BSCS 3D">BSCS 3D</option>
-                    </select>
+            
+            <div class="form-group" style="margin-top: 20px;">
+                <label for="transferSection">
+                    <span class="material-icons" style="vertical-align: middle; font-size: 18px;">class</span>
+                    Target Section
+                </label>
+                <select id="transferSection" class="form-select">
+                    <option value="">Select target section...</option>
+                </select>
+                <small class="text-muted">Only sections for the selected student's year level will be shown</small>
+            </div>
+            
+            <div id="transferWarning" class="alert alert-info" style="margin-top: 20px; display: none; background-color: #e3f2fd; border-left: 4px solid #2196f3;">
+                <div style="display: flex; align-items: flex-start;">
+                    <span class="material-icons" style="color: #2196f3; margin-right: 10px; flex-shrink: 0;">info</span>
+                    <div>
+                        <strong>Note:</strong> 
+                        <span id="transferWarningText"></span>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn-cancel" onclick="closeModal('transferStudentModal')">Cancel</button>
-                <button class="btn-submit" onclick="submitTransferStudent()">Transfer</button>
+            
+            <div id="transferInfo" class="alert alert-light" style="margin-top: 15px; border-left: 4px solid #6c757d; display: none;">
+                <div style="display: flex; align-items: flex-start;">
+                    <span class="material-icons" style="color: #6c757d; margin-right: 10px; flex-shrink: 0;">description</span>
+                    <div>
+                        <strong>Transfer will:</strong><br>
+                        1. Update student's section assignment<br>
+                        2. Update any attendance records in current session<br>
+                        3. Remove student from real-time tracking (if active)
+                    </div>
+                </div>
             </div>
         </div>
+        <div class="modal-footer" style="justify-content: space-between;">
+            <button class="btn-cancel" onclick="closeModal('transferStudentModal')">
+                <span class="material-icons" style="vertical-align: middle; margin-right: 5px;">close</span>
+                Cancel
+            </button>
+            <button class="btn-submit" onclick="submitTransferStudent()">
+                <span class="material-icons" style="vertical-align: middle; margin-right: 5px;">swap_horiz</span>
+                Transfer Student
+            </button>
+        </div>
     </div>
+</div>
 
     <!-- Excused Student Modal -->
     <div class="modal" id="excusedStudentModal">
@@ -522,6 +562,49 @@
     </div>
 </div>
 
+<!-- Delete Confirmation Modal -->
+<div class="modal" id="deleteConfirmationModal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h3 class="modal-title" style="display: flex; align-items: center; color: var(--danger);">
+                <span class="material-icons" style="margin-right: 10px;">warning</span>
+                Confirm Removal
+            </h3>
+            <button class="close-modal" onclick="closeDeleteConfirmationModal()">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div style="text-align: center; padding: 20px 0;">
+                <span class="material-icons" style="font-size: 60px; color: var(--warning); margin-bottom: 15px;">
+                    delete_forever
+                </span>
+                <h4 id="deleteConfirmationTitle" style="margin-bottom: 10px;"></h4>
+                <p id="deleteConfirmationMessage" style="color: var(--gray); line-height: 1.5;"></p>
+                
+                <div style="margin-top: 20px; padding: 15px; background-color: rgba(220, 53, 69, 0.1); border-radius: 8px; border-left: 4px solid var(--danger);">
+                    <div style="display: flex; align-items: flex-start;">
+                        <span class="material-icons" style="color: var(--danger); margin-right: 10px; flex-shrink: 0;">error</span>
+                        <div>
+                            <strong>Warning:</strong> This action cannot be undone. The student's attendance records will be permanently removed from this session.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content: space-between;">
+            <button class="btn-cancel" onclick="closeDeleteConfirmationModal()" style="flex: 1; margin-right: 10px;">
+                <span class="material-icons" style="vertical-align: middle; margin-right: 5px;">close</span>
+                Cancel
+            </button>
+            <button class="btn-submit" id="confirmDeleteButton" style="flex: 1; margin-left: 10px; background: var(--danger) !important;">
+                <span class="material-icons" style="vertical-align: middle; margin-right: 5px;">delete_forever</span>
+                Remove Student
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
 // Global error handler
 window.onerror = function (message, source, lineno, colno, error) {
@@ -530,6 +613,10 @@ window.onerror = function (message, source, lineno, colno, error) {
 };
 
 // State
+let studentToDelete = {
+    id: null,
+    name: null
+};
 let ENROLLMENT_MODAL_OPEN = false;
 let COOLDOWN_TIMER = null;
 let isDragging = false;
@@ -1998,6 +2085,10 @@ function handleAction(action) {
                 }
                 break;
             case 'delete':
+                // Reset delete data first
+                studentToDelete.id = null;
+                studentToDelete.name = null;
+                
                 populateDeleteStudentSelect();
                 const deleteModal = document.getElementById('deleteStudentModal');
                 if (deleteModal) {
@@ -2039,7 +2130,7 @@ function closeModal(modalId) {
         if (modal) {
             modal.style.display = 'none';
             
-            //  RESUME DETECTION when unrecognized faces or enrollment modals are closed
+            //   RESUME DETECTION when unrecognized faces or enrollment modals are closed
             if (modalId === 'unrecognizedFacesModal' || modalId === 'enrollStudentModal') {
                 console.log(` ${modalId} closed - resuming detection`);
                 
@@ -2047,6 +2138,13 @@ function closeModal(modalId) {
                 setTimeout(() => {
                     resumePythonDetection();
                 }, 100);
+            }
+            
+            // Also handle delete confirmation modal specifically
+            if (modalId === 'deleteConfirmationModal') {
+                // Reset the delete student data
+                studentToDelete.id = null;
+                studentToDelete.name = null;
             }
             
             // Trigger custom event when modal closes
@@ -2489,9 +2587,9 @@ function debugSessionData() {
 // debugSessionData();
 
 async function populateDeleteStudentSelect() {
-    console.log('populateDeleteStudentSelect called');
+    console.log('populateDeleteStudentSelect called - TEMPORARY ONLY');
     try {
-        // Get current class students including temporary ones
+        // Get current class students
         const urlParams = new URLSearchParams(window.location.search);
         const program = urlParams.get('program');
         const yearLevel = urlParams.get('year_level');
@@ -2502,48 +2600,190 @@ async function populateDeleteStudentSelect() {
         
         const select = document.getElementById('deleteStudentSelect');
         if (!select) return;
-        select.innerHTML = '<option value="">Select a student to remove...</option>';
+        
+        // Clear and add default option
+        select.innerHTML = '<option value="">Select a temporary student to remove...</option>';
+        let hasTemporaryStudents = false;
 
         if (data.success && data.students) {
-            data.students.forEach(student => {
+            // Filter to only show temporary students
+            const temporaryStudents = data.students.filter(student => 
+                student.type === 'temporary'
+            );
+            
+            temporaryStudents.forEach(student => {
                 const option = document.createElement('option');
                 option.value = student.id;
-                // Show type in the dropdown to distinguish temporary students
-                const typeLabel = student.type === 'temporary' ? ' (Temporary)' : '';
-                option.textContent = `${student.name}${typeLabel} (${student.id})`;
+                option.textContent = `${student.name} (Temporary - ${student.id})`;
                 select.appendChild(option);
+                hasTemporaryStudents = true;
             });
+            
+            if (!hasTemporaryStudents) {
+                select.innerHTML = '<option value="" disabled>No temporary students to remove</option>';
+                console.log('No temporary students found');
+            }
+        } else {
+            select.innerHTML = '<option value="" disabled>No temporary students available</option>';
         }
     } catch (err) {
         console.error('Error in populateDeleteStudentSelect:', err);
-        alert('Error populating delete student select.');
+        // Show message in dropdown on error
+        const select = document.getElementById('deleteStudentSelect');
+        if (select) {
+            select.innerHTML = '<option value="" disabled>Error loading temporary students</option>';
+        }
+        showModal('Error', 'Error loading temporary students.', 'error');
     }
 }
 
 async function populateTransferStudentSelect() {
     console.log('populateTransferStudentSelect called');
     try {
-        // Get ALL students
+        // Get ALL students from the database using your existing endpoint
         const response = await fetch('/api/get_all_students');
         const data = await response.json();
         
         const select = document.getElementById('transferStudent');
         if (!select) return;
-        select.innerHTML = '<option value="">Select a student...</option>';
-
+        
+        // Clear and add default option
+        select.innerHTML = '<option value="">Select a student to transfer...</option>';
+        
+        // Clear previous event listener first
+        select.removeEventListener('change', handleStudentSelectChange);
+        
         if (data.success && data.students) {
             data.students.forEach(student => {
                 const option = document.createElement('option');
-                option.value = student.id;
+                option.value = student.id; // This should be student_id
                 option.textContent = `${student.name} (${student.id}) - ${student.course} ${student.year_section}`;
+                option.dataset.yearLevel = student.year_level;
+                option.dataset.course = student.course;
+                option.dataset.currentSection = student.section_name;
                 select.appendChild(option);
             });
+            
+            // Add event listener for when student is selected
+            select.addEventListener('change', handleStudentSelectChange);
+            console.log(`  Loaded ${data.students.length} students for transfer`);
+        } else {
+            select.innerHTML = '<option value="" disabled>Error loading students</option>';
+            console.error('Error loading students:', data?.message);
         }
     } catch (err) {
         console.error('Error in populateTransferStudentSelect:', err);
-        alert('Error populating transfer student select.');
+        const select = document.getElementById('transferStudent');
+        if (select) {
+            select.innerHTML = '<option value="" disabled>Error loading students</option>';
+        }
+        showModal('Error', 'Error loading students.', 'error');
     }
 }
+
+async function handleStudentSelectChange(event) {
+    const studentSelect = event.target;
+    const selectedOption = studentSelect.options[studentSelect.selectedIndex];
+    
+    if (!selectedOption.value) {
+        // Clear sections if no student selected
+        const sectionSelect = document.getElementById('transferSection');
+        if (sectionSelect) {
+            sectionSelect.innerHTML = '<option value="">Select target section...</option>';
+        }
+        return;
+    }
+    
+    const yearLevel = selectedOption.dataset.yearLevel;
+    const course = selectedOption.dataset.course;
+    const currentSection = selectedOption.dataset.currentSection;
+    
+    console.log(`Student selected: Year ${yearLevel}, Course: ${course}, Current Section: ${currentSection}`);
+    
+    // Load sections for this year level
+    await populateTransferSectionSelect(yearLevel, course, currentSection);
+    
+    // Show warning if trying to transfer within same section
+    const warningDiv = document.getElementById('transferWarning');
+    const warningText = document.getElementById('transferWarningText');
+    
+    if (warningDiv && warningText) {
+        warningDiv.style.display = 'none'; // Hide by default
+        
+        const selectedOption = studentSelect.options[studentSelect.selectedIndex];
+        const currentSection = selectedOption.dataset.currentSection;
+        
+        if (currentSection) {
+            warningText.textContent = `Student is currently in Section ${currentSection}.`;
+            warningDiv.style.display = 'block';
+        }
+    }
+}
+
+async function populateTransferSectionSelect(yearLevel, course, currentSection) {
+    console.log(`populateTransferSectionSelect called for Year ${yearLevel}, Course: ${course}`);
+    try {
+        // Parse course name to get program_id (e.g., "BS in Information Technology" -> "IT")
+        let programId = 'IT'; // Default
+        if (course.includes('Computer Science')) {
+            programId = 'CS';
+        } else if (course.includes('Information Technology')) {
+            programId = 'IT';
+        } else if (course.includes('Associate in Computer Technology')) {
+            programId = 'ACT';
+        }
+        
+        // Get current academic year and semester (you might need to adjust these)
+        const currentYear = new Date().getFullYear();
+        const academicYear = `${currentYear}-${currentYear + 1}`;
+        const semester = '1'; // First semester
+        
+        // Use your existing endpoint to get sections
+        const response = await fetch(`/api/get_sections_with_semester?program_id=${encodeURIComponent(programId)}&year_level=${encodeURIComponent(yearLevel)}&academic_year=${encodeURIComponent(academicYear)}&semester=${encodeURIComponent(semester)}`);
+        const data = await response.json();
+        
+        const sectionSelect = document.getElementById('transferSection');
+        if (!sectionSelect) return;
+        
+        // Clear and add default option
+        sectionSelect.innerHTML = '<option value="">Select target section...</option>';
+        
+        if (data.success && data.sections) {
+            // Filter out the current section
+            const availableSections = data.sections.filter(section => 
+                section.section_name !== currentSection
+            );
+            
+            if (availableSections.length === 0) {
+                sectionSelect.innerHTML = '<option value="" disabled>No other sections available for this year level</option>';
+                console.log('No other sections available');
+                return;
+            }
+            
+            availableSections.forEach(section => {
+                const option = document.createElement('option');
+                // Format: "IT 3A" or "CS 4B"
+                const displayName = `${programId} ${section.year_level}${section.section_name}`;
+                option.value = `${programId} ${section.year_level}${section.section_name}`;
+                option.textContent = displayName;
+                option.dataset.sectionId = section.section_id;
+                sectionSelect.appendChild(option);
+            });
+            
+            console.log(`  Loaded ${availableSections.length} available sections for Year ${yearLevel}`);
+        } else {
+            sectionSelect.innerHTML = '<option value="" disabled>No sections available for this year level</option>';
+            console.error('No sections found:', data?.message);
+        }
+    } catch (err) {
+        console.error('Error loading sections:', err);
+        const sectionSelect = document.getElementById('transferSection');
+        if (sectionSelect) {
+            sectionSelect.innerHTML = '<option value="" disabled>Error loading sections</option>';
+        }
+    }
+}
+
 
 async function populateExcusedStudentSelect() {
     console.log('populateExcusedStudentSelect called');
@@ -2766,22 +3006,172 @@ function changeStudentStatus(studentId, newStatus) {
     manageStudent(action, student_data);
 }
 
+function formatStudentId(input) {
+    // Get current cursor position
+    let cursorPos = input.selectionStart;
+    let oldValue = input.value;
+    
+    // Remove all non-digit characters
+    let digits = oldValue.replace(/\D/g, '');
+    
+    // Format: 4 digits + hyphen + up to 5 digits
+    let formatted = '';
+    if (digits.length > 0) {
+        formatted = digits.substring(0, 4);
+        if (digits.length > 4) {
+            formatted += '-' + digits.substring(4, 9); // 5 digits after hyphen
+        }
+    }
+    
+    // Update input value
+    input.value = formatted;
+    
+    // Adjust cursor position
+    if (cursorPos === 5 && oldValue.charAt(4) === '-' && formatted.charAt(4) === '-') {
+        // If cursor was after hyphen and hyphen still exists, keep it after hyphen
+        input.setSelectionRange(5, 5);
+    } else if (cursorPos <= 4) {
+        // If cursor was in first part, keep relative position
+        input.setSelectionRange(cursorPos, cursorPos);
+    } else {
+        // Adjust for removed characters
+        let newPos = Math.max(5, cursorPos - (oldValue.length - formatted.length));
+        input.setSelectionRange(newPos, newPos);
+    }
+}
+
+/**
+ * Handle special key events for student ID input
+ */
+function handleStudentIdKeydown(event) {
+    const input = event.target;
+    const cursorPos = input.selectionStart;
+    const value = input.value;
+    
+    // Handle backspace at hyphen position
+    if (event.key === 'Backspace' && cursorPos === 5 && value.charAt(4) === '-') {
+        event.preventDefault();
+        
+        // Remove digit before hyphen and the hyphen itself
+        let digits = value.replace(/\D/g, '');
+        if (digits.length > 4) {
+            digits = digits.substring(0, 3) + digits.substring(4);
+        }
+        
+        // Format the new value
+        let formatted = digits.substring(0, 4);
+        if (digits.length > 4) {
+            formatted += '-' + digits.substring(4, 9); // 5 digits after hyphen
+        }
+        
+        input.value = formatted;
+        input.setSelectionRange(4, 4); // Place cursor before where hyphen was
+        return;
+    }
+    
+    // Handle delete at hyphen position
+    if (event.key === 'Delete' && cursorPos === 4 && value.charAt(4) === '-') {
+        event.preventDefault();
+        
+        // Remove hyphen and following digit
+        let digits = value.replace(/\D/g, '');
+        if (digits.length > 4) {
+            digits = digits.substring(0, 4) + digits.substring(5);
+        }
+        
+        // Format the new value
+        let formatted = digits.substring(0, 4);
+        if (digits.length > 4) {
+            formatted += '-' + digits.substring(4, 9); // 5 digits after hyphen
+        }
+        
+        input.value = formatted;
+        input.setSelectionRange(4, 4); // Keep cursor at position 4
+        return;
+    }
+    
+    // Allow navigation and control keys
+    const allowedKeys = [
+        'Backspace', 'Delete', 'Tab', 'Escape', 'Enter',
+        'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+        'Home', 'End'
+    ];
+    
+    // If not a digit and not an allowed key, prevent input
+    if (!/^\d$/.test(event.key) && !allowedKeys.includes(event.key)) {
+        event.preventDefault();
+    }
+}
+
+/**
+ * Reset student ID input when modal opens
+ */
+function resetStudentIdInput() {
+    const studentIdInput = document.getElementById('studentId');
+    if (studentIdInput) {
+        studentIdInput.value = '';
+        studentIdInput.blur(); // Remove focus
+        setTimeout(() => studentIdInput.focus(), 100); // Re-focus after a moment
+    }
+}
+
+/**
+ * Validate student ID format before submission
+ */
+function validateStudentId(studentId) {
+    const pattern = /^\d{4}-\d{5}$/;
+    if (!pattern.test(studentId)) {
+        showModal('Invalid Format', 
+            'Student ID must be in format: YYYY-XXXXX\nExample: 2022-01376', 
+            'error');
+        return false;
+    }
+    
+    // Check year part (first 4 digits)
+    const year = parseInt(studentId.substring(0, 4));
+    const currentYear = new Date().getFullYear();
+    
+    if (year < 2000 || year > currentYear + 1) {
+        showModal('Invalid Year', 
+            `Year ${year} is not valid. Please use a year between 2000 and ${currentYear + 1}.`, 
+            'warning');
+        return false;
+    }
+    
+    // Check number part (last 5 digits)
+    const number = parseInt(studentId.substring(5));
+    if (isNaN(number) || number < 1) {
+        showModal('Invalid Number', 
+            'The student number must be a valid 5-digit number.', 
+            'error');
+        return false;
+    }
+    
+    return true;
+}
+
 function submitAddStudent() {
     console.log('submitAddStudent called');
     try {
         const name = document.getElementById('studentName')?.value?.trim();
         const id = document.getElementById('studentId')?.value?.trim();
 
-        if (name && id) {
-            const student_data = {
-                id: id,
-                name: name,
-                temporary: true
-            };
-            manageStudent('add_temporary', student_data);
-        } else {
+        if (!name || !id) {
             showModal('Missing Information', 'Please fill in all fields.', 'error');
+            return;
         }
+        
+        // Validate student ID format
+        if (!validateStudentId(id)) {
+            return;
+        }
+
+        const student_data = {
+            id: id,
+            name: name,
+            temporary: true
+        };
+        manageStudent('add_temporary', student_data);
     } catch (err) {
         console.error('Error in submitAddStudent:', err);
         showModal('Error', 'Error adding student.', 'error');
@@ -2790,31 +3180,172 @@ function submitAddStudent() {
 
 
 function submitDeleteStudent() {
-    console.log('submitDeleteStudent called');
+    console.log('submitDeleteStudent called - TEMPORARY ONLY');
     try {
         const select = document.getElementById('deleteStudentSelect');
         const studentId = select?.value;
-        if (studentId) {
-            manageStudent('remove', { student_id: studentId });
-        } else {
-            showModal('Missing Information', 'Please select a student to remove.', 'error');
+        
+        if (!studentId) {
+            showModal('Missing Information', 'Please select a temporary student to remove.', 'warning');
+            return;
         }
+
+        // Get the selected student data to check if temporary
+        const selectedOption = select.options[select.selectedIndex];
+        const isTemporary = selectedOption.textContent.includes('Temporary');
+        
+        if (!isTemporary) {
+            showModal('Action Restricted', 'You can only remove temporary students. Regular students belong to this class and cannot be removed.', 'error');
+            return;
+        }
+
+        // Double-check with backend before proceeding
+        const urlParams = new URLSearchParams(window.location.search);
+        const program = urlParams.get('program');
+        const yearLevel = urlParams.get('year_level');
+        const section = urlParams.get('section');
+        
+        fetch(`/api/get_student_status?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.students) {
+                    const studentToDelete = data.students.find(s => s.id === studentId);
+                    
+                    if (!studentToDelete) {
+                        showModal('Student Not Found', 'The selected student was not found.', 'error');
+                        return;
+                    }
+                    
+                    if (studentToDelete.type !== 'temporary') {
+                        showModal('Action Restricted', 
+                            `Cannot remove ${studentToDelete.name}. This is a regular student who belongs to this class.`, 
+                            'error');
+                        return;
+                    }
+                    
+                    // If confirmed temporary, proceed with deletion
+                    confirmDeleteTemporaryStudent(studentId, studentToDelete.name);
+                }
+            })
+            .catch(err => {
+                console.error('Error verifying student:', err);
+                showModal('Error', 'Error verifying student information.', 'error');
+            });
+            
     } catch (err) {
         console.error('Error in submitDeleteStudent:', err);
         showModal('Error', 'Error removing student.', 'error');
     }
 }
 
+function confirmDeleteTemporaryStudent(studentId, studentName) {
+    // Store student info globally
+    studentToDelete.id = studentId;
+    studentToDelete.name = studentName;
+    
+    // Update modal content
+    document.getElementById('deleteConfirmationTitle').textContent = `Remove "${studentName}"?`;
+    document.getElementById('deleteConfirmationMessage').textContent = 
+        `Are you sure you want to remove temporary student "${studentName}" (ID: ${studentId})?`;
+    
+    // Set up the confirmation button
+    const confirmButton = document.getElementById('confirmDeleteButton');
+    confirmButton.onclick = performDeleteStudent;
+    
+    // Open the modal
+    openModal('deleteConfirmationModal');
+}
+
+function performDeleteStudent() {
+    if (studentToDelete.id) {
+        manageStudent('remove', { student_id: studentToDelete.id });
+        closeDeleteConfirmationModal();
+    }
+}
+
+function closeDeleteConfirmationModal() {
+    // Reset stored data
+    studentToDelete.id = null;
+    studentToDelete.name = null;
+    
+    // Close the modal
+    closeModal('deleteConfirmationModal');
+}
+
 function submitTransferStudent() {
     console.log('submitTransferStudent called');
     try {
-        const student = document.getElementById('transferStudent')?.value;
-        const section = document.getElementById('transferSection')?.value;
-        if (student && section) {
-            manageStudent('transfer', { student_id: student, new_section: section });
-        } else {
-            showModal('Missing Information', 'Please select a student and target section.', 'error');
+        const studentSelect = document.getElementById('transferStudent');
+        const studentId = studentSelect?.value;
+        const selectedStudentOption = studentSelect.options[studentSelect.selectedIndex];
+        const studentName = selectedStudentOption?.textContent.split(' - ')[0];
+        const studentYearLevel = selectedStudentOption?.dataset.yearLevel;
+        const currentSection = selectedStudentOption?.dataset.currentSection;
+        
+        const sectionSelect = document.getElementById('transferSection');
+        const targetSection = sectionSelect?.value;
+        const selectedSectionOption = sectionSelect.options[sectionSelect.selectedIndex];
+        const targetSectionId = selectedSectionOption?.dataset.sectionId;
+        
+        if (!studentId) {
+            showModal('Missing Information', 'Please select a student to transfer.', 'error');
+            return;
         }
+        
+        if (!targetSection) {
+            showModal('Missing Information', 'Please select a target section.', 'error');
+            return;
+        }
+        
+        // Parse target section to get components
+        const match = targetSection.match(/^(\w+)\s+(\d+)(\w+)$/);
+        if (!match) {
+            showModal('Invalid Format', 'Target section format is invalid. Please select from the dropdown.', 'error');
+            return;
+        }
+        
+        const targetProgramId = match[1]; // IT, CS, ACT
+        const targetYearLevel = match[2];
+        const targetSectionName = match[3];
+        
+        // Check if transferring within same section
+        const currentSectionDisplay = `${targetProgramId} ${studentYearLevel}${currentSection}`;
+        if (targetSection === currentSectionDisplay) {
+            showModal('Invalid Transfer', 'Cannot transfer student to their current section. Please select a different section.', 'error');
+            return;
+        }
+        
+        // Check if year levels match
+        if (studentYearLevel !== targetYearLevel) {
+            const confirmTransfer = confirm(
+                `Warning: Student is in Year ${studentYearLevel}, but target section is Year ${targetYearLevel}.\n\n` +
+                `Transferring to a different year level may cause curriculum issues.\n\n` +
+                `Do you want to proceed anyway?`
+            );
+            
+            if (!confirmTransfer) {
+                return;
+            }
+        }
+        
+        // Show confirmation with details
+        const confirmMessage = `
+            Transfer Details:
+            • Student: ${studentName}
+            • From: ${currentSectionDisplay}
+            • To: ${targetSection}
+            
+            Are you sure you want to transfer this student?
+        `;
+        
+        if (confirm(confirmMessage)) {
+            manageStudent('transfer', { 
+                student_id: studentId, 
+                new_section: targetSection,
+                target_section_id: targetSectionId
+            });
+        }
+        
     } catch (err) {
         console.error('Error in submitTransferStudent:', err);
         showModal('Error', 'Error transferring student.', 'error');
@@ -3255,4 +3786,6 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     }, 5000);
 });
+
+
 </script>
