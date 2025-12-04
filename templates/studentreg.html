@@ -1060,21 +1060,21 @@ function checkPose(result, poseId) {
     switch (poseId) {
         case 'frontal':
             return result.is_frontal || 
-                   (Math.abs(result.yaw || 0) <= 20 && 
-                    Math.abs(result.pitch || 0) <= 15);
+                   (Math.abs(result.yaw || 0) <= 15 && 
+                    Math.abs(result.pitch || 0) <= 12);
         case 'left':
-            return result.is_left || (result.yaw >= 5);
+            return result.is_left || (result.yaw >= 8);
         case 'right':
-            return result.is_right || (result.yaw <= -4);
+            return result.is_right || (result.yaw <= -8);
         case 'up':
-            return result.is_up || (result.pitch <= -1);
+            return result.is_up || (result.pitch <= -8);
         case 'down':
-            return result.is_down || (result.pitch >= 0.5);
+            return result.is_down || (result.pitch >= 8);
         case 'mouth_open':
-            return result.is_mouth_open || (result.mar >= 0.08);
+            return result.is_mouth_open || (result.mar >= 0.07);
         case 'eyes_closed':
             return result.is_eyes_closed || 
-                   (((result.left_ear || 0.3) + (result.right_ear || 0.3)) / 2 <= 0.35);
+                   (((result.left_ear || 0.3) + (result.right_ear || 0.3)) / 2 <= 0.25);
         default:
             return false;
     }

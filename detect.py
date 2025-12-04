@@ -3185,7 +3185,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         face_embedding = None
         best_similarity = 0
 
-        if conf >= 0.15 and KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
+        if conf >= 0.20 and KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
             try:
                 face_embedding = face_obj.embedding
             
@@ -3197,60 +3197,140 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     if DEBUG_MODE: 
                         logger.debug(f"  Current section has {len(current_section_students)} students")
                     
-                    dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
-                    norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
-                    norm_b = np.linalg.norm(face_embedding)
-                    denominator = norm_a * norm_b
-                    similarities = np.divide(dot_products, denominator,
-                                             out=np.zeros_like(dot_products, dtype=float),
-                                             where=denominator != 0)
-                    if similarities.size > 0:
-                        best_match_index = int(np.argmax(similarities))
-                        best_similarity = float(similarities[best_match_index])
+                    # ENHANCED: Face quality checks before recognition
+                    face_width = x2 - x1
+                    face_height = y2 - y1
+                    
+                    # Skip very small faces (less reliable)
+                    if face_width < 45 or face_height < 45:
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Face too small for reliable recognition: {face_width}x{face_height}")
+                        name = "Unknown - Face too small"
+                    else:
+                        dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                        norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
+                        norm_b = np.linalg.norm(face_embedding)
+                        denominator = norm_a * norm_b
+                        similarities = np.divide(dot_products, denominator,
+                                                 out=np.zeros_like(dot_products, dtype=float),
+                                                 where=denominator != 0)
                         
-                        if best_similarity >= 0.50:
-                            matched_id = known_face_ids[best_match_index]
-                            matched_type = known_face_types[best_match_index]
-                            matched_name = known_face_names[best_match_index]
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Potential match: {matched_name} ({matched_id}) - Type: {matched_type} - Similarity: {best_similarity:.3f}")
+                        if similarities.size > 0:
+                            best_match_index = int(np.argmax(similarities))
+                            best_similarity = float(similarities[best_match_index])
                             
-                            if matched_type == 'faculty':
-                                name = f"Faculty: {matched_name}"
-                                person_id = matched_id
-                                ptype = 'faculty'
-                                confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
-                                if DEBUG_MODE: 
-                                    logger.debug(f"  FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
+                            # ENHANCED: DYNAMIC THRESHOLD with ambiguity check
+                            base_threshold = 0.65  # Increased from 0.50
                             
-                            elif matched_type == 'student':
-                                if current_section_students and matched_id in current_section_students:
-                                    name = matched_name
-                                    person_id = matched_id
-                                    ptype = 'student'
-                                    confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
-                                    if DEBUG_MODE: 
-                                        logger.debug(f"  STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
+                            # Adjust threshold based on face size
+                            if face_width > 70 and face_height > 70:
+                                # Large clear face - higher threshold
+                                recognition_threshold = base_threshold + 0.05  # 0.70
+                            elif face_width < 50 or face_height < 50:
+                                # Small face - even higher threshold (more conservative)
+                                recognition_threshold = base_threshold + 0.08  # 0.73
+                            else:
+                                # Medium face
+                                recognition_threshold = base_threshold  # 0.65
+                            
+                            # ENHANCED: Check for ambiguous matches (similar faces)
+                            if best_similarity >= recognition_threshold:
+                                # Get top 2 matches to check ambiguity
+                                top_indices = np.argsort(similarities)[-2:][::-1]
+                                
+                                if len(top_indices) >= 2:
+                                    second_best_similarity = float(similarities[top_indices[1]])
+                                    similarity_gap = best_similarity - second_best_similarity
+                                    
+                                    # ENHANCED: Check if match is ambiguous
+                                    # If second best is too close, reject the match
+                                    if similarity_gap < 0.12:  # Only 0.12 difference
+                                        if DEBUG_MODE: 
+                                            logger.debug(f"  AMBIGUOUS MATCH: Best {best_similarity:.3f} vs Second {second_best_similarity:.3f} (gap: {similarity_gap:.3f})")
+                                        name = "Unknown - Ambiguous Match"
+                                    else:
+                                        # Clear match, proceed
+                                        matched_id = known_face_ids[best_match_index]
+                                        matched_type = known_face_types[best_match_index]
+                                        matched_name = known_face_names[best_match_index]
+                                        
+                                        if DEBUG_MODE: 
+                                            logger.debug(f"  CLEAR MATCH: {matched_name} - Similarity: {best_similarity:.3f}, Gap: {similarity_gap:.3f}")
+                                        
+                                        if matched_type == 'faculty':
+                                            name = f"Faculty: {matched_name}"
+                                            person_id = matched_id
+                                            ptype = 'faculty'
+                                            confidence = min(1.0, (conf * 0.3) + (best_similarity * 0.7))
+                                            if DEBUG_MODE: 
+                                                logger.debug(f"  FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
+                                        
+                                        elif matched_type == 'student':
+                                            if current_section_students and matched_id in current_section_students:
+                                                name = matched_name
+                                                person_id = matched_id
+                                                ptype = 'student'
+                                                confidence = min(1.0, (conf * 0.3) + (best_similarity * 0.7))
+                                                if DEBUG_MODE: 
+                                                    logger.debug(f"  STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
+                                            else:
+                                                if DEBUG_MODE: 
+                                                    logger.debug(f"  STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
+                                                name = "Unknown - Wrong Section"
+                                                if face_embedding is not None:
+                                                    try:
+                                                        face_crop = frame[y1:y2, x1:x2]
+                                                        if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
+                                                            session_id = get_current_session_id()
+                                                            if session_id:
+                                                                success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
+                                                                if success:
+                                                                    if DEBUG_MODE: 
+                                                                        logger.debug(f"📸 CAPTURED OUT-OF-SECTION FACE - Added to enrollment system")
+                                                    except Exception as capture_error:
+                                                        logger.error(f"Error capturing out-of-section face: {capture_error}")
                                 else:
-                                    if DEBUG_MODE: 
-                                        logger.debug(f"  STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
-                                    name = "Unknown - Wrong Section"
-                                    if face_embedding is not None:
-                                        try:
-                                            face_crop = frame[y1:y2, x1:x2]
-                                            if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
-                                                session_id = get_current_session_id()
-                                                if session_id:
-                                                    success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
-                                                    if success:
-                                                        if DEBUG_MODE: 
-                                                            logger.debug(f"📸 CAPTURED OUT-OF-SECTION FACE - Added to enrollment system")
-                                        except Exception as capture_error:
-                                            logger.error(f"Error capturing out-of-section face: {capture_error}")
-                        else:
-                            if DEBUG_MODE: 
-                                logger.debug(f"  NO MATCH: Best similarity {best_similarity:.3f} < threshold 0.50")
-                            name = "Unknown"
+                                    # Single match case
+                                    matched_id = known_face_ids[best_match_index]
+                                    matched_type = known_face_types[best_match_index]
+                                    matched_name = known_face_names[best_match_index]
+                                    
+                                    if matched_type == 'faculty':
+                                        name = f"Faculty: {matched_name}"
+                                        person_id = matched_id
+                                        ptype = 'faculty'
+                                        confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
+                                        if DEBUG_MODE: 
+                                            logger.debug(f"  FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
+                                    
+                                    elif matched_type == 'student':
+                                        if current_section_students and matched_id in current_section_students:
+                                            name = matched_name
+                                            person_id = matched_id
+                                            ptype = 'student'
+                                            confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
+                                            if DEBUG_MODE: 
+                                                logger.debug(f"  STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
+                                        else:
+                                            if DEBUG_MODE: 
+                                                logger.debug(f"  STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
+                                            name = "Unknown - Wrong Section"
+                                            if face_embedding is not None:
+                                                try:
+                                                    face_crop = frame[y1:y2, x1:x2]
+                                                    if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
+                                                        session_id = get_current_session_id()
+                                                        if session_id:
+                                                            success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
+                                                            if success:
+                                                                if DEBUG_MODE: 
+                                                                    logger.debug(f"📸 CAPTURED OUT-OF-SECTION FACE - Added to enrollment system")
+                                                except Exception as capture_error:
+                                                    logger.error(f"Error capturing out-of-section face: {capture_error}")
+                            else:
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.2f}")
+                                name = "Unknown"
                         
             except Exception as e:
                 logger.error(f"  Error in recognition: {e}")
@@ -6933,6 +7013,16 @@ def encode_face():
                 'next_pose': current_pose
             }), 400
         
+        # ENHANCED: Add face quality check
+        h, w = img.shape[:2]
+        if h < 200 or w < 200:
+            return jsonify({
+                'success': False,
+                'message': 'Image too small. Please move closer to the camera.',
+                'current_pose': current_pose,
+                'next_pose': current_pose
+            }), 400
+        
         enhanced_img = img
         
         faces = face_analysis.get(enhanced_img)
@@ -6950,7 +7040,7 @@ def encode_face():
         yaw, pitch, roll = face.pose
         landmarks = face.landmark_2d_106
         
-        # SIMPLIFIED MIRROR CORRECTION: Only invert yaw
+        # ENHANCED: Mirror correction
         yaw = -yaw  # Correct left/right for mirror
         
         left_eye_indices = [96, 97, 98, 99, 100, 101]
@@ -6960,15 +7050,15 @@ def encode_face():
         mouth_indices = [76, 77, 78, 79, 80, 81, 82, 83]
         mar = calculate_mar(landmarks, mouth_indices)
         
-        # IMPROVED pose detection with BETTER up/down thresholds
+        # ENHANCED: More lenient pose detection thresholds
         pose_results = {
-            'is_frontal': bool(abs(yaw) <= 20 and abs(pitch) <= 15),
-            'is_left': bool(yaw >= 5),
-            'is_right': bool(yaw <= -4),
-            'is_up': bool(pitch <= -1),   # LOWER threshold for up (more negative)
-            'is_down': bool(pitch >= 0.5),  # HIGHER threshold for down (more positive)
-            'is_mouth_open': bool(mar >= 0.08),
-            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.35)
+            'is_frontal': bool(abs(yaw) <= 15 and abs(pitch) <= 12),  # Reduced from 20/15
+            'is_left': bool(yaw >= 8),  # Increased from 6
+            'is_right': bool(yaw <= -8),  # More consistent with left
+            'is_up': bool(pitch <= -8),  # More lenient from -3
+            'is_down': bool(pitch >= 8),  # More lenient from 0.5
+            'is_mouth_open': bool(mar >= 0.07),  # Reduced from 0.08
+            'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.25)  # Reduced from 0.35
         }
         
         if DEBUG_MODE: 
@@ -6977,136 +7067,154 @@ def encode_face():
         pose_satisfied = False
         message = ""
         
-        # IMPROVED pose checking with BETTER up/down logic
+        # ENHANCED: Clearer, more consistent pose checking
         if current_pose == 'frontal':
-            if abs(yaw) <= 10 and abs(pitch) <= 8:
+            if abs(yaw) <= 5 and abs(pitch) <= 5:
                 pose_satisfied = True
-                message = "   Perfect! Face centered."
-            elif abs(yaw) <= 20 and abs(pitch) <= 15:
+                message = "✅ Perfect! Face perfectly centered."
+            elif abs(yaw) <= 12 and abs(pitch) <= 10:
                 pose_satisfied = True
-                message = "   Good! Face detected."
+                message = "👌 Good! Face centered enough."
             else:
-                if abs(yaw) > 20:
+                if abs(yaw) > 12:
                     direction = "left" if yaw > 0 else "right"
-                    message = f"↔️ Face the camera. You're facing {direction}."
-                elif abs(pitch) > 15:
+                    message = f"↔️ Face the camera. You're facing {direction} (yaw: {abs(yaw):.1f}°)"
+                elif abs(pitch) > 10:
                     direction = "up" if pitch < 0 else "down"
-                    message = f"↕️ Face the camera. You're looking {direction}."
+                    message = f"↕️ Keep head level. You're looking {direction} (pitch: {abs(pitch):.1f}°)"
                 else:
-                    message = "👀 Look straight at the camera."
+                    message = "📸 Look straight at the camera"
         
         elif current_pose == 'left':
-            if yaw >= 10:
+            # ENHANCED: More consistent thresholds
+            if yaw >= 20:
                 pose_satisfied = True
-                message = "   Perfect! Good left turn."
-            elif yaw >= 5:
+                message = "✅ Perfect! Good left turn."
+            elif yaw >= 12:
                 pose_satisfied = True
-                message = "   Good! Left turn detected."
+                message = "👍 Good! Left turn detected."
+            elif yaw >= 8:
+                pose_satisfied = True
+                message = "👌 Acceptable. Left movement detected."
             else:
                 if yaw < 0:
-                    message = "  Turn your head to the LEFT"
-                elif yaw < 3:
-                    message = "↩️ Turn a bit more to the left"
+                    message = "❌ Wrong direction! Turn LEFT"
+                elif yaw < 5:
+                    message = "↩️ Turn your head more to the LEFT"
                 else:
-                    message = "👍 Almost there! Turn slightly more left"
+                    message = "↪️ Turn a bit more left (current: {:.1f}°)".format(yaw)
         
         elif current_pose == 'right':
-            if yaw <= -10:
+            # ENHANCED: Consistent with left
+            if yaw <= -20:
                 pose_satisfied = True
-                message = "   Perfect! Good right turn."
-            elif yaw <= -5:
+                message = "✅ Perfect! Good right turn."
+            elif yaw <= -12:
                 pose_satisfied = True
-                message = "   Good! Right turn detected."
+                message = "👍 Good! Right turn detected."
+            elif yaw <= -8:
+                pose_satisfied = True
+                message = "👌 Acceptable. Right movement detected."
             else:
                 if yaw > 0:
-                    message = "  Turn your head to the RIGHT"
-                elif yaw > -3:
-                    message = "↪️ Turn a bit more to the right"
+                    message = "❌ Wrong direction! Turn RIGHT"
+                elif yaw > -5:
+                    message = "↪️ Turn your head more to the RIGHT"
                 else:
-                    message = "👍 Almost there! Turn slightly more right"
+                    message = "↩️ Turn a bit more right (current: {:.1f}°)".format(yaw)
         
         elif current_pose == 'up':
-            # IMPROVED UP DETECTION - More lenient and clear
-            if pitch <= -20:
+            # ENHANCED: Much more lenient for up
+            if pitch <= -25:
                 pose_satisfied = True
-                message = "   Perfect! Great upward tilt."
+                message = "✅ Perfect! Great upward tilt."
             elif pitch <= -15:
                 pose_satisfied = True
-                message = "   Excellent! Upward tilt detected."
-            elif pitch <= -10:
+                message = "👍 Excellent! Upward tilt detected."
+            elif pitch <= -8:
                 pose_satisfied = True
-                message = "   Good! Upward movement detected."
+                message = "👌 Good! Upward movement detected."
             else:
                 if pitch > 5:
                     message = "🔼 Tilt your head UP (chin up, look at ceiling)"
                 elif pitch > 0:
-                    message = "⬆️ Tilt more upward"
-                elif pitch > -5:
-                    message = "👆 A bit more upward"
+                    message = "⬆️ Tilt more upward (current: {:.1f}°)".format(pitch)
                 else:
-                    message = "👍 Almost there! Tilt slightly more up"
+                    message = "👆 A bit more upward (current: {:.1f}°)".format(pitch)
         
         elif current_pose == 'down':
-            # IMPROVED DOWN DETECTION - More lenient and clear
-            if pitch >= 20:
+            # ENHANCED: Much more lenient for down
+            if pitch >= 25:
                 pose_satisfied = True
-                message = "   Perfect! Great downward tilt."
+                message = "✅ Perfect! Great downward tilt."
             elif pitch >= 15:
                 pose_satisfied = True
-                message = "   Excellent! Downward tilt detected."
-            elif pitch >= 10:
+                message = "👍 Excellent! Downward tilt detected."
+            elif pitch >= 8:
                 pose_satisfied = True
-                message = "   Good! Downward movement detected."
+                message = "👌 Good! Downward movement detected."
             else:
                 if pitch < -5:
                     message = "🔽 Tilt your head DOWN (chin down, look at floor)"
                 elif pitch < 0:
-                    message = "⬇️ Tilt more downward"
-                elif pitch < 5:
-                    message = "👇 A bit more downward"
+                    message = "⬇️ Tilt more downward (current: {:.1f}°)".format(pitch)
                 else:
-                    message = "👍 Almost there! Tilt slightly more down"
+                    message = "👇 A bit more downward (current: {:.1f}°)".format(pitch)
         
         elif current_pose == 'mouth_open':
-            if mar >= 0.12:
+            # ENHANCED: More lenient mouth detection
+            if mar >= 0.15:
                 pose_satisfied = True
-                message = "   Perfect! Mouth open detected."
-            elif mar >= 0.08:
+                message = "✅ Perfect! Mouth clearly open."
+            elif mar >= 0.10:
                 pose_satisfied = True
-                message = "   Good! Mouth open detected."
+                message = "👍 Good! Mouth open detected."
+            elif mar >= 0.07:
+                pose_satisfied = True
+                message = "👌 Acceptable. Mouth slightly open."
             else:
-                message = "😮 Open your mouth slightly"
+                message = "😮 Open your mouth slightly (like saying 'ahh')"
         
         elif current_pose == 'eyes_closed':
+            # ENHANCED: More lenient eye closure
             avg_ear = (left_ear + right_ear) / 2
-            if avg_ear <= 0.25:
+            if avg_ear <= 0.15:
                 pose_satisfied = True
-                message = "   Perfect! Eyes closed detected."
-            elif avg_ear <= 0.35:
+                message = "✅ Perfect! Eyes clearly closed."
+            elif avg_ear <= 0.20:
                 pose_satisfied = True
-                message = "   Good! Eyes closed detected."
+                message = "👍 Good! Eyes closed detected."
+            elif avg_ear <= 0.25:
+                pose_satisfied = True
+                message = "👌 Acceptable. Eyes mostly closed."
             else:
-                message = "😌 Close your eyes gently"
+                message = "😌 Close your eyes gently (don't squint)"
         
-        # INSTANT SUCCESS for ANY up/down movement (very lenient)
+        # ENHANCED: Progressive assistance for stuck poses
         if not pose_satisfied:
-            if current_pose == 'up' and pitch < 0:  # ANY negative pitch for up
-                pose_satisfied = True
-                message = "   Good! Upward movement detected."
-            elif current_pose == 'down' and pitch > 0:  # ANY positive pitch for down
-                pose_satisfied = True
-                message = "   Good! Downward movement detected."
-            elif current_pose == 'left' and yaw > 0:
-                pose_satisfied = True
-                message = "   Good! Left movement detected."
-            elif current_pose == 'right' and yaw < 0:
-                pose_satisfied = True
-                message = "   Good! Right movement detected."
+            # Track how many times this pose has failed
+            if 'pose_attempts' not in globals():
+                pose_attempts = {}
+            if current_pose not in pose_attempts:
+                pose_attempts[current_pose] = 0
+            pose_attempts[current_pose] += 1
+            
+            # After 3 failed attempts, give more specific guidance
+            if pose_attempts[current_pose] >= 3:
+                if current_pose in ['up', 'down']:
+                    message += f" Tilt your head more ({abs(pitch):.1f}° currently)"
+                elif current_pose in ['left', 'right']:
+                    message += f" Turn your head more ({abs(yaw):.1f}° currently)"
         
         if pose_satisfied:
+            # Reset attempts counter for this pose
+            if 'pose_attempts' in globals() and current_pose in pose_attempts:
+                pose_attempts[current_pose] = 0
+            
             pose_embeddings[current_pose] = face_embedding.tolist()
             next_pose_index = min(current_pose_index + 1, len(POSE_SEQUENCE) - 1)
             next_pose = POSE_SEQUENCE[next_pose_index]
+            
             if DEBUG_MODE: 
                 logger.debug(f"Pose {current_pose} satisfied, advancing to {next_pose}")
         else:
@@ -7134,10 +7242,13 @@ def encode_face():
             'is_up': bool(pose_results['is_up']),
             'is_down': bool(pose_results['is_down']),
             'is_mouth_open': bool(pose_results['is_mouth_open']),
-            'is_eyes_closed': bool(pose_results['is_eyes_closed'])
+            'is_eyes_closed': bool(pose_results['is_eyes_closed']),
+            'current_angle': float(yaw if current_pose in ['left', 'right'] else pitch if current_pose in ['up', 'down'] else 0)
         })
     except Exception as e:
         logger.error(f"Error encoding face: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'message': f'Error encoding face: {str(e)}',
@@ -8156,7 +8267,7 @@ def summary_page():
 @app.route('/api/summary_data')
 @login_required
 def get_summary_data():
-    """Get complete summary data for the latest session - UPDATED with proper photo handling"""
+    """Get complete summary data for the latest session - FIXED: Handles empty status and missing duplicates"""
     try:
         user_id = session.get('user_id')
         
@@ -8174,7 +8285,7 @@ def get_summary_data():
                     'message': 'User not found'
                 }), 404
             
-            # Get the latest completed session WITH SUBJECT INFORMATION
+            # Get the latest completed session
             cursor.execute("""
                 SELECT *, subject_code, subject_name, room 
                 FROM attendance_sessions 
@@ -8197,10 +8308,11 @@ def get_summary_data():
             
             print(f"  DEBUG Session: {session_id}")
             print(f"   - Section ID: {section_id}")
-            print(f"   - Created At: {started_at}")
-            print(f"   - Ended At: {ended_at}")
             
-            # Get duration
+            # ✅ FIRST: Clean up any existing duplicates in this session
+            cleanup_duplicate_attendance(session_id)
+            
+            # Duration calculation (same as before)
             duration_time = session_data.get('duration_time', '00:00:00')
             duration_seconds = 0
             if duration_time and isinstance(duration_time, str):
@@ -8219,7 +8331,7 @@ def get_summary_data():
             room = session_data.get('room', 'Unknown Room')
             class_name = session_data['class_name']
             
-            # Get program and section display from class_name
+            # Get program and section
             program_display = "BSIT"
             if 'Associate in Computer Technology' in class_name:
                 program_display = 'ACT'
@@ -8238,75 +8350,102 @@ def get_summary_data():
                 if section_part:
                     section_display = f"2{section_part[0]}"
             
-            #    FIXED: PROPER QUERY WITH PHOTO_PATH HANDLING
+            # ✅ FIXED: COMPLETE QUERY THAT HANDLES EMPTY STATUS AND MISSING
             cursor.execute("""
-                WITH attendance_records AS (
-                    -- Get attendance records with status cleanup
+                WITH cleaned_attendance AS (
+                    -- Get latest non-empty status for each student
+                    -- Removes empty string status records if other status exists
                     SELECT 
-                        a.student_id,
-                        a.name as student_name,
+                        student_id,
+                        MAX(timestamp) as latest_timestamp,
                         CASE 
-                            WHEN a.status IS NULL OR a.status = '' OR a.status = 'missing' THEN 'absent'
-                            ELSE a.status
-                        END as status,
-                        a.timestamp,
-                        a.subject_code,
-                        a.subject_name,
-                        a.room,
-                        a.remarks,
-                        CASE 
-                            WHEN a.student_id IS NULL OR a.student_id = '' THEN TRUE
-                            ELSE FALSE
-                        END as is_temporary
-                    FROM attendance a
-                    WHERE a.session_id = %s
-                    AND a.person_type = 'student'
+                            WHEN COUNT(*) = 1 THEN 
+                                -- Single record
+                                CASE 
+                                    WHEN MAX(status) IN ('', NULL) THEN 'absent'
+                                    WHEN MAX(status) = 'missing' THEN 'absent'
+                                    ELSE MAX(status)
+                                END
+                            ELSE 
+                                -- Multiple records, prefer non-empty over empty
+                                COALESCE(
+                                    MAX(CASE WHEN status NOT IN ('', NULL) THEN status END),
+                                    'absent'
+                                )
+                        END as final_status,
+                        MAX(name) as student_name,
+                        MAX(subject_code) as subject_code,
+                        MAX(subject_name) as subject_name,
+                        MAX(room) as room,
+                        MAX(remarks) as remarks,
+                        MAX(id) as latest_id
+                    FROM attendance
+                    WHERE session_id = %s
+                    AND person_type = 'student'
+                    AND student_id IS NOT NULL 
+                    AND student_id != ''
+                    GROUP BY student_id, session_id
                 ),
-                all_students AS (
-                    -- Regular students from section (with their attendance or marked absent)
+                section_students AS (
+                    -- Get all regular students in the section
                     SELECT 
                         s.student_id,
                         CONCAT(s.first_name, ' ', s.last_name) as student_name,
-                        COALESCE(ar.status, 'absent') as status,
-                        COALESCE(ar.timestamp, %s) as attendance_timestamp,
-                        FALSE as is_temporary,
-                        s.photo_path,
-                        COALESCE(ar.subject_code, %s) as subject_code,
-                        COALESCE(ar.subject_name, %s) as subject_name,
-                        COALESCE(ar.room, %s) as room,
-                        ar.remarks
+                        'No' as is_temporary,
+                        s.photo_path
                     FROM students s
-                    LEFT JOIN attendance_records ar ON s.student_id = ar.student_id AND ar.is_temporary = FALSE
-                    WHERE s.section_id = %s AND s.status = 'active'
+                    WHERE s.section_id = %s 
+                    AND s.status = 'active'
+                ),
+                combined_data AS (
+                    -- Regular students with attendance or default to absent
+                    SELECT 
+                        ss.student_id,
+                        ss.student_name,
+                        ss.is_temporary,
+                        ss.photo_path,
+                        COALESCE(ca.final_status, 'absent') as status,
+                        COALESCE(ca.latest_timestamp, %s) as attendance_timestamp,
+                        COALESCE(ca.subject_code, %s) as subject_code,
+                        COALESCE(ca.subject_name, %s) as subject_name,
+                        COALESCE(ca.room, %s) as room,
+                        COALESCE(ca.remarks, '') as remarks
+                    FROM section_students ss
+                    LEFT JOIN cleaned_attendance ca ON ss.student_id = ca.student_id
                     
                     UNION ALL
                     
-                    -- Temporary students (manually added)
-                    SELECT 
+                    -- Temporary students
+                    SELECT DISTINCT
                         CASE 
-                            WHEN ar.student_name LIKE '%(ID: %' THEN 
+                            WHEN a.name LIKE '%(ID: %' THEN 
                                 TRIM(SUBSTRING(
-                                    ar.student_name, 
-                                    LOCATE('(ID: ', ar.student_name) + 5,
-                                    LOCATE(')', ar.student_name, LOCATE('(ID: ', ar.student_name)) - (LOCATE('(ID: ', ar.student_name) + 5)
+                                    a.name, 
+                                    LOCATE('(ID: ', a.name) + 5,
+                                    LOCATE(')', a.name, LOCATE('(ID: ', a.name)) - (LOCATE('(ID: ', a.name) + 5)
                                 ))
-                            ELSE CONCAT('TEMP-', LPAD(ROW_NUMBER() OVER (), 4, '0'))
+                            ELSE CONCAT('TEMP-', LPAD(ROW_NUMBER() OVER (ORDER BY a.timestamp), 4, '0'))
                         END as student_id,
                         CASE 
-                            WHEN ar.student_name LIKE '%(ID: %' THEN 
-                                TRIM(SUBSTRING(ar.student_name, 1, LOCATE('(ID: ', ar.student_name) - 1))
-                            ELSE ar.student_name 
+                            WHEN a.name LIKE '%(ID: %' THEN 
+                                TRIM(SUBSTRING(a.name, 1, LOCATE('(ID: ', a.name) - 1))
+                            ELSE a.name 
                         END as student_name,
-                        ar.status,
-                        ar.timestamp as attendance_timestamp,
-                        TRUE as is_temporary,
+                        'Yes' as is_temporary,
                         NULL as photo_path,
-                        COALESCE(ar.subject_code, %s) as subject_code,
-                        COALESCE(ar.subject_name, %s) as subject_name,
-                        COALESCE(ar.room, %s) as room,
-                        ar.remarks
-                    FROM attendance_records ar
-                    WHERE ar.is_temporary = TRUE
+                        CASE 
+                            WHEN a.status IN ('', NULL, 'missing') THEN 'absent'
+                            ELSE a.status
+                        END as status,
+                        a.timestamp as attendance_timestamp,
+                        COALESCE(a.subject_code, %s) as subject_code,
+                        COALESCE(a.subject_name, %s) as subject_name,
+                        COALESCE(a.room, %s) as room,
+                        COALESCE(a.remarks, '') as remarks
+                    FROM attendance a
+                    WHERE a.session_id = %s
+                    AND a.person_type = 'student'
+                    AND (a.student_id IS NULL OR a.student_id = '')
                 )
                 
                 SELECT 
@@ -8320,25 +8459,26 @@ def get_summary_data():
                     subject_name,
                     room,
                     remarks
-                FROM all_students
+                FROM combined_data
                 ORDER BY student_name ASC
             """, (
                 session_id,
+                section_id,
                 ended_at,
                 subject_code, subject_name, room,
-                section_id,
-                subject_code, subject_name, room
+                subject_code, subject_name, room,
+                session_id
             ))
             
             all_student_records = cursor.fetchall()
             
-            print(f"  DEBUG SUMMARY: Found {len(all_student_records)} total students (regular + temporary)")
+            print(f"  DEBUG SUMMARY: Found {len(all_student_records)} unique students")
             
             # Convert to proper format with photo handling
             complete_student_list = []
             for record in all_student_records:
                 # Handle photo path
-                if record['is_temporary']:
+                if record['is_temporary'] == 'Yes':
                     # Temporary students get default avatar
                     photo_path = '/static/images/default-avatar.jpg'
                 else:
@@ -8379,7 +8519,7 @@ def get_summary_data():
                 
                 # Get clean student ID for temporary students
                 student_id = record['student_id']
-                if record['is_temporary'] and (not student_id or student_id.startswith('TEMP')):
+                if record['is_temporary'] == 'Yes' and (not student_id or student_id.startswith('TEMP')):
                     # Create a temporary ID based on name hash
                     import hashlib
                     name_hash = hashlib.md5(record['student_name'].encode()).hexdigest()[:8]
@@ -8394,7 +8534,7 @@ def get_summary_data():
                     'status': record['status'],
                     'timestamp': display_timestamp,
                     'photo': photo_path or '/static/images/default-avatar.jpg',
-                    'is_temporary': bool(record['is_temporary']),
+                    'is_temporary': record['is_temporary'] == 'Yes',
                     'subject_code': record['subject_code'] or subject_code,
                     'subject_name': record['subject_name'] or subject_name,
                     'room': record['room'] or room,
@@ -8424,7 +8564,7 @@ def get_summary_data():
             # Debug first few students
             print(f"  DEBUG First 10 Students (Alphabetical):")
             for i, student in enumerate(complete_student_list[:10]):
-                print(f"   {i+1}. {student['name']} ({student['student_id']}) - {student['status']} - Photo: {student['photo']}")
+                print(f"   {i+1}. {student['name']} ({student['student_id']}) - {student['status']} - Temp: {student['is_temporary']}")
             
             # Format course display
             course_section_display = f"{program_display}-{section_display}"
@@ -8490,11 +8630,11 @@ def get_summary_data():
             'success': False,
             'message': f'Error loading summary data: {str(e)}'
         }), 500
-    
+
 @app.route('/api/update_attendance', methods=['POST'])
 @login_required
 def update_attendance():
-    """Update attendance status for students"""
+    """Update attendance status for students - PREVENTS empty status duplicates"""
     data = request.get_json()
     session_id = data.get('session_id')
     attendance_updates = data.get('attendance_updates', [])
@@ -8504,13 +8644,102 @@ def update_attendance():
     
     try:
         with get_db_cursor() as cursor:
-            for update in attendance_updates:
-                cursor.execute("""
-                    UPDATE attendance 
-                    SET status = %s 
-                    WHERE session_id = %s AND student_id = %s
-                """, (update['status'], session_id, update['student_id']))
+            # Get session info INCLUDING section_id
+            cursor.execute("""
+                SELECT subject_code, subject_name, room, section_id 
+                FROM attendance_sessions 
+                WHERE session_id = %s
+            """, (session_id,))
+            session_info = cursor.fetchone()
             
+            if not session_info:
+                return jsonify({'success': False, 'message': 'Session not found'}), 404
+            
+            subject_code = session_info.get('subject_code', 'IT99')
+            subject_name = session_info.get('subject_name', 'AMBUTT UY')
+            room = session_info.get('room', 'Unknown Room')
+            section_id = session_info.get('section_id')  # ✅ ADDED THIS LINE
+            
+            if not section_id:
+                print(f"  WARNING: No section_id found for session {session_id}")
+                # Try to get section_id from attendance records as fallback
+                cursor.execute("""
+                    SELECT section_id FROM attendance 
+                    WHERE session_id = %s 
+                    AND section_id IS NOT NULL 
+                    LIMIT 1
+                """, (session_id,))
+                section_record = cursor.fetchone()
+                if section_record:
+                    section_id = section_record['section_id']
+                else:
+                    section_id = 0  # Default fallback
+            
+            print(f"  DEBUG update_attendance: Using section_id = {section_id}")
+            
+            for update in attendance_updates:
+                student_id = update['student_id']
+                status = update['status']
+                remarks = update.get('remarks', '')
+                
+                # ✅ CRITICAL: Don't allow empty status updates
+                if status == '' or status is None:
+                    status = 'absent'  # Convert empty to absent
+                
+                # Check if ANY record exists for this student
+                cursor.execute("""
+                    SELECT id, status 
+                    FROM attendance 
+                    WHERE session_id = %s 
+                    AND student_id = %s
+                    AND person_type = 'student'
+                    ORDER BY timestamp DESC 
+                    LIMIT 1
+                """, (session_id, student_id))
+                
+                existing_record = cursor.fetchone()
+                
+                if existing_record:
+                    # ✅ UPDATE existing record regardless of its status
+                    cursor.execute("""
+                        UPDATE attendance 
+                        SET status = %s, 
+                            remarks = %s,
+                            timestamp = NOW()
+                        WHERE id = %s
+                    """, (status, remarks, existing_record['id']))
+                    
+                    print(f"  UPDATED existing record {existing_record['id']}: {student_id} -> {status}")
+                else:
+                    # Get student name
+                    cursor.execute("""
+                        SELECT CONCAT(first_name, ' ', last_name) as student_name
+                        FROM students 
+                        WHERE student_id = %s
+                    """, (student_id,))
+                    
+                    student = cursor.fetchone()
+                    if student:
+                        student_name = student['student_name']
+                    else:
+                        # Student not in database, use name from update if available
+                        student_name = update.get('student_name', f"Student {student_id}")
+                    
+                    # ✅ INSERT new record with section_id
+                    cursor.execute("""
+                        INSERT INTO attendance (
+                            session_id, student_id, name, status, 
+                            timestamp, subject_code, subject_name, room, 
+                            remarks, person_type, section_id
+                        ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s, 'student', %s)
+                    """, (
+                        session_id, student_id, student_name, status,
+                        subject_code, subject_name, room, remarks, section_id
+                    ))
+                    
+                    print(f"  INSERTED new record: {student_id} -> {status}")
+            
+            # Update session counts
             cursor.execute("""
                 UPDATE attendance_sessions 
                 SET 
@@ -8521,16 +8750,24 @@ def update_attendance():
                 WHERE session_id = %s
             """, (session_id, session_id, session_id, session_id, session_id))
             
-        return jsonify({'success': True, 'message': 'Attendance updated successfully'})
+            return jsonify({
+                'success': True, 
+                'message': f'Attendance updated for {len(attendance_updates)} students'
+            })
         
     except Exception as e:
         print(f"Error updating attendance: {e}")
-        return jsonify({'success': False, 'message': 'Error updating attendance'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False, 
+            'message': f'Error updating attendance: {str(e)}'
+        }), 500
 
 @app.route('/api/export_csv')
 @login_required
 def export_csv():
-    """Export attendance data as CSV - TODAY'S SESSION ONLY (REGULAR + TEMPORARY + ABSENT) - Alphabetically sorted"""
+    """Export attendance data as CSV - FIXED: No duplicate records and handles empty/missing status"""
     session_id = request.args.get('session_id')
     
     if not session_id:
@@ -8538,7 +8775,7 @@ def export_csv():
     
     try:
         with get_db_cursor() as cursor:
-            #    GET CURRENT SESSION DATA
+            # Get current session data
             cursor.execute("""
                 SELECT class_name, started_at, ended_at, subject_code, subject_name, room, section_id
                 FROM attendance_sessions 
@@ -8554,15 +8791,13 @@ def export_csv():
             subject_name = session_data.get('subject_name', 'AMBUTT UY')
             room = session_data.get('room', 'Unknown Room')
             section_id = session_data.get('section_id')
-            session_date = session_data['started_at'].date()
             
             print(f"  DEBUG Current Session: {session_id}")
             print(f"   - Subject: {subject_code} - {subject_name}")
             print(f"   - Room: {room}")
             print(f"   - Section ID: {section_id}")
-            print(f"   - Session Date: {session_date}")
             
-            #    GET PROGRAM AND SECTION FROM SESSION
+            # Get program and section from session
             program_display = "BSIT"  # Default
             if 'Associate in Computer Technology' in class_name:
                 program_display = 'ACT'
@@ -8583,108 +8818,144 @@ def export_csv():
             
             print(f"  DEBUG Program: {program_display}, Section: {section_display}")
             
-            #    FIXED: HANDLE EMPTY STATUS AND GET ALL STUDENTS - SORTED ALPHABETICALLY
+            # ✅ FIXED: SINGLE RECORD PER STUDENT - Consolidates empty/missing status
             cursor.execute("""
-                WITH attendance_records AS (
-                    -- Get attendance records with status cleanup
+                WITH cleaned_attendance AS (
+                    -- Get latest non-empty status for each student
+                    -- Removes empty string status records if other status exists
                     SELECT 
-                        a.student_id,
-                        a.name as student_name,
+                        student_id,
+                        MAX(timestamp) as latest_timestamp,
                         CASE 
-                            WHEN a.status IS NULL OR a.status = '' OR a.status = 'missing' THEN 'absent'
-                            ELSE a.status
-                        END as status,
-                        a.timestamp,
-                        a.subject_code,
-                        a.subject_name,
-                        a.room,
-                        a.remarks,
-                        CASE 
-                            WHEN a.student_id IS NULL OR a.student_id = '' THEN TRUE
-                            ELSE FALSE
-                        END as is_temporary
-                    FROM attendance a
-                    WHERE a.session_id = %s
-                    AND a.person_type = 'student'
+                            WHEN COUNT(*) = 1 THEN 
+                                -- Single record
+                                CASE 
+                                    WHEN MAX(status) IN ('', NULL) THEN 'absent'
+                                    WHEN MAX(status) = 'missing' THEN 'absent'
+                                    ELSE MAX(status)
+                                END
+                            ELSE 
+                                -- Multiple records, prefer non-empty over empty
+                                COALESCE(
+                                    MAX(CASE WHEN status NOT IN ('', NULL) THEN status END),
+                                    'absent'
+                                )
+                        END as final_status,
+                        MAX(name) as student_name,
+                        MAX(subject_code) as subject_code,
+                        MAX(subject_name) as subject_name,
+                        MAX(room) as room,
+                        MAX(remarks) as remarks
+                    FROM attendance
+                    WHERE session_id = %s
+                    AND person_type = 'student'
+                    AND student_id IS NOT NULL 
+                    AND student_id != ''
+                    GROUP BY student_id, session_id
                 ),
-                all_students AS (
-                    -- Regular students from section (with their attendance or marked absent)
+                section_students AS (
+                    -- Get all regular students in the section
                     SELECT 
                         s.student_id,
                         CONCAT(s.first_name, ' ', s.last_name) as student_name,
-                        %s as year_section,
-                        COALESCE(ar.status, 'absent') as status,
-                        COALESCE(ar.timestamp, %s) as attendance_timestamp,
-                        'No' as is_temporary,
-                        COALESCE(ar.subject_code, %s) as subject_code,
-                        COALESCE(ar.subject_name, %s) as subject_name,
-                        COALESCE(ar.room, %s) as room,
-                        ar.remarks
+                        'No' as is_temporary
                     FROM students s
-                    LEFT JOIN attendance_records ar ON s.student_id = ar.student_id AND ar.is_temporary = FALSE
-                    WHERE s.section_id = %s AND s.status = 'active'
+                    WHERE s.section_id = %s 
+                    AND s.status = 'active'
+                ),
+                all_students_export AS (
+                    -- Regular students with attendance or default to absent
+                    SELECT 
+                        ss.student_id,
+                        ss.student_name,
+                        %s as year_section,
+                        COALESCE(ca.final_status, 'absent') as status,
+                        COALESCE(ca.latest_timestamp, %s) as attendance_timestamp,
+                        'No' as is_temporary,
+                        COALESCE(ca.subject_code, %s) as subject_code,
+                        COALESCE(ca.subject_name, %s) as subject_name,
+                        COALESCE(ca.room, %s) as room,
+                        COALESCE(ca.remarks, '') as remarks
+                    FROM section_students ss
+                    LEFT JOIN cleaned_attendance ca ON ss.student_id = ca.student_id
                     
                     UNION ALL
                     
-                    -- Temporary students (manually added)
-                    SELECT 
+                    -- Temporary students
+                    SELECT DISTINCT
                         CASE 
-                            WHEN ar.student_name LIKE '%(ID: %' THEN 
+                            WHEN a.name LIKE '%(ID: %' THEN 
                                 TRIM(SUBSTRING(
-                                    ar.student_name, 
-                                    LOCATE('(ID: ', ar.student_name) + 5,
-                                    LOCATE(')', ar.student_name, LOCATE('(ID: ', ar.student_name)) - (LOCATE('(ID: ', ar.student_name) + 5)
+                                    a.name, 
+                                    LOCATE('(ID: ', a.name) + 5,
+                                    LOCATE(')', a.name, LOCATE('(ID: ', a.name)) - (LOCATE('(ID: ', a.name) + 5)
                                 ))
-                            ELSE CONCAT('TEMP-', LPAD(ar.student_id, 4, '0'))
+                            ELSE CONCAT('TEMP-', LPAD(ROW_NUMBER() OVER (ORDER BY a.timestamp), 4, '0'))
                         END as student_id,
                         CASE 
-                            WHEN ar.student_name LIKE '%(ID: %' THEN 
-                                TRIM(SUBSTRING(ar.student_name, 1, LOCATE('(ID: ', ar.student_name) - 1))
-                            ELSE ar.student_name 
+                            WHEN a.name LIKE '%(ID: %' THEN 
+                                TRIM(SUBSTRING(a.name, 1, LOCATE('(ID: ', a.name) - 1))
+                            ELSE a.name 
                         END as student_name,
                         %s as year_section,
-                        ar.status,
-                        ar.timestamp as attendance_timestamp,
+                        CASE 
+                            WHEN a.status IN ('', NULL, 'missing') THEN 'absent'
+                            ELSE a.status
+                        END as status,
+                        a.timestamp as attendance_timestamp,
                         'Yes' as is_temporary,
-                        COALESCE(ar.subject_code, %s) as subject_code,
-                        COALESCE(ar.subject_name, %s) as subject_name,
-                        COALESCE(ar.room, %s) as room,
-                        ar.remarks
-                    FROM attendance_records ar
-                    WHERE ar.is_temporary = TRUE
+                        COALESCE(a.subject_code, %s) as subject_code,
+                        COALESCE(a.subject_name, %s) as subject_name,
+                        COALESCE(a.room, %s) as room,
+                        COALESCE(a.remarks, '') as remarks
+                    FROM attendance a
+                    WHERE a.session_id = %s
+                    AND a.person_type = 'student'
+                    AND (a.student_id IS NULL OR a.student_id = '')
                 )
                 
-                SELECT 
-                    student_id,
-                    student_name,
-                    year_section,
-                    status,
-                    attendance_timestamp,
-                    is_temporary,
-                    subject_code,
-                    subject_name,
-                    room,
-                    remarks
-                FROM all_students
+                SELECT * FROM all_students_export
                 ORDER BY student_name ASC
             """, (
                 session_id,
+                section_id,
                 section_display,
                 session_data['ended_at'],
                 subject_code, subject_name, room,
-                section_id,
                 section_display,
-                subject_code, subject_name, room
+                subject_code, subject_name, room,
+                session_id
             ))
             
             records = cursor.fetchall()
             
             if not records:
-                return jsonify({'success': False, 'message': 'No student data found for today\'s session'}), 404
+                return jsonify({'success': False, 'message': 'No student data found for this session'}), 404
             
-            print(f"  DEBUG CSV Export: Found {len(records)} total students in today's session")
+            # Debug: Check for duplicates
+            student_ids = [r['student_id'] for r in records]
+            unique_ids = set(student_ids)
             
-            # Debug breakdown
+            if len(student_ids) != len(unique_ids):
+                print(f"  WARNING: Found duplicates in export! Total: {len(student_ids)}, Unique: {len(unique_ids)}")
+                # Show duplicates
+                from collections import Counter
+                duplicates = {k: v for k, v in Counter(student_ids).items() if v > 1}
+                print(f"  Duplicate student IDs: {duplicates}")
+                
+                # Remove duplicates manually as fallback
+                seen = set()
+                unique_records = []
+                for record in records:
+                    if record['student_id'] not in seen:
+                        seen.add(record['student_id'])
+                        unique_records.append(record)
+                records = unique_records
+                print(f"  After deduplication: {len(records)} records")
+            
+            print(f"  DEBUG CSV Export: Found {len(records)} unique students")
+            
+            # Count breakdown
             regular_students = [r for r in records if r['is_temporary'] == 'No']
             temp_students = [r for r in records if r['is_temporary'] == 'Yes']
             present_students = [r for r in records if r['status'] == 'present']
@@ -8692,18 +8963,13 @@ def export_csv():
             absent_students = [r for r in records if r['status'] == 'absent']
             excused_students = [r for r in records if r['status'] == 'excused']
             
-            print(f"  DEBUG Today's Session Breakdown:")
-            print(f"   - Regular students: {len(regular_students)}")
-            print(f"   - Temporary students: {len(temp_students)}")
+            print(f"  DEBUG Export Breakdown:")
+            print(f"   - Regular: {len(regular_students)}")
+            print(f"   - Temporary: {len(temp_students)}")
             print(f"   - Present: {len(present_students)}")
             print(f"   - Late: {len(late_students)}")
             print(f"   - Absent: {len(absent_students)}")
             print(f"   - Excused: {len(excused_students)}")
-            
-            # Debug first few students (alphabetically)
-            print(f"  DEBUG First 10 Students (Alphabetical Order):")
-            for i, record in enumerate(records[:10]):
-                print(f"   {i+1}. {record['student_name']} ({record['student_id']}) - {record['status']}")
             
             # Create CSV content
             import csv
@@ -8727,7 +8993,7 @@ def export_csv():
                 'Temporary Student'
             ])
             
-            # Write data for ALL students (already sorted alphabetically by query)
+            # Write data
             for record in records:
                 timestamp = record['attendance_timestamp']
                 
@@ -8749,12 +9015,17 @@ def export_csv():
                 # Clean up student ID for temporary students
                 student_id = record['student_id']
                 if record['is_temporary'] == 'Yes' and (not student_id or student_id.startswith('TEMP')):
-                    student_id = f"TEMP-{hash(record['student_name']) % 10000:04d}"
+                    import hashlib
+                    name_hash = hashlib.md5(record['student_name'].encode()).hexdigest()[:8]
+                    student_id = f"TEMP-{name_hash}"
+                
+                # Ensure status is uppercase and clean
+                status = record['status'].upper() if record['status'] else 'ABSENT'
                 
                 writer.writerow([
                     student_id,
                     record['student_name'],
-                    record['status'].upper(),
+                    status,
                     time_recorded,
                     record['subject_code'] or subject_code,
                     record['subject_name'] or subject_name,
@@ -8772,7 +9043,7 @@ def export_csv():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{subject_code}_{clean_subject_name}_{program_display}-{section_display}_attendance_{timestamp}.csv"
             
-            print(f"   EXPORT SUCCESS: {len(records)} students from today's session (A-Z sorted)")
+            print(f"   EXPORT SUCCESS: {len(records)} unique students")
             print(f"   - Regular: {len(regular_students)}")
             print(f"   - Temporary: {len(temp_students)}")
             print(f"   - Present: {len(present_students)}")
@@ -8801,7 +9072,48 @@ def export_csv():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error exporting data: {str(e)}'}), 500
-    
+
+def cleanup_duplicate_attendance(session_id):
+    """Clean up duplicate attendance records for a session"""
+    try:
+        with get_db_cursor() as cursor:
+            # Delete duplicate records (keeping the latest for each student)
+            cursor.execute("""
+                DELETE FROM attendance 
+                WHERE id NOT IN (
+                    SELECT max_id FROM (
+                        SELECT MAX(id) as max_id
+                        FROM attendance
+                        WHERE session_id = %s
+                        AND person_type = 'student'
+                        GROUP BY student_id, session_id
+                    ) as latest_records
+                )
+                AND session_id = %s
+                AND person_type = 'student'
+            """, (session_id, session_id))
+            
+            # Also clean up records with empty status that have 'missing' or other status
+            cursor.execute("""
+                DELETE a1 FROM attendance a1
+                INNER JOIN attendance a2 ON 
+                    a1.session_id = a2.session_id AND 
+                    a1.student_id = a2.student_id AND 
+                    a1.person_type = a2.person_type AND 
+                    a1.id < a2.id
+                WHERE a1.session_id = %s
+                AND a1.status = ''
+                AND a2.status != ''
+                AND a1.person_type = 'student'
+            """, (session_id,))
+            
+            print(f"  DEBUG: Cleaned up duplicate attendance for session {session_id}")
+            return True
+            
+    except Exception as e:
+        print(f"  ERROR cleaning duplicates: {e}")
+        return False
+
 @app.route('/schedule')
 @login_required
 def schedule_page():
