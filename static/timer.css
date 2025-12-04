@@ -15,7 +15,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background-color: #1a3c34;
+            background-color: white;
             padding: 12px 24px;
             color: white;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -31,10 +31,11 @@
             font-weight: 600;
             text-align: center;
             flex-grow: 1;
+            color: #2d3748;
         }
 
         .header-btn {
-            background-color: #2b6b5f;
+            background-color: #4a6fa9;
             color: white;
             padding: 8px 16px;
             border-radius: 6px;
@@ -46,7 +47,7 @@
         }
 
         .header-btn:hover {
-            background-color: #224f47;
+            background-color: #3b5b8d;
         }
 
         .content-wrapper {
@@ -183,7 +184,7 @@
             width: 200px;
             margin: 0 auto;
             padding: 12px;
-            background-color: #2b6b5f;
+            background-color: #4a6fa9;
             color: white;
             border: none;
             border-radius: 8px;
@@ -194,7 +195,7 @@
         }
 
         #startBtn:hover {
-            background-color: #224f47;
+            background-color: #3b5b8d;
             transform: translateY(-2px);
         }
 
@@ -261,7 +262,7 @@
         }
 
         .warning-buttons button:hover {
-            background-color: #224f47;
+            background-color: #4a6fa9;
         }
 
         /* Responsive Design */
@@ -351,7 +352,7 @@
 
 .modal-btn {
     padding: 8px 16px;
-    background: #007bff;
+    background: #4a6fa9;
     color: white;
     border: none;
     border-radius: 4px;
@@ -382,7 +383,7 @@
 }
 
 .test-btn {
-    background: #17a2b8;
+    background: #4a6fa9;
     color: white;
     border: none;
     padding: 12px 20px;
@@ -393,7 +394,7 @@
 }
 
 .test-btn:hover {
-    background: #138496;
+    background: #3b5b8d;
 }
 
 .rtsp-hint {
@@ -465,7 +466,7 @@
 }
 
 .modal-btn {
-    background: #007bff;
+    background: #4a6fa9;
     color: white;
     border: none;
     padding: 10px 20px;
