@@ -115,19 +115,29 @@
     .name-fields input {
       flex: 1;
     }
-    .otp-boxes, .pin-boxes {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin: 15px 0;
-    }
-    .otp-boxes input, .pin-boxes input {
-      width: 45px;
-      height: 50px;
-      text-align: center;
-      font-size: 22px;
-    }
+.otp-boxes,
+.pin-boxes {
+    display: flex;
+    justify-content: center;
+    gap: 8px;        
+    flex-wrap: nowrap !important;   
+    overflow-x: auto;  
+    padding: 10px 0;    
+    scrollbar-width: none; 
+}
+.otp-boxes::-webkit-scrollbar,
+.pin-boxes::-webkit-scrollbar {
+    display: none; 
+}
+.otp-boxes input,
+.pin-boxes input {
+    width: 48px !important;
+    height: 52px;
+    min-width: 48px;  
+    text-align: center;
+    font-size: 22px;
+    flex-shrink: 0;  
+}
 
     .pin-label {
       display: block;
@@ -316,3 +326,15 @@
         gap: 8px;
       }
     }
+    @media (max-width: 360px) {
+    .otp-boxes input,
+    .pin-boxes input {
+        width: 42px !important;
+        height: 48px;
+        font-size: 20px;
+    }
+    .otp-boxes,
+    .pin-boxes {
+        gap: 6px;
+    }
+}
