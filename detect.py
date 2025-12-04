@@ -1046,7 +1046,6 @@ def calculate_mar(landmarks, mouth_indices):
     mar = (A + B + C) / (3.0 * D)
     return mar
 
-
 # =========================
 # Load known faces from database
 # =========================
@@ -12025,6 +12024,7 @@ def set_rtsp_url():
     try:
         data = request.json
         rtsp_url = data.get('rtsp_url')
+        stream_type = data.get('stream_type', 'unknown')  # 'main' or 'sub'
         
         if not rtsp_url:
             return jsonify({'success': False, 'message': 'RTSP URL is required'})
@@ -12033,17 +12033,26 @@ def set_rtsp_url():
         import urllib.parse
         rtsp_url = urllib.parse.unquote(rtsp_url)
         
-        if DEBUG_MODE: 
-            logger.debug(f"Setting RTSP URL: {rtsp_url}")
+        logger.info(f"Setting RTSP URL: {stream_type} stream - {rtsp_url}")
         
         # Try to connect to the RTSP stream
         success = open_stream(rtsp_url)
         
         if success:
+            # Get camera info
+            width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) if cap else 0
+            height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) if cap else 0
+            fps = cap.get(cv2.CAP_PROP_FPS) if cap else 0
+            
+            logger.info(f"Connected: {int(width)}x{int(height)} @ {fps:.1f} FPS")
+            
             return jsonify({
                 'success': True, 
-                'message': 'RTSP URL set successfully',
-                'camera_available': camera_available
+                'message': f'{stream_type.upper()} stream connected',
+                'camera_available': camera_available,
+                'resolution': f"{int(width)}x{int(height)}",
+                'fps': fps,
+                'stream_type': stream_type
             })
         else:
             return jsonify({
@@ -17333,7 +17342,7 @@ if __name__ == "__main__":
         
         # Start server with proper configuration
         app.run(
-            host="192.168.254.104", 
+            host="192.168.0.100", 
             port=5000,
             debug=False,
             threaded=True,
