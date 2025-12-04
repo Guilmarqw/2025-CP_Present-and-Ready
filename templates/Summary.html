@@ -325,7 +325,7 @@ function formatTimeFromDateTime(datetimeString) {
         console.log('🔧 formatTimeFromDateTime: Could not parse format');
         return 'N/A';
     } catch (e) {
-        console.error('❌ Error formatting time:', e, datetimeString);
+        console.error('  Error formatting time:', e, datetimeString);
         return 'N/A';
     }
 }
@@ -359,7 +359,7 @@ function formatCourseName(courseName) {
     // Load summary data
     async function loadSummaryData() {
         try {
-            console.log('🔄 Loading summary data...');
+            console.log('  Loading summary data...');
             const response = await fetch('/api/summary_data');
             const data = await response.json();
 
@@ -368,19 +368,19 @@ function formatCourseName(courseName) {
             if (data.success) {
                 displaySummaryData(data);
             } else {
-                console.error('❌ API Error:', data.message);
+                console.error('  API Error:', data.message);
                 showAlert('Error loading summary data: ' + data.message);
             }
         } catch (error) {
-            console.error('❌ Error loading summary:', error);
+            console.error('  Error loading summary:', error);
             showAlert('Error loading summary data');
         }
     }
 
 // Display summary data
 function displaySummaryData(data) {
-    console.log('📊 Full API Response:', data);
-    console.log('🕒 Session Data:', data.session);
+    console.log('  Full API Response:', data);
+    console.log('  Session Data:', data.session);
 
     const session = data.session;
     const user = data.user;
@@ -392,11 +392,11 @@ function displaySummaryData(data) {
     const facultyTitle = document.querySelector('.faculty-title');
     if (facultyName) {
         facultyName.textContent = user.name || 'Faculty Member';
-        console.log('👤 Faculty Name:', facultyName.textContent);
+        console.log('  Faculty Name:', facultyName.textContent);
     }
     if (facultyTitle) {
         facultyTitle.textContent = user.role ? `${user.role.replace('_', ' ').toUpperCase()}` : 'Faculty Member';
-        console.log('👤 Faculty Title:', facultyTitle.textContent);
+        console.log('  Faculty Title:', facultyTitle.textContent);
     }
     
     // Update faculty avatar
@@ -404,11 +404,11 @@ function displaySummaryData(data) {
     if (facultyAvatar) {
         if (user.photo_path && user.photo_path !== 'NULL') {
             facultyAvatar.src = user.photo_path;
-            console.log('👤 Faculty Avatar:', user.photo_path);
+            console.log('  Faculty Avatar:', user.photo_path);
         }
         facultyAvatar.onerror = function() {
             this.src = '/static/images/default-avatar.jpg';
-            console.log('👤 Using default avatar');
+            console.log('  Using default avatar');
         };
     }
     
@@ -419,31 +419,31 @@ function displaySummaryData(data) {
     
     if (subjectCode) {
         subjectCode.textContent = data.subject?.code || 'IT99';
-        console.log('📚 Subject Code:', subjectCode.textContent);
+        console.log('  Subject Code:', subjectCode.textContent);
     }
     if (subjectLabel) {
         subjectLabel.textContent = data.subject?.name || 'AMBUTT UY';
-        console.log('📚 Subject Name:', subjectLabel.textContent);
+        console.log('  Subject Name:', subjectLabel.textContent);
     }
     if (courseCode) {
         courseCode.textContent = formatCourseName(data.course_section || session.class_name || 'Information Technology-4C');
-        console.log('📚 Course:', courseCode.textContent);
+        console.log('  Course:', courseCode.textContent);
     }
 
-    // ✅ FIXED: CORRECT ELEMENT TARGETING FOR YOUR HTML STRUCTURE
+    //    FIXED: CORRECT ELEMENT TARGETING FOR YOUR HTML STRUCTURE
     const timeStarted = document.querySelector('.time-started'); // This should target the element with class "time-started"
     const timeEnded = document.querySelector('.time-ended'); // This should target the element with class "time-ended"
     const durationValue = document.querySelector('.duration-value');
     const thresholdValue = document.querySelector('.threshold-value');
     
-    console.log('⏰ Element Search Results:', {
+    console.log('  Element Search Results:', {
         timeStarted: timeStarted ? 'Found' : 'NOT FOUND',
         timeEnded: timeEnded ? 'Found' : 'NOT FOUND',
         durationValue: durationValue ? 'Found' : 'NOT FOUND',
         thresholdValue: thresholdValue ? 'Found' : 'NOT FOUND'
     });
     
-    console.log('⏰ Raw Time Data:', {
+    console.log('  Raw Time Data:', {
         started_at: session.started_at,
         ended_at: session.ended_at,
         duration_seconds: session.duration_seconds
@@ -453,18 +453,18 @@ function displaySummaryData(data) {
     if (timeStarted && session.started_at) {
         const formattedStart = formatTimeFromDateTime(session.started_at);
         timeStarted.textContent = formattedStart;
-        console.log('⏰ Time Started Updated:', formattedStart);
+        console.log('  Time Started Updated:', formattedStart);
     } else {
-        console.log('⏰ Time Started NOT updated - element or data missing');
+        console.log('  Time Started NOT updated - element or data missing');
     }
     
     // Update Time Ended - FIXED TARGETING
     if (timeEnded && session.ended_at) {
         const formattedEnd = formatTimeFromDateTime(session.ended_at);
         timeEnded.textContent = formattedEnd;
-        console.log('⏰ Time Ended Updated:', formattedEnd);
+        console.log('  Time Ended Updated:', formattedEnd);
     } else {
-        console.log('⏰ Time Ended NOT updated - element or data missing');
+        console.log('  Time Ended NOT updated - element or data missing');
     }
 
     // Update Duration - FIXED
@@ -472,20 +472,20 @@ function displaySummaryData(data) {
         if (session.duration_seconds !== undefined && session.duration_seconds !== null) {
             const formattedDuration = formatDuration(session.duration_seconds);
             durationValue.textContent = formattedDuration;
-            console.log('⏰ Duration Updated:', {
+            console.log('  Duration Updated:', {
                 raw_seconds: session.duration_seconds,
                 formatted: formattedDuration
             });
         } else {
             durationValue.textContent = '00h:00m:00s';
-            console.log('⏰ Duration: Using default - no duration data');
+            console.log('  Duration: Using default - no duration data');
         }
     }
     
     // Update Threshold
     if (thresholdValue && session.late_threshold_minutes) {
         thresholdValue.textContent = formatTimeThreshold(session.late_threshold_minutes);
-        console.log('⏰ Threshold Updated:', thresholdValue.textContent);
+        console.log('  Threshold Updated:', thresholdValue.textContent);
     }
 
     // Update attendance counts
@@ -528,14 +528,14 @@ function displaySummaryData(data) {
         populateModalStudentsList();
         console.log('👥 Attendance Data Loaded:', allStudents.length, 'students');
     } else {
-        console.warn('❌ No attendance data found');
+        console.warn('  No attendance data found');
         allStudents = [];
         originalStudents = [];
         populateStudentLists();
         populateModalStudentsList();
     }
     
-    console.log('✅ Summary data loaded successfully');
+    console.log('   Summary data loaded successfully');
 }
 
     // Populate student lists in the main attendance columns

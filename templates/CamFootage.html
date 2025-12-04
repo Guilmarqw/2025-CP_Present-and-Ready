@@ -581,7 +581,7 @@ function setupPeriodicRefresh() {
     setInterval(() => {
         if (isSessionEnding || isDetectionStopped) return;
         
-        console.log("🔄 FORCING HARD REFRESH OF STUDENT LIST");
+        console.log("  FORCING HARD REFRESH OF STUDENT LIST");
         const urlParams = new URLSearchParams(window.location.search);
         const program = urlParams.get('program');
         const yearLevel = urlParams.get('year_level');
@@ -597,7 +597,7 @@ function setupPeriodicRefresh() {
 window.addEventListener('load', () => {
     console.log('🔴 PAGE LOADED - Starting initialization');
     
-    // 🎯 ADD DATE-TIME FUNCTION
+    //  ADD DATE-TIME FUNCTION
     function updateDateTime() {
         const now = new Date();
         
@@ -621,13 +621,13 @@ window.addEventListener('load', () => {
         }
     }
     
-    // 🎯 INITIALIZE DATE-TIME IMMEDIATELY AND UPDATE EVERY SECOND
+    //  INITIALIZE DATE-TIME IMMEDIATELY AND UPDATE EVERY SECOND
     updateDateTime();
     setInterval(updateDateTime, 1000);
     
     setupPeriodicRefresh();
     
-    // 🎯 CRITICAL FIX: Reset detection flags for new session
+    //    Reset detection flags for new session
     isSessionEnding = false;
     isDetectionStopped = false;
     console.log('🟢 Detection flags RESET for new session');
@@ -639,7 +639,7 @@ window.addEventListener('load', () => {
     // Extract URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     
-    // 🎯 FIX: Handle both schedule_id (singular) and schedule_ids (plural)
+    //  FIX: Handle both schedule_id (singular) and schedule_ids (plural)
     let scheduleId = urlParams.get('schedule_id'); // Try singular first
     
     // If schedule_id not found, check for schedule_ids (plural)
@@ -649,7 +649,7 @@ window.addEventListener('load', () => {
             // Take the first schedule ID from comma-separated list
             const scheduleIds = scheduleIdsParam.split(',');
             scheduleId = scheduleIds[0];
-            console.log(`📋 Using first schedule ID from schedule_ids: ${scheduleId}`);
+            console.log(`  Using first schedule ID from schedule_ids: ${scheduleId}`);
         }
     }
     
@@ -671,9 +671,9 @@ window.addEventListener('load', () => {
         mode: urlParams.get('mode') || 'default'
     };
     
-    console.log('📋 Session data from URL:', sessionData);
+    console.log('  Session data from URL:', sessionData);
     
-    // 🎯 SET INITIAL FALLBACK VALUES (will be updated if API succeeds)
+    //  SET INITIAL FALLBACK VALUES (will be updated if API succeeds)
     currentSessionId = sessionData.schedule_id || ('fallback_' + Date.now());
     currentSectionId = sessionData.section;
     
@@ -710,15 +710,15 @@ window.addEventListener('load', () => {
         start_time: new Date().toISOString()
     };
     
-    // 🎯 UPDATE UI IMMEDIATELY WITH FALLBACK DATA
+    //  UPDATE UI IMMEDIATELY WITH FALLBACK DATA
     updateSessionUI(window._sessionData);
     
     // Set initial timer start time
     startTime = new Date();
     
-    // 🎯 VALIDATE: Make sure we have a schedule_id before calling API
+    //  VALIDATE: Make sure we have a schedule_id before calling API
     if (!sessionData.schedule_id) {
-        console.error('❌ No schedule_id found in URL parameters');
+        console.error('  No schedule_id found in URL parameters');
         showAlertModal('error', 'Missing schedule information. Please start the session again.', 'Session Error');
         
         // Load students with fallback
@@ -758,9 +758,9 @@ window.addEventListener('load', () => {
         console.log('🔴 Session initialization response:', data);
         
         if (data && data.success) {
-            console.log('✅ Session initialized successfully');
+            console.log('   Session initialized successfully');
             
-            // 🎯 UPDATE WITH REAL DATA FROM BACKEND
+            //  UPDATE WITH REAL DATA FROM BACKEND
             currentSessionId = data.data.session_id || currentSessionId;
             currentSectionId = data.data.section_id || currentSectionId;
             
@@ -808,24 +808,24 @@ window.addEventListener('load', () => {
             
             console.log('🔴 Updated global variables:', window._sessionData);
             
-            // 🎯 UPDATE UI WITH REAL DATA
+            //  UPDATE UI WITH REAL DATA
             updateSessionUI(window._sessionData);
             
-            // 🎯 CRITICAL FIX: Ensure detection is enabled after session init
+            //    Ensure detection is enabled after session init
             isSessionEnding = false;
             isDetectionStopped = false;
             resumePythonDetection();
             console.log('🟢 Detection EXPLICITLY ENABLED for new session');
             
-            // 🎯 LOAD STUDENTS
+            //  LOAD STUDENTS
             setTimeout(() => {
                 if (window._sessionData.program && window._sessionData.year_level && window._sessionData.section && currentSessionId) {
                     console.log('🔴 Loading students with session data');
                     loadClassStudents(window._sessionData.program, window._sessionData.year_level, window._sessionData.section);
                 } else {
-                    console.error('❌ Missing parameters for loadClassStudents');
+                    console.error('  Missing parameters for loadClassStudents');
                     if (sessionData.program && sessionData.year_level && sessionData.section) {
-                        console.log('🔄 Falling back to URL parameters');
+                        console.log('  Falling back to URL parameters');
                         loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
                     }
                 }
@@ -835,12 +835,12 @@ window.addEventListener('load', () => {
             updateStudentCount();
             setInterval(updateStudentCount, 6000);
             
-            console.log('🚀 Session started successfully with backend data');
+            console.log('  Session started successfully with backend data');
             
         } else {
-            console.error('❌ Session initialization failed:', data?.message || 'Unknown error');
+            console.error('  Session initialization failed:', data?.message || 'Unknown error');
             
-            // 🎯 SHOW WARNING BUT KEEP USING FALLBACK VALUES
+            //  SHOW WARNING BUT KEEP USING FALLBACK VALUES
             showAlertModal('warning', 
                 'Connected with limited functionality. Using fallback data.', 
                 'Limited Mode');
@@ -857,9 +857,9 @@ window.addEventListener('load', () => {
         }
     })
     .catch(err => {
-        console.error('❌ Error initializing session:', err);
+        console.error('  Error initializing session:', err);
         
-        // 🎯 CHECK SPECIFIC ERROR
+        //  CHECK SPECIFIC ERROR
         let errorMessage = 'Connected with limited functionality. ';
         
         if (err.message.includes('curriculum_year')) {
@@ -892,7 +892,7 @@ window.addEventListener('load', () => {
     });
 });
 
-// 🆕 ADD THIS FUNCTION - Complete session resumption
+//   ADD THIS FUNCTION - Complete session resumption
 async function resumeSession() {
     console.log('Resuming session...');
     
@@ -915,7 +915,7 @@ async function resumeSession() {
     }
 }
 
-// 🆕 REPLACE ALL your DOMContentLoaded with this SINGLE version:
+//   REPLACE ALL your DOMContentLoaded with this SINGLE version:
 document.addEventListener('DOMContentLoaded', function() {
     // Enrollment button
     const enrollBtn = document.getElementById('confirmEnrollBtn');
@@ -923,13 +923,13 @@ document.addEventListener('DOMContentLoaded', function() {
         enrollBtn.addEventListener('click', enrollSelectedFace);
     }
     
-    // 🆕 Modal close handlers
+    //   Modal close handlers
     const unrecognizedModal = document.getElementById('unrecognizedFacesModal');
     if (unrecognizedModal) {
         unrecognizedModal.addEventListener('modalClosed', function(event) {
             console.log('Unrecognized faces modal closed');
             
-            // 🆕 ONLY resume if we're not in session ending flow
+            //   ONLY resume if we're not in session ending flow
             if (!isSessionEnding) {
                 console.log('Resuming detection - session not ending');
                 resumeSession();
@@ -942,7 +942,7 @@ document.addEventListener('DOMContentLoaded', function() {
         endSessionModal.addEventListener('modalClosed', function(event) {
             console.log('End session modal closed');
             
-            // 🆕 ONLY resume if user canceled end session
+            //   ONLY resume if user canceled end session
             if (!isSessionEnding) {
                 console.log('Resuming detection - end session canceled');
                 resumeSession();
@@ -955,7 +955,7 @@ document.addEventListener('DOMContentLoaded', function() {
         enrollModal.addEventListener('modalClosed', function(event) {
             console.log('Enroll student modal closed');
             
-            // 🆕 ONLY resume if we're not in session ending flow
+            //   ONLY resume if we're not in session ending flow
             if (!isSessionEnding) {
                 console.log('Resuming detection - enrollment finished');
                 resumeSession();
@@ -969,7 +969,7 @@ function openModal(modalId) {
     if (modal) {
         modal.style.display = 'flex';
         
-        // 🆕 STOP DETECTION when enrollment-related modals open
+        //   STOP DETECTION when enrollment-related modals open
         if (modalId === 'unrecognizedFacesModal' || 
             modalId === 'enrollStudentModal' || 
             modalId === 'endSessionModal') {
@@ -1156,13 +1156,13 @@ function initializeMinimizedView() {
 }
 
 function updateSessionUI(data) {
-    console.log('🔄 Updating session UI with data:', data);
+    console.log('  Updating session UI with data:', data);
     
     // Update faculty info in header
     const facultyNameElement = document.querySelector('.faculty-info div div span');
     if (facultyNameElement) {
         facultyNameElement.textContent = data.instructor || 'Unknown Instructor';
-        console.log('✅ Updated faculty name:', facultyNameElement.textContent);
+        console.log('   Updated faculty name:', facultyNameElement.textContent);
     }
     
     // Update faculty role
@@ -1183,7 +1183,7 @@ function updateSessionUI(data) {
                 roleDisplay = data.role || 'Faculty Member';
         }
         facultyRoleElement.textContent = roleDisplay;
-        console.log('✅ Updated faculty role:', facultyRoleElement.textContent);
+        console.log('   Updated faculty role:', facultyRoleElement.textContent);
     }
     
     // Update faculty photo
@@ -1194,10 +1194,10 @@ function updateSessionUI(data) {
         facultyAvatar.onerror = function() {
             this.src = '../static/images/default-avatar.jpg';
         };
-        console.log('✅ Updated faculty photo:', facultyAvatar.src);
+        console.log('   Updated faculty photo:', facultyAvatar.src);
     }
     
-    // 🎯 UPDATE HEADER (Subject - Room (Day))
+    //  UPDATE HEADER (Subject - Room (Day))
     const headerInfo = document.querySelector('.cctv-header div span');
     if (headerInfo) {
         if (data.header_display) {
@@ -1211,10 +1211,10 @@ function updateSessionUI(data) {
         } else {
             headerInfo.textContent = 'Unknown Subject - Unknown Room';
         }
-        console.log('✅ Updated header info:', headerInfo.textContent);
+        console.log('   Updated header info:', headerInfo.textContent);
     }
     
-    // 🎯 UPDATE SECTION INFO IN SEARCH BAR
+    //  UPDATE SECTION INFO IN SEARCH BAR
     const sectionInfoElement = document.querySelector('.section-info span:last-child');
     if (sectionInfoElement) {
         let displayProgram = data.program_display || 'Unknown';
@@ -1222,10 +1222,10 @@ function updateSessionUI(data) {
         let section = data.section || '';
         
         sectionInfoElement.textContent = `${displayProgram} ${yearLevel}${section}`.trim();
-        console.log('✅ Updated section info:', sectionInfoElement.textContent);
+        console.log('   Updated section info:', sectionInfoElement.textContent);
     }
     
-    console.log('✅ Session UI updated successfully');
+    console.log('   Session UI updated successfully');
 }
 
 
@@ -1457,21 +1457,21 @@ async function openSettings() {
     const settingsModal = document.getElementById('settingsModal');
     if (settingsModal) settingsModal.style.display = 'flex';
     
-    // ✅ GET THE CURRENT SESSION ID
+    //    GET THE CURRENT SESSION ID
     const session_id = window._sessionData?.session_id;
     
     // ADD DEBUG LOGGING
-    console.log('🔍 DEBUG openSettings - Current session_id:', session_id);
-    console.log('🔍 DEBUG openSettings - Full _sessionData:', window._sessionData);
+    console.log('  DEBUG openSettings - Current session_id:', session_id);
+    console.log('  DEBUG openSettings - Full _sessionData:', window._sessionData);
     
     if (!session_id) {
-        console.error('❌ No session_id found');
+        console.error('  No session_id found');
         showModalNotification('Session not properly initialized.', 'error', 5000);
         return;
     }
 
     try {
-        // ✅ FIXED: Use session_id parameter name
+        //    FIXED: Use session_id parameter name
         const response = await fetch(`/api/get_session_settings?session_id=${session_id}`);
         const data = await response.json();
 
@@ -1494,7 +1494,7 @@ async function openSettings() {
                 window._sessionData.threshold = settings.live_threshold_seconds;
             }
             
-            console.log('✅ Settings loaded:', settings);
+            console.log('   Settings loaded:', settings);
         } else {
             showModalNotification(data?.message || 'Failed to load settings', 'error', 5000);
         }
@@ -1511,8 +1511,8 @@ async function adjustSessionTime(type, minutes) {
     const session_id = window._sessionData?.session_id;
     
     // ADD THIS DEBUG
-    console.log('🔍 DEBUG adjustSessionTime - Using session_id:', session_id);
-    console.log('🔍 DEBUG adjustSessionTime - Full _sessionData:', window._sessionData);
+    console.log('  DEBUG adjustSessionTime - Using session_id:', session_id);
+    console.log('  DEBUG adjustSessionTime - Full _sessionData:', window._sessionData);
     
     if (!session_id) {
         showModalNotification('Session ID is missing. Cannot adjust time.', 'error', 5000);
@@ -1609,7 +1609,7 @@ async function adjustSessionTime(type, minutes) {
 async function saveStaticSettings() {
     console.log('saveStaticSettings called for Video Quality');
     
-    // ✅ GET THE CURRENT SESSION ID
+    //    GET THE CURRENT SESSION ID
     const session_id = window._sessionData?.session_id;
     
     const videoQuality = document.getElementById('videoQuality')?.value || '720'; 
@@ -1652,7 +1652,7 @@ function endSession() {
     console.log('endSession clicked');
     
     try {
-        // 🆕 Set session ending flag
+        //   Set session ending flag
         isSessionEnding = true;
         isDetectionStopped = true;
         
@@ -1682,13 +1682,13 @@ function endSession() {
 
 async function resumePythonDetection() {
     try {
-        // 🎯 CRITICAL: Update frontend flags first
+        //  CRITICAL: Update frontend flags first
         isDetectionStopped = false;
         isSessionEnding = false;
         
         console.log('🟢 Resuming Python detection...');
         
-        // 🎯 Add a small delay to let backend clear buffers
+        //  Add a small delay to let backend clear buffers
         await new Promise(resolve => setTimeout(resolve, 300));
         
         const response = await fetch('/api/resume_detection', {
@@ -1697,9 +1697,9 @@ async function resumePythonDetection() {
         });
         
         if (response.ok) {
-            console.log('✅ Python detection resumed successfully');
+            console.log('   Python detection resumed successfully');
         } else {
-            console.error('❌ Failed to resume Python detection');
+            console.error('  Failed to resume Python detection');
         }
     } catch (err) {
         console.error('Error resuming Python detection:', err);
@@ -1730,7 +1730,7 @@ function cancelUnrecognizedModal() {
     resumePythonDetection();
 }
 
-// 🆕 ADD THIS FUNCTION - Cancel end session and resume
+//   ADD THIS FUNCTION - Cancel end session and resume
 function cancelEndSession() {
     console.log('Canceling end session - resuming');
     
@@ -1865,19 +1865,19 @@ async function confirmEndSession() {
             });
         });
 
-        // 🎯 CRITICAL FIX: Use window._sessionData.session_id instead of currentSessionId
+        //    Use window._sessionData.session_id instead of currentSessionId
         const session_id = window._sessionData?.session_id;
         
         if (!session_id) {
-            console.error('❌ No session_id found in window._sessionData');
+            console.error('  No session_id found in window._sessionData');
             showAlertModal('error', 'Session ID not found. Cannot end session.', 'Error');
             return;
         }
 
-        console.log('🎯 Using session_id:', session_id);
+        console.log(' Using session_id:', session_id);
 
         const payload = {
-            session_id: session_id, // 🎯 FIXED: Use the correct session_id
+            session_id: session_id, //  FIXED: Use the correct session_id
             session_data: {
                 duration: elapsedSeconds,
                 total_students: stats.total,
@@ -1947,7 +1947,7 @@ function updateStudentStatuses(students) {
     // Only update count if there were changes
     if (changedCount > 0) {
         updateStudentCount();
-        console.log(`🔄 Updated ${changedCount} student statuses`);
+        console.log(`  Updated ${changedCount} student statuses`);
     }
 }
 
@@ -2039,11 +2039,11 @@ function closeModal(modalId) {
         if (modal) {
             modal.style.display = 'none';
             
-            // 🎯 RESUME DETECTION when unrecognized faces or enrollment modals are closed
+            //  RESUME DETECTION when unrecognized faces or enrollment modals are closed
             if (modalId === 'unrecognizedFacesModal' || modalId === 'enrollStudentModal') {
-                console.log(`🎯 ${modalId} closed - resuming detection`);
+                console.log(` ${modalId} closed - resuming detection`);
                 
-                // 🎯 Add a small delay to ensure modal is fully closed
+                //  Add a small delay to ensure modal is fully closed
                 setTimeout(() => {
                     resumePythonDetection();
                 }, 100);
@@ -2068,13 +2068,13 @@ function loadClassStudents(program, yearLevel, section) {
     console.log('🎯🔴 loadClassStudents CALLED with:', { program, yearLevel, section });
     
     if (!program || !yearLevel || !section) {
-        console.error('❌ Missing parameters for loading students');
+        console.error('  Missing parameters for loading students');
         return;
     }
     
     // Use fallback if currentSessionId is null
     const sessionIdToUse = currentSessionId || window._sessionData?.session_id || 'fallback';
-    console.log('🎯 Using session ID:', sessionIdToUse);
+    console.log(' Using session ID:', sessionIdToUse);
     
     const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&session_id=${encodeURIComponent(sessionIdToUse)}`;
     
@@ -2098,7 +2098,7 @@ function loadClassStudents(program, yearLevel, section) {
                     
                     // If 500 error, try fallback without session_id
                     if (res.status === 500) {
-                        console.log('🔄 Trying fallback due to 500 error');
+                        console.log('  Trying fallback due to 500 error');
                         return loadStudentsFallback(program, yearLevel, section);
                     }
                     
@@ -2111,7 +2111,7 @@ function loadClassStudents(program, yearLevel, section) {
             console.log('🔴 get_class_students Response data:', data);
             
             if (data && data.success) {
-                console.log(`📊 Loaded ${data.students?.length || 0} students for session ${sessionIdToUse}`);
+                console.log(`  Loaded ${data.students?.length || 0} students for session ${sessionIdToUse}`);
                 updateStudentList(data.students || []);
                 updateStudentCount();
             } else {
@@ -2130,7 +2130,7 @@ function loadClassStudents(program, yearLevel, section) {
 function loadStudentsFallback(program, yearLevel, section) {
     const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`;
     
-    console.log('🔄 Using fallback student loading (no session ID)');
+    console.log('  Using fallback student loading (no session ID)');
     
     fetch(url)
         .then(res => {
@@ -2144,7 +2144,7 @@ function loadStudentsFallback(program, yearLevel, section) {
         })
         .then(data => {
             if (data && data.success) {
-                console.log('✅ Fallback student loading successful');
+                console.log('   Fallback student loading successful');
                 // Force all students to be absent for fallback
                 const studentsWithAbsentStatus = data.students.map(student => ({
                     ...student,
@@ -2164,7 +2164,7 @@ function loadStudentsFallback(program, yearLevel, section) {
 }
 
 function showPlaceholderStudents(program, yearLevel, section) {
-    console.log('🔄 Showing placeholder students');
+    console.log('  Showing placeholder students');
     
     // Create some placeholder student data
     const placeholderStudents = [
@@ -2199,7 +2199,7 @@ async function loadClassSettings() {
         };
 
         localStorage.setItem('classSettings', JSON.stringify(settings));
-        console.log('✅ Using default class settings');
+        console.log('   Using default class settings');
         
     } catch (err) {
         console.error('Error in loadClassSettings:', err);
@@ -2296,7 +2296,7 @@ function updateStudentList(students) {
         filterStudents(currentSearch);
     }
     
-    // 🎯 UPDATE STUDENT COUNTS
+    //  UPDATE STUDENT COUNTS
     updateStudentCount();
 }
 
@@ -2318,7 +2318,7 @@ function addTemporaryStudentToFrontend(studentData) {
     studentItem.setAttribute('data-type', 'temporary');
     studentItem.style.display = 'flex';
     
-    // 🎯 FIX: Remove program info from display name
+    //  FIX: Remove program info from display name
     studentItem.innerHTML = `
         <div class="student-info">
             <img src="/static/images/default-avatar.jpg" alt="${studentData.name}" 
@@ -2337,10 +2337,10 @@ function addTemporaryStudentToFrontend(studentData) {
     // Update counters
     updateStudentCount();
     
-    console.log(`✅ Added temporary student to frontend: ${studentData.name}`);
+    console.log(`   Added temporary student to frontend: ${studentData.name}`);
 }
 
-// ✅ Helper function to get CSS class for status
+//    Helper function to get CSS class for status
 function getStatusClass(status) {
     switch (status) {
         case 'present': return 'present';
@@ -2410,7 +2410,7 @@ function updateStudentCount() {
         return;
     }
     
-    // 🎯 USE CURRENT SESSION ID
+    //  USE CURRENT SESSION ID
     const sessionId = window._sessionData?.session_id;
     
     fetch(`/api/get_student_status?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&session_id=${sessionId}`)
@@ -2428,7 +2428,7 @@ function updateStudentCount() {
                 if (detectedElement) detectedElement.textContent = data.detected_count || 0;
                 if (totalElement) totalElement.textContent = data.total_count || 0;
                 
-                // 🆕 REDUCED LOGGING: Only log if there are actual changes
+                //   REDUCED LOGGING: Only log if there are actual changes
                 const currentPresent = data.students.filter(s => s.status === 'present').length;
                 const currentLate = data.students.filter(s => s.status === 'late').length;
                 const currentMissing = data.students.filter(s => s.status === 'missing').length;
@@ -2439,7 +2439,7 @@ function updateStudentCount() {
                      window.lastStatusCounts.late !== currentLate ||
                      window.lastStatusCounts.missing !== currentMissing)) {
                     
-                    console.log(`🔄 Status Update - Present: ${currentPresent}, Late: ${currentLate}, Missing: ${currentMissing}, Total: ${data.total_count}`);
+                    console.log(`  Status Update - Present: ${currentPresent}, Late: ${currentLate}, Missing: ${currentMissing}, Total: ${data.total_count}`);
                 }
                 
                 window.lastStatusCounts = {
@@ -2463,17 +2463,17 @@ function updateStudentCount() {
 }
 
 function debugSessionData() {
-    console.log('🔍 DEBUG SESSION DATA:');
-    console.log('📋 URL Parameters:', Object.fromEntries(new URLSearchParams(window.location.search)));
+    console.log('  DEBUG SESSION DATA:');
+    console.log('  URL Parameters:', Object.fromEntries(new URLSearchParams(window.location.search)));
     console.log('💾 Window Session Data:', window._sessionData);
-    console.log('🎯 Current Session ID:', currentSessionId);
-    console.log('🔗 Current Section ID:', currentSectionId);
+    console.log(' Current Session ID:', currentSessionId);
+    console.log('  Current Section ID:', currentSectionId);
     
     // Check DOM elements
     const headerInfo = document.querySelector('.cctv-header div span');
     const sectionInfo = document.querySelector('.section-info span:last-child');
     console.log('🏷️ Header Element:', headerInfo?.textContent);
-    console.log('📚 Section Element:', sectionInfo?.textContent);
+    console.log('  Section Element:', sectionInfo?.textContent);
     
     return {
         urlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
@@ -2629,7 +2629,7 @@ async function manageStudent(action, student_data) {
         if (data.success) {
             showModal(data.title || 'Success', data.message, 'success');
             
-            // ✅ FIX: Handle temporary student addition specifically
+            //    FIX: Handle temporary student addition specifically
             if (action === 'add_temporary' && data.student_data) {
                 // Add the temporary student to the frontend list immediately
                 addTemporaryStudentToFrontend(data.student_data);
@@ -2701,10 +2701,10 @@ function showStatusContextMenu(x, y, studentRow) {
                 <div style="font-size: 12px; color: #666; font-weight: normal;">Current: ${currentStatus}</div>
             </div>
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'present')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
-                ✅ Mark as Present
+                   Mark as Present
             </div>
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'late')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
-                ⏰ Mark as Late
+                  Mark as Late
             </div>
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'missing')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
                 🚶 Mark as Missing
@@ -2713,7 +2713,7 @@ function showStatusContextMenu(x, y, studentRow) {
                 📝 Mark as Excused
             </div>
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'absent')" style="padding: 8px 12px; cursor: pointer; color: #dc3545; font-size: 14px;">
-                ❌ Mark as Absent
+                  Mark as Absent
             </div>
         </div>
     `;
@@ -2742,7 +2742,7 @@ function changeStudentStatus(studentId, newStatus) {
     switch(newStatus) {
         case 'present':
         case 'late':
-        case 'missing':  // 🆕 ADD MISSING STATUS
+        case 'missing':  //   ADD MISSING STATUS
         case 'absent':
             action = 'mark_present';
             student_data = { 
@@ -2854,26 +2854,26 @@ async function checkUnrecognizedFaces() {
     console.log('Fetching unrecognized faces from API...');
     try {
         const res = await fetch('/api/unrecognized_faces');
-        console.log(`🔍 DEBUG: Unrecognized faces API status: ${res.status}`);
+        console.log(`  DEBUG: Unrecognized faces API status: ${res.status}`);
         
         if (!res.ok) {
             const errorText = await res.text();
-            console.error(`❌ API Error ${res.status}:`, errorText);
+            console.error(`  API Error ${res.status}:`, errorText);
             throw new Error(`Server returned ${res.status}: ${errorText}`);
         }
         
         const faces = await res.json();
-        console.log(`🔍 DEBUG: Received ${faces.length} unrecognized faces`);
+        console.log(`  DEBUG: Received ${faces.length} unrecognized faces`);
         
         // Handle case where API returns error object instead of array
         if (faces && faces.error) {
-            console.error('❌ API returned error:', faces);
+            console.error('  API returned error:', faces);
             showAlertModal('error', `Server error: ${faces.message || 'Unknown error'}`, 'API Error');
             return false;
         }
         
         if (!Array.isArray(faces)) {
-            console.error('❌ API did not return array:', faces);
+            console.error('  API did not return array:', faces);
             return false;
         }
         
@@ -2904,7 +2904,7 @@ async function checkUnrecognizedFaces() {
             listContainer.appendChild(card);
         });
 
-        console.log(`✅ Rendered ${UNRECOGNIZED_FACES_DATA.length} face cards`);
+        console.log(`   Rendered ${UNRECOGNIZED_FACES_DATA.length} face cards`);
         return UNRECOGNIZED_FACES_DATA.length > 0;
         
     } catch (err) {
@@ -2928,7 +2928,7 @@ if (!currentSessionId || !currentSectionId) {
     const fallback = getFallbackSessionData();
     currentSessionId = fallback.session_id;
     currentSectionId = fallback.section_id;
-    console.warn('⚠️ Using fallback IDs:', fallback);
+    console.warn('  Using fallback IDs:', fallback);
 }
 
 function markSelectedAs(status) {
@@ -2941,8 +2941,8 @@ function markSelectedAs(status) {
             return;
         }
 
-        // 🎯 Stop detection BEFORE processing
-        console.log('🛑 PAUSING detection for face enrollment');
+        //  Stop detection BEFORE processing
+        console.log('  PAUSING detection for face enrollment');
         stopPythonDetection();
 
         // We only process the FIRST selected face for manual enrollment 
@@ -2988,7 +2988,7 @@ function markSelectedAs(status) {
 function skipSelected() {
     console.log('skipSelected called');
     
-    // 🆕 Stop detection and timer (already stopped by endSession, but double ensure)
+    //   Stop detection and timer (already stopped by endSession, but double ensure)
     stopPythonDetection();
     clearInterval(timerInterval);
     isRunning = false;
@@ -3022,7 +3022,7 @@ function skipSelected() {
         }
     });
 
-    // 🆕 Check if any faces remain
+    //   Check if any faces remain
     const remainingFaces = document.querySelectorAll('.unrecognized-faces .face-card').length;
     if (remainingFaces === 0) {
         closeModal('unrecognizedFacesModal');
@@ -3030,15 +3030,15 @@ function skipSelected() {
     }
 }
 
-// 🆕 ADD THIS FUNCTION - Handle the actual enrollment
+//   ADD THIS FUNCTION - Handle the actual enrollment
 async function enrollSelectedFace() {
     const studentSelect = document.getElementById('studentSelect');
     const studentId = studentSelect.value;
     const faceId = document.getElementById('faceToEnrollID').value;
     const faceEncoding = document.getElementById('faceToEnrollEncoding').value;
-    const sessionId = currentSessionId; // 🎯 Use global variable
+    const sessionId = currentSessionId; //  Use global variable
 
-    console.log('🔍 DEBUG: Enrollment data:', {
+    console.log('  DEBUG: Enrollment data:', {
         studentId, faceId, sessionId, 
         encodingLength: faceEncoding?.length
     });
@@ -3078,18 +3078,18 @@ async function enrollSelectedFace() {
 }
 
 async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
-    console.log('🛑 PAUSING detection for enrollment modal');
+    console.log('  PAUSING detection for enrollment modal');
     
-    // 🎯 Stop detection BEFORE opening modal
+    //  Stop detection BEFORE opening modal
     stopPythonDetection();
     
     const studentSelect = document.getElementById('studentSelect');
     studentSelect.innerHTML = '<option value="">Loading students...</option>';
     
-    console.log(`🔍 DEBUG: Fetching students with currentSessionId=${currentSessionId}`);
+    console.log(`  DEBUG: Fetching students with currentSessionId=${currentSessionId}`);
     
     if (!currentSessionId) {
-        console.error('❌ CRITICAL: Missing currentSessionId');
+        console.error('  CRITICAL: Missing currentSessionId');
         showAlertModal('error', 'Session not properly initialized. Please refresh the page.', 'Session Error');
         return;
     }
@@ -3104,23 +3104,23 @@ async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
         }
         
         const url = `/api/absent_students_for_enrollment?${params.toString()}`;
-        console.log(`🔍 DEBUG: Calling API: ${url}`);
+        console.log(`  DEBUG: Calling API: ${url}`);
         
         const res = await fetch(url);
-        console.log(`🔍 DEBUG: API Response status: ${res.status}`);
+        console.log(`  DEBUG: API Response status: ${res.status}`);
         
         if (!res.ok) {
             throw new Error(`API returned ${res.status}`);
         }
         
         const students = await res.json();
-        console.log(`🔍 DEBUG: Received ${students.length} students`);
+        console.log(`  DEBUG: Received ${students.length} students`);
 
         studentSelect.innerHTML = '<option value="" disabled selected>Select a student to enroll</option>';
         
         if (students.length === 0) {
             studentSelect.innerHTML = '<option value="" disabled>No students found in this class</option>';
-            console.log('ℹ️ INFO: No students found for this class');
+            console.log('  INFO: No students found for this class');
         } else {
             students.forEach(student => {
                 const option = document.createElement('option');
@@ -3128,7 +3128,7 @@ async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
                 option.textContent = `${student.last_name}, ${student.first_name} (${student.student_id})`;
                 studentSelect.appendChild(option);
             });
-            console.log(`✅ Loaded ${students.length} students for enrollment`);
+            console.log(`   Loaded ${students.length} students for enrollment`);
         }
         
         // Set face data
@@ -3136,7 +3136,7 @@ async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
         document.getElementById('faceToEnrollID').value = faceId;
         document.getElementById('faceToEnrollEncoding').value = tempEncoding; 
         
-        // 🎯 Close unrecognized modal and open enrollment modal
+        //  Close unrecognized modal and open enrollment modal
         closeModal('unrecognizedFacesModal');
         openModal('enrollStudentModal');
         
@@ -3145,7 +3145,7 @@ async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
         showAlertModal('error', `Could not load student list: ${error.message}`, 'Load Error');
         studentSelect.innerHTML = '<option value="">Error loading students</option>';
         
-        // 🎯 Resume detection on error
+        //  Resume detection on error
         resumePythonDetection();
     }
 }
@@ -3170,7 +3170,7 @@ async function confirmEnrollment() {
                 student_id: studentId,
                 face_encoding: JSON.parse(faceEncoding), 
                 unrecognized_face_id: faceId,
-                session_id: currentSessionId // 🎯 Use global variable
+                session_id: currentSessionId //  Use global variable
             }),
         });
 
@@ -3185,12 +3185,12 @@ async function confirmEnrollment() {
                 faceCardToRemove.remove();
             }
             
-            // 🆕 Check remaining faces WITHOUT restarting detection
+            //   Check remaining faces WITHOUT restarting detection
             const remainingFaces = document.querySelectorAll('.unrecognized-faces .face-card').length;
             if (remainingFaces === 0) {
                 showEndSessionConfirmation();
             } else {
-                // 🆕 Keep detection stopped, just show modal
+                //   Keep detection stopped, just show modal
                 openModal('unrecognizedFacesModal');
             }
         } else {
