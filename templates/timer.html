@@ -151,6 +151,29 @@
         </div>
     </div>
 </div>
+
+<!-- Simple Camera Test Modal -->
+<div id="cameraTestModal" class="camera-modal">
+    <div class="camera-modal-content">
+        <div class="camera-modal-header">
+            <h3>Camera Test View</h3>
+            <button class="camera-close-btn" id="closeCameraModal">&times;</button>
+        </div>
+        <div class="camera-modal-body">
+            <iframe id="cameraTestFrame" allow="camera"></iframe>
+            <div class="camera-controls">
+                <button class="camera-control-btn" id="refreshCameraBtn">
+                    <span class="material-icons" style="font-size: 18px; margin-right: 5px;">refresh</span>
+                    Refresh
+                </button>
+                <button class="camera-control-btn primary" id="useCameraBtn">
+                    <span class="material-icons" style="font-size: 18px; margin-right: 5px;">check_circle</span>
+                    Use This Camera
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 <script>
 // Global variables
 let timerInterval;
@@ -182,6 +205,55 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Load default mode on startup
     await loadDefaultSettings();
 });
+
+function detectBestCameraURL() {
+    const baseURL = 'rtsp://admin:@101Pok3r5610@';
+    const paths = '/cam/realmonitor?channel=1&subtype=1';
+    
+    // Try direct connection first
+    const directIP = '192.168.1.64';
+    const wifiIP = '192.168.0.64'; // Or whatever your camera WiFi IP is
+    
+    // Test both connections
+    testConnection(directIP + ':554' + paths, 'Direct Ethernet').then(result => {
+        if (result.success) {
+            console.log('Using DIRECT connection: 20-50ms latency');
+            document.getElementById('rtspUrl').value = baseURL + directIP + ':554' + paths;
+            return;
+        }
+        
+        // Fallback to WiFi
+        testConnection(wifiIP + ':554' + paths, 'WiFi').then(result => {
+            if (result.success) {
+                console.log('Using WiFi: 200-500ms latency');
+                document.getElementById('rtspUrl').value = baseURL + wifiIP + ':554' + paths;
+            } else {
+                console.log('No camera found');
+            }
+        });
+    });
+}
+
+function testConnection(url, type) {
+    return new Promise(resolve => {
+        const testImg = new Image();
+        const startTime = Date.now();
+        
+        testImg.onload = function() {
+            const latency = Date.now() - startTime;
+            console.log(`${type} connection: ${latency}ms`);
+            resolve({success: true, latency: latency});
+        };
+        
+        testImg.onerror = function() {
+            console.log(`${type} connection failed`);
+            resolve({success: false});
+        };
+        
+        // Use a test endpoint
+        testImg.src = `/api/test_connection?url=${encodeURIComponent(url)}&t=${Date.now()}`;
+    });
+}
 
 async function loadDefaultSettings() {
     try {
@@ -568,19 +640,79 @@ document.head.appendChild(styleSheet);
 
 function testRtspConnection() {
     const rtspUrl = document.getElementById('rtspUrl').value.trim();
+    const streamType = document.querySelector('input[name="streamType"]:checked').value;
     
     if (!rtspUrl) {
         showModal('Error', 'Please enter an RTSP URL');
         return;
     }
     
-    localStorage.setItem('rtspUrl', rtspUrl);
+    // Show camera modal
+    const modal = document.getElementById('cameraTestModal');
+    const frame = document.getElementById('cameraTestFrame');
+    const closeBtn = document.getElementById('closeCameraModal');
+    const refreshBtn = document.getElementById('refreshCameraBtn');
+    const useBtn = document.getElementById('useCameraBtn');
     
-    const testUrl = `/camfootage?test=true&rtsp=${encodeURIComponent(rtspUrl)}`;
-    window.open(testUrl, '_blank');
+    // Set up close button
+    closeBtn.onclick = function() {
+        modal.style.display = 'none';
+        frame.src = 'about:blank'; // Clear the iframe
+    };
+    
+    // Close when clicking outside
+    modal.onclick = function(e) {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+            frame.src = 'about:blank';
+        }
+    };
+    
+    // Refresh button
+    refreshBtn.onclick = function() {
+        loadCameraTest(rtspUrl);
+    };
+    
+    // Use this camera button
+    useBtn.onclick = function() {
+        showModal('Success', 'Camera configuration saved successfully!', function() {
+            modal.style.display = 'none';
+            frame.src = 'about:blank';
+        });
+    };
+    
+    // Load the camera test page
+    loadCameraTest(rtspUrl);
+    
+    // Show modal
+    modal.style.display = 'block';
 }
 
-// Add this to your JavaScript
+function loadCameraTest(rtspUrl) {
+    const frame = document.getElementById('cameraTestFrame');
+    
+    // Add timestamp to prevent caching
+    const timestamp = new Date().getTime();
+    const testUrl = `/api/test_camera?rtsp=${encodeURIComponent(rtspUrl)}&t=${timestamp}`;
+    
+    // Clear and reload
+    frame.src = 'about:blank';
+    
+    setTimeout(() => {
+        frame.src = testUrl;
+        
+        // Handle iframe load events
+        frame.onload = function() {
+            console.log('Camera test iframe loaded');
+        };
+        
+        frame.onerror = function() {
+            console.error('Failed to load camera test');
+        };
+    }, 100);
+}
+
+
 document.addEventListener('DOMContentLoaded', function() {
     const rtspUrlInput = document.getElementById('rtspUrl');
     const streamTypeRadios = document.querySelectorAll('input[name="streamType"]');

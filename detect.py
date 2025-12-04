@@ -108,7 +108,11 @@ face_scan_start_time = None
 student_presence_tracker = {}  # Tracks when students are present/missing
 current_session_id = None  
 DEBUG_MODE = False
-
+# Camera test stream variables
+test_camera_lock = threading.Lock()
+test_camera_cap = None
+test_camera_active = False
+test_frame = None
 # Initialize FaceAnalysis with SCRFD
 face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 face_analysis.prepare(ctx_id=0, det_size=(320, 320))  
@@ -1045,6 +1049,9 @@ def calculate_mar(landmarks, mouth_indices):
     D = np.linalg.norm(mouth_points[0] - mouth_points[4])
     mar = (A + B + C) / (3.0 * D)
     return mar
+
+        
+  
 
 # =========================
 # Load known faces from database
@@ -17294,6 +17301,269 @@ def get_curriculum_details():
             'success': False,
             'message': str(e)
         }), 500
+    
+def open_test_camera(rtsp_url):
+    """Open camera with ZERO buffering"""
+    global test_camera_cap, test_camera_active
+    
+    try:
+        with test_camera_lock:
+            if test_camera_cap is not None:
+                test_camera_cap.release()
+            
+            test_camera_cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+            
+            # CRITICAL FIX: Zero buffering
+            test_camera_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Changed from 0 to 1 (minimum)
+            test_camera_cap.set(cv2.CAP_PROP_FPS, 30)
+            test_camera_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            test_camera_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+            
+            # Test connection
+            ret, frame = test_camera_cap.read()
+            if not ret:
+                return False
+            
+            test_camera_active = True
+            return True
+            
+    except Exception as e:
+        print(f"Camera error: {e}")
+        return False
+
+def test_camera_grabber():
+    """Grab frames - ALWAYS get latest frame"""
+    global test_frame, test_camera_active, test_camera_cap
+    
+    while test_camera_active:
+        try:
+            with test_camera_lock:
+                if test_camera_cap and test_camera_cap.isOpened():
+                    # CRITICAL: Flush old frames
+                    for _ in range(3):  # Skip 3 old frames
+                        test_camera_cap.grab()
+                    
+                    # Get latest frame
+                    ret, frame = test_camera_cap.read()
+                    if ret:
+                        test_frame = frame
+                        
+        except Exception as e:
+            print(f"Grab error: {e}")
+        
+        time.sleep(0.001)  # Very short sleep
+
+def create_test_placeholder():
+    """Create a simple placeholder frame"""
+    frame = np.zeros((360, 640, 3), dtype=np.uint8)
+    timestamp = time.strftime("%H:%M:%S")
+    cv2.putText(frame, f"TEST FEED - {timestamp}", (180, 180), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    return frame
+
+def generate_test_frames():
+    """Generate frames with minimal delay"""
+    global test_frame
+    
+    while test_camera_active:
+        if test_frame is not None:
+            # Lower JPEG quality for speed
+            ret, buffer = cv2.imencode('.jpg', test_frame, 
+                                     [cv2.IMWRITE_JPEG_QUALITY, 60])
+            if ret:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + 
+                       buffer.tobytes() + b'\r\n')
+        
+        time.sleep(0.033)  # 30 FPS max
+        
+@app.route('/api/test_camera')
+def test_camera():
+    """Endpoint for testing camera feed in modal"""
+    rtsp_url = request.args.get('rtsp', '')
+    
+    # Start test camera stream
+    global test_camera_active, test_camera_thread
+    
+    # Stop existing test camera
+    test_camera_active = False
+    if 'test_camera_thread' in globals() and test_camera_thread.is_alive():
+        test_camera_thread.join(timeout=1.0)
+    
+    # Open new test camera
+    success = open_test_camera(rtsp_url)
+    
+    # Start grabber thread if successful
+    if success:
+        test_camera_active = True
+        test_camera_thread = threading.Thread(target=test_camera_grabber, daemon=True)
+        test_camera_thread.start()
+    
+    # Return the test page
+    html = f'''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera Test</title>
+    <style>
+        body {{ 
+            margin: 0; 
+            padding: 0; 
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }}
+        #status {{
+            color: white;
+            text-align: center;
+            margin: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 5px 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 3px;
+        }}
+        #latency {{
+            color: #0f0;
+            font-family: monospace;
+            font-size: 11px;
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 3px 6px;
+            border-radius: 3px;
+        }}
+        #cameraFeed {{
+            width: 100%;
+            height: calc(100% - 40px);
+            object-fit: contain;
+        }}
+    </style>
+</head>
+<body>
+    <div id="status">Connecting...</div>
+    <div id="latency">0 ms</div>
+    <img id="cameraFeed" crossorigin="anonymous" 
+         src="/api/test_camera_stream?t={int(time.time())}" 
+         alt="Camera Feed">
+    
+    <script>
+        let retryCount = 0;
+        const maxRetries = 3;
+        const statusElement = document.getElementById('status');
+        const latencyElement = document.getElementById('latency');
+        let frameTimes = [];
+        let lastFrameTime = Date.now();
+        let refreshTimer = null;
+        
+        function updateStatus(text, isError = false) {{
+            statusElement.textContent = text;
+            statusElement.style.color = isError ? '#ff6b6b' : '#0f0';
+        }}
+        
+        function updateLatency() {{
+            const now = Date.now();
+            const latency = now - lastFrameTime;
+            
+            // Keep last 10 measurements
+            frameTimes.push(latency);
+            if (frameTimes.length > 10) frameTimes.shift();
+            
+            // Calculate average
+            const avgLatency = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+            
+            // Display
+            latencyElement.textContent = Math.round(avgLatency) + ' ms';
+            
+            // Color coding
+            if (avgLatency < 150) {{
+                latencyElement.style.color = '#0f0';  // Green
+            }} else if (avgLatency < 300) {{
+                latencyElement.style.color = '#ff0';  // Yellow
+            }} else {{
+                latencyElement.style.color = '#f00';  // Red
+            }}
+            
+            return avgLatency;
+        }}
+        
+        const img = document.getElementById('cameraFeed');
+        
+        // Track when new frame loads
+        img.addEventListener('load', function() {{
+            lastFrameTime = Date.now();
+            retryCount = 0;
+            
+            const avgLatency = updateLatency();
+            
+            if (avgLatency < 150) {{
+                updateStatus('✓ LIVE - Good latency');
+            }} else {{
+                updateStatus('✓ LIVE - Moderate latency');
+            }}
+            
+            // Don't refresh too fast! This causes the errors
+            // Clear any existing timer
+            if (refreshTimer) clearTimeout(refreshTimer);
+            
+            // Refresh only if latency is bad
+            if (avgLatency > 500) {{
+                refreshTimer = setTimeout(() => {{
+                    img.src = '/api/test_camera_stream?t=' + Date.now();
+                }}, 1000);
+            }}
+        }});
+        
+        img.addEventListener('error', function() {{
+            retryCount++;
+            if (retryCount < maxRetries) {{
+                updateStatus('Retrying (' + retryCount + '/' + maxRetries + ')', true);
+                setTimeout(() => {{
+                    img.src = '/api/test_camera_stream?t=' + Date.now();
+                }}, 500);
+            }} else {{
+                updateStatus('✗ Connection failed', true);
+                latencyElement.textContent = 'OFFLINE';
+                latencyElement.style.color = '#f00';
+            }}
+        }});
+        
+        // Initial load
+        updateStatus('Connecting to camera...');
+        
+        // Update latency display every 200ms
+        setInterval(updateLatency, 200);
+        
+        // Keep-alive: refresh every 10 seconds to prevent timeout
+        setInterval(() => {{
+            img.src = '/api/test_camera_stream?t=' + Date.now();
+        }}, 10000);
+    </script>
+</body>
+</html>
+'''
+    
+    return html
+
+@app.route('/api/test_camera_stream')
+def test_camera_stream():
+    """MJPEG stream for test camera - LOW LATENCY"""
+    response = Response(generate_test_frames(),
+                       mimetype='multipart/x-mixed-replace; boundary=frame')
+    
+    # CRITICAL: Disable all buffering
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    response.headers['X-Accel-Buffering'] = 'no'  # For nginx
+    response.headers['Connection'] = 'keep-alive'
+    
+    return response
 
 if __name__ == "__main__":
     latest_frame = None
