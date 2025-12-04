@@ -14,12 +14,12 @@ DB_CONFIG = {
 try:
     conn = mysql.connector.connect(**DB_CONFIG)
     if conn.is_connected():
-        print("✅ Connection successful!")
+        print("   Connection successful!")
         cursor = conn.cursor()
         cursor.execute("SHOW TABLES;")
         print("Tables:", [row[0] for row in cursor.fetchall()])
         conn.close()
     else:
-        print("❌ Connection failed — no connection object returned.")
+        print("  Connection failed — no connection object returned.")
 except Error as e:
-    print("❌ Connection error:", e)
+    print("  Connection error:", e)

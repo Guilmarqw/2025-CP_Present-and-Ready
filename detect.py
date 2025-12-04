@@ -3,6 +3,7 @@ from functools import wraps
 import hashlib
 import os
 import sys
+import gc
 import cv2
 import time
 import dlib
@@ -106,6 +107,7 @@ face_scan_start_time = None
 
 student_presence_tracker = {}  # Tracks when students are present/missing
 current_session_id = None  
+DEBUG_MODE = False
 
 # Initialize FaceAnalysis with SCRFD
 face_analysis = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
@@ -242,22 +244,25 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # Initialize face detector
 yolo = YOLO(WEIGHTS_PATH)
 yolo.to(DEVICE)
-logger.info(f"Using device: {DEVICE}  |  Model: {WEIGHTS_PATH}")
+if DEBUG_MODE: 
+    logger.debug(f"Using device: {DEVICE}  |  Model: {WEIGHTS_PATH}")
 
-# Initialize body detector for person tracking - 🚀 OPTIMIZED VERSION
+# Initialize body detector for person tracking -   OPTIMIZED VERSION
 try:
     body_detector = YOLO('yolov8n.pt')
     body_detector.to(DEVICE)
     
-    # 🚀 CRITICAL: Enable FP16 for 2x speed on RTX 3050
     if DEVICE == "cuda":
         body_detector.model.half()
-        logger.info("✅ Body detector running in FP16 mode (2x faster on RTX 3050)")
+        if DEBUG_MODE: 
+            logger.debug("   Body detector running in FP16 mode (2x faster on RTX 3050)")
     
-    logger.info(f"✅ Body detector (YOLOv8n) loaded successfully on {DEVICE}")
+    if DEBUG_MODE: 
+        logger.debug(f"   Body detector (YOLOv8n) loaded successfully on {DEVICE}")
 except Exception as e:
-    logger.error(f"❌ Failed to load body detector: {e}")
-    logger.info("Downloading yolov8n.pt model...")
+    logger.error(f"  Failed to load body detector: {e}")
+    if DEBUG_MODE: 
+        logger.debug("Downloading yolov8n.pt model...")
     body_detector = YOLO('yolov8n.pt')
     body_detector.to(DEVICE)
     if DEVICE == "cuda":
@@ -274,7 +279,8 @@ try:
         minimum_matching_threshold=0.8,
         frame_rate=30
     )
-    logger.info("✅ ByteTrack initialized successfully for body tracking")
+    if DEBUG_MODE: 
+        logger.debug("   ByteTrack initialized successfully for body tracking")
     
     # Test ByteTrack with dummy detection - FIXED IMPORT
     test_detection = sv.Detections(
@@ -283,10 +289,11 @@ try:
         class_id=np.array([0])
     )
     test_tracks = byte_tracker.update_with_detections(detections=test_detection)
-    logger.info("✅ ByteTrack test passed - working correctly")
+    if DEBUG_MODE: 
+        logger.debug("   ByteTrack test passed - working correctly")
     
 except Exception as e:
-    logger.error(f"❌ ByteTrack initialization failed: {e}")
+    logger.error(f"  ByteTrack initialization failed: {e}")
     # Create a simple fallback tracker
     class SimpleTracker:
         def __init__(self):
@@ -318,10 +325,11 @@ except Exception as e:
             return tracks
     
     byte_tracker = SimpleTracker()
-    logger.info("🔄 Using simple fallback tracker instead of ByteTrack")
+    if DEBUG_MODE: 
+        logger.debug("  Using simple fallback tracker instead of ByteTrack")
 
 # =========================
-# TorchReID OSNet Model - 🚀 OPTIMIZED VERSION
+# TorchReID OSNet Model -   OPTIMIZED VERSION
 # =========================
 try:
     reid_model = torchreid.models.build_model(
@@ -335,7 +343,8 @@ try:
     
     if os.path.exists(cache_path):
         torchreid.utils.load_pretrained_weights(reid_model, cache_path)
-        logger.info(f"✅ TorchReID model loaded from cache: {cache_path}")
+        if DEBUG_MODE: 
+            logger.debug(f"   TorchReID model loaded from cache: {cache_path}")
     else:
         logger.error("ReID model cache file not found")
         reid_model = None
@@ -343,26 +352,29 @@ try:
     
     reid_model.eval()
     
-    # 🚀 CRITICAL: Enable FP16 for GPU
     if torch.cuda.is_available():
         reid_model = reid_model.cuda()
         reid_model = reid_model.half()  # FP16 for maximum speed
-        logger.info(f"✅ TorchReID model moved to GPU with FP16 precision")
+        if DEBUG_MODE: 
+            logger.debug(f"   TorchReID model moved to GPU with FP16 precision")
     else:
-        logger.info("⚠️ TorchReID model running on CPU")
+        if DEBUG_MODE: 
+            logger.debug("  TorchReID model running on CPU")
     
-    logger.info(f"✅ TorchReID model loaded successfully on {DEVICE}")
+    if DEBUG_MODE: 
+        logger.debug(f"   TorchReID model loaded successfully on {DEVICE}")
     
 except Exception as e:
     logger.error(f"Failed to load reid: {e}")
     reid_model = None
 
 # =========================
-# Load InsightFace model - 🚀 OPTIMIZED VERSION
+# Load InsightFace model -   OPTIMIZED VERSION
 # =========================
 try:
     available_providers = ort.get_available_providers()
-    logger.info(f"Available ONNX Runtime providers: {available_providers}")
+    if DEBUG_MODE: 
+        logger.debug(f"Available ONNX Runtime providers: {available_providers}")
 
     providers = []
     
@@ -379,13 +391,15 @@ try:
             {}
         ]
         ctx_id = 0
-        logger.info("✅ Using CUDA + CPU providers")
+        if DEBUG_MODE: 
+            logger.debug("   Using CUDA + CPU providers")
     else:
         # Fallback to CPU only
         providers = ['CPUExecutionProvider']
         provider_options = [{}]
         ctx_id = -1
-        logger.info("⚠️ CUDA not available, using CPU only")
+        if DEBUG_MODE: 
+            logger.debug("  CUDA not available, using CPU only")
 
     # Initialize FaceAnalysis
     face_analysis = insightface.app.FaceAnalysis(
@@ -394,28 +408,31 @@ try:
         provider_options=provider_options
     )
 
-    # 🚀 OPTIMIZED: Prepare with smaller detection size
+    #   OPTIMIZED: Prepare with smaller detection size
     face_analysis.prepare(
         ctx_id=ctx_id,
-        det_size=FACE_DET_SIZE,  # 🚀 Uses config (256, 256) instead of (320, 320)
-        det_thresh=0.65  # 🚀 Higher threshold for fewer false positives
+        det_size=FACE_DET_SIZE,  #   Uses config (256, 256) instead of (320, 320)
+        det_thresh=0.65  #   Higher threshold for fewer false positives
     )
 
-    logger.info(f"🎯 InsightFace model '{INSIGHTFACE_MODEL}' loaded successfully")
-    logger.info(f"🚀 InsightFace optimized for high FPS - det_size: {FACE_DET_SIZE}")
+    if DEBUG_MODE: 
+        logger.debug(f" InsightFace model '{INSIGHTFACE_MODEL}' loaded successfully")
+    if DEBUG_MODE: 
+        logger.debug(f"  InsightFace optimized for high FPS - det_size: {FACE_DET_SIZE}")
 
     # Test the model to verify it works
     try:
         # Create a small test image to verify detection works
         test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         test_faces = face_analysis.get(test_img)
-        logger.info("✅ InsightFace model test passed - detection method is available")
+        if DEBUG_MODE: 
+            logger.debug("   InsightFace model test passed - detection method is available")
     except Exception as test_error:
-        logger.error(f"❌ InsightFace model test failed: {test_error}")
+        logger.error(f"  InsightFace model test failed: {test_error}")
         raise ValueError("FaceAnalysis detect method not working properly")
 
 except Exception as e:
-    logger.error(f"❌ Failed to load InsightFace model: {e}")
+    logger.error(f"  Failed to load InsightFace model: {e}")
     
     # More robust fallback with multiple attempts
     fallback_success = False
@@ -423,32 +440,34 @@ except Exception as e:
     
     for model_name in fallback_models:
         try:
-            logger.info(f"🔄 Attempting fallback with model: {model_name}")
+            if DEBUG_MODE: 
+                logger.debug(f"  Attempting fallback with model: {model_name}")
             face_analysis = insightface.app.FaceAnalysis(name=model_name, providers=['CPUExecutionProvider'])
-            face_analysis.prepare(ctx_id=-1, det_size=FACE_DET_SIZE)  # 🚀 Use config
+            face_analysis.prepare(ctx_id=-1, det_size=FACE_DET_SIZE)  #   Use config
             
             # Test the fallback model
             test_img = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
             test_faces = face_analysis.get(test_img)
             
-            logger.info(f"✅ Fallback successful with model: {model_name}")
+            if DEBUG_MODE: 
+                logger.debug(f"   Fallback successful with model: {model_name}")
             fallback_success = True
             INSIGHTFACE_MODEL = model_name  
             break
             
         except Exception as fallback_error:
-            logger.warning(f"⚠️ Fallback with {model_name} failed: {fallback_error}")
+            logger.warning(f"  Fallback with {model_name} failed: {fallback_error}")
             continue
     
     if not fallback_success:
-        logger.error("❌ All initialization methods failed - InsightFace cannot be loaded")
+        logger.error("  All initialization methods failed - InsightFace cannot be loaded")
         face_analysis = None
         ENABLE_RECOGNITION = False
     else:
         ENABLE_RECOGNITION = True
 
 # =========================
-# 🚀 CUDA & CPU OPTIMIZATIONS - ADD THIS NEW SECTION
+#   CUDA & CPU OPTIMIZATIONS - ADD THIS NEW SECTION
 # =========================
 if torch.cuda.is_available():
     # Enable cuDNN benchmarking for faster convolutions
@@ -465,18 +484,27 @@ if torch.cuda.is_available():
     # Clear initial GPU cache
     torch.cuda.empty_cache()
     
-    logger.info("✅ CUDA optimizations enabled for RTX 3050")
-    logger.info("   - cuDNN benchmark: True")
-    logger.info("   - TF32 matmul: True")
-    logger.info("   - GPU memory fraction: 0.7")
+    if DEBUG_MODE: 
+        logger.debug("   CUDA optimizations enabled for RTX 3050")
+    if DEBUG_MODE: 
+        logger.debug("   - cuDNN benchmark: True")
+    if DEBUG_MODE: 
+        logger.debug("   - TF32 matmul: True")
+    if DEBUG_MODE: 
+        logger.debug("   - GPU memory fraction: 0.7")
 
 # Set CPU thread count for better performance
 torch.set_num_threads(4)  # Optimal for i5 13th gen (8 threads total, use 4 for CV)
 cv2.setNumThreads(4)
 
-logger.info("✅ CPU optimizations: 4 threads for PyTorch and OpenCV")
-logger.info("🚀 All models loaded and optimized for high FPS performance")
+if DEBUG_MODE: 
+        logger.debug("   CPU optimizations: 4 threads for PyTorch and OpenCV")
+if DEBUG_MODE: 
+        logger.debug("  All models loaded and optimized for high FPS performance")
 
+
+logging.basicConfig(level=logging.WARNING)  
+logger.setLevel(logging.WARNING)
 # =========================
 # Utilities
 # =========================
@@ -564,25 +592,25 @@ def authenticate_user(email, password):
     print(f"🔐 Starting authentication for: {email}")
     
     try:
-        print("🔄 Step 1: Getting database connection...")
+        print("  Step 1: Getting database connection...")
         conn = get_db_connection()
         if not conn:
-            print("❌ Step 1 FAILED: Database connection is None")
+            print("  Step 1 FAILED: Database connection is None")
             return None
         else:
-            print("✅ Step 1 SUCCESS: Database connection established")
+            print("   Step 1 SUCCESS: Database connection established")
         
-        print("🔄 Step 2: Creating cursor...")
+        print("  Step 2: Creating cursor...")
         cursor = conn.cursor(dictionary=True)
-        print("✅ Step 2 SUCCESS: Cursor created")
+        print("   Step 2 SUCCESS: Cursor created")
         
         # Check all user tables with DIFFERENT queries for each table
-        print("🔄 Step 3: Searching for user in database...")
+        print("  Step 3: Searching for user in database...")
         
         user = None
         
         # Check admins table (has role column)
-        print("   🔍 Checking admins table...")
+        print("     Checking admins table...")
         cursor.execute("""
             SELECT admin_id as user_id, first_name, last_name, password_hash, 
                    'admin' as user_type, role
@@ -593,7 +621,7 @@ def authenticate_user(email, password):
         
         if not user:
             # Check faculty table (has role column)
-            print("   🔍 Checking faculty table...")
+            print("     Checking faculty table...")
             cursor.execute("""
                 SELECT faculty_id as user_id, first_name, last_name, password_hash, 
                        'faculty' as user_type, role
@@ -604,7 +632,7 @@ def authenticate_user(email, password):
         
         if not user:
             # Check students table (NO role column - use default 'student')
-            print("   🔍 Checking students table...")
+            print("     Checking students table...")
             cursor.execute("""
                 SELECT student_id as user_id, first_name, last_name, password_hash, 
                        'student' as user_type, 'student' as role
@@ -614,40 +642,40 @@ def authenticate_user(email, password):
             user = cursor.fetchone()
         
         if not user:
-            print("❌ Step 3 FAILED: User not found in any table")
+            print("  Step 3 FAILED: User not found in any table")
             return None
         
-        print(f"✅ Step 3 SUCCESS: User found: {user['user_id']}")
-        print(f"✅ User role: {user.get('role', 'NO ROLE!')}")
+        print(f"   Step 3 SUCCESS: User found: {user['user_id']}")
+        print(f"   User role: {user.get('role', 'NO ROLE!')}")
         
         # Verify password
-        print("🔄 Step 4: Verifying password...")
+        print("  Step 4: Verifying password...")
         print(f"   🔑 Password hash: {user['password_hash'][:50]}...")
         
         if verify_password(password, user['password_hash']):
-            print("✅ Step 4 SUCCESS: Password verified")
-            print(f"🎉 AUTHENTICATION SUCCESSFUL for {user['user_id']}")
-            print(f"🎉 FINAL USER OBJECT: {user}")
+            print("   Step 4 SUCCESS: Password verified")
+            print(f"  AUTHENTICATION SUCCESSFUL for {user['user_id']}")
+            print(f"  FINAL USER OBJECT: {user}")
             return user
         else:
-            print("❌ Step 4 FAILED: Password verification failed")
-            print(f"   💡 Provided password: {password}")
-            print(f"   💡 Stored hash: {user['password_hash']}")
+            print("  Step 4 FAILED: Password verification failed")
+            print(f"     Provided password: {password}")
+            print(f"     Stored hash: {user['password_hash']}")
             return None
             
     except Exception as e:
-        print(f"❌ Authentication error: {e}")
+        print(f"  Authentication error: {e}")
         import traceback
-        print(f"🔍 Stack trace: {traceback.format_exc()}")
+        print(f"  Stack trace: {traceback.format_exc()}")
         return None
     finally:
         # Always close connections
         if cursor:
             cursor.close()
-            print("✅ Cursor closed")
+            print("   Cursor closed")
         if conn:
             conn.close()
-            print("✅ Connection closed")
+            print("   Connection closed")
 
 
 def create_user_session(user_id, user_type):
@@ -732,7 +760,8 @@ class ThreadSafeTrackManager:
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info(f"Attendance recorded: {name} ({person_id})")
+            if DEBUG_MODE: 
+                logger.debug(f"Attendance recorded: {name} ({person_id})")
         except Exception as e:
             logger.error(f"DB write failed: {e}")
 
@@ -862,7 +891,8 @@ class IdentityVerificationManager:
             
         last_verification = active_info.get('last_verification', 0)
         if current_time - last_verification > 5.0:
-            logger.info(f"Identity {person_id} switching from track {existing_track_id} to {track_id}")
+            if DEBUG_MODE: 
+                logger.debug(f"Identity {person_id} switching from track {existing_track_id} to {track_id}")
             return True
             
         logger.warning(f"Duplicate identity attempt: {person_id} already active on track {existing_track_id}")
@@ -879,7 +909,8 @@ class IdentityVerificationManager:
             'confidence_history': [confidence],
             'assignment_time': current_time
         }
-        logger.info(f"Identity {person_id} assigned to track {track_id} with confidence {confidence:.3f}")
+        if DEBUG_MODE: 
+            logger.debug(f"Identity {person_id} assigned to track {track_id} with confidence {confidence:.3f}")
         return True
     
     def cleanup_stale_identities(self):
@@ -891,7 +922,8 @@ class IdentityVerificationManager:
         
         for person_id in stale_ids:
             del self.active_identities[person_id]
-            logger.info(f"Removed stale identity for {person_id}")
+            if DEBUG_MODE: 
+                logger.debug(f"Removed stale identity for {person_id}")
 
 # Initialize identity manager
 identity_manager = IdentityVerificationManager()
@@ -990,7 +1022,8 @@ def send_otp_email(recipient_email, otp_code):
         server.login(EMAIL_CONFIG['email'], EMAIL_CONFIG['password'])
         server.send_message(msg)
         server.quit()
-        logger.info(f"OTP email sent to {recipient_email}")
+        if DEBUG_MODE: 
+            logger.debug(f"OTP email sent to {recipient_email}")
         return True
     except Exception as e:
         logger.error(f"Error sending email to {recipient_email}: {e}")
@@ -1028,7 +1061,8 @@ def get_current_section_student_ids():
     global current_session_id
     
     if not current_session_id:
-        logger.debug("ℹ️ No current session ID - session not yet initialized")
+        if DEBUG_MODE: 
+            logger.debug(" No current session ID - session not yet initialized")
         return []
     
     try:
@@ -1046,7 +1080,7 @@ def get_current_section_student_ids():
         if not session_info or session_info.get('section_id') is None:
             cursor.close()
             connection.close()
-            logger.warning("⚠️ No section_id found for current session")
+            logger.warning("  No section_id found for current session")
             return []
         
         section_id = session_info['section_id']
@@ -1065,7 +1099,8 @@ def get_current_section_student_ids():
         cursor.close()
         connection.close()
         
-        logger.info(f"📋 Section ID {section_id} has {len(student_ids)} active students")
+        if DEBUG_MODE: 
+            logger.debug(f"  Section ID {section_id} has {len(student_ids)} active students")
         return student_ids
         
     except Exception as e:
@@ -1096,7 +1131,8 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
         # Rebuild the array
         rebuild_known_faces_array()
         
-        logger.info(f"✅ Added {person_type} {full_name} ({id}) to memory")
+        if DEBUG_MODE: 
+            logger.debug(f"   Added {person_type} {full_name} ({id}) to memory")
         return True
         
     except Exception as e:
@@ -1141,10 +1177,12 @@ def rebuild_known_faces_array():
     global KNOWN_FACE_ENCODINGS_ARRAY
     if known_face_encodings:
         KNOWN_FACE_ENCODINGS_ARRAY = np.vstack(known_face_encodings)
-        logger.info(f"Rebuilt KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+        if DEBUG_MODE: 
+            logger.debug(f"Rebuilt KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
     else:
         KNOWN_FACE_ENCODINGS_ARRAY = np.array([])
-        logger.info("No known faces loaded.")
+        if DEBUG_MODE: 
+            logger.debug("No known faces loaded.")
 
 def load_known_faces_from_db():
     """Load known faces from database, filtered by current section if available"""
@@ -1165,11 +1203,13 @@ def load_known_faces_from_db():
         # Get current section student IDs
         current_section_students = get_current_section_student_ids()
         
-        logger.info(f"📊 Attempting to load faces. Current section has {len(current_section_students)} students")
+        if DEBUG_MODE: 
+            logger.debug(f"  Attempting to load faces. Current section has {len(current_section_students)} students")
         
         if current_section_students and len(current_section_students) > 0:
             # Load ONLY students from current section
-            logger.info(f"🔍 Loading faces for {len(current_section_students)} students in current section")
+            if DEBUG_MODE: 
+                logger.debug(f"  Loading faces for {len(current_section_students)} students in current section")
             
             # Create placeholders for SQL IN clause
             placeholders = ', '.join(['%s'] * len(current_section_students))
@@ -1189,9 +1229,10 @@ def load_known_faces_from_db():
             results = cursor.fetchall()
             
             if not results:
-                logger.warning("⚠️ No students with face encodings found in current section")
+                logger.warning("  No students with face encodings found in current section")
             else:
-                logger.info(f"📋 Found {len(results)} students with face encodings in current section")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Found {len(results)} students with face encodings in current section")
             
             for (id, first_name, last_name, face_encoding) in results:
                 try:
@@ -1204,16 +1245,18 @@ def load_known_faces_from_db():
                         known_face_ids.append(id)
                         known_face_types.append('student')
                         loaded_count += 1
-                        logger.info(f"✅ Loaded current section student {full_name} ({id})")
+                        if DEBUG_MODE: 
+                            logger.debug(f"   Loaded current section student {full_name} ({id})")
                     else:
-                        logger.warning(f"⚠️ Invalid encoding for student {id} - size: {encoding.size if encoding is not None else 'None'}")
+                        logger.warning(f"  Invalid encoding for student {id} - size: {encoding.size if encoding is not None else 'None'}")
                 except Exception as e:
-                    logger.error(f"❌ Error parsing encoding for student {id}: {e}")
+                    logger.error(f"  Error parsing encoding for student {id}: {e}")
         else:
             # If no current section students, check if we have a session ID
             global current_session_id
             if current_session_id:
-                logger.info("🔍 Current section has no enrolled students or section not set")
+                if DEBUG_MODE: 
+                    logger.debug("  Current section has no enrolled students or section not set")
                 
                 # Try to get section_id from attendance_sessions
                 cursor.execute("""
@@ -1225,7 +1268,8 @@ def load_known_faces_from_db():
                 session_result = cursor.fetchone()
                 if session_result and session_result[0]:
                     section_id = session_result[0]
-                    logger.info(f"📌 Found section_id {section_id} in attendance_sessions")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Found section_id {section_id} in attendance_sessions")
                     
                     # Load students from this section
                     cursor.execute("""
@@ -1241,7 +1285,8 @@ def load_known_faces_from_db():
                     section_results = cursor.fetchall()
                     
                     if section_results:
-                        logger.info(f"📋 Found {len(section_results)} students in section {section_id}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Found {len(section_results)} students in section {section_id}")
                         
                         for (id, first_name, last_name, face_encoding) in section_results:
                             try:
@@ -1254,18 +1299,19 @@ def load_known_faces_from_db():
                                     known_face_ids.append(id)
                                     known_face_types.append('student')
                                     loaded_count += 1
-                                    logger.info(f"✅ Loaded student {full_name} ({id}) from section {section_id}")
+                                    if DEBUG_MODE: 
+                                        logger.debug(f"   Loaded student {full_name} ({id}) from section {section_id}")
                                 else:
-                                    logger.warning(f"⚠️ Invalid encoding for student {id}")
+                                    logger.warning(f"  Invalid encoding for student {id}")
                             except Exception as e:
-                                logger.error(f"❌ Error parsing encoding for student {id}: {e}")
+                                logger.error(f"  Error parsing encoding for student {id}: {e}")
                     else:
-                        logger.warning(f"⚠️ No students with face encodings found in section {section_id}")
+                        logger.warning(f"  No students with face encodings found in section {section_id}")
                 else:
-                    logger.warning("⚠️ No section_id found in attendance_sessions for current session")
+                    logger.warning("  No section_id found in attendance_sessions for current session")
                     
                     # Fallback: Load a limited number of all students (for testing)
-                    logger.warning("🔄 Loading limited sample of all students (fallback mode)")
+                    logger.warning("  Loading limited sample of all students (fallback mode)")
                     cursor.execute("""
                         SELECT student_id, first_name, last_name, face_encoding 
                         FROM students 
@@ -1289,14 +1335,16 @@ def load_known_faces_from_db():
                                 known_face_ids.append(id)
                                 known_face_types.append('student')
                                 loaded_count += 1
-                                logger.info(f"✅ Loaded student {full_name} ({id}) [FALLBACK]")
+                                if DEBUG_MODE: 
+                                    logger.debug(f"   Loaded student {full_name} ({id}) [FALLBACK]")
                             else:
-                                logger.warning(f"⚠️ Invalid encoding for student {id}")
+                                logger.warning(f"  Invalid encoding for student {id}")
                         except Exception as e:
-                            logger.error(f"❌ Error parsing encoding for student {id}: {e}")
+                            logger.error(f"  Error parsing encoding for student {id}: {e}")
             else:
                 # No session at all - this is expected on startup
-                logger.info("ℹ️ No active session - faces will be loaded when session starts")
+                if DEBUG_MODE: 
+                    logger.debug("  No active session - faces will be loaded when session starts")
                 return
         
         # Also load faculty faces (always load these)
@@ -1321,47 +1369,58 @@ def load_known_faces_from_db():
                     known_face_ids.append(id)
                     known_face_types.append('faculty')
                     faculty_count += 1
-                    logger.info(f"👤 Loaded faculty {full_name} ({id})")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Loaded faculty {full_name} ({id})")
                 else:
-                    logger.warning(f"⚠️ Invalid encoding for faculty {id}")
+                    logger.warning(f"  Invalid encoding for faculty {id}")
             except Exception as e:
-                logger.error(f"❌ Error parsing encoding for faculty {id}: {e}")
+                logger.error(f"  Error parsing encoding for faculty {id}: {e}")
         
         cursor.close()
         conn.close()
         
-        logger.info(f"📊 Loaded {loaded_count} student faces and {faculty_count} faculty faces")
-        logger.info(f"📊 Total faces in memory: {len(known_face_encodings)}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Loaded {loaded_count} student faces and {faculty_count} faculty faces")
+        if DEBUG_MODE: 
+            logger.debug(f"  Total faces in memory: {len(known_face_encodings)}")
         
         # If no faces loaded at all, log warning
         if len(known_face_encodings) == 0:
             logger.warning("🚨 No faces loaded from database! Face recognition will not work.")
             
     except Exception as e:
-        logger.error(f"❌ Failed to load faces from database: {e}")
+        logger.error(f"  Failed to load faces from database: {e}")
         import traceback
         logger.error(traceback.format_exc())
 
 
 def debug_face_loading():
     """Debug function to check face loading status"""
-    logger.info(f"=== FACE LOADING DEBUG ===")
-    logger.info(f"Total known faces: {len(known_face_names)}")
-    logger.info(f"Known face IDs: {known_face_ids}")
-    logger.info(f"Known face names: {known_face_names}")
-    logger.info(f"Known face types: {known_face_types}")
+    if DEBUG_MODE: 
+        logger.debug(f"=== FACE LOADING DEBUG ===")
+    if DEBUG_MODE: 
+        logger.debug(f"Total known faces: {len(known_face_names)}")
+    if DEBUG_MODE: 
+        logger.debug(f"Known face IDs: {known_face_ids}")
+    if DEBUG_MODE: 
+        logger.debug(f"Known face names: {known_face_names}")
+    if DEBUG_MODE: 
+        logger.debug(f"Known face types: {known_face_types}")
     
     # Get current section info
     current_section_students = get_current_section_student_ids()
-    logger.info(f"Current section students: {current_section_students}")
+    if DEBUG_MODE: 
+        logger.debug(f"Current section students: {current_section_students}")
     
     # Check if KNOWN_FACE_ENCODINGS_ARRAY is built
     if KNOWN_FACE_ENCODINGS_ARRAY is not None:
-        logger.info(f"KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+        if DEBUG_MODE: 
+            logger.debug(f"KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
     else:
         logger.warning("KNOWN_FACE_ENCODINGS_ARRAY is None!")
     
-    logger.info(f"=== END DEBUG ===")
+    if DEBUG_MODE: 
+        logger.debug(f"=== END DEBUG ===")
 
 def load_known_faculties_from_db():
     global known_face_encodings, known_face_names, known_face_ids, known_face_types
@@ -1381,7 +1440,8 @@ def load_known_faculties_from_db():
                     known_face_names.append(full_name)
                     known_face_ids.append(id)
                     known_face_types.append('faculty')
-                    logger.info(f"Loaded faculty {full_name} ({id})")
+                    if DEBUG_MODE: 
+                        logger.debug(f"Loaded faculty {full_name} ({id})")
                 else:
                     logger.warning(f"Invalid encoding for faculty {id}")
             except Exception as e:
@@ -1393,27 +1453,35 @@ def load_known_faculties_from_db():
 
 def debug_face_loading_status():
     """Debug function to check face loading status"""
-    logger.info("=== FACE LOADING DEBUG ===")
-    logger.info(f"Total known faces: {len(known_face_names)}")
+    if DEBUG_MODE: 
+        logger.debug("=== FACE LOADING DEBUG ===")
+    if DEBUG_MODE: 
+        logger.debug(f"Total known faces: {len(known_face_names)}")
     
     if known_face_names:
-        logger.info(f"Loaded face IDs: {known_face_ids}")
-        logger.info(f"Loaded face names: {known_face_names}")
-        logger.info(f"Loaded face types: {known_face_types}")
+        if DEBUG_MODE: 
+            logger.debug(f"Loaded face IDs: {known_face_ids}")
+        if DEBUG_MODE: 
+            logger.debug(f"Loaded face names: {known_face_names}")
+        if DEBUG_MODE: 
+            logger.debug(f"Loaded face types: {known_face_types}")
     else:
         logger.warning("No faces loaded!")
     
     # Get current section info
     current_section_students = get_current_section_student_ids()
-    logger.info(f"Current section has {len(current_section_students)} students: {current_section_students}")
+    if DEBUG_MODE: 
+        logger.debug(f"Current section has {len(current_section_students)} students: {current_section_students}")
     
     # Check if KNOWN_FACE_ENCODINGS_ARRAY is built
     if KNOWN_FACE_ENCODINGS_ARRAY is not None:
-        logger.info(f"KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+        if DEBUG_MODE: 
+            logger.debug(f"KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
     else:
         logger.warning("KNOWN_FACE_ENCODINGS_ARRAY is None!")
     
-    logger.info("=== END DEBUG ===")
+    if DEBUG_MODE: 
+        logger.debug("=== END DEBUG ===")
 
 
 @app.route('/api/debug_face_status', methods=['GET'])
@@ -1469,7 +1537,8 @@ def reload_faces_for_current_session():
     # Debug logging
     debug_face_loading_status()
     
-    logger.info(f"🔄 Reloaded faces for current session. Total: {len(known_face_names)} faces")
+    if DEBUG_MODE: 
+        logger.debug(f"  Reloaded faces for current session. Total: {len(known_face_names)} faces")
 
 @app.route('/api/debug_loaded_faces', methods=['GET'])
 def debug_loaded_faces():
@@ -1485,11 +1554,13 @@ def debug_loaded_faces():
 
 def initialize_faces_for_session():
     """Initialize faces after session is created"""
-    logger.info("🔄 Initializing faces for new session...")
+    if DEBUG_MODE: 
+        logger.debug("  Initializing faces for new session...")
     load_known_faces_from_db()
     load_known_faculties_from_db()
     rebuild_known_faces_array()
-    logger.info(f"✅ Loaded {len(known_face_names)} faces for session")
+    if DEBUG_MODE: 
+        logger.debug(f"   Loaded {len(known_face_names)} faces for session")
 
 # =========================
 # OPTIMIZED CAMERA CAPTURE
@@ -1518,8 +1589,8 @@ def open_stream(rtsp_url=None):
                 cap = None
             
             time.sleep(0.3)
-                    
-            logger.info(f"Connecting to RTSP: {rtsp_url}")
+            if DEBUG_MODE:         
+                logger.debug(f"Connecting to RTSP: {rtsp_url}")
             
             cap = cv2.VideoCapture(rtsp_url)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)  
@@ -1537,7 +1608,8 @@ def open_stream(rtsp_url=None):
                         camera_available = True
                         use_dummy_feed = False
                         current_rtsp_url = rtsp_url
-                        logger.info(f"✅ Camera connected: 640x480 @ 30 FPS")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Camera connected: 640x480 @ 30 FPS")
                         return True
                 time.sleep(0.1)
             
@@ -1546,7 +1618,7 @@ def open_stream(rtsp_url=None):
             raise Exception("Camera connection timeout")
                 
     except Exception as e:
-        logger.warning(f"❌ Camera connection failed: {e}")
+        logger.warning(f"  Camera connection failed: {e}")
         camera_available = False
         use_dummy_feed = True
         if cap is not None:
@@ -1587,7 +1659,8 @@ def grabber():
                 if current_rtsp_url:
                     def attempt_recovery():
                         time.sleep(2.0)
-                        logger.info("Attempting camera reconnection...")
+                        if DEBUG_MODE: 
+                            logger.debug("Attempting camera reconnection...")
                         open_stream(current_rtsp_url)
                     
                     recovery_thread = threading.Thread(target=attempt_recovery, daemon=True)
@@ -1623,7 +1696,8 @@ def periodic_attendance_save():
                     writer.writerow(['ID', 'Name', 'DateTime', 'Status'])
                     for sid, data in attendance.items():
                         writer.writerow([sid, data['name'], data['time'], 'present'])
-                logger.info(f"Periodic backup: Saved {len(attendance)} attendance records to CSV")
+                if DEBUG_MODE:         
+                    logger.debug(f"Periodic backup: Saved {len(attendance)} attendance records to CSV")
         except Exception as e:
             logger.error(f"Periodic attendance save failed: {e}")
         
@@ -1650,14 +1724,15 @@ def mark_attendance(name, id, type, session_id=None):
             session_data = cursor.fetchone()
             if session_data and session_data.get('threshold_seconds_total'):
                 session_threshold_seconds = session_data['threshold_seconds_total']
-                logger.info(f"🎯 Loaded threshold from database: {session_threshold_seconds} seconds")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Loaded threshold from database: {session_threshold_seconds} seconds")
             else:
-                logger.warning(f"⚠️ No threshold found for session {current_session_id}, using default 900s")
+                logger.warning(f"  No threshold found for session {current_session_id}, using default 900s")
                 session_threshold_seconds = 900
             cursor.close()
             conn.close()
         except Exception as e:
-            logger.warning(f"⚠️ Could not load threshold from database: {e}")
+            logger.warning(f"  Could not load threshold from database: {e}")
             session_threshold_seconds = 900
     
     if type not in ['student', 'faculty']:
@@ -1670,7 +1745,7 @@ def mark_attendance(name, id, type, session_id=None):
     if not session_id:
         session_id = current_session_id
     
-    # 🎯 Update presence tracker (ALWAYS update this regardless of manual status)
+    #   Update presence tracker (ALWAYS update this regardless of manual status)
     if type == 'student' and session_id:
         student_presence_tracker[id] = {
             'last_seen': current_time,
@@ -1678,9 +1753,10 @@ def mark_attendance(name, id, type, session_id=None):
             'name': name,
             'present': True
         }
-        logger.info(f"📍 PRESENCE TRACKER UPDATED: {name} is currently present")
+        if DEBUG_MODE: 
+            logger.debug(f"  PRESENCE TRACKER UPDATED: {name} is currently present")
     
-    # ✅ Get section_id AND SUBJECT INFO for this session
+    #   Get section_id AND SUBJECT INFO for this session
     section_id = None
     subject_code = None
     subject_name = None
@@ -1701,13 +1777,14 @@ def mark_attendance(name, id, type, session_id=None):
             subject_code = session_result.get('subject_code')
             subject_name = session_result.get('subject_name')
             room = session_result.get('room')
-            logger.info(f"🔗 Found session info - Section: {section_id}, Subject: {subject_code}")
+            if DEBUG_MODE: 
+                logger.debug(f"🔗 Found session info - Section: {section_id}, Subject: {subject_code}")
         cursor.close()
         conn.close()
     except Exception as e:
         logger.error(f"Error getting session info: {e}")
     
-    # 🎯 CRITICAL FIX: BETTER Manual Status Detection
+    #     BETTER Manual Status Detection
     is_manual_status = False
     original_status = None
     existing_record_id = None
@@ -1718,7 +1795,7 @@ def mark_attendance(name, id, type, session_id=None):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # 🎯 Get the MOST RECENT attendance record for this student in this session
+        #   Get the MOST RECENT attendance record for this student in this session
         cursor.execute("""
             SELECT id, status, timestamp, session_id, remarks FROM attendance 
             WHERE student_id = %s AND session_id = %s
@@ -1732,7 +1809,7 @@ def mark_attendance(name, id, type, session_id=None):
             existing_session_id = existing_record.get('session_id')
             existing_remarks = existing_record.get('remarks', '')
             
-            # 🎯 CONSISTENT MANUAL STATUS DETECTION (SAME AS ALL OTHER ENDPOINTS)
+            #   CONSISTENT MANUAL STATUS DETECTION (SAME AS ALL OTHER ENDPOINTS)
             manual_excuse_sessions = ['manual_excuse']  # Only for excused students
             manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
             manual_statuses = ['excused']  # Only truly manual statuses
@@ -1750,9 +1827,11 @@ def mark_attendance(name, id, type, session_id=None):
             )
             
             if is_manual_status:
-                logger.info(f"🔒 MANUAL STATUS DETECTED: {name} has manual status '{original_status}' (session: {existing_session_id}, remarks: {existing_remarks}) - PRESERVING")
+                if DEBUG_MODE: 
+                    logger.debug(f"  MANUAL STATUS DETECTED: {name} has manual status '{original_status}' (session: {existing_session_id}, remarks: {existing_remarks}) - PRESERVING")
             else:
-                logger.info(f"🔄 AUTO STATUS: {name} has status '{original_status}' (session: {existing_session_id}) - CAN BE UPDATED")
+                if DEBUG_MODE: 
+                    logger.debug(f"  AUTO STATUS: {name} has status '{original_status}' (session: {existing_session_id}) - CAN BE UPDATED")
             
         cursor.close()
         conn.close()
@@ -1772,8 +1851,8 @@ def mark_attendance(name, id, type, session_id=None):
                 if not file_exists:
                     writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room', 'MissingDuration', 'IsReturning', 'RestoredStatus', 'WasMissing', 'ManualStatus'])
                 writer.writerow([id, name, time_str, type, original_status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A', 0, False, 'N/A', False, True])
-            
-            logger.info(f"📄 CSV saved: {name} - MANUAL STATUS PRESERVED: {original_status}")
+            if DEBUG_MODE: 
+                logger.debug(f"📄 CSV saved: {name} - MANUAL STATUS PRESERVED: {original_status}")
         except Exception as e:
             logger.error(f"Failed to save attendance to CSV: {e}")
         
@@ -1787,7 +1866,8 @@ def mark_attendance(name, id, type, session_id=None):
                     SET timestamp = %s
                     WHERE id = %s
                 """, (time_str, existing_record_id))
-                logger.info(f"🔒 Updated timestamp only for {name} - Status '{original_status}' preserved")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Updated timestamp only for {name} - Status '{original_status}' preserved")
             
             conn.commit()
             cursor.close()
@@ -1796,10 +1876,10 @@ def mark_attendance(name, id, type, session_id=None):
         except Exception as e:
             logger.error(f"Failed to update timestamp in database: {e}")
         
-        # 🎯 CRITICAL: EARLY RETURN - don't process auto-detection logic
+        #   CRITICAL: EARLY RETURN - don't process auto-detection logic
         return
 
-    # 🎯 STANDARD STATUS DETERMINATION (only runs if NOT manual status)
+    #   STANDARD STATUS DETERMINATION (only runs if NOT manual status)
     # Continue with your existing logic for non-manual statuses...
     missing_duration = 0
     is_returning_from_missing = False
@@ -1810,7 +1890,7 @@ def mark_attendance(name, id, type, session_id=None):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # 🎯 CHECK IF STUDENT IS CURRENTLY MISSING
+        #   CHECK IF STUDENT IS CURRENTLY MISSING
         cursor.execute("""
             SELECT id, status FROM attendance 
             WHERE student_id = %s AND session_id = %s AND status = 'missing'
@@ -1820,9 +1900,10 @@ def mark_attendance(name, id, type, session_id=None):
         missing_record = cursor.fetchone()
         if missing_record:
             is_currently_missing = True
-            logger.info(f"🎯 Student {name} is CURRENTLY MISSING")
+            if DEBUG_MODE: 
+                logger.debug(f"  Student {name} is CURRENTLY MISSING")
         
-        # 🎯 Check if student is currently in missing_periods
+        #   Check if student is currently in missing_periods
         cursor.execute("""
             SELECT id, missing_start, original_status, TIMESTAMPDIFF(SECOND, missing_start, NOW()) as missing_seconds
             FROM missing_periods 
@@ -1836,31 +1917,33 @@ def mark_attendance(name, id, type, session_id=None):
             is_returning_from_missing = True
             missing_duration = active_missing_period['missing_seconds'] or 0
             restored_original_status = active_missing_period['original_status']
+            if DEBUG_MODE: 
+                logger.debug(f"  Student {name} is RETURNING from missing - was missing for {missing_duration} seconds, original status: {restored_original_status}")
             
-            logger.info(f"🔄 Student {name} is RETURNING from missing - was missing for {missing_duration} seconds, original status: {restored_original_status}")
-            
-            # 🎯 MARK THE MISSING PERIOD AS RETURNED
+            #   MARK THE MISSING PERIOD AS RETURNED
             cursor.execute("""
                 UPDATE missing_periods 
                 SET missing_end = NOW(), duration_seconds = %s, returned = TRUE
                 WHERE id = %s
             """, (missing_duration, active_missing_period['id']))
-            
-            logger.info(f"✅ Marked missing period as returned for {name}")
+            if DEBUG_MODE: 
+                logger.debug(f"  Marked missing period as returned for {name}")
         
         cursor.close()
         conn.close()
     except Exception as e:
         logger.error(f"Error checking missing status: {e}")
     
-    # 🎯 STATUS DETERMINATION LOGIC (your existing code continues here)
+    #   STATUS DETERMINATION LOGIC (your existing code continues here)
     if is_currently_missing:
         if is_returning_from_missing and restored_original_status in ['present', 'late']:
             status = restored_original_status
-            logger.info(f"🔄 RESTORING ORIGINAL STATUS (from missing): {name} -> {status}")
+            if DEBUG_MODE: 
+                logger.debug(f"  RESTORING ORIGINAL STATUS (from missing): {name} -> {status}")
         elif original_status in ['present', 'late']:
             status = original_status
-            logger.info(f"🔄 RESTORING ORIGINAL STATUS (fallback from missing): {name} -> {status}")
+            if DEBUG_MODE: 
+                logger.debug(f"  RESTORING ORIGINAL STATUS (fallback from missing): {name} -> {status}")
         else:
             status = 'present'
             if session_start_time:
@@ -1871,17 +1954,21 @@ def mark_attendance(name, id, type, session_id=None):
                 
                 if time_diff_seconds > threshold_seconds:
                     status = 'late'
-                    logger.info(f"⏰ LATE (after missing): {name} arrived {time_diff_seconds:.1f}s after start")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  LATE (after missing): {name} arrived {time_diff_seconds:.1f}s after start")
                 else:
-                    logger.info(f"✅ PRESENT (after missing): {name} arrived on time")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  PRESENT (after missing): {name} arrived on time")
     
     elif is_returning_from_missing and restored_original_status in ['present', 'late']:
         status = restored_original_status
-        logger.info(f"🔄 RESTORING ORIGINAL STATUS: {name} returning from missing -> {status}")
+        if DEBUG_MODE: 
+            logger.debug(f"  RESTORING ORIGINAL STATUS: {name} returning from missing -> {status}")
         
     elif is_returning_from_missing and original_status in ['present', 'late']:
         status = original_status
-        logger.info(f"🔄 RESTORING ORIGINAL STATUS (fallback): {name} returning from missing -> {status}")
+        if DEBUG_MODE: 
+            logger.debug(f"  RESTORING ORIGINAL STATUS (fallback): {name} returning from missing -> {status}")
         
     else:
         # New detection or no previous status - calculate based on arrival time
@@ -1894,9 +1981,11 @@ def mark_attendance(name, id, type, session_id=None):
             
             if time_diff_seconds > threshold_seconds:
                 status = 'late'
-                logger.info(f"⏰ LATE: {name} arrived {time_diff_seconds:.1f}s after start")
+                if DEBUG_MODE: 
+                    logger.debug(f"  LATE: {name} arrived {time_diff_seconds:.1f}s after start")
             else:
-                logger.info(f"✅ PRESENT: {name} arrived on time")
+                if DEBUG_MODE: 
+                    logger.debug(f"  PRESENT: {name} arrived on time")
     
     # Save to memory
     attendance[id] = {
@@ -1906,10 +1995,11 @@ def mark_attendance(name, id, type, session_id=None):
         "status": status
     }
     
-    # ✅ Update student status for frontend
+    #   Update student status for frontend
     if type == 'student':
         student_status[id] = status
-        logger.info(f"🎯 STUDENT STATUS: {name} -> {status}")
+        if DEBUG_MODE: 
+            logger.debug(f"  STUDENT STATUS: {name} -> {status}")
     
     # Save to CSV
     try:
@@ -1921,12 +2011,12 @@ def mark_attendance(name, id, type, session_id=None):
             if not file_exists:
                 writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room', 'MissingDuration', 'IsReturning', 'RestoredStatus', 'WasMissing', 'ManualStatus'])
             writer.writerow([id, name, time_str, type, status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A', missing_duration, is_returning_from_missing, restored_original_status or 'N/A', is_currently_missing, False])
-        
-        logger.info(f"📄 CSV saved: {name} ({id}) - {type} - {status} - Missing: {missing_duration}s - Returning: {is_returning_from_missing} - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
+        if DEBUG_MODE: 
+            logger.debug(f"📄 CSV saved: {name} ({id}) - {type} - {status} - Missing: {missing_duration}s - Returning: {is_returning_from_missing} - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
     
-    # 🎯 Update database with proper status handling
+    #   Update database with proper status handling
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -1953,17 +2043,19 @@ def mark_attendance(name, id, type, session_id=None):
                 
                 time_since_update = (current_time - existing_timestamp).total_seconds()
                 
-                # 🎯 CRITICAL: Only update if status changed OR student is returning from missing OR was missing
+                #   CRITICAL: Only update if status changed OR student is returning from missing OR was missing
                 if existing_db_status != status or is_returning_from_missing or is_currently_missing:
-                    # 🎯 Update with missing_duration and proper status
+                    #   Update with missing_duration and proper status
                     cursor.execute("""
                         UPDATE attendance 
                         SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s, missing_duration = %s
                         WHERE id = %s
                     """, (status, time_str, name, subject_code, subject_name, room, missing_duration, existing_id))
-                    logger.info(f"🔄 Updated attendance: {name} - {status} (was {existing_db_status}) - Missing: {missing_duration}s - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Updated attendance: {name} - {status} (was {existing_db_status}) - Missing: {missing_duration}s - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
                 else:
-                    logger.info(f"⏭️ Skipping update for {name} - status unchanged: {status}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Skipping update for {name} - status unchanged: {status}")
             else:
                 # No record exists - INSERT new one
                 if section_id:
@@ -1978,7 +2070,8 @@ def mark_attendance(name, id, type, session_id=None):
                         (student_id, name, timestamp, person_type, status, session_id, subject_code, subject_name, room, missing_duration)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (id, name, time_str, 'student', status, session_id, subject_code, subject_name, room, missing_duration))
-                logger.info(f"📝 Created NEW attendance record: {name} - {status}")
+                if DEBUG_MODE:     
+                    logger.debug(f"📝 Created NEW attendance record: {name} - {status}")
         else:  # faculty
             # Faculty logic remains the same
             cursor.execute("""
@@ -2004,8 +2097,8 @@ def mark_attendance(name, id, type, session_id=None):
         conn.commit()
         cursor.close()
         conn.close()
-        
-        logger.info(f"💾 Database UPDATED: {name} ({id}) - {status} - Missing Duration: {missing_duration}s - Returning: {is_returning_from_missing} - Restored Status: {restored_original_status} - Was Missing: {is_currently_missing}")
+        if DEBUG_MODE: 
+            logger.debug(f"💾 Database UPDATED: {name} ({id}) - {status} - Missing Duration: {missing_duration}s - Returning: {is_returning_from_missing} - Restored Status: {restored_original_status} - Was Missing: {is_currently_missing}")
         
     except Exception as e:
         logger.error(f"Failed to update attendance in database: {e}")
@@ -2022,8 +2115,8 @@ def save_attendance_to_csv(person_id, name, timestamp, person_type):
             if not file_exists:
                 writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status'])
             writer.writerow([person_id, name, timestamp, person_type, 'present'])
-        
-        logger.info(f"Attendance saved to CSV: {name} ({person_id}) - {person_type}")
+        if DEBUG_MODE: 
+            logger.debug(f"Attendance saved to CSV: {name} ({person_id}) - {person_type}")
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
 
@@ -2038,13 +2131,13 @@ def detect_bodies(frame):
         return []
     
     try:
-        # 🚀 Resize for faster detection (USES YOLO_IMG_SIZE)
+        #   Resize for faster detection (USES YOLO_IMG_SIZE)
         h, w = frame.shape[:2]
-        scale = YOLO_IMG_SIZE / max(h, w)  # 🚀 USES CONFIG
+        scale = YOLO_IMG_SIZE / max(h, w)  #   USES CONFIG
         new_w, new_h = int(w * scale), int(h * scale)
         resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
         
-        # 🚀 Run detection with FP16 (USES YOLO_IMG_SIZE)
+        #   Run detection with FP16 (USES YOLO_IMG_SIZE)
         if DEVICE == "cuda":
             results = body_detector(
                 resized,
@@ -2052,7 +2145,7 @@ def detect_bodies(frame):
                 verbose=False,
                 conf=0.3,
                 half=True,
-                imgsz=YOLO_IMG_SIZE  # 🚀 USES CONFIG
+                imgsz=YOLO_IMG_SIZE  #   USES CONFIG
             )
         else:
             results = body_detector(resized, classes=[0], verbose=False, conf=0.3)
@@ -2070,8 +2163,8 @@ def detect_bodies(frame):
                     'box': [x1, y1, x2, y2],
                     'confidence': conf
                 })
-        
-        logger.debug(f"Body detector found {len(detections)} people")
+        if DEBUG_MODE: 
+            logger.debug(f"Body detector found {len(detections)} people")
         return detections
     except Exception as e:
         logger.error(f"Body detection error: {e}")
@@ -2180,7 +2273,8 @@ def cleanup_locked_tracks(current_frame, lock_timeout_frames):
     for id, lock_info in locked_tracks.items():
         if current_frame - lock_info['last_seen'] > lock_timeout_frames * 2:
             to_remove.append(id)
-            logger.info(f"Cleaning up locked track for {id}")
+            if DEBUG_MODE: 
+                logger.debug(f"Cleaning up locked track for {id}")
     
     for id in to_remove:
         del locked_tracks[id]
@@ -2193,7 +2287,8 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.7, is_loc
 
         # INCREASED MAX RECOGNITION DISTANCE
         if distance > MAX_RECOGNITION_DISTANCE * 1.5:  # 50% more range
-            logger.info(f"Face too far for recognition: {distance:.1f}m")
+            if DEBUG_MODE: 
+                logger.debug(f"Face too far for recognition: {distance:.1f}m")
             return "Unknown", None, float('inf'), distance, 0.0, None
 
         # IMPROVED IMAGE ENHANCEMENT for better recognition at distance
@@ -2211,7 +2306,8 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.7, is_loc
 
         start_time = time.time()
         faces = face_analysis.get(enhanced)
-        logger.info(f"Face analysis inference time: {time.time() - start_time:.4f} seconds")
+        if DEBUG_MODE: 
+            logger.debug(f"Face analysis inference time: {time.time() - start_time:.4f} seconds")
         if not faces:
             return "Unknown", None, float('inf'), distance, 0.0, None
 
@@ -2274,7 +2370,8 @@ def detect_liveness_cctv(face_image, liveness_threshold):
         if fm < adjusted_threshold:
             logger.warning(f"Liveness detection failed: variance {fm} < threshold {adjusted_threshold}")
             return False
-        logger.info(f"Liveness detection passed: variance {fm}")
+        if DEBUG_MODE: 
+            logger.debug(f"Liveness detection passed: variance {fm}")
         return True
     except Exception as e:
         logger.error(f"Liveness detection error: {e}")
@@ -2312,21 +2409,22 @@ def calculate_late_status(attendance_time, session_start, threshold_minutes):
 def refresh_with_detections(frame, rgb, frame_idx):
     """
     🛡️ ULTRA STRONG ANTI-SWAPPING: Prevents identity swapping even during overlaps
-    ✅ FIXED: ByteTrack coordinate extraction - was treating bbox as track_id
-    ✅ ADDED: Force field protection for locked tracks with overlapping detection
-    ✅ ADDED: Body shape signature verification to prevent swapping
-    ✅ ADDED: Movement prediction and path consistency validation
-    ✅ ADDED: Temporal consistency with frame history
-    ✅ PRESERVED: Fast recognition and instant locking system
-    ✅ UPDATED: Filters recognition to only current section students
-    ✅ ENHANCED: Improved tracking for half-bodies and far-away persons
-    ✅ FIXED: Proper body signature initialization to prevent 'min_width' error
+      FIXED: ByteTrack coordinate extraction - was treating bbox as track_id
+      ADDED: Force field protection for locked tracks with overlapping detection
+      ADDED: Body shape signature verification to prevent swapping
+      ADDED: Movement prediction and path consistency validation
+      ADDED: Temporal consistency with frame history
+      PRESERVED: Fast recognition and instant locking system
+      UPDATED: Filters recognition to only current section students
+      ENHANCED: Improved tracking for half-bodies and far-away persons
+      FIXED: Proper body signature initialization to prevent 'min_width' error
     """
-    logger.debug(f"🔍 refresh_with_detections CALLED - Frame {frame_idx}")
+    if DEBUG_MODE: 
+        logger.debug(f"  refresh_with_detections CALLED - Frame {frame_idx}")
     global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
     global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
     
-    # 🆕 ANTI-SWAP: Initialize tracking history for movement prediction
+    #   ANTI-SWAP: Initialize tracking history for movement prediction
     global locked_track_history, locked_track_predictions, locked_track_signatures
     
     if detectionStopped:
@@ -2353,7 +2451,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
         unlocked_tracks.sort(key=lambda x: x.get('confidence', 0), reverse=True)
         unlocked_tracks = unlocked_tracks[:MAX_UNLOCKED_TRACKS]
         tracks[:] = unlocked_tracks
-        logger.info(f"Track cleanup: {locked_track_count} locked + {len(unlocked_tracks)} unlocked")
+        if DEBUG_MODE: 
+            logger.debug(f"Track cleanup: {locked_track_count} locked + {len(unlocked_tracks)} unlocked")
     
     # Cleanup stale pending confirmations
     cleanup_pending_confirmations(frame_idx, timeout_frames=15)
@@ -2378,7 +2477,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             x1, y1, x2, y2 = body_box
             conf = body_det['confidence']
         
-            # 🆕 ENHANCED: Allow half-bodies (reduced from 50px to 30px width)
+            #   ENHANCED: Allow half-bodies (reduced from 50px to 30px width)
             if (x2 - x1) < 30 or (y2 - y1) < 80:
                 continue
             
@@ -2417,7 +2516,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 # Extract ReID features
                                 reid_features = extract_reid_features(frame, body_box)
                                 
-                                # 🆕 ANTI-SWAP: Calculate body shape signature
+                                #   ANTI-SWAP: Calculate body shape signature
                                 body_width = x2 - x1
                                 body_height = y2 - y1
                                 aspect_ratio = body_width / body_height if body_height > 0 else 0
@@ -2440,7 +2539,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 continue
                     else:
                         # No tracker_ids - fallback to index-based IDs
-                        logger.warning("⚠️ ByteTrack returned detections without tracker_ids")
+                        logger.warning("  ByteTrack returned detections without tracker_ids")
                         for idx in range(len(xyxy)):
                             x1, y1, x2, y2 = xyxy[idx]
                             confidence = float(confidences[idx]) if idx < len(confidences) else 0.8
@@ -2465,11 +2564,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                     'area': body_area
                                 }
                             })
-            
-                logger.debug(f"✅ ByteTrack: {len(body_tracks)} body tracks")
+                if DEBUG_MODE: 
+                    logger.debug(f"  ByteTrack: {len(body_tracks)} body tracks")
             
             except Exception as e:
-                logger.error(f"❌ ByteTrack failed: {e}")
+                logger.error(f"  ByteTrack failed: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
                 # Fallback with ReID features
@@ -2494,13 +2593,14 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             'area': body_area
                         }
                     })
-                logger.info(f"✅ Fallback: {len(body_tracks)} body tracks")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Fallback: {len(body_tracks)} body tracks")
     
     # ============================================
     # 🛡️ ULTRA STRONG ANTI-SWAPPING SYSTEM
     # ============================================
     
-    # 🆕 1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
+    #   1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
     for person_id, lock_info in locked_tracks.items():
         current_body_box = lock_info.get('body_box')
         if current_body_box:
@@ -2520,7 +2620,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             if len(locked_track_history[person_id]) > 15:
                 locked_track_history[person_id].pop(0)
             
-            # 🆕 IMPROVED PREDICTION for far-away tracking
+            #   IMPROVED PREDICTION for far-away tracking
             if len(locked_track_history[person_id]) >= 3:
                 last_positions = locked_track_history[person_id][-3:]
                 dx = 0
@@ -2569,7 +2669,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'confidence': min(0.9, len(locked_track_history[person_id]) / 15.0)
                 }
             
-            # 🆕 2. UPDATE BODY SHAPE SIGNATURE for this locked track
+            #   2. UPDATE BODY SHAPE SIGNATURE for this locked track
             body_width = current_body_box[2] - current_body_box[0]
             body_height = current_body_box[3] - current_body_box[1]
             aspect_ratio = body_width / body_height if body_height > 0 else 0
@@ -2615,7 +2715,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 sig['min_height'] = min(sig['min_height'], body_height)
                 sig['max_height'] = max(sig['max_height'], body_height)
     
-    # 🆕 3. CREATE FORCE FIELD PROTECTION ZONES for locked tracks
+    #   3. CREATE FORCE FIELD PROTECTION ZONES for locked tracks
     locked_track_protection_zones = {}
     
     for person_id, lock_info in locked_tracks.items():
@@ -2702,14 +2802,15 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     if body_box:
                         bx1, by1, bx2, by2 = body_box
                         if (bx1 <= face_center_x <= bx2 and by1 <= face_center_y <= by2):
-                            logger.info(f"Missing locked student detected: {lock_info.get('name')}")
+                            if DEBUG_MODE: 
+                                logger.debug(f"Missing locked student detected: {lock_info.get('name')}")
                             mark_attendance(lock_info.get('name'), person_id, lock_info.get('type', 'student'))
                             break
                 except Exception as e:
                     continue
     
     # ============================================
-    # 🎯 PROCESS FACE DETECTIONS WITH ANTI-SWAPPING
+    #   PROCESS FACE DETECTIONS WITH ANTI-SWAPPING
     # ============================================
     
     # Step 4: Process face detections with ANTI-SWAPPING protection
@@ -2780,7 +2881,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                     break
                         
                         if should_reject_face:
-                            logger.debug(f"🚫 Rejecting face in {rejection_reason}")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Rejecting face in {rejection_reason}")
                             continue
                         
                         # Original locked face check
@@ -2817,11 +2919,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
         except Exception as e:
             logger.error(f"Error processing face detection (idx: {face_idx}): {e}")
             continue
-    
-    logger.debug(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces after anti-swap filtering") 
+    if DEBUG_MODE: 
+        logger.debug(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces after anti-swap filtering") 
     
     # ============================================
-    # 🎯 ULTRA STRONG ReID MATCHING FOR LOCKED TRACKS
+    #   ULTRA STRONG ReID MATCHING FOR LOCKED TRACKS
     # ============================================
     
     new_tracks = []
@@ -2837,7 +2939,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             best_match_idx = None
             best_reid_distance = 0.15
             
-            # 🆕 Get body signature for this locked track
+            #   Get body signature for this locked track
             body_signature = locked_track_signatures.get(person_id)
             
             # Try ReID matching with multi-stage validation
@@ -2883,7 +2985,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         body_signature['min_width'] > 0 and body_signature['max_width'] > 0):
                         if current_sig['width'] < body_signature['min_width'] * 0.7 or \
                            current_sig['width'] > body_signature['max_width'] * 1.3:
-                            logger.debug(f"❌ Rejected: width out of range ({current_sig['width']} vs [{body_signature['min_width']}-{body_signature['max_width']}])")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Rejected: width out of range ({current_sig['width']} vs [{body_signature['min_width']}-{body_signature['max_width']}])")
                             continue
                     
                     # 🛡️ FIX: Check if min_height/max_height exist
@@ -2891,7 +2994,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         body_signature['min_height'] > 0 and body_signature['max_height'] > 0):
                         if current_sig['height'] < body_signature['min_height'] * 0.7 or \
                            current_sig['height'] > body_signature['max_height'] * 1.3:
-                            logger.debug(f"❌ Rejected: height out of range ({current_sig['height']} vs [{body_signature['min_height']}-{body_signature['max_height']}])")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Rejected: height out of range ({current_sig['height']} vs [{body_signature['min_height']}-{body_signature['max_height']}])")
                             continue
                 
                 # 🛡️ STAGE 4: TEMPORAL CONSISTENCY
@@ -2922,7 +3026,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             movement_factor = 2.0 if distance_from_center > 300 else 1.5
                             if (abs(actual_movement_x) > abs(avg_movement_x) * movement_factor or 
                                 abs(actual_movement_y) > abs(avg_movement_y) * movement_factor):
-                                logger.debug(f"❌ Rejected: movement too abrupt")
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  Rejected: movement too abrupt")
                                 continue
                 
                 # 🛡️ STAGE 5: OVERLAP VALIDATION
@@ -2930,13 +3035,15 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     overlap = iou(tuple(body_track['body_box']), last_body_box)
                     min_overlap = 0.15 if distance_from_center > 300 else 0.25
                     if overlap < min_overlap:
-                        logger.debug(f"❌ Rejected: insufficient overlap ({overlap:.2f})")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Rejected: insufficient overlap ({overlap:.2f})")
                         continue        
             
                 # All validations passed
                 best_reid_distance = reid_dist
                 best_match_idx = idx
-                logger.debug(f"✅ All checks passed: ReID={reid_dist:.3f}, Movement={movement:.1f}px")
+                if DEBUG_MODE: 
+                    logger.debug(f"  All checks passed: ReID={reid_dist:.3f}, Movement={movement:.1f}px")
     
             if best_match_idx is not None:
                 # Found matching body
@@ -2957,12 +3064,13 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         alpha * last_reid_features +
                         (1 - alpha) * matched_body['reid_features']
                     )
-            
-                logger.debug(f"✅ Locked {lock_info.get('name', person_id)} updated via ReID (dist: {best_reid_distance:.3f})")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Locked {lock_info.get('name', person_id)} updated via ReID (dist: {best_reid_distance:.3f})")
             else:
                 # No match
                 lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
-                logger.debug(f"⚠️ No match for {lock_info.get('name', person_id)} - Preserving last position")
+                if DEBUG_MODE: 
+                    logger.debug(f"  No match for {lock_info.get('name', person_id)} - Preserving last position")
 
     # Add existing locked tracks to new_tracks
     for person_id, lock_info in locked_tracks.items():
@@ -3015,7 +3123,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     new_tracks.append(tr)
     
     # ============================================
-    # 🎯 PROCESS NEW FACE DETECTIONS WITH ANTI-SWAPPING
+    #   PROCESS NEW FACE DETECTIONS WITH ANTI-SWAPPING
     # ============================================
     
     # Step 5: Process NEW face detections with anti-swapping protection
@@ -3051,7 +3159,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 
                 if face_iou < 0.4:
                     face_too_close_to_locked = True
-                    logger.debug(f"🚫 Face rejected: in locked person's inner zone")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Face rejected: in locked person's inner zone")
                     break
         
         if face_too_close_to_locked:
@@ -3075,7 +3184,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     name = "Unknown"
                 else:
                     current_section_students = get_current_section_student_ids()
-                    logger.debug(f"📊 Current section has {len(current_section_students)} students")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Current section has {len(current_section_students)} students")
                     
                     dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
                     norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
@@ -3092,15 +3202,16 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             matched_id = known_face_ids[best_match_index]
                             matched_type = known_face_types[best_match_index]
                             matched_name = known_face_names[best_match_index]
-                            
-                            logger.info(f"🎯 Potential match: {matched_name} ({matched_id}) - Type: {matched_type} - Similarity: {best_similarity:.3f}")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Potential match: {matched_name} ({matched_id}) - Type: {matched_type} - Similarity: {best_similarity:.3f}")
                             
                             if matched_type == 'faculty':
                                 name = f"Faculty: {matched_name}"
                                 person_id = matched_id
                                 ptype = 'faculty'
                                 confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
-                                logger.info(f"✅ FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  FACULTY RECOGNITION: {name} - Similarity: {best_similarity:.3f}")
                             
                             elif matched_type == 'student':
                                 if current_section_students and matched_id in current_section_students:
@@ -3108,9 +3219,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                     person_id = matched_id
                                     ptype = 'student'
                                     confidence = min(1.0, (conf * 0.4) + (best_similarity * 0.6))
-                                    logger.info(f"✅ STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
+                                    if DEBUG_MODE: 
+                                        logger.debug(f"  STUDENT RECOGNITION (Current Section): {name} ({person_id}) - Similarity: {best_similarity:.3f}")
                                 else:
-                                    logger.info(f"❌ STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
+                                    if DEBUG_MODE: 
+                                        logger.debug(f"  STUDENT NOT IN CURRENT SECTION: {matched_name} ({matched_id}) - Ignoring")
                                     name = "Unknown - Wrong Section"
                                     if face_embedding is not None:
                                         try:
@@ -3120,15 +3233,17 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                                 if session_id:
                                                     success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
                                                     if success:
-                                                        logger.info(f"📸 CAPTURED OUT-OF-SECTION FACE - Added to enrollment system")
+                                                        if DEBUG_MODE: 
+                                                            logger.debug(f"📸 CAPTURED OUT-OF-SECTION FACE - Added to enrollment system")
                                         except Exception as capture_error:
                                             logger.error(f"Error capturing out-of-section face: {capture_error}")
                         else:
-                            logger.info(f"❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold 0.50")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  NO MATCH: Best similarity {best_similarity:.3f} < threshold 0.50")
                             name = "Unknown"
                         
             except Exception as e:
-                logger.error(f"❌ Error in recognition: {e}")
+                logger.error(f"  Error in recognition: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
                 name = "Unknown"
@@ -3142,9 +3257,10 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     if session_id:
                         success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
                         if success:
-                            logger.info(f"📸 CAPTURED UNKNOWN FACE - Added to enrollment system")
+                            if DEBUG_MODE: 
+                                logger.debug(f"📸 CAPTURED UNKNOWN FACE - Added to enrollment system")
             except Exception as e:
-                logger.error(f"❌ Error capturing unknown face: {e}")
+                logger.error(f"  Error capturing unknown face: {e}")
         
         # Match face to body
         matched_body_track = None
@@ -3190,14 +3306,15 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             
                             min_iou = 0.4 if distance_from_center > 300 else 0.5
                             if overlap_iou < min_iou:
-                                logger.warning(f"🚫 ANTI-SWAP: Body detected in {zone_info['lock_info'].get('name', locked_person_id)}'s protection zone - REJECTING")
+                                logger.warning(f"  ANTI-SWAP: Body detected in {zone_info['lock_info'].get('name', locked_person_id)}'s protection zone - REJECTING")
                                 body_in_protected_zone = True
                                 break
                     
                     if not body_in_protected_zone:
                         matched_body_track = body_track
                         used_body_tracks.add(body_track['track_id'])
-                        logger.info(f"✅ Face-Body matched: track_id={body_track['track_id']}, ratio={face_body_ratio:.3f}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Face-Body matched: track_id={body_track['track_id']}, ratio={face_body_ratio:.3f}")
                         break
         
         # If still unknown after recognition attempt
@@ -3219,7 +3336,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'reid_features': matched_body_track['reid_features']
                 }
                 new_tracks.append(track_obj)
-                logger.info(f"📍 Unknown face with body tracking")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Unknown face with body tracking")
             else:
                 new_tracks.append({
                     'id': unique_id,
@@ -3231,7 +3349,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'type': 'unknown',
                     'start_frame': frame_idx
                 })
-                logger.info(f"📍 Unknown face without body")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Unknown face without body")
         else:
             # Known person
             if matched_body_track and person_id not in locked_tracks:
@@ -3248,7 +3367,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         'byte_track_id': matched_body_track['track_id'],
                         'reid_features': matched_body_track['reid_features']
                     }
-                    logger.info(f"🆕 NEW PENDING: {name} (ID: {person_id})")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  NEW PENDING: {name} (ID: {person_id})")
             
                 pending_confirmations[person_id]['frames'].append(frame_idx)
                 pending_confirmations[person_id]['body_boxes'].append(matched_body_track['body_box'])
@@ -3264,8 +3384,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 confirmation_data = pending_confirmations[person_id]
                 consecutive_frames = len(confirmation_data['frames'])
                 avg_similarity = sum(confirmation_data['similarities']) / len(confirmation_data['similarities'])
-            
-                logger.info(f"🔄 PENDING PROGRESS: {name} - Frames: {consecutive_frames}, Avg Similarity: {avg_similarity:.3f}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  PENDING PROGRESS: {name} - Frames: {consecutive_frames}, Avg Similarity: {avg_similarity:.3f}")
             
                 if (consecutive_frames >= max(3, CONFIRMATION_FRAMES_REQUIRED - 2) and
                     avg_similarity >= CONFIRMATION_SIMILARITY_THRESHOLD - 0.05):
@@ -3299,9 +3419,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 
                     if ptype == 'faculty' or (ptype == 'student' and current_section_students and person_id in current_section_students):
                         mark_attendance(name, person_id, ptype)
-                        logger.info(f"🔒 LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
                     else:
-                        logger.info(f"🔒 LOCKED but NO ATTENDANCE (wrong section) for {name} ({person_id})")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  LOCKED but NO ATTENDANCE (wrong section) for {name} ({person_id})")
                     
                     del pending_confirmations[person_id]
                 else:
@@ -3319,7 +3441,8 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     new_tracks.append(temp_track)
             else:
                 if person_id not in locked_tracks:
-                    logger.info(f"⚠️ {name} recognized but no body match")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  {name} recognized but no body match")
                 new_tracks.append({
                     'id': person_id,
                     'box': (x1, y1, x2, y2),
@@ -3345,7 +3468,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
     ]
     tracks[:] = current_tracks
     
-    # 🆕 Cleanup old tracking history
+    #   Cleanup old tracking history
     expired_history_keys = []
     for person_id in list(locked_track_history.keys()):
         if person_id not in locked_tracks:
@@ -3358,22 +3481,20 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if key in locked_track_signatures:
             del locked_track_signatures[key]
     
-    logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
-    
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
     🛡️ ULTRA STRONG ANTI-SWAPPING: Body-only tracking for LOCKED tracks with force field protection
-    ✅ FIXED: Prevents bounding boxes from jumping to unknown/scanning people
-    ✅ ADDED: Body shape signature verification for each locked track
-    ✅ ADDED: Movement prediction and path consistency validation
-    ✅ ADDED: Temporal consistency with frame history
-    ✅ ADDED: Force field protection zones with overlapping rejection
-    ✅ ENHANCED: Real-time FPS calculation and optimization
+      FIXED: Prevents bounding boxes from jumping to unknown/scanning people
+      ADDED: Body shape signature verification for each locked track
+      ADDED: Movement prediction and path consistency validation
+      ADDED: Temporal consistency with frame history
+      ADDED: Force field protection zones with overlapping rejection
+      ENHANCED: Real-time FPS calculation and optimization
     """
     global tracks, locked_tracks, pending_confirmations, current_fps
     global detectionStopped, student_presence_tracker, current_session_id, locked_track_reid_features
     
-    # 🆕 ANTI-SWAP: Initialize advanced tracking systems
+    #   ANTI-SWAP: Initialize advanced tracking systems
     global locked_track_history, locked_track_predictions, locked_track_signatures
     
     # Stop detection if session ended
@@ -3395,21 +3516,22 @@ def update_trackers_with_body(rgb, frame, frame_idx):
 
     h, w = frame.shape[:2]
     
-    # 🎯 CRITICAL FIX: Clean up student_presence_tracker from invalid entries
+    #     Clean up student_presence_tracker from invalid entries
     invalid_entries = []
     for student_id, track_info in list(student_presence_tracker.items()):
         if not student_id or not isinstance(student_id, str) or not student_id.startswith(('20', '19', '21')):
             invalid_entries.append(student_id)
 
     for invalid_id in invalid_entries:
-        logger.warning(f"🚮 Removing invalid student_presence_tracker entry: {invalid_id}")
+        logger.warning(f"  Removing invalid student_presence_tracker entry: {invalid_id}")
         del student_presence_tracker[invalid_id]
     
     # Step 1: Detect bodies FIRST - this is critical
     body_detections = detect_bodies(frame)
-    logger.debug(f"Detected {len(body_detections)} bodies in frame {frame_idx}")
+    if DEBUG_MODE: 
+        logger.debug(f"Detected {len(body_detections)} bodies in frame {frame_idx}")
     
-    # 🎯 CRITICAL FIX: Check for missing bodies IMMEDIATELY every frame
+    #     Check for missing bodies IMMEDIATELY every frame
     current_time = datetime.now()
     
     # Step 2: Extract ReID features and body signatures for ALL bodies
@@ -3430,7 +3552,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         body_reid_features.append(reid_feature)
         body_boxes_clean.append(body_det)
         
-        # 🆕 Calculate body signature
+        #   Calculate body signature
         body_width = bx2 - bx1
         body_height = by2 - by1
         aspect_ratio = body_width / body_height if body_height > 0 else 0
@@ -3452,7 +3574,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
     # 🛡️ ULTRA STRONG ANTI-SWAPPING SYSTEM
     # ============================================
     
-    # 🆕 1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
+    #   1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
     for person_id, lock_info in locked_tracks.items():
         current_body_box = lock_info.get('body_box')
         if current_body_box:
@@ -3477,7 +3599,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             if len(locked_track_history[person_id]) > 8:
                 locked_track_history[person_id].pop(0)
             
-            # 🆕 PREDICT NEXT POSITION based on movement history
+            #   PREDICT NEXT POSITION based on movement history
             if len(locked_track_history[person_id]) >= 3:
                 last_3_positions = locked_track_history[person_id][-3:]
                 dx = 0
@@ -3513,7 +3635,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     'confidence': min(0.85, len(locked_track_history[person_id]) / 8.0)
                 }
             
-            # 🆕 2. UPDATE BODY SHAPE SIGNATURE for this locked track
+            #   2. UPDATE BODY SHAPE SIGNATURE for this locked track
             body_width = current_body_box[2] - current_body_box[0]
             body_height = current_body_box[3] - current_body_box[1]
             aspect_ratio = body_width / body_height if body_height > 0 else 0
@@ -3548,7 +3670,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 sig['avg_height'] = (sig['avg_height'] * (1 - weight)) + (body_height * weight)
                 sig['samples'] += 1
     
-    # 🆕 3. CREATE FORCE FIELD PROTECTION ZONES for locked tracks
+    #   3. CREATE FORCE FIELD PROTECTION ZONES for locked tracks
     locked_track_protection_zones = {}
     
     for person_id, lock_info in locked_tracks.items():
@@ -3603,7 +3725,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 'protected': False
             }
     
-    # 🎯 FIRST: Protect LOCKED tracks from being stolen by unknown bodies
+    #   FIRST: Protect LOCKED tracks from being stolen by unknown bodies
     # Check for bodies that might be trying to steal locked track IDs
     for idx, body_det in enumerate(body_detections):
         if idx in matched_body_indices:
@@ -3637,7 +3759,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     lock_info['last_seen'] = frame_idx
                     lock_info['missed_detections'] = 0
                     
-                    # 🆕 Update ReID features if available
+                    #   Update ReID features if available
                     if idx < len(body_reid_features) and body_reid_features[idx] is not None:
                         if person_id not in locked_track_reid_features:
                             locked_track_reid_features[person_id] = body_reid_features[idx]
@@ -3657,12 +3779,11 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         student_presence_tracker[lock_info['id']]['last_body_seen'] = current_time
                         student_presence_tracker[lock_info['id']]['last_seen'] = current_time
                         student_presence_tracker[lock_info['id']]['present'] = True
-                    
-                    logger.info(f"✅ ANTI-SWAP: Updated {lock_info.get('name', person_id)} position (IoU: {overlap_iou:.2f})")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  ANTI-SWAP: Updated {lock_info.get('name', person_id)} position (IoU: {overlap_iou:.2f})")
                 else:
-                    # 🛡️ Different person in inner zone - REJECT this body
-                    # But don't mark as used, just skip for this locked person
-                    logger.warning(f"🚫 ANTI-SWAP: Different body in {zone_info['lock_info'].get('name', person_id)}'s inner zone - Skipping")
+                   logger.warning(f"  ANTI-SWAP: Different body in {zone_info['lock_info'].get('name', person_id)}'s inner zone - Skipping")
+    
                 
                 break  # Move to next body detection
             
@@ -3689,17 +3810,17 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         
                         if width_diff > 0.25 or height_diff > 0.25:
                             # 🛡️ Very different body size - REJECT for this locked track
-                            logger.warning(f"🚫 ANTI-SWAP: Different sized body near {zone_info['lock_info'].get('name', person_id)} - Rejecting")
+                            logger.warning(f"  ANTI-SWAP: Different sized body near {zone_info['lock_info'].get('name', person_id)} - Rejecting")
                             # Don't add to matched indices - let it be available for other checks
                             continue
                 
                 break  # Move to next body detection
     
     # ============================================
-    # 🎯 CONTINUE WITH UPDATED ANTI-SWAP LOGIC
+    #   CONTINUE WITH UPDATED ANTI-SWAP LOGIC
     # ============================================
     
-    # 🎯 IMMEDIATE BODY MATCHING - Check every frame with enhanced anti-swap
+    #   IMMEDIATE BODY MATCHING - Check every frame with enhanced anti-swap
     to_remove_locks = []
     locked_tracks_with_bodies = set()
     
@@ -3711,12 +3832,12 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             locked_tracks_with_bodies.add(person_id)
             continue
             
-        # 🎯 ENHANCED CHECK: If no body found in current frame, start counting immediately
+        #   ENHANCED CHECK: If no body found in current frame, start counting immediately
         body_found_in_current_frame = False
         last_body_box = lock_info.get('body_box')
         
         if last_body_box and body_detections:
-            # 🆕 Get body signature for this locked track
+            #   Get body signature for this locked track
             body_signature = locked_track_signatures.get(person_id)
             
             # Try to match with current frame bodies (excluding already matched)
@@ -3769,7 +3890,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         lock_info['last_seen'] = frame_idx
                         lock_info['missed_detections'] = 0
                         
-                        # 🆕 Update ReID features
+                        #   Update ReID features
                         if idx < len(body_reid_features) and body_reid_features[idx] is not None:
                             if person_id not in locked_track_reid_features:
                                 locked_track_reid_features[person_id] = body_reid_features[idx]
@@ -3787,37 +3908,40 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                             student_presence_tracker[lock_info['id']]['present'] = True
                         
                         locked_tracks_with_bodies.add(person_id)
-                        logger.info(f"✅ LOCKED TRACK UPDATED: {lock_info.get('name', person_id)} (IoU: {overlap_iou:.2f})")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  LOCKED TRACK UPDATED: {lock_info.get('name', person_id)} (IoU: {overlap_iou:.2f})")
                         break
         
-        # 🎯 CRITICAL: If no body found in current frame, mark for immediate removal
+        #   CRITICAL: If no body found in current frame, mark for immediate removal
         if not body_found_in_current_frame:
             lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
             
-            # 🎯 IMMEDIATE REMOVAL: Remove after just 1-2 seconds
+            #   IMMEDIATE REMOVAL: Remove after just 1-2 seconds
             if lock_info['missed_detections'] > 30:  # 1 second at 30fps
                 to_remove_locks.append(person_id)
-                logger.info(f"❌ IMMEDIATE REMOVAL: {lock_info.get('name', person_id)} - no body for 1 second")
+                if DEBUG_MODE: 
+                    logger.debug(f"  IMMEDIATE REMOVAL: {lock_info.get('name', person_id)} - no body for 1 second")
     
-    # 🎯 CRITICAL FIX: Remove tracks immediately when no body found
+    #     Remove tracks immediately when no body found
     for person_id in to_remove_locks:
         lock_info = locked_tracks.get(person_id)
         if lock_info and lock_info.get('type') == 'student':
             student_id = lock_info.get('id')
             student_name = lock_info.get('name', person_id)
             
-            # 🎯 FIXED: Validate student_id before proceeding
+            #   FIXED: Validate student_id before proceeding
             if not student_id or not isinstance(student_id, str) or not student_id.startswith(('20', '19', '21')):
-                logger.error(f"❌ INVALID STUDENT ID: {student_id} for {student_name} - skipping API call")
+                logger.error(f"  INVALID STUDENT ID: {student_id} for {student_name} - skipping API call")
                 if student_id in student_presence_tracker:
                     student_presence_tracker[student_id]['present'] = False
                     student_presence_tracker[student_id]['last_seen'] = current_time
                 locked_tracks.pop(person_id, None)
                 locked_track_reid_features.pop(person_id, None)
-                logger.info(f"🔓 IMMEDIATE UNLOCK (INVALID ID): {person_id}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  IMMEDIATE UNLOCK (INVALID ID): {person_id}")
                 continue
             
-            # 🎯 FIXED: BETTER Manual Status Detection BEFORE calling student_left API
+            #   FIXED: BETTER Manual Status Detection BEFORE calling student_left API
             is_manual_status = False
             try:
                 # First check if student has manual status
@@ -3838,11 +3962,11 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     current_session = attendance_record.get('session_id')
                     remarks = attendance_record.get('remarks') or ''
                     
-                    # 🎯 FIXED: Handle None values properly
+                    #   FIXED: Handle None values properly
                     if current_session is None:
                         current_session = ''
                     
-                    # 🎯 BETTER MANUAL STATUS DETECTION - More specific
+                    #   BETTER MANUAL STATUS DETECTION - More specific
                     manual_excuse_sessions = ['manual_excuse']
                     manual_status_sessions = ['manual_status']
                     manual_statuses = ['excused']
@@ -3856,22 +3980,25 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     )
                     
                     if is_manual_status:
-                        logger.info(f"🔒 SKIPPING MISSING: {student_name} has manual status '{current_status}'")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  SKIPPING MISSING: {student_name} has manual status '{current_status}'")
                         if student_id in student_presence_tracker:
                             student_presence_tracker[student_id]['present'] = False
                             student_presence_tracker[student_id]['last_seen'] = current_time
                         
                         locked_tracks.pop(person_id, None)
                         locked_track_reid_features.pop(person_id, None)
-                        logger.info(f"🔓 IMMEDIATE UNLOCK (MANUAL STATUS): {person_id}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  IMMEDIATE UNLOCK (MANUAL STATUS): {person_id}")
                         continue
                     else:
-                        logger.info(f"🔄 AUTO STATUS: {student_name} can be marked as missing")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  AUTO STATUS: {student_name} can be marked as missing")
                 
             except Exception as e:
-                logger.warning(f"⚠️ Error checking manual status: {e}")
+                logger.warning(f"  Error checking manual status: {e}")
             
-            # 🎯 Only call student_left API if NOT manual status
+            #   Only call student_left API if NOT manual status
             try:
                 import requests
                 import time
@@ -3899,36 +4026,37 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         )
                         
                         if response.status_code == 200:
-                            logger.info(f"✅ SUCCESS: student_left API called for {student_name}")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  SUCCESS: student_left API called for {student_name}")
                             success = True
                             break
                         elif response.status_code == 400:
                             try:
                                 error_data = response.json()
-                                logger.warning(f"⚠️ API returned {response.status_code}: {error_data.get('message', 'Unknown error')}")
+                                logger.warning(f"  API returned {response.status_code}: {error_data.get('message', 'Unknown error')}")
                                 success = True
                             except:
-                                logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
+                                logger.warning(f"  API returned {response.status_code}: {response.text}")
                             break
                         else:
-                            logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
+                            logger.warning(f"  API returned {response.status_code}: {response.text}")
                             if attempt < 2:
                                 time.sleep(0.3)
                                 
                     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as conn_err:
-                        logger.error(f"❌ Connection error (attempt {attempt + 1}/3): {conn_err}")
+                        logger.error(f"  Connection error (attempt {attempt + 1}/3): {conn_err}")
                         if attempt < 2:
                             time.sleep(0.5)
                     except Exception as req_err:
-                        logger.error(f"❌ Request error (attempt {attempt + 1}/3): {req_err}")
+                        logger.error(f"  Request error (attempt {attempt + 1}/3): {req_err}")
                         if attempt < 2:
                             time.sleep(0.5)
                 
                 if not success:
-                    logger.error(f"❌ FAILED after 3 attempts: Could not mark {student_name} as missing")
+                    logger.error(f"  FAILED after 3 attempts: Could not mark {student_name} as missing")
                     
             except Exception as e:
-                logger.error(f"❌ Fatal error calling student_left API: {e}")
+                logger.error(f"  Fatal error calling student_left API: {e}")
             
             if student_id in student_presence_tracker:
                 student_presence_tracker[student_id]['present'] = False
@@ -3936,14 +4064,15 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         
         locked_tracks.pop(person_id, None)
         locked_track_reid_features.pop(person_id, None)
-        logger.info(f"🔓 IMMEDIATE UNLOCK: {person_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  IMMEDIATE UNLOCK: {person_id}")
     
-    # 🎯 Periodic backup check for missing students
+    #   Periodic backup check for missing students
     if frame_idx % 15 == 0 and current_session_id:
         for student_id, track_info in list(student_presence_tracker.items()):
             if student_id and isinstance(student_id, str) and student_id.startswith(('20', '19', '21')):
                 if track_info.get('present'):
-                    # 🎯 FIXED: Check if this student has any active locked track
+                    #   FIXED: Check if this student has any active locked track
                     has_active_body = False
                     for locked_id, lock_info in locked_tracks.items():
                         if lock_info.get('type') == 'student' and lock_info.get('id') == student_id:
@@ -3960,7 +4089,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                 track_info['present'] = False
                                 track_info['last_seen'] = current_time
                                 
-                                # 🎯 ADDED: BETTER Manual Status Detection
+                                #   ADDED: BETTER Manual Status Detection
                                 try:
                                     conn = get_db_connection()
                                     cursor = conn.cursor(dictionary=True)
@@ -3979,7 +4108,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                         current_session = attendance_record.get('session_id')
                                         remarks = attendance_record.get('remarks') or ''
                                         
-                                        # 🎯 BETTER MANUAL STATUS DETECTION
+                                        #   BETTER MANUAL STATUS DETECTION
                                         manual_excuse_sessions = ['manual_excuse']
                                         manual_status_sessions = ['manual_status']
                                         manual_statuses = ['excused']
@@ -3993,13 +4122,15 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                         )
                                         
                                         if is_manual_status:
-                                            logger.info(f"🔒 SKIPPING MISSING: {track_info['name']} has manual status '{current_status}'")
+                                            if DEBUG_MODE: 
+                                                logger.debug(f"  SKIPPING MISSING: {track_info['name']} has manual status '{current_status}'")
                                             continue
                                         else:
-                                            logger.info(f"🔄 AUTO STATUS: {track_info['name']} can be marked as missing")
+                                            if DEBUG_MODE: 
+                                                logger.debug(f"  AUTO STATUS: {track_info['name']} can be marked as missing")
                                     
                                 except Exception as e:
-                                    logger.warning(f"⚠️ Error checking manual status: {e}")
+                                    logger.warning(f"  Error checking manual status: {e}")
                                 
                                 # Only call API if not manual status
                                 try:
@@ -4018,12 +4149,13 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                             timeout=2
                                         )
                                         if response.status_code == 200:
-                                            logger.info(f"📤 BACKUP MISSING: {track_info['name']}")
+                                            if DEBUG_MODE: 
+                                                logger.debug(f"  BACKUP MISSING: {track_info['name']}")
                                 except Exception as e:
-                                    logger.warning(f"⚠️ API call failed: {e}")
+                                    logger.warning(f"  API call failed: {e}")
             else:
-                # 🎯 CLEANUP: Remove invalid entries
-                logger.warning(f"🚮 Removing invalid student_presence_tracker entry: {student_id}")
+                #   CLEANUP: Remove invalid entries
+                logger.warning(f"  Removing invalid student_presence_tracker entry: {student_id}")
                 del student_presence_tracker[student_id]
         
         # Cleanup old entries
@@ -4040,17 +4172,18 @@ def update_trackers_with_body(rgb, frame, frame_idx):
     for person_id, lock_info in list(locked_tracks.items()):
         frames_since_seen = frame_idx - lock_info.get('last_seen', frame_idx)
 
-        # 🎯 SIMPLE: 10 second timeout
+        #   SIMPLE: 10 second timeout
         if frames_since_seen > 300:
             to_remove_locks.append(person_id)
-            logger.info(f"❌ Person {lock_info.get('name', person_id)} disappeared - releasing lock")
+            if DEBUG_MODE: 
+                logger.debug(f"  Person {lock_info.get('name', person_id)} disappeared - releasing lock")
             continue
         
         last_body_box = lock_info.get('body_box')
         last_reid_feature = locked_track_reid_features.get(person_id)
         matched = False
         
-        # 🆕 Try ReID matching with ANTI-SWAP validation
+        #   Try ReID matching with ANTI-SWAP validation
         if last_reid_feature is not None and body_detections:
             best_reid_match_idx = None
             best_reid_distance = 0.3  # Stricter threshold
@@ -4071,7 +4204,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     if movement > 120:  # Reduced from 150 to 120 for stricter tracking
                         continue
                 
-                # 🆕 Check body signature if available
+                #   Check body signature if available
                 if person_id in locked_track_signatures and idx < len(body_signatures):
                     current_sig = body_signatures[idx]
                     locked_sig = locked_track_signatures[person_id]
@@ -4100,7 +4233,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 lock_info['missed_detections'] = 0
                 locked_track_reid_features[person_id] = new_reid_feature
                 
-                # 🎯 SIMPLE: Update presence tracker when body detected
+                #   SIMPLE: Update presence tracker when body detected
                 if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
                     student_presence_tracker[lock_info['id']]['last_body_seen'] = datetime.now()
                     student_presence_tracker[lock_info['id']]['last_seen'] = datetime.now()
@@ -4108,7 +4241,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 
                 matched = True
         
-        # 🆕 Fall back to spatial matching with ANTI-SWAP validation
+        #   Fall back to spatial matching with ANTI-SWAP validation
         if not matched and last_body_box and body_detections:
             best_match_idx = None
             best_iou = 0.35  # Increased from 0.3 to 0.35 for stricter matching
@@ -4121,7 +4254,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 overlap_iou = iou(tuple(body_box), last_body_box)
                 
                 if overlap_iou > best_iou:
-                    # 🆕 Check body signature if available
+                    #   Check body signature if available
                     if person_id in locked_track_signatures and idx < len(body_signatures):
                         current_sig = body_signatures[idx]
                         locked_sig = locked_track_signatures[person_id]
@@ -4159,7 +4292,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         
         if not matched:
             lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
-            # 🎯 SIMPLE: 5 second tolerance
+            #   SIMPLE: 5 second tolerance
             if lock_info['missed_detections'] > 150:
                 to_remove_locks.append(person_id)
     
@@ -4170,18 +4303,19 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             student_id = lock_info.get('id')
             student_name = lock_info.get('name', person_id)
             
-            # 🎯 FIXED: Validate student_id before proceeding
+            #   FIXED: Validate student_id before proceeding
             if not student_id or not isinstance(student_id, str) or not student_id.startswith(('20', '19', '21')):
-                logger.error(f"❌ INVALID STUDENT ID: {student_id} for {student_name} - skipping API call")
+                logger.error(f"  INVALID STUDENT ID: {student_id} for {student_name} - skipping API call")
                 if student_id in student_presence_tracker:
                     student_presence_tracker[student_id]['present'] = False
                     student_presence_tracker[student_id]['last_seen'] = datetime.now()
                 locked_tracks.pop(person_id, None)
                 locked_track_reid_features.pop(person_id, None)
-                logger.info(f"🔓 Unlocked track for {person_id} (INVALID ID)")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Unlocked track for {person_id} (INVALID ID)")
                 continue
             
-            # 🎯 FIXED: BETTER Manual Status Detection
+            #   FIXED: BETTER Manual Status Detection
             is_manual_status = False
             try:
                 conn = get_db_connection()
@@ -4204,7 +4338,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     if current_session is None:
                         current_session = ''
                     
-                    # 🎯 BETTER MANUAL STATUS DETECTION
+                    #   BETTER MANUAL STATUS DETECTION
                     manual_excuse_sessions = ['manual_excuse']
                     manual_status_sessions = ['manual_status']
                     manual_statuses = ['excused']
@@ -4218,26 +4352,29 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     )
                     
                     if is_manual_status:
-                        logger.info(f"🔒 SKIPPING MISSING: {student_name} has manual status '{current_status}'")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  SKIPPING MISSING: {student_name} has manual status '{current_status}'")
                         if student_id in student_presence_tracker:
                             student_presence_tracker[student_id]['present'] = False
                             student_presence_tracker[student_id]['last_seen'] = datetime.now()
                         
                         locked_tracks.pop(person_id, None)
                         locked_track_reid_features.pop(person_id, None)
-                        logger.info(f"🔓 Unlocked track for {person_id} (MANUAL STATUS)")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Unlocked track for {person_id} (MANUAL STATUS)")
                         continue
                     else:
-                        logger.info(f"🔄 AUTO STATUS: {student_name} can be marked as missing")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  AUTO STATUS: {student_name} can be marked as missing")
                 
             except Exception as e:
-                logger.warning(f"⚠️ Error checking manual status: {e}")
+                logger.warning(f"  Error checking manual status: {e}")
             
             if student_id in student_presence_tracker:
                 student_presence_tracker[student_id]['present'] = False
                 student_presence_tracker[student_id]['last_seen'] = datetime.now()
             
-            # 🎯 SIMPLE: Call API to mark as missing WITH RETRY LOGIC
+            #   SIMPLE: Call API to mark as missing WITH RETRY LOGIC
             try:
                 import requests
                 import time
@@ -4258,38 +4395,42 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         )
                         
                         if response.status_code == 200:
-                            logger.info(f"✅ Student marked as MISSING: {student_name}")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Student marked as MISSING: {student_name}")
                             success = True
                             break
                         elif response.status_code == 400:
-                            logger.warning(f"⚠️ API returned {response.status_code}: Student already marked as missing")
+                            if DEBUG_MODE: 
+                                logger.warning(f"  API returned {response.status_code}: Student already marked as missing")
                             success = True
                             break
                         else:
-                            logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
+                            if DEBUG_MODE: 
+                                logger.warning(f"  API returned {response.status_code}: {response.text}")
                             if attempt < 2:
                                 time.sleep(0.3)
                                 
                     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as conn_err:
-                        logger.error(f"❌ Connection error (attempt {attempt + 1}/3): {conn_err}")
+                        logger.error(f"  Connection error (attempt {attempt + 1}/3): {conn_err}")
                         if attempt < 2:
                             time.sleep(0.5)
                     except Exception as req_err:
-                        logger.error(f"❌ Request error (attempt {attempt + 1}/3): {req_err}")
+                        logger.error(f"  Request error (attempt {attempt + 1}/3): {req_err}")
                         if attempt < 2:
                             time.sleep(0.5)
                 
                 if not success:
-                    logger.error(f"❌ FAILED after 3 attempts: Could not mark {student_name} as missing")
+                    logger.error(f"  FAILED after 3 attempts: Could not mark {student_name} as missing")
                     
             except Exception as e:
-                logger.error(f"❌ Fatal error calling student_left API: {e}")
+                logger.error(f"  Fatal error calling student_left API: {e}")
         
         locked_tracks.pop(person_id, None)
         locked_track_reid_features.pop(person_id, None)
-        logger.info(f"🔓 Unlocked track for {person_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Unlocked track for {person_id}")
     
-    # 🆕 Cleanup tracking history for removed locks
+    #   Cleanup tracking history for removed locks
     for person_id in list(locked_track_history.keys()):
         if person_id not in locked_tracks:
             del locked_track_history[person_id]
@@ -4349,7 +4490,8 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         
                         tr['confidence'] = max(0.3, tr.get('confidence', 0.5) * 0.99)
         except Exception as e:
-            logger.debug(f"Unlocked tracker update failed: {e}")
+            if DEBUG_MODE: 
+                logger.debug(f"Unlocked tracker update failed: {e}")
         
         if tracker_ok:
             tr['consecutive_failures'] = 0
@@ -4379,7 +4521,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
     ]
     tracks[:] = current_tracks
     
-    # 🎯 ENHANCED DRAWING WITH ANTI-SWAP VISUALIZATION
+    #   ENHANCED DRAWING WITH ANTI-SWAP VISUALIZATION
     
     # Step 5: Draw PENDING CONFIRMATIONS (Orange BODY boxes)
     active_pending = {pid: data for pid, data in pending_confirmations.items() 
@@ -4390,13 +4532,13 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             body_box = conf_data['body_boxes'][-1]
             bx1, by1, bx2, by2 = body_box
             
-            # 🎯 BOLDER Orange box for confirmation phase
+            #   BOLDER Orange box for confirmation phase
             cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 165, 255), 2)
             
             display_name = conf_data.get('name', f'Person {person_id}')
             progress = len(conf_data['frames'])
             
-            # 🎯 LARGER TEXT for name and progress
+            #   LARGER TEXT for name and progress
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale_name = 0.5
             font_scale_status = 0.4
@@ -4436,7 +4578,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     cv2.rectangle(overlay, (oz_x1, oz_y1), (oz_x2, oz_y2), (0, 0, 255), 1)
                     cv2.addWeighted(overlay, 0.1, frame, 0.9, 0, frame)
         
-        # 🎯 BOLDER Green box for locked body tracking
+        #   BOLDER Green box for locked body tracking
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
         
         display_name = lock_info.get('name', f'Person {person_id}')
@@ -4447,7 +4589,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         tracking_seconds = (frame_idx - lock_start) // 30
         time_label = f"Time: {tracking_seconds}s"
         
-        # 🎯 LARGER TEXT settings
+        #   LARGER TEXT settings
         font_scale_name = 0.5
         font_scale_info = 0.4
         thickness = 1
@@ -4487,7 +4629,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         
         font = cv2.FONT_HERSHEY_SIMPLEX
         
-        # 🎯 LARGER TEXT settings
+        #   LARGER TEXT settings
         font_scale_name = 0.5
         font_scale_info = 0.4
         thickness = 1
@@ -4519,8 +4661,8 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         status_y = (conf_y if display_name == "Unknown" else time_y) + status_h + 8
         cv2.rectangle(frame, (x1, status_y - status_h - 4), (x1 + status_w + 8, status_y + 4), (0, 150, 150), -1)
         cv2.putText(frame, status_label, (x1 + 4, status_y), font, font_scale_info, (255, 255, 255), thickness)
-
-    logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
+    if DEBUG_MODE: 
+        logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
 
 @app.route('/video_feed')
 def video_feed():
@@ -4538,12 +4680,12 @@ def video_feed():
                     time.sleep(0.001)
                     continue
                 
-                # 🚀 CRITICAL: Resize to target resolution (USES STREAM_WIDTH, STREAM_HEIGHT)
+                #   CRITICAL: Resize to target resolution (USES STREAM_WIDTH, STREAM_HEIGHT)
                 frame = cv2.resize(latest_frame.copy(), (STREAM_WIDTH, STREAM_HEIGHT))
                 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
-                # 🚀 CRITICAL: Frame skipping for high FPS (USES DETECT_EVERY)
+                #   CRITICAL: Frame skipping for high FPS (USES DETECT_EVERY)
                 skip_counter += 1
                 should_detect = (skip_counter % DETECT_EVERY == 0)
                 
@@ -4554,13 +4696,13 @@ def video_feed():
                 
                 frame_idx += 1
                 
-                # 🚀 Clear GPU cache periodically
+                #   Clear GPU cache periodically
                 if frame_idx % 100 == 0:
                     torch.cuda.empty_cache()
                 
-                # 🚀 Optimized encoding (USES JPEG_QUALITY)
+                #   Optimized encoding (USES JPEG_QUALITY)
                 ret, buffer = cv2.imencode('.jpg', frame, [
-                    cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY,  # 🚀 USES CONFIG
+                    cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY,  #   USES CONFIG
                     cv2.IMWRITE_JPEG_OPTIMIZE, 1
                 ])
                 frame_bytes = buffer.tobytes()
@@ -4569,9 +4711,9 @@ def video_feed():
                       b'Content-Type: image/jpeg\r\n\r\n' + 
                       frame_bytes + b'\r\n')
                 
-                # 🚀 Target FPS (USES TARGET_FPS)
+                #   Target FPS (USES TARGET_FPS)
                 processing_time = time.time() - frame_start
-                target_frame_time = 1.0 / TARGET_FPS  # 🚀 USES CONFIG
+                target_frame_time = 1.0 / TARGET_FPS  #   USES CONFIG
                 sleep_time = max(0.001, target_frame_time - processing_time)
                 time.sleep(sleep_time)
                 
@@ -4585,9 +4727,11 @@ def get_current_session_id():
     """Get the current active session ID for face capture"""
     global current_session_id
     if current_session_id is None:
-        logger.debug("ℹ️ current_session_id is None - waiting for session initialization")  # Changed to debug
+        if DEBUG_MODE: 
+            logger.debug("  current_session_id is None - waiting for session initialization")  # Changed to debug
     else:
-        logger.info(f"🔍 get_current_session_id returning: {current_session_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  get_current_session_id returning: {current_session_id}")
     return current_session_id
 
 def is_face_scan_active():
@@ -4606,7 +4750,8 @@ def start_face_scan():
     
     FACE_SCAN_START_TIME = datetime.now()
     is_face_scan_active_flag = True
-    logger.info(f"🔍 FACE SCAN STARTED - Will capture unknown faces for {FACE_SCAN_DURATION} seconds")
+    if DEBUG_MODE: 
+        logger.debug(f"  FACE SCAN STARTED - Will capture unknown faces for {FACE_SCAN_DURATION} seconds")
     
     # Auto-stop after duration
     def auto_stop():
@@ -4620,7 +4765,8 @@ def stop_face_scan():
     global is_face_scan_active_flag
     
     is_face_scan_active_flag = False
-    logger.info("🛑 FACE SCAN STOPPED - No longer capturing unknown faces")
+    if DEBUG_MODE: 
+        logger.debug("  FACE SCAN STOPPED - No longer capturing unknown faces")
 
 def get_remaining_scan_time():
     """Get remaining scan time in seconds"""
@@ -4633,7 +4779,7 @@ def get_remaining_scan_time():
 
 def cleanup_pending_confirmations(current_frame, timeout_frames=10):
     """
-    ✅ FIX #16: Aggressive cleanup of stale pending confirmations
+      FIX #16: Aggressive cleanup of stale pending confirmations
     Removes confirmations not seen in the last 10 frames (0.33 seconds at 30fps)
     """
     global pending_confirmations
@@ -4645,7 +4791,8 @@ def cleanup_pending_confirmations(current_frame, timeout_frames=10):
         # Remove if stale (not seen in last 10 frames)
         if current_frame - last_seen > timeout_frames:
             to_remove.append(person_id)
-            logger.info(f"🗑️ Cleanup stale confirmation: {data.get('name', person_id)} (stale {current_frame - last_seen} frames)")
+            if DEBUG_MODE: 
+                logger.debug(f"🗑️ Cleanup stale confirmation: {data.get('name', person_id)} (stale {current_frame - last_seen} frames)")
     
     for person_id in to_remove:
         del pending_confirmations[person_id]
@@ -4665,8 +4812,8 @@ def extract_reid_features(frame, body_box):
         if body_crop.shape[0] < 32 or body_crop.shape[1] < 16:
             return None
         
-        # 🚀 Smaller ReID input for speed (USES REID_IMG_SIZE)
-        body_crop_resized = cv2.resize(body_crop, REID_IMG_SIZE, interpolation=cv2.INTER_LINEAR)  # 🚀 USES CONFIG
+        #   Smaller ReID input for speed (USES REID_IMG_SIZE)
+        body_crop_resized = cv2.resize(body_crop, REID_IMG_SIZE, interpolation=cv2.INTER_LINEAR)  #   USES CONFIG
         body_crop_normalized = body_crop_resized.astype(np.float32) / 255.0
         
         if torch.cuda.is_available():
@@ -4683,7 +4830,8 @@ def extract_reid_features(frame, body_box):
         
         return reid_features.cpu().numpy()[0]
     except Exception as e:
-        logger.debug(f"Reid extraction error: {e}")
+        if DEBUG_MODE: 
+            logger.debug(f"Reid extraction error: {e}")
         return None
     
 def calculate_box_distance(box1, box2):
@@ -4708,9 +4856,9 @@ def calculate_reid_distance(feat1, feat2):
     if feat1 is None or feat2 is None:
         return 1.0
     
-    # 🎯 ENSURE FP32 FOR ACCURATE MATH OPERATIONS
-    feat1 = feat1.flatten().astype(np.float32)  # 🆕 Ensure FP32
-    feat2 = feat2.flatten().astype(np.float32)  # 🆕 Ensure FP32
+    #   ENSURE FP32 FOR ACCURATE MATH OPERATIONS
+    feat1 = feat1.flatten().astype(np.float32)  #   Ensure FP32
+    feat2 = feat2.flatten().astype(np.float32)  #   Ensure FP32
     
     dot_product = np.dot(feat1, feat2)
     norm1 = np.linalg.norm(feat1)
@@ -4733,8 +4881,8 @@ def optimize_memory():
     # Force garbage collection
     import gc
     gc.collect()
-    
-    logger.debug("🧹 Aggressive memory optimization completed")
+    if DEBUG_MODE: 
+        logger.debug("🧹 Aggressive memory optimization completed")
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -4765,17 +4913,22 @@ app.json_encoder = CustomJSONEncoder
 def check_detection_status():
     """Check why detection isn't running"""
     global detectionStopped, current_session_id, latest_frame
-    
-    logger.info(f"🔍 DETECTION STATUS CHECK:")
-    logger.info(f"   - detectionStopped: {detectionStopped}")
-    logger.info(f"   - current_session_id: {current_session_id}")
-    logger.info(f"   - latest_frame: {'Available' if latest_frame is not None else 'None'}")
-    logger.info(f"   - ENABLE_RECOGNITION: {ENABLE_RECOGNITION}")
+    if DEBUG_MODE: 
+        logger.debug(f"  DETECTION STATUS CHECK:")
+    if DEBUG_MODE:     
+        logger.debug(f"   - detectionStopped: {detectionStopped}")
+    if DEBUG_MODE: 
+        logger.debug(f"   - current_session_id: {current_session_id}")
+    if DEBUG_MODE: 
+        logger.debug(f"   - latest_frame: {'Available' if latest_frame is not None else 'None'}")
+    if DEBUG_MODE: 
+        logger.debug(f"   - ENABLE_RECOGNITION: {ENABLE_RECOGNITION}")
     
     # Check camera
     try:
         if cap is not None:
-            logger.info(f"   - Camera: Connected")
+            if DEBUG_MODE: 
+                logger.debug(f"   - Camera: Connected")
         else:
             logger.error("   - Camera: NOT CONNECTED")
     except:
@@ -4791,7 +4944,8 @@ def login():
         email = data.get('email', '').strip()
         password = data.get('password', '')
         
-        logger.info(f"Login attempt for email: {email}")
+        if DEBUG_MODE: 
+            logger.debug(f"Login attempt for email: {email}")
         
         if not email or not password:
             return jsonify({'success': False, 'message': 'Email and password are required'})
@@ -4832,7 +4986,8 @@ def login():
         # Determine redirect URL
         redirect_url = '/AdminDB' if user['user_type'] in ['admin', 'faculty'] else '/StudentLP'
         
-        logger.info(f"Login successful for {email}, role: {user.get('role')}, redirecting to {redirect_url}")
+        if DEBUG_MODE: 
+            logger.debug(f"Login successful for {email}, role: {user.get('role')}, redirecting to {redirect_url}")
         
         resp = jsonify({
             'success': True,
@@ -4865,7 +5020,8 @@ def debug_password():
     email = data.get('email')
     password = data.get('password')
     
-    logger.info(f"Debug password check for: {email}")
+    if DEBUG_MODE: 
+        logger.debug(f"Debug password check for: {email}")
     
     conn = get_db_connection()
     if not conn:
@@ -5478,7 +5634,7 @@ def export_data():
         cursor = conn.cursor(dictionary=True)
         
         if data_type == 'students':
-            # ✅ CORRECTED: Join with year_sections and programs to get proper data
+            #    CORRECTED: Join with year_sections and programs to get proper data
             query = """
                 SELECT 
                     s.student_id, 
@@ -6220,7 +6376,7 @@ def get_other_students():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # ✅ CORRECTED: Join with year_sections and programs to get proper data
+        #    CORRECTED: Join with year_sections and programs to get proper data
         cursor.execute("""
             SELECT 
                 s.student_id,
@@ -6388,7 +6544,8 @@ def generate_dynamic_invite():
             # Commit BEFORE verification
             conn.commit()
             
-            logger.info(f"Committed invite with ID {invite_id}, token: {token[:10]}...")
+            if DEBUG_MODE: 
+                logger.debug(f"Committed invite with ID {invite_id}, token: {token[:10]}...")
             
             # Verify the insert succeeded
             cursor.execute(
@@ -6400,7 +6557,8 @@ def generate_dynamic_invite():
             if not verify:
                 raise Exception("Token insertion failed verification")
             
-            logger.info(f"Generated {invite_type} invite token: {token} (ID: {invite_id})")
+            if DEBUG_MODE: 
+                logger.debug(f"Generated {invite_type} invite token: {token} (ID: {invite_id})")
             
         except mysql.connector.Error as db_error:
             if conn:
@@ -6529,7 +6687,8 @@ def delete_student():
         photo_path = f"student_photos/{student_id}.jpg"
         if os.path.exists(photo_path):
             os.remove(photo_path)
-            logger.info(f"Deleted photo for {student_id}")
+            if DEBUG_MODE: 
+                logger.debug(f"Deleted photo for {student_id}")
             
         load_known_faces_from_db()  # Refresh known faces
         if student_id in locked_tracks:
@@ -6554,7 +6713,8 @@ def update_faculty():
         status = data.get('status', 'active')
         
         # Debug logging
-        logger.info(f"Updating faculty: {faculty_id}, {first_name} {last_name}")
+        if DEBUG_MODE: 
+            logger.debug(f"Updating faculty: {faculty_id}, {first_name} {last_name}")
         
         if not all([faculty_id, first_name, last_name, department, designation, email]):
             return jsonify({'success': False, 'message': 'All required fields are missing'})
@@ -6586,7 +6746,8 @@ def update_faculty():
         # Refresh known faces
         load_known_faculties_from_db()
         
-        logger.info(f"Successfully updated faculty: {faculty_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"Successfully updated faculty: {faculty_id}")
         return jsonify({'success': True, 'message': 'Faculty Member updated successfully'})
         
     except Exception as e:
@@ -6616,7 +6777,8 @@ def delete_faculty():
         photo_path = f"faculty_photos/{faculty_id}.jpg"
         if os.path.exists(photo_path):
             os.remove(photo_path)
-            logger.info(f"Deleted photo for faculty {faculty_id}")
+            if DEBUG_MODE: 
+                logger.debug(f"Deleted photo for faculty {faculty_id}")
 
         load_known_faculties_from_db()  # Refresh
         if faculty_id in locked_tracks:
@@ -6652,7 +6814,8 @@ def send_otp():
         conn.close()
         
         if send_otp_email(email, otp_code):
-            logger.info(f"OTP sent to {email}")
+            if DEBUG_MODE: 
+                logger.debug(f"OTP sent to {email}")
             return jsonify({'success': True, 'message': 'OTP sent successfully'})
         else:
             logger.error(f"Failed to send OTP email to {email}")
@@ -6694,7 +6857,8 @@ def verify_otp():
             return jsonify({'success': False, 'message': 'OTP has expired'})
         
         if otp_code == stored_otp:
-            logger.info(f"OTP verified successfully for {email}")
+            if DEBUG_MODE: 
+                logger.debug(f"OTP verified successfully for {email}")
             return jsonify({'success': True, 'message': 'OTP verified successfully'})
         else:
             logger.warning(f"Invalid OTP provided for {email}")
@@ -6712,7 +6876,8 @@ def detect_liveness_cctv(face_image, liveness_threshold):
         if fm < adjusted_threshold:
             logger.warning(f"Liveness detection failed: variance {fm} < threshold {adjusted_threshold}")
             return False
-        logger.info(f"Liveness detection passed: variance {fm}")
+        if DEBUG_MODE: 
+            logger.debug(f"Liveness detection passed: variance {fm}")
         return True
     except Exception as e:
         logger.error(f"Liveness detection error: {e}")
@@ -6721,7 +6886,8 @@ def detect_liveness_cctv(face_image, liveness_threshold):
 @app.route('/api/encode_face', methods=['POST'])
 def encode_face():
     try:
-        logger.info(f"Received encode_face request for pose: {request.form.get('current_pose')}")
+        if DEBUG_MODE: 
+            logger.debug(f"Received encode_face request for pose: {request.form.get('current_pose')}")
         
         if 'image' not in request.files:
             logger.error("No image provided in encode_face request")
@@ -6784,7 +6950,8 @@ def encode_face():
             'is_eyes_closed': bool((left_ear + right_ear) / 2 <= 0.35)
         }
         
-        logger.info(f"Pose results for {current_pose}: yaw={yaw:.1f}, pitch={pitch:.1f}, mar={mar:.2f}, ear_avg={(left_ear + right_ear)/2:.2f}")
+        if DEBUG_MODE: 
+            logger.debug(f"Pose results for {current_pose}: yaw={yaw:.1f}, pitch={pitch:.1f}, mar={mar:.2f}, ear_avg={(left_ear + right_ear)/2:.2f}")
         
         pose_satisfied = False
         message = ""
@@ -6793,10 +6960,10 @@ def encode_face():
         if current_pose == 'frontal':
             if abs(yaw) <= 10 and abs(pitch) <= 8:
                 pose_satisfied = True
-                message = "✅ Perfect! Face centered."
+                message = "   Perfect! Face centered."
             elif abs(yaw) <= 20 and abs(pitch) <= 15:
                 pose_satisfied = True
-                message = "✅ Good! Face detected."
+                message = "   Good! Face detected."
             else:
                 if abs(yaw) > 20:
                     direction = "left" if yaw > 0 else "right"
@@ -6810,13 +6977,13 @@ def encode_face():
         elif current_pose == 'left':
             if yaw >= 10:
                 pose_satisfied = True
-                message = "✅ Perfect! Good left turn."
+                message = "   Perfect! Good left turn."
             elif yaw >= 5:
                 pose_satisfied = True
-                message = "✅ Good! Left turn detected."
+                message = "   Good! Left turn detected."
             else:
                 if yaw < 0:
-                    message = "🔄 Turn your head to the LEFT"
+                    message = "  Turn your head to the LEFT"
                 elif yaw < 3:
                     message = "↩️ Turn a bit more to the left"
                 else:
@@ -6825,13 +6992,13 @@ def encode_face():
         elif current_pose == 'right':
             if yaw <= -10:
                 pose_satisfied = True
-                message = "✅ Perfect! Good right turn."
+                message = "   Perfect! Good right turn."
             elif yaw <= -5:
                 pose_satisfied = True
-                message = "✅ Good! Right turn detected."
+                message = "   Good! Right turn detected."
             else:
                 if yaw > 0:
-                    message = "🔄 Turn your head to the RIGHT"
+                    message = "  Turn your head to the RIGHT"
                 elif yaw > -3:
                     message = "↪️ Turn a bit more to the right"
                 else:
@@ -6841,13 +7008,13 @@ def encode_face():
             # IMPROVED UP DETECTION - More lenient and clear
             if pitch <= -20:
                 pose_satisfied = True
-                message = "✅ Perfect! Great upward tilt."
+                message = "   Perfect! Great upward tilt."
             elif pitch <= -15:
                 pose_satisfied = True
-                message = "✅ Excellent! Upward tilt detected."
+                message = "   Excellent! Upward tilt detected."
             elif pitch <= -10:
                 pose_satisfied = True
-                message = "✅ Good! Upward movement detected."
+                message = "   Good! Upward movement detected."
             else:
                 if pitch > 5:
                     message = "🔼 Tilt your head UP (chin up, look at ceiling)"
@@ -6862,13 +7029,13 @@ def encode_face():
             # IMPROVED DOWN DETECTION - More lenient and clear
             if pitch >= 20:
                 pose_satisfied = True
-                message = "✅ Perfect! Great downward tilt."
+                message = "   Perfect! Great downward tilt."
             elif pitch >= 15:
                 pose_satisfied = True
-                message = "✅ Excellent! Downward tilt detected."
+                message = "   Excellent! Downward tilt detected."
             elif pitch >= 10:
                 pose_satisfied = True
-                message = "✅ Good! Downward movement detected."
+                message = "   Good! Downward movement detected."
             else:
                 if pitch < -5:
                     message = "🔽 Tilt your head DOWN (chin down, look at floor)"
@@ -6882,10 +7049,10 @@ def encode_face():
         elif current_pose == 'mouth_open':
             if mar >= 0.12:
                 pose_satisfied = True
-                message = "✅ Perfect! Mouth open detected."
+                message = "   Perfect! Mouth open detected."
             elif mar >= 0.08:
                 pose_satisfied = True
-                message = "✅ Good! Mouth open detected."
+                message = "   Good! Mouth open detected."
             else:
                 message = "😮 Open your mouth slightly"
         
@@ -6893,10 +7060,10 @@ def encode_face():
             avg_ear = (left_ear + right_ear) / 2
             if avg_ear <= 0.25:
                 pose_satisfied = True
-                message = "✅ Perfect! Eyes closed detected."
+                message = "   Perfect! Eyes closed detected."
             elif avg_ear <= 0.35:
                 pose_satisfied = True
-                message = "✅ Good! Eyes closed detected."
+                message = "   Good! Eyes closed detected."
             else:
                 message = "😌 Close your eyes gently"
         
@@ -6904,25 +7071,27 @@ def encode_face():
         if not pose_satisfied:
             if current_pose == 'up' and pitch < 0:  # ANY negative pitch for up
                 pose_satisfied = True
-                message = "✅ Good! Upward movement detected."
+                message = "   Good! Upward movement detected."
             elif current_pose == 'down' and pitch > 0:  # ANY positive pitch for down
                 pose_satisfied = True
-                message = "✅ Good! Downward movement detected."
+                message = "   Good! Downward movement detected."
             elif current_pose == 'left' and yaw > 0:
                 pose_satisfied = True
-                message = "✅ Good! Left movement detected."
+                message = "   Good! Left movement detected."
             elif current_pose == 'right' and yaw < 0:
                 pose_satisfied = True
-                message = "✅ Good! Right movement detected."
+                message = "   Good! Right movement detected."
         
         if pose_satisfied:
             pose_embeddings[current_pose] = face_embedding.tolist()
             next_pose_index = min(current_pose_index + 1, len(POSE_SEQUENCE) - 1)
             next_pose = POSE_SEQUENCE[next_pose_index]
-            logger.info(f"Pose {current_pose} satisfied, advancing to {next_pose}")
+            if DEBUG_MODE: 
+                logger.debug(f"Pose {current_pose} satisfied, advancing to {next_pose}")
         else:
             next_pose = current_pose
-            logger.info(f"Pose {current_pose} not satisfied, retrying")
+            if DEBUG_MODE: 
+                logger.debug(f"Pose {current_pose} not satisfied, retrying")
         
         encoding_response = face_embedding.tolist() if current_pose == 'frontal' else []
         
@@ -7039,7 +7208,8 @@ def register_student():
         
         # Log curriculum assignment
         if curriculum_id:
-            logger.info(f"Assigned curriculum {curriculum_id} to student {student_id} (program: {program_id}, year: {curriculum_year})")
+            if DEBUG_MODE: 
+                logger.debug(f"Assigned curriculum {curriculum_id} to student {student_id} (program: {program_id}, year: {curriculum_year})")
         else:
             logger.warning(f"No active curriculum found for student {student_id} (program: {program_id}, year: {curriculum_year})")
         
@@ -7072,7 +7242,8 @@ def register_student():
                     
                     try:
                         photo.save(photo_path)
-                        logger.info(f"Saved photo for {student_id} at {photo_path}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"Saved photo for {student_id} at {photo_path}")
                     except Exception as e:
                         logger.error(f"Failed to save photo: {e}")
                         photo_path = None
@@ -7110,13 +7281,15 @@ def register_student():
                         "UPDATE invites SET used = 1 WHERE token = %s",
                         (invite_token,)
                     )
-                    logger.info(f"Invite token {invite_token} has reached max uses and marked as used")
+                    if DEBUG_MODE: 
+                        logger.debug(f"Invite token {invite_token} has reached max uses and marked as used")
 
                 conn_invite.commit()
                 cursor_invite.close()
                 conn_invite.close()
 
-                logger.info(f"Incremented uses for invite token: {invite_token}")
+                if DEBUG_MODE: 
+                    logger.debug(f"Incremented uses for invite token: {invite_token}")
             except Exception as e:
                 logger.error(f"Failed to update invite uses: {e}")
         
@@ -7134,7 +7307,8 @@ def register_student():
         except Exception as e:
             logger.error(f"Failed to add student {student_id} to memory: {e}")
         
-        logger.info(f"Student registered successfully: {student_id} ({first_name} {last_name}) with curriculum {curriculum_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"Student registered successfully: {student_id} ({first_name} {last_name}) with curriculum {curriculum_id}")
         return jsonify({'success': True, 'message': 'Student registered successfully'})
 
     except Exception as e:
@@ -7210,7 +7384,8 @@ def register_faculty():
             if filename and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
                 photo_path = f"static/images/faculty_photos/{faculty_id}.jpg"
                 photo.save(photo_path)
-                logger.info(f"Saved photo for faculty {faculty_id} at {photo_path}")
+                if DEBUG_MODE: 
+                    logger.debug(f"Saved photo for faculty {faculty_id} at {photo_path}")
                 
                 # Verify photo matches face scan
                 img = cv2.imread(photo_path)
@@ -7274,13 +7449,15 @@ def register_faculty():
                         "UPDATE invites SET used = 1 WHERE token = %s",
                         (invite_token,)
                     )
-                    logger.info(f"Invite token {invite_token} has reached max uses and marked as used")
+                    if DEBUG_MODE: 
+                        logger.debug(f"Invite token {invite_token} has reached max uses and marked as used")
 
                 conn_invite.commit()
                 cursor_invite.close()
                 conn_invite.close()
 
-                logger.info(f"Incremented uses for invite token: {invite_token}")
+                if DEBUG_MODE: 
+                    logger.debug(f"Incremented uses for invite token: {invite_token}")
             except Exception as e:
                 logger.error(f"Failed to update invite uses: {e}")
         
@@ -7297,7 +7474,8 @@ def register_faculty():
         
         pose_embeddings.clear()
         
-        logger.info(f"Faculty registered: {faculty_id} ({first_name} {last_name}) with role {role}")
+        if DEBUG_MODE: 
+            logger.debug(f"Faculty registered: {faculty_id} ({first_name} {last_name}) with role {role}")
         return jsonify({'success': True, 'message': 'Faculty registered successfully'})
         
     except Exception as e:
@@ -7574,9 +7752,9 @@ def student_attendance_data():
                 a.session_id, 
                 a.status, 
                 a.timestamp,
-                a.subject_code,  -- ✅ GET FROM ATTENDANCE TABLE
-                a.subject_name,  -- ✅ GET FROM ATTENDANCE TABLE
-                a.room,          -- ✅ GET FROM ATTENDANCE TABLE
+                a.subject_code,  --    GET FROM ATTENDANCE TABLE
+                a.subject_name,  --    GET FROM ATTENDANCE TABLE
+                a.room,          --    GET FROM ATTENDANCE TABLE
                 ases.class_name,
                 ases.started_at, 
                 ases.ended_at,
@@ -7881,11 +8059,16 @@ def sidebar_page():
     user_type = user.get('user_type', '')
     user_id = user.get('user_id', '') 
     
-    logger.info("=== SIDEBAR DEBUG ===")
-    logger.info(f"User ID: {user.get('user_id')}")
-    logger.info(f"Name: {user_name}")
-    logger.info(f"Role: {user_role}")
-    logger.info(f"Type: {user_type}")
+    if DEBUG_MODE: 
+        logger.debug("=== SIDEBAR DEBUG ===")
+    if DEBUG_MODE: 
+        logger.debug(f"User ID: {user.get('user_id')}")
+    if DEBUG_MODE: 
+        logger.debug(f"Name: {user_name}")
+    if DEBUG_MODE: 
+        logger.debug(f"Role: {user_role}")
+    if DEBUG_MODE: 
+        logger.debug(f"Type: {user_type}")
 
     return render_template(
         'sidebar.html',
@@ -7991,7 +8174,7 @@ def get_summary_data():
             started_at = session_data['created_at']
             ended_at = session_data['ended_at']
             
-            print(f"🔍 DEBUG Session: {session_id}")
+            print(f"  DEBUG Session: {session_id}")
             print(f"   - Section ID: {section_id}")
             print(f"   - Created At: {started_at}")
             print(f"   - Ended At: {ended_at}")
@@ -8034,7 +8217,7 @@ def get_summary_data():
                 if section_part:
                     section_display = f"2{section_part[0]}"
             
-            # ✅ FIXED: PROPER QUERY WITH PHOTO_PATH HANDLING
+            #    FIXED: PROPER QUERY WITH PHOTO_PATH HANDLING
             cursor.execute("""
                 WITH attendance_records AS (
                     -- Get attendance records with status cleanup
@@ -8128,7 +8311,7 @@ def get_summary_data():
             
             all_student_records = cursor.fetchall()
             
-            print(f"🔍 DEBUG SUMMARY: Found {len(all_student_records)} total students (regular + temporary)")
+            print(f"  DEBUG SUMMARY: Found {len(all_student_records)} total students (regular + temporary)")
             
             # Convert to proper format with photo handling
             complete_student_list = []
@@ -8182,7 +8365,7 @@ def get_summary_data():
                     student_id = f"TEMP-{name_hash}"
                 
                 # Debug photo info
-                print(f"🔍 DEBUG Photo for {student_id}: {photo_path}")
+                print(f"  DEBUG Photo for {student_id}: {photo_path}")
                 
                 complete_student_list.append({
                     'student_id': student_id,
@@ -8208,7 +8391,7 @@ def get_summary_data():
             temp_count = len([s for s in complete_student_list if s['is_temporary']])
             regular_count = total_students - temp_count
             
-            print(f"🔍 DEBUG FINAL SUMMARY BREAKDOWN:")
+            print(f"  DEBUG FINAL SUMMARY BREAKDOWN:")
             print(f"   - Total: {total_students}")
             print(f"   - Regular: {regular_count}")
             print(f"   - Temporary: {temp_count}")
@@ -8218,7 +8401,7 @@ def get_summary_data():
             print(f"   - Excused: {excused_count}")
             
             # Debug first few students
-            print(f"🔍 DEBUG First 10 Students (Alphabetical):")
+            print(f"  DEBUG First 10 Students (Alphabetical):")
             for i, student in enumerate(complete_student_list[:10]):
                 print(f"   {i+1}. {student['name']} ({student['student_id']}) - {student['status']} - Photo: {student['photo']}")
             
@@ -8273,13 +8456,13 @@ def get_summary_data():
                 'attendance': complete_student_list
             }
             
-            print(f"✅ FINAL SUMMARY: {total_students} total students ({regular_count} regular, {temp_count} temporary)")
+            print(f"   FINAL SUMMARY: {total_students} total students ({regular_count} regular, {temp_count} temporary)")
             print(f"   Present: {present_count}, Late: {late_count}, Absent: {absent_count}, Excused: {excused_count}")
             
             return jsonify(summary_data)
             
     except Exception as e:
-        print(f"❌ ERROR in get_summary_data: {e}")
+        print(f"  ERROR in get_summary_data: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({
@@ -8334,7 +8517,7 @@ def export_csv():
     
     try:
         with get_db_cursor() as cursor:
-            # ✅ GET CURRENT SESSION DATA
+            #    GET CURRENT SESSION DATA
             cursor.execute("""
                 SELECT class_name, started_at, ended_at, subject_code, subject_name, room, section_id
                 FROM attendance_sessions 
@@ -8352,13 +8535,13 @@ def export_csv():
             section_id = session_data.get('section_id')
             session_date = session_data['started_at'].date()
             
-            print(f"🔍 DEBUG Current Session: {session_id}")
+            print(f"  DEBUG Current Session: {session_id}")
             print(f"   - Subject: {subject_code} - {subject_name}")
             print(f"   - Room: {room}")
             print(f"   - Section ID: {section_id}")
             print(f"   - Session Date: {session_date}")
             
-            # ✅ GET PROGRAM AND SECTION FROM SESSION
+            #    GET PROGRAM AND SECTION FROM SESSION
             program_display = "BSIT"  # Default
             if 'Associate in Computer Technology' in class_name:
                 program_display = 'ACT'
@@ -8377,9 +8560,9 @@ def export_csv():
                 if section_part:
                     section_display = f"2{section_part[0]}"
             
-            print(f"🔍 DEBUG Program: {program_display}, Section: {section_display}")
+            print(f"  DEBUG Program: {program_display}, Section: {section_display}")
             
-            # ✅ FIXED: HANDLE EMPTY STATUS AND GET ALL STUDENTS - SORTED ALPHABETICALLY
+            #    FIXED: HANDLE EMPTY STATUS AND GET ALL STUDENTS - SORTED ALPHABETICALLY
             cursor.execute("""
                 WITH attendance_records AS (
                     -- Get attendance records with status cleanup
@@ -8478,7 +8661,7 @@ def export_csv():
             if not records:
                 return jsonify({'success': False, 'message': 'No student data found for today\'s session'}), 404
             
-            print(f"🔍 DEBUG CSV Export: Found {len(records)} total students in today's session")
+            print(f"  DEBUG CSV Export: Found {len(records)} total students in today's session")
             
             # Debug breakdown
             regular_students = [r for r in records if r['is_temporary'] == 'No']
@@ -8488,7 +8671,7 @@ def export_csv():
             absent_students = [r for r in records if r['status'] == 'absent']
             excused_students = [r for r in records if r['status'] == 'excused']
             
-            print(f"🔍 DEBUG Today's Session Breakdown:")
+            print(f"  DEBUG Today's Session Breakdown:")
             print(f"   - Regular students: {len(regular_students)}")
             print(f"   - Temporary students: {len(temp_students)}")
             print(f"   - Present: {len(present_students)}")
@@ -8497,7 +8680,7 @@ def export_csv():
             print(f"   - Excused: {len(excused_students)}")
             
             # Debug first few students (alphabetically)
-            print(f"🔍 DEBUG First 10 Students (Alphabetical Order):")
+            print(f"  DEBUG First 10 Students (Alphabetical Order):")
             for i, record in enumerate(records[:10]):
                 print(f"   {i+1}. {record['student_name']} ({record['student_id']}) - {record['status']}")
             
@@ -8568,7 +8751,7 @@ def export_csv():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{subject_code}_{clean_subject_name}_{program_display}-{section_display}_attendance_{timestamp}.csv"
             
-            print(f"✅ EXPORT SUCCESS: {len(records)} students from today's session (A-Z sorted)")
+            print(f"   EXPORT SUCCESS: {len(records)} students from today's session (A-Z sorted)")
             print(f"   - Regular: {len(regular_students)}")
             print(f"   - Temporary: {len(temp_students)}")
             print(f"   - Present: {len(present_students)}")
@@ -8593,7 +8776,7 @@ def export_csv():
             return response
             
     except Exception as e:
-        print(f"❌ Error exporting CSV: {e}")
+        print(f"  Error exporting CSV: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error exporting data: {str(e)}'}), 500
@@ -8685,7 +8868,8 @@ def studentreg_page():
             logger.warning(f"Expired invite token attempted: {token}")
             return redirect(url_for('login_page'))
         
-        logger.info(f"Valid student invite token accessed: {token}")
+        if DEBUG_MODE: 
+            logger.debug(f"Valid student invite token accessed: {token}")
         return render_template('studentreg.html', token=token)
         
     except Exception as e:
@@ -8737,7 +8921,8 @@ def faculty_reg_page():
             logger.warning(f"Expired invite token attempted: {token}")
             return redirect(url_for('login_page'))
         
-        logger.info(f"Valid faculty invite token accessed: {token}")
+        if DEBUG_MODE: 
+            logger.debug(f"Valid faculty invite token accessed: {token}")
         return render_template('facultyreg.html', token=token)
         
     except Exception as e:
@@ -8855,7 +9040,8 @@ def logout():
                 conn.commit()
                 cursor.close()
                 conn.close()
-                logger.info(f"Session token deleted from database: {session_token[:8]}...")
+                if DEBUG_MODE: 
+                    logger.debug(f"Session token deleted from database: {session_token[:8]}...")
             except Exception as db_error:
                 logger.error(f"Error deleting session from database: {db_error}")
         
@@ -8869,7 +9055,8 @@ def logout():
         # Clear the session cookie
         resp.set_cookie('session_token', '', expires=0, max_age=0, httponly=True, secure=False, samesite='Strict')
         
-        logger.info("User logged out successfully")
+        if DEBUG_MODE: 
+            logger.debug("User logged out successfully")
         return resp
         
     except Exception as e:
@@ -8902,7 +9089,8 @@ def logout_page():
                 conn.commit()
                 cursor.close()
                 conn.close()
-                logger.info(f"Direct logout - session token deleted: {session_token[:8]}...")
+                if DEBUG_MODE: 
+                    logger.debug(f"Direct logout - session token deleted: {session_token[:8]}...")
             except Exception as db_error:
                 logger.error(f"Error deleting session in direct logout: {db_error}")
         
@@ -8910,7 +9098,8 @@ def logout_page():
         resp = make_response(redirect('/login'))  # Use direct path instead of url_for
         resp.set_cookie('session_token', '', expires=0, max_age=0, httponly=True, secure=False, samesite='Strict')
         
-        logger.info("User logged out via direct logout route")
+        if DEBUG_MODE: 
+            logger.debug("User logged out via direct logout route")
         return resp
         
     except Exception as e:
@@ -9119,9 +9308,11 @@ def get_semesters_for_curriculum():
         semesters = cursor.fetchall()
         
         # ADD DEBUG LOGGING
-        logger.info(f"Found {len(semesters)} semesters for curriculum {curriculum_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"Found {len(semesters)} semesters for curriculum {curriculum_id}")
         for semester in semesters:
-            logger.info(f"Semester: {semester['semester_number']} - Status: {semester['status']}")
+            if DEBUG_MODE: 
+                logger.debug(f"Semester: {semester['semester_number']} - Status: {semester['status']}")
         
         cursor.close()
         conn.close()
@@ -9623,7 +9814,8 @@ def get_unassigned_faculty():
         cursor.close()
         conn.close()
         
-        logger.info(f"Found {unassigned_count} unassigned faculty member(s)")
+        if DEBUG_MODE: 
+            logger.debug(f"Found {unassigned_count} unassigned faculty member(s)")
         return jsonify({
             'success': True,
             'faculty': faculty,
@@ -10057,7 +10249,8 @@ def get_faculty_schedule():
         
         subjects_list = list(subjects.values())
         
-        logger.info(f"Found {len(subjects_list)} subjects with {len(schedules)} meetings for faculty {faculty_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"Found {len(subjects_list)} subjects with {len(schedules)} meetings for faculty {faculty_id}")
         
         return jsonify({
             'success': True,
@@ -10698,7 +10891,8 @@ def initialize_default_data():
                 "INSERT INTO programs (program_id, program_name, department, status) VALUES (%s, %s, %s, 'active')",
                 default_programs
             )
-            logger.info("Added default programs")
+            if DEBUG_MODE: 
+                logger.debug("Added default programs")
         
         cursor.execute("SELECT COUNT(*) as count FROM academic_years")
         year_count = cursor.fetchone()[0]
@@ -10716,7 +10910,8 @@ def initialize_default_data():
                     "INSERT INTO academic_years (program_id, academic_year, status) VALUES (%s, %s, 'active')",
                     (program_id, academic_year)
                 )
-                logger.info(f"Added default academic year: {academic_year}")
+                if DEBUG_MODE: 
+                    logger.debug(f"Added default academic year: {academic_year}")
         
         conn.commit()
         cursor.close()
@@ -10855,7 +11050,8 @@ def get_programs():
                 logger.warning(f"Error counting total subjects for program {program_id}: {e}")
                 program['total_subjects'] = 0
             
-            logger.info(f"Program {program_id}: {program['program_name']} - Semesters: {program['semesters']}")
+            if DEBUG_MODE: 
+                logger.debug(f"Program {program_id}: {program['program_name']} - Semesters: {program['semesters']}")
         
         cursor.close()
         conn.close()
@@ -11279,7 +11475,8 @@ def get_assigned_faculty_schedules():
             })
         
         result = list(faculty_schedules.values())
-        logger.info(f"Found {len(result)} faculty with assigned schedules")
+        if DEBUG_MODE: 
+            logger.debug(f"Found {len(result)} faculty with assigned schedules")
         return jsonify({
             'success': True,
             'faculty_schedules': result
@@ -11340,7 +11537,8 @@ def get_faculty_all_schedules():
         cursor.close()
         conn.close()
         
-        logger.info(f"Found {len(schedules)} schedules for faculty {faculty_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"Found {len(schedules)} schedules for faculty {faculty_id}")
         
         return jsonify({
             'success': True,
@@ -11835,7 +12033,8 @@ def set_rtsp_url():
         import urllib.parse
         rtsp_url = urllib.parse.unquote(rtsp_url)
         
-        logger.info(f"Setting RTSP URL: {rtsp_url}")
+        if DEBUG_MODE: 
+            logger.debug(f"Setting RTSP URL: {rtsp_url}")
         
         # Try to connect to the RTSP stream
         success = open_stream(rtsp_url)
@@ -11947,8 +12146,10 @@ def get_session_info():
             }
         }
         
-        logger.info(f"✅ Session info loaded: {schedule['program_id']} {schedule['year_level']}{schedule['section_name']}, Faculty photo: {faculty_photo}")
-        logger.info(f"📚 Subject: {schedule['subject_code']}, Room: {schedule['room']}, Day: {schedule['day_of_week']}")
+        if DEBUG_MODE: 
+            logger.debug(f"   Session info loaded: {schedule['program_id']} {schedule['year_level']}{schedule['section_name']}, Faculty photo: {faculty_photo}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Subject: {schedule['subject_code']}, Room: {schedule['room']}, Day: {schedule['day_of_week']}")
         
         return jsonify(response)
         
@@ -11987,7 +12188,8 @@ def initialize_session():
     connection = None
     cursor = None
     
-    logger.info("🔄 INITIALIZE_SESSION CALLED")
+    if DEBUG_MODE: 
+        logger.debug("  INITIALIZE_SESSION CALLED")
 
     detectionStopped = False
 
@@ -11998,9 +12200,12 @@ def initialize_session():
     locked_track_reid_features = {}
     student_status = {}
     
-    logger.info("🟢 Detection flag RESET to False for new session")
-    logger.info(f"🧹 Cleared: {len(tracks)} tracks, {len(locked_tracks)} locked tracks, {len(pending_confirmations)} pending")
-    logger.info(f"🧹 Cleared student_status: {len(student_status)} entries")
+    if DEBUG_MODE: 
+        logger.debug("🟢 Detection flag RESET to False for new session")
+    if DEBUG_MODE: 
+        logger.debug(f"🧹 Cleared: {len(tracks)} tracks, {len(locked_tracks)} locked tracks, {len(pending_confirmations)} pending")
+    if DEBUG_MODE: 
+        logger.debug(f"🧹 Cleared student_status: {len(student_status)} entries")
     
     try:
         # Get request data
@@ -12008,7 +12213,8 @@ def initialize_session():
         if not data:
             return jsonify({'success': False, 'message': 'No data provided'}), 400
         
-        logger.info(f"📦 Received data: {data}")
+        if DEBUG_MODE: 
+            logger.debug(f"📦 Received data: {data}")
         
         # IMPORTANT FIX: Handle both schedule_id and subject_id
         schedule_id = data.get('schedule_id')
@@ -12017,9 +12223,10 @@ def initialize_session():
         if not schedule_id and not subject_id:
             return jsonify({'success': False, 'message': 'Missing schedule_id or subject_id'}), 400
         
-        logger.info(f"🔍 Received IDs - schedule_id: {schedule_id}, subject_id: {subject_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Received IDs - schedule_id: {schedule_id}, subject_id: {subject_id}")
         
-        # ✅ GENERATE UNIQUE SESSION ID
+        #    GENERATE UNIQUE SESSION ID
         import uuid
         import datetime as dt
         
@@ -12039,11 +12246,13 @@ def initialize_session():
             session_total_duration_seconds = 3600
             session_threshold_seconds = 900
         
-        # ✅ SET SESSION START TIME
+        #    SET SESSION START TIME
         session_start_time = dt.datetime.now()
         
-        logger.info(f"🎯 Generated unique session ID: {unique_session_id}")
-        logger.info(f"✅ SESSION PARAMS - Duration: {session_total_duration_seconds}s, Threshold: {session_threshold_seconds}s")
+        if DEBUG_MODE: 
+            logger.debug(f" Generated unique session ID: {unique_session_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"   SESSION PARAMS - Duration: {session_total_duration_seconds}s, Threshold: {session_threshold_seconds}s")
         
         # Get database connection
         connection = get_db_connection()
@@ -12052,7 +12261,7 @@ def initialize_session():
         
         cursor = connection.cursor(dictionary=True, buffered=True)
         
-        # 🎯 CRITICAL FIX: CLEAR PREVIOUS TEMPORARY STUDENTS FOR THIS SESSION
+        #    CLEAR PREVIOUS TEMPORARY STUDENTS FOR THIS SESSION
         try:
             cursor.execute("""
                 DELETE FROM temporary_students 
@@ -12060,31 +12269,33 @@ def initialize_session():
             """, (unique_session_id,))
             
             deleted_count = cursor.rowcount
-            logger.info(f"🧹 CLEARED {deleted_count} temporary students for new session: {unique_session_id}")
+            if DEBUG_MODE: 
+                logger.debug(f"🧹 CLEARED {deleted_count} temporary students for new session: {unique_session_id}")
             
         except Exception as e:
-            logger.warning(f"⚠️ Could not clear temporary students: {e}")
+            logger.warning(f"  Could not clear temporary students: {e}")
         
-        # ✅ CORRECTED SECTION LOOKUP WITH CURRICULUM
+        #    CORRECTED SECTION LOOKUP WITH CURRICULUM
         section_id = None
         curriculum_info = None
         year_level = data.get('year_level', '')
         section_name = data.get('section', '')
         program_id = data.get('program', '')
 
-        logger.info(f"🔍 Looking for section: Year={year_level}, Section={section_name}, Program={program_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Looking for section: Year={year_level}, Section={section_name}, Program={program_id}")
 
         if year_level and section_name and program_id:
             try:
-                # 🎯 EXTRACT NUMERIC YEAR LEVEL (convert "4th Year" to 4)
+                #  EXTRACT NUMERIC YEAR LEVEL (convert "4th Year" to 4)
                 year_level_clean = ''.join(filter(str.isdigit, year_level))
                 if year_level_clean:
                     year_level_num = int(year_level_clean)
                 else:
                     year_level_num = None
-                    logger.warning(f"⚠️ Could not extract numeric year level from: {year_level}")
+                    logger.warning(f"  Could not extract numeric year level from: {year_level}")
                 
-                # 🎯 MAP PROGRAM NAME TO PROGRAM ID
+                #  MAP PROGRAM NAME TO PROGRAM ID
                 program_map = {
                     'Information Technology': 'IT',
                     'Computer Science': 'CS',
@@ -12095,12 +12306,13 @@ def initialize_session():
                 }
                 program_id_to_search = program_map.get(program_id, program_id)
                 
-                # 🎯 CLEAN SECTION NAME
+                #  CLEAN SECTION NAME
                 section_to_search = section_name.upper().strip()
                 
-                logger.info(f"🔍 Searching section with: Year={year_level_num}, Section={section_to_search}, Program={program_id_to_search}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Searching section with: Year={year_level_num}, Section={section_to_search}, Program={program_id_to_search}")
                 
-                # 🎯 UPDATED QUERY: INCLUDE CURRICULUM INFORMATION
+                #  UPDATED QUERY: INCLUDE CURRICULUM INFORMATION
                 cursor.execute("""
                     SELECT 
                         ys.section_id,
@@ -12125,7 +12337,7 @@ def initialize_session():
                 if section_result:
                     section_id = section_result['section_id']
                     
-                    # 🎯 STORE CURRICULUM INFO
+                    #  STORE CURRICULUM INFO
                     if section_result['curriculum_id']:
                         curriculum_info = {
                             'curriculum_id': section_result['curriculum_id'],
@@ -12133,14 +12345,17 @@ def initialize_session():
                             'curriculum_name': section_result['curriculum_name']
                         }
                     
-                    logger.info(f"✅ Found section_id: {section_id}")
-                    logger.info(f"📋 Section details: Program={section_result['program_name']}, Year={section_result['year_level']}, Section={section_result['section_name']}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"   Found section_id: {section_id}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Section details: Program={section_result['program_name']}, Year={section_result['year_level']}, Section={section_result['section_name']}")
                     if curriculum_info:
-                        logger.info(f"🎓 Curriculum: {curriculum_info['curriculum_year']} - {curriculum_info['curriculum_name']}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"🎓 Curriculum: {curriculum_info['curriculum_year']} - {curriculum_info['curriculum_name']}")
                 else:
-                    logger.warning(f"⚠️ No section found for Program={program_id_to_search}, Year={year_level_num}, Section={section_to_search}")
+                    logger.warning(f"  No section found for Program={program_id_to_search}, Year={year_level_num}, Section={section_to_search}")
                     
-                    # 🎯 FALLBACK: Try to find any active section for this program
+                    #  FALLBACK: Try to find any active section for this program
                     cursor.execute("""
                         SELECT section_id FROM year_sections 
                         WHERE program_id = %s AND status = 'active'
@@ -12150,14 +12365,15 @@ def initialize_session():
                     fallback_result = cursor.fetchone()
                     if fallback_result:
                         section_id = fallback_result['section_id']
-                        logger.info(f"🔄 Using fallback section_id: {section_id}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Using fallback section_id: {section_id}")
                     else:
-                        logger.error(f"❌ No sections found for program: {program_id_to_search}")
+                        logger.error(f"  No sections found for program: {program_id_to_search}")
                 
             except Exception as e:
-                logger.warning(f"⚠️ Error finding section: {e}")
+                logger.warning(f"  Error finding section: {e}")
         
-        # ✅ GET SUBJECT AND ROOM INFO FROM DATABASE - IMPROVED LOGIC
+        #    GET SUBJECT AND ROOM INFO FROM DATABASE - IMPROVED LOGIC
         subject_code = 'Unknown Subject'
         subject_name = 'Unknown Subject'
         room = 'Unknown Room'
@@ -12170,7 +12386,8 @@ def initialize_session():
         try:
             # FIRST: Check if schedule_id exists in class_schedules
             if schedule_id:
-                logger.info(f"🔍 Looking for schedule_id in class_schedules: {schedule_id}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Looking for schedule_id in class_schedules: {schedule_id}")
                 
                 cursor.execute("""
                     SELECT cs.schedule_id, cs.subject_id, cs.room, cs.day_of_week, cs.class_type,
@@ -12185,7 +12402,8 @@ def initialize_session():
                 schedule_info = cursor.fetchone()
                 
                 if schedule_info:
-                    logger.info(f"✅ Found schedule in database: schedule_id={schedule_info['schedule_id']}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"   Found schedule in database: schedule_id={schedule_info['schedule_id']}")
                     actual_schedule_id = schedule_info['schedule_id']
                     db_subject_id = schedule_info['subject_id']
                     subject_code = schedule_info.get('subject_code', 'Unknown Subject')
@@ -12203,28 +12421,32 @@ def initialize_session():
                         
                         # If schedule day doesn't match current day, log a warning
                         if day_of_week != current_day and current_day != 'Sunday':
-                            logger.warning(f"⚠️ Schedule is for {day_of_week}, but today is {current_day}")
+                            logger.warning(f"  Schedule is for {day_of_week}, but today is {current_day}")
                     except Exception as day_error:
-                        logger.warning(f"⚠️ Could not determine day match: {day_error}")
+                        logger.warning(f"  Could not determine day match: {day_error}")
                     
-                    logger.info(f"📚 Database values - Subject: {subject_code}, Room: {room}, Day: {day_of_week}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Database values - Subject: {subject_code}, Room: {room}, Day: {day_of_week}")
                     
                     # Use this schedule's section_id if not already found
                     if schedule_info.get('section_id') and section_id is None:
                         section_id = schedule_info['section_id']
-                        logger.info(f"📌 Using section_id from schedule: {section_id}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Using section_id from schedule: {section_id}")
                 else:
-                    logger.warning(f"⚠️ No schedule found with schedule_id={schedule_id}")
+                    logger.warning(f"  No schedule found with schedule_id={schedule_id}")
                     # Check if this might be a subject_id instead
                     if schedule_id and schedule_id.isdigit():
-                        logger.info(f"🔄 schedule_id {schedule_id} not found in class_schedules, checking if it's a subject_id...")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  schedule_id {schedule_id} not found in class_schedules, checking if it's a subject_id...")
                         subject_id = schedule_id
             
             # SECOND: If we have subject_id or schedule_id was actually a subject_id
             if subject_id or (schedule_id and not actual_schedule_id and schedule_id.isdigit()):
                 subject_id_to_check = subject_id if subject_id else schedule_id
                 
-                logger.info(f"🔍 Looking for subject_id in subjects table: {subject_id_to_check}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Looking for subject_id in subjects table: {subject_id_to_check}")
                 
                 cursor.execute("""
                     SELECT s.subject_id, s.subject_code, s.subject_name, s.class_type, 
@@ -12237,7 +12459,8 @@ def initialize_session():
                 subject_info = cursor.fetchone()
                 
                 if subject_info:
-                    logger.info(f"✅ Found subject by ID: {subject_info['subject_id']}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"   Found subject by ID: {subject_info['subject_id']}")
                     db_subject_id = subject_info['subject_id']
                     subject_code = subject_info.get('subject_code', 'Unknown Subject')
                     subject_name = subject_info.get('subject_name', 'Unknown Subject')
@@ -12263,11 +12486,13 @@ def initialize_session():
                         # Use this schedule's section_id if not already found
                         if schedule_info.get('section_id') and section_id is None:
                             section_id = schedule_info['section_id']
-                            logger.info(f"📌 Using section_id from subject's schedule: {section_id}")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Using section_id from subject's schedule: {section_id}")
                         
-                        logger.info(f"📚 Found schedule for subject: Room={room}, Day={day_of_week}, Schedule ID={actual_schedule_id}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Found schedule for subject: Room={room}, Day={day_of_week}, Schedule ID={actual_schedule_id}")
                     else:
-                        logger.warning("⚠️ No active schedule found for this subject")
+                        logger.warning("  No active schedule found for this subject")
                         
                         # Try to find ANY schedule for this subject
                         cursor.execute("""
@@ -12283,15 +12508,17 @@ def initialize_session():
                             actual_schedule_id = any_schedule.get('schedule_id')
                             room = any_schedule.get('room', 'Unknown Room')
                             day_of_week = any_schedule.get('day_of_week', 'Unknown Day')
-                            logger.info(f"📚 Using last known schedule: Room={room}, Schedule ID={actual_schedule_id}")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Using last known schedule: Room={room}, Schedule ID={actual_schedule_id}")
                 else:
-                    logger.warning(f"⚠️ No subject found with ID={subject_id_to_check}")
+                    logger.warning(f"  No subject found with ID={subject_id_to_check}")
             
             # THIRD: If still no info, extract from URL parameters
             if subject_code == 'Unknown Subject' and data.get('subject'):
                 subject_code = data.get('subject', 'Unknown Subject')
                 subject_name = data.get('subject', 'Unknown Subject')
-                logger.info(f"🔄 Using URL parameter for subject: {subject_code}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Using URL parameter for subject: {subject_code}")
             
             # FINAL: Get current day if still unknown
             if day_of_week == 'Unknown Day':
@@ -12299,17 +12526,18 @@ def initialize_session():
                     day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
                     current_day_index = dt.datetime.now().weekday()
                     day_of_week = day_names[current_day_index]
-                    logger.info(f"📅 Using current system day: {day_of_week}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Using current system day: {day_of_week}")
                 except Exception as day_error:
-                    logger.warning(f"⚠️ Could not determine day of week: {day_error}")
+                    logger.warning(f"  Could not determine day of week: {day_error}")
                     
         except Exception as e:
-            logger.error(f"❌ Error fetching subject/schedule info: {e}", exc_info=True)
+            logger.error(f"  Error fetching subject/schedule info: {e}", exc_info=True)
             # Fallback to URL parameters
             subject_code = data.get('subject', 'Unknown Subject')
             subject_name = data.get('subject', 'Unknown Subject')
         
-        # ✅ GET FACULTY INFO
+        #    GET FACULTY INFO
         faculty_name = data.get('instructor', 'Unknown Instructor')
         faculty_photo = '../static/images/placeholder.jpg'
         faculty_role = 'moderator'
@@ -12353,7 +12581,8 @@ def initialize_session():
                     if faculty_result.get('photo_path'):
                         faculty_photo = faculty_result['photo_path']
                     
-                    logger.info(f"👤 Found user: {faculty_name} - Role: {faculty_role}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Found user: {faculty_name} - Role: {faculty_role}")
                 else:
                     if "super" in instructor_name.lower() or "administrator" in instructor_name.lower():
                         faculty_role = 'super_admin'
@@ -12363,9 +12592,9 @@ def initialize_session():
                         faculty_role = 'moderator'
                         
         except Exception as e:
-            logger.warning(f"⚠️ Could not fetch faculty info: {e}")
+            logger.warning(f"  Could not fetch faculty info: {e}")
         
-        # ✅ SAVE SESSION TO DATABASE
+        #    SAVE SESSION TO DATABASE
         original_schedule_id = actual_schedule_id if actual_schedule_id else schedule_id
         
         try:
@@ -12404,11 +12633,13 @@ def initialize_session():
                 next_instance,
                 db_subject_id
             ))
-            logger.info(f"💾 Session saved to database with unique ID: {unique_session_id}, instance: {next_instance}")
-            logger.info(f"📋 Database fields - Schedule ID: {original_schedule_id}, Subject ID: {db_subject_id}, Section ID: {section_id}")
+            if DEBUG_MODE: 
+                logger.debug(f"💾 Session saved to database with unique ID: {unique_session_id}, instance: {next_instance}")
+            if DEBUG_MODE: 
+                logger.debug(f"  Database fields - Schedule ID: {original_schedule_id}, Subject ID: {db_subject_id}, Section ID: {section_id}")
             
         except Exception as e:
-            logger.error(f"❌ Could not save session to database: {e}")
+            logger.error(f"  Could not save session to database: {e}")
             # Try simpler insert without instance number
             try:
                 cursor.execute("""
@@ -12434,9 +12665,10 @@ def initialize_session():
                     original_schedule_id,
                     db_subject_id
                 ))
-                logger.info(f"💾 Session saved without instance number: {unique_session_id}")
+                if DEBUG_MODE: 
+                    logger.debug(f"💾 Session saved without instance number: {unique_session_id}")
             except Exception as retry_error:
-                logger.error(f"❌ Failed to save session even with retry: {retry_error}")
+                logger.error(f"  Failed to save session even with retry: {retry_error}")
                 # Basic insert with minimal fields
                 try:
                     cursor.execute("""
@@ -12460,9 +12692,10 @@ def initialize_session():
                         data.get('instructor', 'System'),
                         section_id
                     ))
-                    logger.info(f"💾 Session saved with basic insert: {unique_session_id}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Session saved with basic insert: {unique_session_id}")
                 except Exception as final_error:
-                    logger.error(f"❌ All insert attempts failed: {final_error}")
+                    logger.error(f"  All insert attempts failed: {final_error}")
                     # Don't raise error, just log it - session can continue without DB entry
                     pass
         
@@ -12476,7 +12709,7 @@ def initialize_session():
             else:
                 return f"{minutes:02d}:{secs:02d}"
         
-        # 🎯 ADD PROGRAM DISPLAY NAME HELPER FUNCTION
+        #  ADD PROGRAM DISPLAY NAME HELPER FUNCTION
         def get_program_display_name(program_id):
             """Get display name for program ID"""
             program_map = {
@@ -12491,7 +12724,7 @@ def initialize_session():
             
         program_display = get_program_display_name(data.get('program', ''))
         
-        # 🎯 FORMAT SUBJECT DISPLAY WITH CLASS TYPE
+        #  FORMAT SUBJECT DISPLAY WITH CLASS TYPE
         def format_subject_display(subject_code, class_type):
             """Format subject display with class type indicator"""
             if class_type == 'laboratory':
@@ -12503,7 +12736,7 @@ def initialize_session():
         
         subject_display = format_subject_display(subject_code, class_type)
         
-        # ✅ FORMAT HEADER DISPLAY TEXT
+        #    FORMAT HEADER DISPLAY TEXT
         def format_header_display(subject_code, room):
             """Format header display: Subject Code - Room (Day)"""
             # If room is still 'Unknown Room', use a more generic display
@@ -12513,7 +12746,7 @@ def initialize_session():
         
         header_display = format_header_display(subject_code, room)
         
-        # ✅ STORE SESSION DATA - USE UNIQUE SESSION ID
+        #    STORE SESSION DATA - USE UNIQUE SESSION ID
         session_data = {
             'session_id': unique_session_id,
             'schedule_id': original_schedule_id,
@@ -12548,23 +12781,37 @@ def initialize_session():
         if connection and connection.is_connected():
             try:
                 connection.commit()
-                logger.info("✅ Database changes committed successfully")
+                if DEBUG_MODE: 
+                    logger.debug("   Database changes committed successfully")
             except Exception as commit_error:
-                logger.error(f"❌ Could not commit changes: {commit_error}")
+                logger.error(f"  Could not commit changes: {commit_error}")
         
-        logger.info(f"🔍 DEBUG: threshold input = {data.get('threshold')}")
-        logger.info(f"🔍 DEBUG: session_threshold_seconds = {session_threshold_seconds}")
-        logger.info(f"✅ SESSION INITIALIZED: {session_start_time}")
-        logger.info(f"👤 Faculty: {faculty_name} - Role: {faculty_role}")
-        logger.info(f"🏫 Class: {data.get('program')} {data.get('year_level')}{data.get('section')}")
-        logger.info(f"📚 Subject: {subject_code} - {subject_name}")
-        logger.info(f"📍 Room: {room}")
-        logger.info(f"📅 Day: {day_of_week}")
-        logger.info(f"📚 Class Type: {class_type}")
-        logger.info(f"🔗 Section ID: {section_id}")
-        logger.info(f"🔗 Subject ID: {db_subject_id}")
-        logger.info(f"🎯 Unique Session ID returned: {unique_session_id}")
-        logger.info(f"📋 Header Display: {header_display}")
+        if DEBUG_MODE: 
+            logger.debug(f"  DEBUG: threshold input = {data.get('threshold')}")
+        if DEBUG_MODE: 
+            logger.debug(f"  DEBUG: session_threshold_seconds = {session_threshold_seconds}")
+        if DEBUG_MODE: 
+            logger.debug(f"   SESSION INITIALIZED: {session_start_time}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Faculty: {faculty_name} - Role: {faculty_role}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Class: {data.get('program')} {data.get('year_level')}{data.get('section')}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Subject: {subject_code} - {subject_name}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Room: {room}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Day: {day_of_week}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Class Type: {class_type}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Section ID: {section_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Subject ID: {db_subject_id}")
+        if DEBUG_MODE: 
+            logger.debug(f" Unique Session ID returned: {unique_session_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Header Display: {header_display}")
         
         return jsonify({
             'success': True, 
@@ -12573,7 +12820,7 @@ def initialize_session():
         })
         
     except Exception as e:
-        logger.error(f"❌ Error in initialize_session: {e}", exc_info=True)
+        logger.error(f"  Error in initialize_session: {e}", exc_info=True)
         if connection:
             try:
                 connection.rollback()
@@ -12585,7 +12832,7 @@ def initialize_session():
         }), 500
     
     finally:
-        # ✅ FIX: Properly close cursor and connection
+        #    FIX: Properly close cursor and connection
         if cursor:
             try:
                 cursor.close()
@@ -12673,7 +12920,7 @@ def get_class_students():
         if not connection:
             return jsonify({'success': False, 'message': 'Failed to connect to database'}), 500
         
-        # 🎯 FIX: Use buffered cursor to prevent "Unread result found" error
+        #  FIX: Use buffered cursor to prevent "Unread result found" error
         cursor = connection.cursor(dictionary=True, buffered=True)
         
         # Get URL parameters
@@ -12682,12 +12929,13 @@ def get_class_students():
         section = request.args.get('section')
         session_id = request.args.get('session_id')
         
-        logger.info(f"🔍 get_class_students CALLED: program='{program}', year_level='{year_level}', section='{section}', session_id='{session_id}'")
+        if DEBUG_MODE: 
+            logger.debug(f"  get_class_students CALLED: program='{program}', year_level='{year_level}', section='{section}', session_id='{session_id}'")
         
         if not all([program, year_level, section]):
             return jsonify({'success': False, 'message': 'Missing required parameters'}), 400
         
-        # 🎯 CORRECTED: Extract numeric year level from "4th Year"
+        #  CORRECTED: Extract numeric year level from "4th Year"
         year_level_clean = ''.join(filter(str.isdigit, year_level))
         year_level_num = int(year_level_clean) if year_level_clean else None
         
@@ -12704,9 +12952,10 @@ def get_class_students():
         program_id_to_search = program_map.get(program, program)
         section_to_search = section.upper().strip()
         
-        logger.info(f"🔍 Cleaned parameters: program_id='{program_id_to_search}', year_level={year_level_num}, section='{section_to_search}'")
+        if DEBUG_MODE: 
+            logger.debug(f"  Cleaned parameters: program_id='{program_id_to_search}', year_level={year_level_num}, section='{section_to_search}'")
         
-        # 🎯 STEP 1: FIRST FIND THE SECTION_ID (USING THE SAME LOGIC AS initialize_session)
+        #  STEP 1: FIRST FIND THE SECTION_ID (USING THE SAME LOGIC AS initialize_session)
         section_id = None
         cursor.execute("""
             SELECT section_id FROM year_sections 
@@ -12716,13 +12965,14 @@ def get_class_students():
         section_result = cursor.fetchone()
         if section_result:
             section_id = section_result['section_id']
-            logger.info(f"✅ Found section_id: {section_id}")
+            if DEBUG_MODE: 
+                logger.debug(f"   Found section_id: {section_id}")
         else:
-            logger.error(f"❌ No section found for {program_id_to_search} {year_level_num}{section_to_search}")
+            logger.error(f"  No section found for {program_id_to_search} {year_level_num}{section_to_search}")
             return jsonify({'success': False, 'message': 'Section not found'}), 404
         
-        # 🎯 STEP 2: GET REGULAR STUDENTS USING SECTION_ID (NOT PROGRAM/YEAR/SECTION)
-        # 🎯 FIX: Ensure we fetch all results and close this query properly
+        #  STEP 2: GET REGULAR STUDENTS USING SECTION_ID (NOT PROGRAM/YEAR/SECTION)
+        #  FIX: Ensure we fetch all results and close this query properly
         cursor.execute("""
             SELECT 
                 s.student_id, 
@@ -12744,12 +12994,13 @@ def get_class_students():
         
         regular_students = cursor.fetchall()
         
-        # 🎯 FIX: Consume any remaining results before next query
+        #  FIX: Consume any remaining results before next query
         cursor.fetchall()
         
-        logger.info(f"🔍 Found {len(regular_students)} regular students in section {section_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Found {len(regular_students)} regular students in section {section_id}")
         
-        # 🎯 STEP 3: GET TEMPORARY STUDENTS - FIXED: Query attendance table
+        #  STEP 3: GET TEMPORARY STUDENTS - FIXED: Query attendance table
         temporary_students = []
         if session_id:
             cursor.execute("""
@@ -12786,9 +13037,10 @@ def get_class_students():
                     'type': 'temporary'
                 })
         
-        logger.info(f"🔍 Found {len(temporary_students)} temporary students")
+        if DEBUG_MODE: 
+            logger.debug(f"  Found {len(temporary_students)} temporary students")
         
-        # 🎯 STEP 4: FORMAT STUDENTS
+        #  STEP 4: FORMAT STUDENTS
         formatted_students = []
         
         for student in regular_students:
@@ -12812,9 +13064,9 @@ def get_class_students():
         for temp_student in temporary_students:
             formatted_students.append(temp_student)
         
-        # 🎯 STEP 5: UPDATE STATUSES FROM ATTENDANCE
+        #  STEP 5: UPDATE STATUSES FROM ATTENDANCE
         if session_id:
-            # 🎯 FIX: Clear any previous results before new query
+            #  FIX: Clear any previous results before new query
             cursor.fetchall()
             
             cursor.execute("""
@@ -12843,7 +13095,8 @@ def get_class_students():
         
         detected_count = len([s for s in formatted_students if s['status'] in ['present', 'late']])
         
-        logger.info(f"📊 Final student count: {len(formatted_students)} total, {detected_count} detected")
+        if DEBUG_MODE: 
+            logger.debug(f"  Final student count: {len(formatted_students)} total, {detected_count} detected")
         
         return jsonify({
             'success': True, 
@@ -12856,24 +13109,24 @@ def get_class_students():
         })
         
     except Exception as e:
-        logger.error(f"❌ Error fetching class students: {e}")
+        logger.error(f"  Error fetching class students: {e}")
         import traceback
-        logger.error(f"❌ Stack trace: {traceback.format_exc()}")
+        logger.error(f"  Stack trace: {traceback.format_exc()}")
         return jsonify({'success': False, 'message': str(e)}), 500
     
     finally:
-        # 🎯 FIX: Proper cleanup
+        #  FIX: Proper cleanup
         if cursor:
             try:
                 cursor.close()
             except Exception as e:
-                logger.warning(f"⚠️ Error closing cursor: {e}")
+                logger.warning(f"  Error closing cursor: {e}")
         
         if connection and connection.is_connected():
             try:
                 connection.close()
             except Exception as e:
-                logger.warning(f"⚠️ Error closing connection: {e}")
+                logger.warning(f"  Error closing connection: {e}")
 
 @app.route('/api/debug_section_students')
 def debug_section_students():
@@ -12910,7 +13163,7 @@ def debug_students():
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
         
-        # ✅ CORRECTED: Join with year_sections and programs to get proper data
+        #    CORRECTED: Join with year_sections and programs to get proper data
         cursor.execute("""
             SELECT 
                 s.student_id, 
@@ -12951,7 +13204,7 @@ def get_student_status():
         section = request.args.get('section')
         session_id = request.args.get('session_id', current_session_id)
         
-        # ✅ Load threshold from database if not set
+        #    Load threshold from database if not set
         if not session_threshold_seconds and current_session_id:
             try:
                 conn = get_db_connection()
@@ -12969,12 +13222,13 @@ def get_student_status():
                 
                 if session_data and session_data.get('threshold_seconds_total'):
                     session_threshold_seconds = session_data['threshold_seconds_total']
-                    logger.info(f"🎯 Loaded threshold: {session_threshold_seconds} seconds")
+                    if DEBUG_MODE: 
+                        logger.debug(f" Loaded threshold: {session_threshold_seconds} seconds")
                 else:
-                    logger.warning(f"⚠️ No threshold found, using default 900s")
+                    logger.warning(f"  No threshold found, using default 900s")
                     session_threshold_seconds = 900
             except Exception as e:
-                logger.warning(f"⚠️ Could not load threshold: {e}")
+                logger.warning(f"  Could not load threshold: {e}")
                 session_threshold_seconds = 900
                 if cursor:
                     cursor.close()
@@ -12984,12 +13238,13 @@ def get_student_status():
                 conn = None
         
         threshold_seconds = session_threshold_seconds or 900
-        logger.info(f"⏰ Using threshold: {threshold_seconds} seconds")
+        if DEBUG_MODE: 
+            logger.debug(f"  Using threshold: {threshold_seconds} seconds")
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True, buffered=True)
         
-        # 🎯 GET SECTION_ID FROM ATTENDANCE_SESSIONS
+        #  GET SECTION_ID FROM ATTENDANCE_SESSIONS
         section_id = None
         cursor.execute("""
             SELECT section_id FROM attendance_sessions 
@@ -12999,9 +13254,10 @@ def get_student_status():
         session_data = cursor.fetchone()
         if session_data and session_data.get('section_id'):
             section_id = session_data['section_id']
-            logger.info(f"🎯 Using section_id from session: {section_id}")
+            if DEBUG_MODE: 
+                logger.debug(f" Using section_id from session: {section_id}")
         else:
-            logger.warning(f"⚠️ No section_id found for session {session_id}, falling back to program/year/section lookup")
+            logger.warning(f"  No section_id found for session {session_id}, falling back to program/year/section lookup")
             
             # Fallback: Find section_id from year_sections
             program_map = {
@@ -13026,10 +13282,11 @@ def get_student_status():
             section_result = cursor.fetchone()
             if section_result:
                 section_id = section_result['section_id']
-                logger.info(f"🔄 Fallback: Found section_id: {section_id}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  Fallback: Found section_id: {section_id}")
         
         if not section_id:
-            logger.error(f"❌ No section_id found for session {session_id}")
+            logger.error(f"  No section_id found for session {session_id}")
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Section not found'}), 404
@@ -13053,12 +13310,13 @@ def get_student_status():
         """, (section_id,))
         
         students = cursor.fetchall()
-        logger.info(f"🔍 Found {len(students)} students for section_id: {section_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Found {len(students)} students for section_id: {section_id}")
         
         # Close cursor before next query
         cursor.close()
         
-        # ✅ Get temporary students from CURRENT SESSION only
+        #    Get temporary students from CURRENT SESSION only
         cursor = conn.cursor(dictionary=True, buffered=True)
         cursor.execute("""
             SELECT name, timestamp, status, remarks, session_id
@@ -13073,7 +13331,7 @@ def get_student_status():
         student_list = []
         detected_count = 0
         
-        # 🎯 Check missing periods
+        #  Check missing periods
         missing_student_ids = []
         currently_present_ids = set()
         
@@ -13088,10 +13346,11 @@ def get_student_status():
                 cursor.close()
                 
                 missing_student_ids = [record['student_id'] for record in missing_records] if missing_records else []
-                logger.info(f"🔍 DB MISSING CHECK: Found {len(missing_student_ids)} CURRENTLY missing students")
+                if DEBUG_MODE: 
+                    logger.debug(f"  DB MISSING CHECK: Found {len(missing_student_ids)} CURRENTLY missing students")
                 
             except Exception as e:
-                logger.warning(f"⚠️ Error checking missing students: {e}")
+                logger.warning(f"  Error checking missing students: {e}")
                 missing_student_ids = []
                 if cursor:
                     cursor.close()
@@ -13105,9 +13364,10 @@ def get_student_status():
                         if student_id and isinstance(student_id, str):
                             currently_present_ids.add(student_id)
                 
-                logger.info(f"🔍 REAL-TIME CHECK: {len(currently_present_ids)} students currently tracked")
+                if DEBUG_MODE: 
+                    logger.debug(f"  REAL-TIME CHECK: {len(currently_present_ids)} students currently tracked")
         except Exception as e:
-            logger.warning(f"⚠️ Error checking locked_tracks: {e}")
+            logger.warning(f"  Error checking locked_tracks: {e}")
             currently_present_ids = set()
         
         safe_missing_ids = list(missing_student_ids) if missing_student_ids is not None else []
@@ -13154,7 +13414,8 @@ def get_student_status():
             
             # Priority 1: Manual status (use it and skip other checks)
             if is_manual_status:
-                logger.info(f"🔒 MANUAL STATUS PROTECTED: {student_name} -> {current_status}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  MANUAL STATUS PROTECTED: {student_name} -> {current_status}")
                 student_list.append({
                     'id': student_id,
                     'name': student_name,
@@ -13202,14 +13463,17 @@ def get_student_status():
                         """, (original_status, student_id, session_id))
                         cursor.close()
                         
-                        logger.info(f"🔄 STUDENT RETURNED: {student_name} -> {original_status}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  STUDENT RETURNED: {student_name} -> {original_status}")
                 
-                logger.info(f"✅ CURRENTLY PRESENT: {student_name}")
+                if DEBUG_MODE: 
+                    logger.debug(f"   CURRENTLY PRESENT: {student_name}")
             
             # Priority 3: Currently missing in database
             elif student_id in safe_missing_ids:
                 current_status = 'missing'
-                logger.info(f"🎯 CURRENTLY MISSING: {student_name}")
+                if DEBUG_MODE: 
+                    logger.debug(f" CURRENTLY MISSING: {student_name}")
             
             # Priority 4: Check attendance records (fallback)
             else:
@@ -13236,13 +13500,14 @@ def get_student_status():
                             """, (student_id, session_id, attendance_record['timestamp']))
                             cursor.close()
                             
-                            logger.info(f"🔄 UPDATED TO LATE: {student_name}")
+                            if DEBUG_MODE: 
+                                logger.debug(f"  UPDATED TO LATE: {student_name}")
                 else:
                     current_status = 'absent'
             
             if current_status is None:
                 current_status = 'absent'
-                logger.warning(f"⚠️ Status was None for {student_name}, defaulting to 'absent'")
+                logger.warning(f"  Status was None for {student_name}, defaulting to 'absent'")
             
             if current_status in ['present', 'late']:
                 detected_count += 1
@@ -13332,7 +13597,8 @@ def get_student_status():
         for student in student_list:
             status_counts[student['status']] = status_counts.get(student['status'], 0) + 1
         
-        logger.info(f"📊 STATUS SUMMARY: {status_counts}")
+        if DEBUG_MODE: 
+            logger.debug(f"  STATUS SUMMARY: {status_counts}")
         
         return jsonify({
             'success': True,
@@ -13350,9 +13616,9 @@ def get_student_status():
         })
         
     except Exception as e:
-        logger.error(f"❌ Error getting student status: {e}")
+        logger.error(f"  Error getting student status: {e}")
         import traceback
-        logger.error(f"❌ Stack trace: {traceback.format_exc()}")
+        logger.error(f"  Stack trace: {traceback.format_exc()}")
         
         # Cleanup on error
         if cursor:
@@ -13418,9 +13684,10 @@ def manage_student():
                 
                 if time_difference.total_seconds() > threshold_seconds:
                     status = 'late'
-                    logger.info(f"⏰ TEMPORARY STUDENT LATE: {student_name} arrived {time_difference.total_seconds():.1f} seconds after start (threshold: {threshold_seconds} seconds)")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  TEMPORARY STUDENT LATE: {student_name} arrived {time_difference.total_seconds():.1f} seconds after start (threshold: {threshold_seconds} seconds)")
             
-            # ✅ GET SESSION SUBJECT INFORMATION
+            #    GET SESSION SUBJECT INFORMATION
             subject_code = 'Unknown Subject'
             subject_name = 'Unknown Subject'
             room = 'Unknown Room'
@@ -13441,17 +13708,18 @@ def manage_student():
                     subject_name = session_result.get('subject_name', 'Unknown Subject')
                     room = session_result.get('room', 'Unknown Room')
                     section_id = session_result.get('section_id')
-                    logger.info(f"🔗 Found session subject: {subject_code} - {subject_name}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Found session subject: {subject_code} - {subject_name}")
                 
                 cursor.close()
                 conn.close()
             except Exception as e:
-                logger.warning(f"⚠️ Could not fetch session subject info: {e}")
+                logger.warning(f"  Could not fetch session subject info: {e}")
             
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # ✅ CRITICAL FIX: Check if temporary student already exists in THIS session
+            #      Check if temporary student already exists in THIS session
             cursor.execute("""
                 SELECT id, status FROM attendance 
                 WHERE student_id IS NULL 
@@ -13463,7 +13731,7 @@ def manage_student():
             existing_temp_student = cursor.fetchone()
             
             if existing_temp_student:
-                # ✅ UPDATE existing temporary student instead of creating duplicate
+                #    UPDATE existing temporary student instead of creating duplicate
                 cursor.execute("""
                     UPDATE attendance 
                     SET status = %s, timestamp = %s,
@@ -13471,9 +13739,10 @@ def manage_student():
                     WHERE id = %s
                 """, (status, current_time, subject_code, subject_name, room, section_id, existing_temp_student[0]))
                 
-                logger.info(f"🔄 TEMPORARY STUDENT UPDATED: {student_name} ({student_id}) - {status}")
+                if DEBUG_MODE: 
+                    logger.debug(f"  TEMPORARY STUDENT UPDATED: {student_name} ({student_id}) - {status}")
             else:
-                # ✅ INSERT new temporary student
+                #    INSERT new temporary student
                 actual_session_id = current_session_id if current_session_id else 'manual_add'
                 
                 cursor.execute("""
@@ -13482,7 +13751,8 @@ def manage_student():
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (None, display_name, current_time, 'student', status, actual_session_id, remarks, subject_code, subject_name, room, section_id))
                 
-                logger.info(f"✅ TEMPORARY ATTENDANCE ADDED: {student_name} ({student_id}) - {status}")
+                if DEBUG_MODE: 
+                    logger.debug(f"   TEMPORARY ATTENDANCE ADDED: {student_name} ({student_id}) - {status}")
             
             conn.commit()
             cursor.close()
@@ -13510,7 +13780,7 @@ def manage_student():
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # ✅ CORRECTED: Check students table with proper schema
+            #    CORRECTED: Check students table with proper schema
             cursor.execute("""
                 SELECT first_name, last_name 
                 FROM students 
@@ -13533,7 +13803,8 @@ def manage_student():
                 if student_id in student_status:
                     del student_status[student_id]
                 
-                logger.info(f"🗑️ REGULAR STUDENT REMOVED: {student_id}")
+                if DEBUG_MODE: 
+                    logger.debug(f"🗑️ REGULAR STUDENT REMOVED: {student_id}")
                 return jsonify({
                     'success': True, 
                     'title': 'Student Removed',
@@ -13555,7 +13826,8 @@ def manage_student():
                 if student_id in student_status:
                     del student_status[student_id]
                 
-                logger.info(f"🗑️ TEMPORARY STUDENT REMOVED: {student_id} (deleted {deleted_count} records)")
+                if DEBUG_MODE: 
+                    logger.debug(f"🗑️ TEMPORARY STUDENT REMOVED: {student_id} (deleted {deleted_count} records)")
                 return jsonify({
                     'success': True, 
                     'title': 'Temporary Student Removed',
@@ -13589,7 +13861,7 @@ def manage_student():
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             
-            # ✅ CORRECTED: Get student info with proper schema
+            #    CORRECTED: Get student info with proper schema
             cursor.execute("""
                 SELECT s.first_name, s.last_name, ys.section_id
                 FROM students s
@@ -13628,7 +13900,7 @@ def manage_student():
                     'message': f'Section {program_id} {year_level}{section_name} was not found'
                 })
             
-            # ✅ CORRECTED: Update student's section_id
+            #    CORRECTED: Update student's section_id
             cursor.execute("""
                 UPDATE students 
                 SET section_id = %s
@@ -13642,7 +13914,8 @@ def manage_student():
             if student_id in student_status:
                 del student_status[student_id]
             
-            logger.info(f"🔄 STUDENT TRANSFERRED: {student_id} to {program_id} {year_level}{section_name}")
+            if DEBUG_MODE: 
+                logger.debug(f"  STUDENT TRANSFERRED: {student_id} to {program_id} {year_level}{section_name}")
             return jsonify({
                 'success': True, 
                 'title': 'Transfer Successful',
@@ -13654,7 +13927,7 @@ def manage_student():
             remarks = student_data.get('remarks', 'Excused')
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # ✅ GET SESSION SUBJECT INFORMATION
+            #    GET SESSION SUBJECT INFORMATION
             subject_code = 'Unknown Subject'
             subject_name = 'Unknown Subject'
             room = 'Unknown Room'
@@ -13679,7 +13952,7 @@ def manage_student():
                 cursor.close()
                 conn.close()
             except Exception as e:
-                logger.warning(f"⚠️ Could not fetch session subject info: {e}")
+                logger.warning(f"  Could not fetch session subject info: {e}")
             
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
@@ -13697,7 +13970,7 @@ def manage_student():
                     # REGULAR STUDENT
                     student_name = f"{student['first_name']} {student['last_name']}"
                     
-                    # ✅ CRITICAL FIX: Check for existing attendance record in CURRENT SESSION
+                    #      Check for existing attendance record in CURRENT SESSION
                     cursor.execute("""
                         SELECT id, status FROM attendance 
                         WHERE student_id = %s AND session_id = %s
@@ -13707,7 +13980,7 @@ def manage_student():
                     existing_record = cursor.fetchone()
                     
                     if existing_record:
-                        # ✅ UPDATE existing record (PREVENTS DUPLICATE)
+                        #    UPDATE existing record (PREVENTS DUPLICATE)
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = 'excused', remarks = %s, timestamp = %s,
@@ -13729,7 +14002,8 @@ def manage_student():
                     
                     student_status[student_id] = 'excused'
                     
-                    logger.info(f"📝 REGULAR STUDENT EXCUSED: {student_name} ({student_id}) - {action_type}")
+                    if DEBUG_MODE: 
+                        logger.debug(f"📝 REGULAR STUDENT EXCUSED: {student_name} ({student_id}) - {action_type}")
                     return jsonify({
                         'success': True, 
                         'title': 'Student Excused',
@@ -13761,7 +14035,8 @@ def manage_student():
                         
                         student_status[student_id] = 'excused'
                         
-                        logger.info(f"📝 TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id})")
+                        if DEBUG_MODE: 
+                            logger.debug(f"📝 TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id})")
                         return jsonify({
                             'success': True, 
                             'title': 'Student Excused',
@@ -13772,7 +14047,7 @@ def manage_student():
                         # STUDENT NOT FOUND
                         cursor.close()
                         conn.close()
-                        logger.error(f"❌ STUDENT NOT FOUND: {student_id}")
+                        logger.error(f"  STUDENT NOT FOUND: {student_id}")
                         return jsonify({
                             'success': False, 
                             'title': 'Student Not Found',
@@ -13783,7 +14058,7 @@ def manage_student():
                 conn.rollback()
                 cursor.close()
                 conn.close()
-                logger.error(f"❌ DATABASE ERROR IN EXCUSED: {e}")
+                logger.error(f"  DATABASE ERROR IN EXCUSED: {e}")
                 return jsonify({
                     'success': False, 
                     'title': 'Database Error',
@@ -13805,7 +14080,7 @@ def manage_student():
             
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # ✅ GET SESSION SUBJECT INFORMATION
+            #    GET SESSION SUBJECT INFORMATION
             subject_code = 'Unknown Subject'
             subject_name = 'Unknown Subject'
             room = 'Unknown Room'
@@ -13830,7 +14105,7 @@ def manage_student():
                 cursor.close()
                 conn.close()
             except Exception as e:
-                logger.warning(f"⚠️ Could not fetch session subject info: {e}")
+                logger.warning(f"  Could not fetch session subject info: {e}")
             
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
@@ -13848,7 +14123,7 @@ def manage_student():
                     # REGULAR STUDENT
                     student_name = f"{student['first_name']} {student['last_name']}"
                     
-                    # ✅ CRITICAL FIX: Check for existing record in CURRENT SESSION
+                    #      Check for existing record in CURRENT SESSION
                     cursor.execute("""
                         SELECT id FROM attendance 
                         WHERE student_id = %s AND session_id = %s
@@ -13858,7 +14133,7 @@ def manage_student():
                     existing_record = cursor.fetchone()
                     
                     if existing_record:
-                        # ✅ UPDATE existing record (PREVENTS DUPLICATE)
+                        #    UPDATE existing record (PREVENTS DUPLICATE)
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = %s, remarks = %s, timestamp = %s,
@@ -13871,14 +14146,15 @@ def manage_student():
                         
                         student_status[student_id] = status
                         
-                        logger.info(f"🔄 MANUAL STATUS UPDATED: {student_name} -> {status}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  MANUAL STATUS UPDATED: {student_name} -> {status}")
                         return jsonify({
                             'success': True, 
                             'title': 'Status Updated',
                             'message': f'Student {student_name} status updated to {status}'
                         })
                     else:
-                        # ✅ INSERT new record if none exists in this session
+                        #    INSERT new record if none exists in this session
                         cursor.execute("""
                             INSERT INTO attendance 
                             (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
@@ -13891,7 +14167,8 @@ def manage_student():
                         
                         student_status[student_id] = status
                         
-                        logger.info(f"✅ MANUAL ATTENDANCE ADDED: {student_name} -> {status}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"   MANUAL ATTENDANCE ADDED: {student_name} -> {status}")
                         return jsonify({
                             'success': True, 
                             'title': 'Attendance Added',
@@ -13899,7 +14176,7 @@ def manage_student():
                         })
                 else:
                     # TEMPORARY STUDENT
-                    # ✅ CRITICAL FIX: Check in CURRENT SESSION only
+                    #      Check in CURRENT SESSION only
                     cursor.execute("""
                         SELECT id, name FROM attendance 
                         WHERE student_id IS NULL 
@@ -13911,7 +14188,7 @@ def manage_student():
                     temp_student = cursor.fetchone()
                     
                     if temp_student:
-                        # ✅ UPDATE existing temporary student (PREVENTS DUPLICATE)
+                        #    UPDATE existing temporary student (PREVENTS DUPLICATE)
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = %s, remarks = %s, timestamp = %s,
@@ -13925,7 +14202,8 @@ def manage_student():
                         
                         student_status[student_id] = status
                         
-                        logger.info(f"🔄 TEMPORARY STUDENT STATUS UPDATED: {temp_student['name']} -> {status}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  TEMPORARY STUDENT STATUS UPDATED: {temp_student['name']} -> {status}")
                         return jsonify({
                             'success': True, 
                             'title': 'Status Updated',
@@ -13934,7 +14212,7 @@ def manage_student():
                     else:
                         cursor.close()
                         conn.close()
-                        logger.warning(f"❌ NO ATTENDANCE RECORD: Temporary student ({student_id}) in session {current_session_id}")
+                        logger.warning(f"  NO ATTENDANCE RECORD: Temporary student ({student_id}) in session {current_session_id}")
                         return jsonify({
                             'success': False, 
                             'title': 'No Attendance Record',
@@ -13974,7 +14252,7 @@ def get_all_students():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # ✅ CORRECTED: Join with year_sections and programs to get proper data
+        #    CORRECTED: Join with year_sections and programs to get proper data
         cursor.execute("""
             SELECT 
                 s.student_id as id, 
@@ -14127,7 +14405,7 @@ def fix_connection():
     global get_db_connection
     get_db_connection = proper_get_db_connection
     
-    return "✅ Connection function fixed! Try logging in again."
+    return "   Connection function fixed! Try logging in again."
 
 @app.route('/reset-admin-password')
 def reset_admin_password():
@@ -14149,14 +14427,14 @@ def reset_admin_password():
         conn.close()
         
         return f"""
-        <h2>✅ Admin Password Reset</h2>
+        <h2>   Admin Password Reset</h2>
         <p>New password: <strong>{new_password}</strong></p>
         <p>Try logging in with: <strong>admin@wmsu.edu.ph</strong> and password: <strong>{new_password}</strong></p>
         <a href="/">Go to Login</a>
         """
         
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"  Error: {str(e)}"
 
 def get_session_start_time():
     """Get the session start time"""
@@ -14167,7 +14445,8 @@ def set_session_start_time():
     """Set the session start time when class begins"""
     global session_start_time
     session_start_time = datetime.now()
-    logger.info(f"🕐 SESSION START TIME SET: {session_start_time}")
+    if DEBUG_MODE: 
+        logger.debug(f"🕐 SESSION START TIME SET: {session_start_time}")
 
 # Add test routes to debug API
 @app.route('/api/test_simple', methods=['GET'])
@@ -14199,8 +14478,9 @@ def list_routes():
 @app.route('/api/adjust_session_time', methods=['POST'])
 def adjust_session_time():
     """Adjust session duration or late threshold"""
-    print("🎯 DEBUG: /api/adjust_session_time endpoint HIT!")
-    logger.info("✅ /api/adjust_session_time endpoint called!")
+    print(" DEBUG: /api/adjust_session_time endpoint HIT!")
+    if DEBUG_MODE: 
+        logger.debug("   /api/adjust_session_time endpoint called!")
     
     try:
         # Get JSON data from request
@@ -14216,7 +14496,7 @@ def adjust_session_time():
         adj_minutes = data.get('adjustment_minutes', 0)
         elapsed_minutes = data.get('elapsed_minutes', 0)
         
-        print(f"🔍 DEBUG: session_id={session_id}, adj_type={adj_type}, adj_minutes={adj_minutes}, elapsed_minutes={elapsed_minutes}")
+        print(f"  DEBUG: session_id={session_id}, adj_type={adj_type}, adj_minutes={adj_minutes}, elapsed_minutes={elapsed_minutes}")
         
         # Validate input
         if not all([session_id, adj_type, isinstance(adj_minutes, (int, float))]):
@@ -14235,7 +14515,7 @@ def adjust_session_time():
         
         try:
             # 1. Fetch current LIVE values from attendance_sessions
-            print(f"🔍 DEBUG: Querying attendance_sessions for session_id: {session_id}")
+            print(f"  DEBUG: Querying attendance_sessions for session_id: {session_id}")
             cursor.execute("""
                 SELECT total_duration_minutes, late_threshold_minutes,
                        session_duration_seconds_total, threshold_seconds_total,
@@ -14245,10 +14525,10 @@ def adjust_session_time():
             """, (session_id,))
             live_session = cursor.fetchone()
             
-            print(f"🔍 DEBUG: Query result: {live_session}")
+            print(f"  DEBUG: Query result: {live_session}")
             
             if not live_session:
-                print(f"❌ DEBUG: No active session found for session_id: {session_id}")
+                print(f"  DEBUG: No active session found for session_id: {session_id}")
                 cursor.close()
                 connection.close()
                 return jsonify({'success': False, 'message': 'Active session not found.'}), 404
@@ -14265,7 +14545,7 @@ def adjust_session_time():
                 current_duration_seconds = current_duration_minutes * 60
                 current_threshold_seconds = current_threshold_minutes * 60
                 
-            print(f"🔍 DEBUG: Current values - Duration: {current_duration_minutes}min, Threshold: {current_threshold_minutes}min")
+            print(f"  DEBUG: Current values - Duration: {current_duration_minutes}min, Threshold: {current_threshold_minutes}min")
             
             # 2. Calculate new values
             new_duration_minutes = current_duration_minutes
@@ -14273,10 +14553,10 @@ def adjust_session_time():
             
             if adj_type == 'duration':
                 new_duration_minutes += adj_minutes
-                print(f"🔍 DEBUG: Adjusting duration: {current_duration_minutes} + {adj_minutes} = {new_duration_minutes}")
+                print(f"  DEBUG: Adjusting duration: {current_duration_minutes} + {adj_minutes} = {new_duration_minutes}")
             elif adj_type == 'threshold':
                 new_threshold_minutes += adj_minutes
-                print(f"🔍 DEBUG: Adjusting threshold: {current_threshold_minutes} + {adj_minutes} = {new_threshold_minutes}")
+                print(f"  DEBUG: Adjusting threshold: {current_threshold_minutes} + {adj_minutes} = {new_threshold_minutes}")
             else:
                 cursor.close()
                 connection.close()
@@ -14285,7 +14565,7 @@ def adjust_session_time():
             new_duration_seconds = new_duration_minutes * 60
             new_threshold_seconds = new_threshold_minutes * 60
             
-            print(f"🔍 DEBUG: New values - Duration: {new_duration_seconds}s ({new_duration_minutes}min), Threshold: {new_threshold_seconds}s ({new_threshold_minutes}min)")
+            print(f"  DEBUG: New values - Duration: {new_duration_seconds}s ({new_duration_minutes}min), Threshold: {new_threshold_seconds}s ({new_threshold_minutes}min)")
 
             # 3. Backend Constraints Check
             if new_duration_seconds <= 0:
@@ -14317,7 +14597,7 @@ def adjust_session_time():
                     WHERE session_id = %s
                 """
                 cursor.execute(update_live_sql, (new_duration_minutes, new_duration_seconds, session_id))
-                print(f"✅ DEBUG: Updated attendance_sessions duration")
+                print(f"   DEBUG: Updated attendance_sessions duration")
             elif adj_type == 'threshold':
                 update_live_sql = """
                     UPDATE attendance_sessions 
@@ -14325,7 +14605,7 @@ def adjust_session_time():
                     WHERE session_id = %s
                 """
                 cursor.execute(update_live_sql, (new_threshold_minutes, new_threshold_seconds, session_id))
-                print(f"✅ DEBUG: Updated attendance_sessions threshold")
+                print(f"   DEBUG: Updated attendance_sessions threshold")
             
             # B) Update the DEFAULT settings in session_settings using original_schedule_id
             user_id_for_settings = live_session.get('original_schedule_id') or session_id
@@ -14339,10 +14619,10 @@ def adjust_session_time():
                 updated_at = CURRENT_TIMESTAMP()
             """
             cursor.execute(upsert_config_sql, (user_id_for_settings, new_duration_minutes, new_threshold_minutes))
-            print(f"✅ DEBUG: Updated session_settings for user: {user_id_for_settings}")
+            print(f"   DEBUG: Updated session_settings for user: {user_id_for_settings}")
             
             connection.commit()
-            print(f"✅ DEBUG: Database commit successful")
+            print(f"   DEBUG: Database commit successful")
 
             # Update global variables
             global session_total_duration_seconds, session_threshold_seconds
@@ -14351,7 +14631,8 @@ def adjust_session_time():
             elif adj_type == 'threshold':
                 session_threshold_seconds = new_threshold_seconds
 
-            logger.info(f"🎯 TIME ADJUSTED: {adj_type} -> Duration: {new_duration_seconds}s, Threshold: {new_threshold_seconds}s")
+            if DEBUG_MODE: 
+                logger.debug(f" TIME ADJUSTED: {adj_type} -> Duration: {new_duration_seconds}s, Threshold: {new_threshold_seconds}s")
 
             # 5. Return success response
             response_data = {
@@ -14363,13 +14644,13 @@ def adjust_session_time():
                 'new_threshold_seconds': new_threshold_seconds
             }
             
-            print(f"✅ DEBUG: Returning success: {response_data}")
+            print(f"   DEBUG: Returning success: {response_data}")
             return jsonify(response_data)
 
         except Exception as e:
             connection.rollback()
             logger.error(f"Database error during adjustment: {e}")
-            print(f"❌ DEBUG: Database error: {str(e)}")
+            print(f"  DEBUG: Database error: {str(e)}")
             import traceback
             traceback.print_exc()
             return jsonify({'success': False, 'message': f'Database error: {str(e)}'}), 500
@@ -14380,7 +14661,7 @@ def adjust_session_time():
             
     except Exception as e:
         logger.error(f"Error in adjust_session_time: {e}")
-        print(f"❌ DEBUG: General error: {str(e)}")
+        print(f"  DEBUG: General error: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -14425,7 +14706,7 @@ def get_session_settings():
     """Retrieve class settings: live duration/threshold and default video quality."""
     global session_total_duration_seconds, session_threshold_seconds
     
-    session_id = request.args.get('session_id')  # ✅ CHANGED: schedule_id -> session_id
+    session_id = request.args.get('session_id')  #    CHANGED: schedule_id -> session_id
     if not session_id:
         return jsonify({'success': False, 'message': 'Session ID required'}), 400
         
@@ -14481,15 +14762,16 @@ def get_session_settings():
             live_duration_seconds = live_duration_minutes * 60
             live_threshold_seconds = live_threshold_minutes * 60
             
-            logger.warning(f"⚠️ No active attendance session found for {session_id}. Using default/config values.")
+            logger.warning(f"  No active attendance session found for {session_id}. Using default/config values.")
 
-        # 🎯 CRITICAL: Update global variables
+        #  CRITICAL: Update global variables
         session_total_duration_seconds = live_duration_seconds
         session_threshold_seconds = live_threshold_seconds
         
         video_quality = default_config['video_quality'] if default_config else '720'
 
-        logger.info(f"🎯 SESSION SETTINGS LOADED: Duration={live_duration_seconds}s ({live_duration_minutes}min), Threshold={live_threshold_seconds}s ({live_threshold_minutes}min)")
+        if DEBUG_MODE: 
+            logger.debug(f" SESSION SETTINGS LOADED: Duration={live_duration_seconds}s ({live_duration_minutes}min), Threshold={live_threshold_seconds}s ({live_threshold_minutes}min)")
 
         return jsonify({
             'success': True,
@@ -14503,7 +14785,7 @@ def get_session_settings():
         })
             
     except Exception as e:
-        logger.error(f"❌ Error in get_session_settings: {e}", exc_info=True)
+        logger.error(f"  Error in get_session_settings: {e}", exc_info=True)
         return jsonify({'success': False, 'message': str(e)}), 500
     finally:
         if cursor: cursor.close()
@@ -14512,7 +14794,7 @@ def get_session_settings():
 @app.route('/api/update_video_quality', methods=['POST'])
 def update_video_quality():
     data = request.get_json()
-    session_id = data.get('session_id')  # ✅ CHANGED: schedule_id -> session_id
+    session_id = data.get('session_id')  #    CHANGED: schedule_id -> session_id
     video_quality = data.get('video_quality')
 
     if not all([session_id, video_quality]):
@@ -14544,7 +14826,8 @@ def update_video_quality():
         """, (user_id_for_settings, video_quality))
         
         connection.commit()
-        logger.info(f"🎯 VIDEO QUALITY UPDATED: {user_id_for_settings} -> {video_quality}")
+        if DEBUG_MODE: 
+            logger.debug(f" VIDEO QUALITY UPDATED: {user_id_for_settings} -> {video_quality}")
         return jsonify({'success': True, 'message': 'Video Quality updated.'})
 
     except Exception as e:
@@ -14562,30 +14845,30 @@ def end_session():
     API 3: Finalizes the session, saves summary statistics INCLUDING DURATION
     FIXED: Prevents duplicate absent records and handles temporary students properly
     """
-    print("🎯 DEBUG: /api/end_session endpoint HIT!")
+    print(" DEBUG: /api/end_session endpoint HIT!")
     
     data = request.get_json()
     session_data = data.get('session_data')
     unrecognized_faces = data.get('unrecognized_faces', [])
     session_id = data.get('session_id')
 
-    print(f"🔍 DEBUG end_session called with session_id: {session_id}")
+    print(f"  DEBUG end_session called with session_id: {session_id}")
 
     if not session_id:
         return jsonify({'success': False, 'message': 'Missing session_id.'}), 400
 
     try:
         with get_db_cursor() as cursor:
-            print(f"🔍 DEBUG Database connection established")
+            print(f"  DEBUG Database connection established")
             
             # 1. Get session start time AND SUBJECT INFO first
-            print(f"🔍 DEBUG Getting session start time and subject info")
+            print(f"  DEBUG Getting session start time and subject info")
             cursor.execute("SELECT started_at, subject_code, subject_name, room FROM attendance_sessions WHERE session_id = %s", (session_id,))
             session_result = cursor.fetchone()
             
             if not session_result:
-                print(f"❌ DEBUG Session not found: {session_id}")
-                print(f"❌ DEBUG Available sessions in database:")
+                print(f"  DEBUG Session not found: {session_id}")
+                print(f"  DEBUG Available sessions in database:")
                 # List all available sessions for debugging
                 cursor.execute("SELECT session_id, status FROM attendance_sessions ORDER BY started_at DESC LIMIT 10")
                 all_sessions = cursor.fetchall()
@@ -14603,8 +14886,8 @@ def end_session():
             subject_name = session_result['subject_name'] if isinstance(session_result, dict) else session_result[2]
             room = session_result['room'] if isinstance(session_result, dict) else session_result[3]
             
-            print(f"🔍 DEBUG Session started at: {started_at}")
-            print(f"🔍 DEBUG Subject info - Code: {subject_code}, Name: {subject_name}, Room: {room}")
+            print(f"  DEBUG Session started at: {started_at}")
+            print(f"  DEBUG Subject info - Code: {subject_code}, Name: {subject_name}, Room: {room}")
             
             # 2. Calculate duration as TIME format (HH:MM:SS)
             from datetime import datetime, timedelta
@@ -14620,10 +14903,10 @@ def end_session():
             # Format as TIME string (HH:MM:SS)
             duration_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
             
-            print(f"🔍 DEBUG Calculated duration: {duration_time} (HH:MM:SS)")
+            print(f"  DEBUG Calculated duration: {duration_time} (HH:MM:SS)")
             
             # 3. Finalize Unrecognized Faces
-            print(f"🔍 DEBUG Processing {len(unrecognized_faces)} unrecognized faces")
+            print(f"  DEBUG Processing {len(unrecognized_faces)} unrecognized faces")
             for face in unrecognized_faces:
                 face_status = face.get('status', 'skipped')
                 unrecognized_id = face.get('unrecognized_face_id') 
@@ -14637,28 +14920,28 @@ def end_session():
                         """
                         notes = face.get('notes', f'Final status set to {face_status} during session end.')
                         cursor.execute(unrecognized_sql, (face_status, notes, unrecognized_id, session_id))
-                        print(f"🔍 DEBUG Updated unrecognized face: {unrecognized_id}")
+                        print(f"  DEBUG Updated unrecognized face: {unrecognized_id}")
                     except Exception as e:
-                        print(f"⚠️ WARNING: Could not update unrecognized face {unrecognized_id}: {e}")
+                        print(f"  WARNING: Could not update unrecognized face {unrecognized_id}: {e}")
                         continue
 
             # 4. Get section_id for this session
-            print(f"🔍 DEBUG Getting section_id for session: {session_id}")
+            print(f"  DEBUG Getting section_id for session: {session_id}")
             cursor.execute("SELECT section_id FROM attendance_sessions WHERE session_id = %s", (session_id,))
             session_result = cursor.fetchone()
             
             section_id = session_result['section_id'] if isinstance(session_result, dict) else session_result[0]
-            print(f"🔍 DEBUG Found section_id: {section_id}")
+            print(f"  DEBUG Found section_id: {section_id}")
 
             # 5. Get total enrolled students in this section
-            print(f"🔍 DEBUG Getting total enrolled students for section: {section_id}")
+            print(f"  DEBUG Getting total enrolled students for section: {section_id}")
             cursor.execute("SELECT COUNT(*) as count FROM students WHERE section_id = %s AND status = 'active'", (section_id,))
             total_enrolled_result = cursor.fetchone()
             total_enrolled = total_enrolled_result['count'] if isinstance(total_enrolled_result, dict) else total_enrolled_result[0]
-            print(f"🔍 DEBUG Total enrolled students: {total_enrolled}")
+            print(f"  DEBUG Total enrolled students: {total_enrolled}")
 
             # 6. Get actual attendance counts from attendance table
-            print(f"🔍 DEBUG Getting attendance counts for session: {session_id}")
+            print(f"  DEBUG Getting attendance counts for session: {session_id}")
             cursor.execute("""
                 SELECT 
                     COUNT(*) as total_attended,
@@ -14688,9 +14971,9 @@ def end_session():
             else:
                 present_count = late_count = excused_count = absent_count = total_attended = 0
 
-            print(f"🔍 DEBUG Current attendance - Present: {present_count}, Late: {late_count}, Excused: {excused_count}, Absent: {absent_count}, Total Attended: {total_attended}")
+            print(f"  DEBUG Current attendance - Present: {present_count}, Late: {late_count}, Excused: {excused_count}, Absent: {absent_count}, Total Attended: {total_attended}")
 
-            # 7. ✅ CRITICAL FIX: Calculate absent count PROPERLY (considering temporary students)
+            # 7.      Calculate absent count PROPERLY (considering temporary students)
             # Total records should equal total enrolled + temporary students
             # But absent count should only consider enrolled students who are actually absent
             
@@ -14705,9 +14988,9 @@ def end_session():
             temp_result = cursor.fetchone()
             temp_student_count = temp_result['temp_count'] if isinstance(temp_result, dict) else temp_result[0]
             
-            print(f"🔍 DEBUG Temporary students in session: {temp_student_count}")
+            print(f"  DEBUG Temporary students in session: {temp_student_count}")
             
-            # ✅ CORRECT absent calculation: Only enrolled students who don't have attendance records
+            #    CORRECT absent calculation: Only enrolled students who don't have attendance records
             cursor.execute("""
                 SELECT COUNT(*) as actual_absent_count
                 FROM students s 
@@ -14725,11 +15008,11 @@ def end_session():
             absent_result = cursor.fetchone()
             actual_absent_count = absent_result['actual_absent_count'] if isinstance(absent_result, dict) else absent_result[0]
             
-            print(f"🔍 DEBUG Actual absent students (enrolled but not present/late/excused): {actual_absent_count}")
+            print(f"  DEBUG Actual absent students (enrolled but not present/late/excused): {actual_absent_count}")
 
-            # 8. ✅ CRITICAL FIX: MARK ABSENT STUDENTS WITH PROPER DUPLICATE CHECK
+            # 8.      MARK ABSENT STUDENTS WITH PROPER DUPLICATE CHECK
             if actual_absent_count > 0:
-                print(f"🔍 DEBUG Marking {actual_absent_count} students as absent")
+                print(f"  DEBUG Marking {actual_absent_count} students as absent")
                 try:
                     # Get students who are enrolled but NOT marked as present/late/excused in this session
                     cursor.execute("""
@@ -14747,16 +15030,16 @@ def end_session():
                     """, (section_id, session_id))
                     absent_students = cursor.fetchall()
                     
-                    print(f"🔍 DEBUG Found {len(absent_students)} students to mark as absent")
+                    print(f"  DEBUG Found {len(absent_students)} students to mark as absent")
                     
-                    # ✅ CRITICAL FIX: Check for existing absent records before inserting
+                    #      Check for existing absent records before inserting
                     absent_records_added = 0
                     for student in absent_students:
                         student_id = student['student_id'] if isinstance(student, dict) else student[0]
                         first_name = student['first_name'] if isinstance(student, dict) else student[1]
                         last_name = student['last_name'] if isinstance(student, dict) else student[2]
                         
-                        # ✅ CHECK if absent record already exists for this student in this session
+                        #    CHECK if absent record already exists for this student in this session
                         cursor.execute("""
                             SELECT id FROM attendance 
                             WHERE session_id = %s AND student_id = %s AND status = 'absent'
@@ -14772,12 +15055,12 @@ def end_session():
                             """, (student_id, f"{first_name} {last_name}", session_id, section_id, subject_code, subject_name, room))
                             absent_records_added += 1
                         else:
-                            print(f"🔍 DEBUG Absent record already exists for student {student_id}, skipping")
+                            print(f"  DEBUG Absent record already exists for student {student_id}, skipping")
                     
-                    print(f"🔍 DEBUG Successfully inserted {absent_records_added} new absent records (skipped {len(absent_students) - absent_records_added} duplicates)")
+                    print(f"  DEBUG Successfully inserted {absent_records_added} new absent records (skipped {len(absent_students) - absent_records_added} duplicates)")
                     
                 except Exception as e:
-                    print(f"❌ ERROR inserting absent records: {e}")
+                    print(f"  ERROR inserting absent records: {e}")
                     return jsonify({
                         'success': False,
                         'message': f'Failed to insert absent records: {str(e)}'
@@ -14812,10 +15095,10 @@ def end_session():
             else:
                 final_present = final_late = final_absent = final_excused = final_total = 0
 
-            print(f"🔍 DEBUG Final counts - Present: {final_present}, Late: {final_late}, Absent: {final_absent}, Excused: {final_excused}, Total Records: {final_total}")
+            print(f"  DEBUG Final counts - Present: {final_present}, Late: {final_late}, Absent: {final_absent}, Excused: {final_excused}, Total Records: {final_total}")
 
             # 10. Update attendance_sessions with FINAL data INCLUDING DURATION
-            print(f"🔍 DEBUG Updating attendance_sessions table with duration")
+            print(f"  DEBUG Updating attendance_sessions table with duration")
             summary_sql = """
                 UPDATE attendance_sessions
                 SET ended_at = NOW(), status = 'completed',
@@ -14832,9 +15115,9 @@ def end_session():
                 duration_time,  # STORE AS TIME FORMAT
                 session_id
             ))
-            print(f"🔍 DEBUG Updated attendance_sessions successfully with duration: {duration_time}")
+            print(f"  DEBUG Updated attendance_sessions successfully with duration: {duration_time}")
 
-        print(f"✅ DEBUG Session ended successfully")
+        print(f"   DEBUG Session ended successfully")
         return jsonify({
             'success': True, 
             'message': 'Session ended successfully.',
@@ -14850,7 +15133,7 @@ def end_session():
         }), 200
 
     except Exception as e:
-        print(f"\n❌ ERROR in /api/end_session:")
+        print(f"\n  ERROR in /api/end_session:")
         print(f"Error type: {type(e).__name__}")
         print(f"Error message: {str(e)}")
         import traceback
@@ -14863,15 +15146,16 @@ def end_session():
         }), 500
 
 
-# 🎯 NEW: Function to initialize session timing
+#  NEW: Function to initialize session timing
 def initialize_session_timing(schedule_id):
     """Initialize session timing when session starts"""
     global session_start_time, session_total_duration_seconds, session_threshold_seconds
     global detectionStopped
 
-     # 🎯 RESET DETECTION FLAG WHEN STARTING NEW SESSION
+     #  RESET DETECTION FLAG WHEN STARTING NEW SESSION
     detectionStopped = False
-    logger.info("🟢 Detection enabled for new session")
+    if DEBUG_MODE: 
+        logger.debug("🟢 Detection enabled for new session")
     
     try:
         connection = get_db_connection()
@@ -14899,13 +15183,14 @@ def initialize_session_timing(schedule_id):
             # Set session start time
             session_start_time = datetime.now()
             
-            logger.info(f"🎯 SESSION TIMING INITIALIZED: Start={session_start_time}, Duration={session_total_duration_seconds}s, Threshold={session_threshold_seconds}s")
+            if DEBUG_MODE: 
+                logger.debug(f" SESSION TIMING INITIALIZED: Start={session_start_time}, Duration={session_total_duration_seconds}s, Threshold={session_threshold_seconds}s")
         
         cursor.close()
         connection.close()
         
     except Exception as e:
-        logger.error(f"❌ Error initializing session timing: {e}")
+        logger.error(f"  Error initializing session timing: {e}")
 
 @app.route('/api/absent_students_for_enrollment', methods=['GET'])
 def get_absent_students():
@@ -14916,12 +15201,12 @@ def get_absent_students():
     session_id = request.args.get('session_id')
     section_id = request.args.get('section_id')
 
-    print(f"🔍 DEBUG /api/absent_students_for_enrollment:")
+    print(f"  DEBUG /api/absent_students_for_enrollment:")
     print(f"   session_id: {session_id}")
     print(f"   section_id: {section_id}")
 
     if not session_id or session_id == 'undefined':
-        print("❌ ERROR: Missing session_id")
+        print("  ERROR: Missing session_id")
         return jsonify({
             'success': False, 
             'message': 'Missing valid session_id.'
@@ -14931,8 +15216,8 @@ def get_absent_students():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # 🎯 STEP 1: Get session details to find the class info
-        print("🔍 DEBUG: Fetching session details...")
+        #  STEP 1: Get session details to find the class info
+        print("  DEBUG: Fetching session details...")
         cursor.execute("""
             SELECT session_id, class_name, subject_name, section_id 
             FROM attendance_sessions 
@@ -14941,20 +15226,20 @@ def get_absent_students():
         session_data = cursor.fetchone()
         
         if not session_data:
-            print(f"❌ ERROR: Session {session_id} not found")
+            print(f"  ERROR: Session {session_id} not found")
             return jsonify({
                 'success': False,
                 'message': f'Session {session_id} not found.'
             }), 404
         
-        print(f"🔍 DEBUG: Session found: {session_data}")
+        print(f"  DEBUG: Session found: {session_data}")
         
-        # 🎯 STEP 2: Get section details from year_sections
+        #  STEP 2: Get section details from year_sections
         session_section_id = session_data.get('section_id')
         section_info = None
         
         if session_section_id:
-            print(f"🔍 DEBUG: Fetching section details for section_id: {session_section_id}")
+            print(f"  DEBUG: Fetching section details for section_id: {session_section_id}")
             cursor.execute("""
                 SELECT ys.section_id, ys.program_id, ys.year_level, ys.section_name, p.program_name
                 FROM year_sections ys
@@ -14962,10 +15247,10 @@ def get_absent_students():
                 WHERE ys.section_id = %s
             """, (session_section_id,))
             section_info = cursor.fetchone()
-            print(f"🔍 DEBUG: Section info: {section_info}")
+            print(f"  DEBUG: Section info: {section_info}")
         
-        # 🎯 STEP 3: Get students already marked present/late in THIS session
-        print("🔍 DEBUG: Finding students already detected in this session...")
+        #  STEP 3: Get students already marked present/late in THIS session
+        print("  DEBUG: Finding students already detected in this session...")
         present_sql = """
             SELECT DISTINCT student_id 
             FROM attendance 
@@ -14975,12 +15260,12 @@ def get_absent_students():
         present_students = cursor.fetchall()
         present_ids = [student['student_id'] for student in present_students] if present_students else []
         
-        print(f"🔍 DEBUG: Already detected: {len(present_ids)} students")
+        print(f"  DEBUG: Already detected: {len(present_ids)} students")
         
-        # 🎯 STEP 4: Try multiple approaches to find students
+        #  STEP 4: Try multiple approaches to find students
         
         # First, let's see what students actually exist in the database
-        print("🔍 DEBUG: Checking available students in database...")
+        print("  DEBUG: Checking available students in database...")
         cursor.execute("""
             SELECT DISTINCT 
                 p.program_name, 
@@ -14994,14 +15279,14 @@ def get_absent_students():
             LIMIT 10
         """)
         available_students = cursor.fetchall()
-        print(f"🔍 DEBUG: Available student patterns: {available_students}")
+        print(f"  DEBUG: Available student patterns: {available_students}")
         
-        # 🎯 STEP 5: Try to find students using multiple criteria
+        #  STEP 5: Try to find students using multiple criteria
         undetected_students = []
         
         # Method 1: Try using section_id from session (BEST METHOD)
         if session_section_id:
-            print(f"🔍 DEBUG: Trying to find students by section_id: {session_section_id}")
+            print(f"  DEBUG: Trying to find students by section_id: {session_section_id}")
             if present_ids:
                 placeholders = ', '.join(['%s'] * len(present_ids))
                 students_sql = f"""
@@ -15042,17 +15327,17 @@ def get_absent_students():
                 cursor.execute(students_sql, [session_section_id])
             
             undetected_students = cursor.fetchall()
-            print(f"🔍 DEBUG: Found {len(undetected_students)} students by section_id")
+            print(f"  DEBUG: Found {len(undetected_students)} students by section_id")
         
         # Method 2: If no students found by section_id, try by program and year_level/section
         if not undetected_students and section_info:
-            print(f"🔍 DEBUG: Trying to find students by program/year_level/section...")
+            print(f"  DEBUG: Trying to find students by program/year_level/section...")
             program_id = section_info.get('program_id')
             year_level = section_info.get('year_level')
             section_name = section_info.get('section_name')
             
             if program_id and year_level and section_name:
-                print(f"🔍 DEBUG: Searching for program_id='{program_id}', year_level={year_level}, section_name='{section_name}'")
+                print(f"  DEBUG: Searching for program_id='{program_id}', year_level={year_level}, section_name='{section_name}'")
                 
                 if present_ids:
                     placeholders = ', '.join(['%s'] * len(present_ids))
@@ -15098,11 +15383,11 @@ def get_absent_students():
                     cursor.execute(students_sql, [program_id, year_level, section_name])
                 
                 undetected_students = cursor.fetchall()
-                print(f"🔍 DEBUG: Found {len(undetected_students)} students by program/year/section")
+                print(f"  DEBUG: Found {len(undetected_students)} students by program/year/section")
         
         # Method 3: Last resort - get ALL active students (for debugging)
         if not undetected_students:
-            print("🔍 DEBUG: No students found with specific criteria, getting ALL active students for debugging...")
+            print("  DEBUG: No students found with specific criteria, getting ALL active students for debugging...")
             if present_ids:
                 placeholders = ', '.join(['%s'] * len(present_ids))
                 students_sql = f"""
@@ -15141,17 +15426,17 @@ def get_absent_students():
                 cursor.execute(students_sql)
             
             all_students = cursor.fetchall()
-            print(f"🔍 DEBUG: Total active students in database: {len(all_students)}")
-            print(f"🔍 DEBUG: All student patterns: {[(s['student_id'], s['program_name'], s['year_level'], s['section_name']) for s in all_students[:5]]}")
+            print(f"  DEBUG: Total active students in database: {len(all_students)}")
+            print(f"  DEBUG: All student patterns: {[(s['student_id'], s['program_name'], s['year_level'], s['section_name']) for s in all_students[:5]]}")
             
             # For now, return all students so we can see what's available
             undetected_students = all_students
         
-        print(f"✅ FINAL RESULT: Found {len(undetected_students)} students for enrollment")
+        print(f"   FINAL RESULT: Found {len(undetected_students)} students for enrollment")
         
         # Log the results
         for student in undetected_students[:5]:  # Log first 5 only
-            print(f"   👤 {student['student_id']}: {student['first_name']} {student['last_name']} ({student['program_name']} {student['year_level']}{student['section_name']})")
+            print(f"     {student['student_id']}: {student['first_name']} {student['last_name']} ({student['program_name']} {student['year_level']}{student['section_name']})")
         
         if len(undetected_students) > 5:
             print(f"   ... and {len(undetected_students) - 5} more students")
@@ -15162,7 +15447,7 @@ def get_absent_students():
         return jsonify(undetected_students), 200
 
     except Exception as e:
-        print(f"❌ ERROR in /api/absent_students_for_enrollment: {str(e)}")
+        print(f"  ERROR in /api/absent_students_for_enrollment: {str(e)}")
         import traceback
         traceback.print_exc()
         
@@ -15187,7 +15472,7 @@ def enroll_unknown_face():
     unrecognized_face_id = data.get('unrecognized_face_id')
     session_id = data.get('session_id')
 
-    print(f"🎯 ENROLLMENT STARTED:")
+    print(f" ENROLLMENT STARTED:")
     print(f"   Student: {student_id}")
     print(f"   Face ID: {unrecognized_face_id}")
     print(f"   Session: {session_id}")
@@ -15217,7 +15502,7 @@ def enroll_unknown_face():
 
         student_name = f"{student_data['first_name']} {student_data['last_name']}"
 
-        # 2. 🎯 STORE MULTIPLE FACE ENCODINGS (don't overwrite, just add new)
+        # 2.  STORE MULTIPLE FACE ENCODINGS (don't overwrite, just add new)
         print("💾 Adding new face encoding to student_face_encodings table...")
         encoding_sql = """
             INSERT INTO student_face_encodings (student_id, face_encoding, source, created_at)
@@ -15225,10 +15510,10 @@ def enroll_unknown_face():
         """
         cursor.execute(encoding_sql, (student_id, json.dumps(face_encoding), 'manual_enrollment'))
         encoding_id = cursor.lastrowid
-        print(f"✅ New face encoding saved to encodings table with ID: {encoding_id}")
+        print(f"   New face encoding saved to encodings table with ID: {encoding_id}")
 
         # 3. Check if student already has attendance record for this session
-        print("🔍 Checking existing attendance record...")
+        print("  Checking existing attendance record...")
         check_attendance_sql = """
             SELECT id, status FROM attendance 
             WHERE student_id = %s AND session_id = %s
@@ -15244,7 +15529,7 @@ def enroll_unknown_face():
                 WHERE id = %s
             """
             cursor.execute(update_attendance_sql, (student_name, existing_attendance['id']))
-            print(f"✅ Updated existing attendance from '{existing_attendance['status']}' to 'present'")
+            print(f"   Updated existing attendance from '{existing_attendance['status']}' to 'present'")
         else:
             # Create new attendance record
             print("📝 Creating new attendance record...")
@@ -15254,7 +15539,7 @@ def enroll_unknown_face():
                 VALUES (%s, %s, 'present', NOW(), %s)
             """
             cursor.execute(attendance_sql, (student_id, session_id, student_name))
-            print("✅ New attendance marked as present")
+            print("   New attendance marked as present")
 
         # 4. Handle unrecognized face cleanup
         print("🗑️ Cleaning up unrecognized face...")
@@ -15273,7 +15558,7 @@ def enroll_unknown_face():
             """
             notes = f'Enrolled as student {student_id} ({student_name})'
             cursor.execute(update_sql, (notes, db_id))
-            print(f"✅ Database face {db_id} marked as enrolled")
+            print(f"   Database face {db_id} marked as enrolled")
             
         else:
             # Memory-only face - save to database for record keeping
@@ -15285,15 +15570,15 @@ def enroll_unknown_face():
             """
             notes = f'Enrolled as student {student_id} ({student_name}) - was memory-only face'
             cursor.execute(insert_sql, (session_id, json.dumps(face_encoding), notes))
-            print(f"✅ Memory face saved to database as enrolled")
+            print(f"   Memory face saved to database as enrolled")
 
         # 5. Remove from memory
         print("🧹 Removing from memory...")
         remove_success = remove_unknown_face(unrecognized_face_id)
         print(f"   Memory removal: {'Success' if remove_success else 'Failed'}")
 
-        # 6. 🎯 UPDATE GLOBAL KNOWN FACES ARRAY WITH ALL ENCODINGS
-        print("🔄 Updating known faces cache with ALL encodings...")
+        # 6.  UPDATE GLOBAL KNOWN FACES ARRAY WITH ALL ENCODINGS
+        print("  Updating known faces cache with ALL encodings...")
         try:
             global KNOWN_FACE_ENCODINGS_ARRAY, known_face_names, known_face_ids, known_face_types
             
@@ -15325,18 +15610,18 @@ def enroll_unknown_face():
                         known_face_types.append('student')
                         
                 except Exception as e:
-                    print(f"⚠️ Error loading face encoding for {student_id_db}: {e}")
+                    print(f"  Error loading face encoding for {student_id_db}: {e}")
                     continue
             
             if known_face_encodings:
                 KNOWN_FACE_ENCODINGS_ARRAY = np.array(known_face_encodings)
-                print(f"✅ Updated known faces cache: {len(known_face_encodings)} encodings from database")
+                print(f"   Updated known faces cache: {len(known_face_encodings)} encodings from database")
             else:
                 KNOWN_FACE_ENCODINGS_ARRAY = np.array([])
-                print("⚠️ No known faces in cache")
+                print("  No known faces in cache")
                 
         except Exception as cache_error:
-            print(f"⚠️ Error updating face cache: {cache_error}")
+            print(f"  Error updating face cache: {cache_error}")
 
         # 7. Commit all changes
         conn.commit()
@@ -15352,7 +15637,7 @@ def enroll_unknown_face():
         }), 200
 
     except Exception as e:
-        print(f"❌ ERROR in enrollment: {str(e)}")
+        print(f"  ERROR in enrollment: {str(e)}")
         import traceback
         traceback.print_exc()
         
@@ -15415,7 +15700,7 @@ def debug_session():
 def stop_detection():
     global detectionStopped, FRAME_BUFFER
     detectionStopped = True
-    FRAME_BUFFER = []  # 🎯 CLEAR THE BUFFER
+    FRAME_BUFFER = []  #  CLEAR THE BUFFER
     print("🔴 Detection stopped via API - buffer cleared")
     return jsonify({'success': True, 'message': 'Detection stopped'})
 
@@ -15423,7 +15708,7 @@ def stop_detection():
 def resume_detection():
     global detectionStopped, FRAME_BUFFER
     detectionStopped = False
-    FRAME_BUFFER = []  # 🎯 CLEAR THE BUFFER
+    FRAME_BUFFER = []  #  CLEAR THE BUFFER
     print("🟢 Detection resumed via API - buffer cleared")
     return jsonify({'success': True, 'message': 'Detection resumed'})
 
@@ -15438,13 +15723,13 @@ def get_unrecognized_faces():
     """
     global UNKNOWN_FACES_FOR_ENROLLMENT
     
-    print("🔍 DEBUG: /api/unrecognized_faces called")
+    print("  DEBUG: /api/unrecognized_faces called")
     
     try:
-        # 🛑 Clean up BEFORE processing
+        #   Clean up BEFORE processing
         cleanup_unrecognized_faces()
         
-        # 🆕 CRITICAL FIX: Load faces from database first
+        #     Load faces from database first
         load_faces_from_database()
         
         # Initialize if not exists or invalid type
@@ -15455,17 +15740,17 @@ def get_unrecognized_faces():
         
         # Handle empty dictionary case
         if not UNKNOWN_FACES_FOR_ENROLLMENT:
-            print("ℹ️ INFO: No unrecognized faces found")
+            print("  INFO: No unrecognized faces found")
             return jsonify(unrecognized_list), 200
 
-        print(f"🔍 DEBUG: Processing {len(UNKNOWN_FACES_FOR_ENROLLMENT)} faces")
+        print(f"  DEBUG: Processing {len(UNKNOWN_FACES_FOR_ENROLLMENT)} faces")
         
         processed_count = 0
         for unique_id, face_data in UNKNOWN_FACES_FOR_ENROLLMENT.items():
             try:
                 # Validate face_data structure
                 if not isinstance(face_data, dict):
-                    print(f"⚠️ WARN: Face {unique_id} is not a dict")
+                    print(f"  WARN: Face {unique_id} is not a dict")
                     continue
                 
                 face_crop_img = face_data.get('face_crop')
@@ -15474,7 +15759,7 @@ def get_unrecognized_faces():
 
                 # Skip if essential data is missing
                 if face_crop_img is None or face_encoding is None:
-                    print(f"⚠️ WARN: Face {unique_id} missing crop or encoding")
+                    print(f"  WARN: Face {unique_id} missing crop or encoding")
                     continue
 
                 # Image Conversion: Handle numpy arrays
@@ -15484,24 +15769,24 @@ def get_unrecognized_faces():
                 if hasattr(face_crop_img, 'shape') and hasattr(face_crop_img, 'dtype'):
                     try:
                         if face_crop_img.size == 0:
-                            print(f"⚠️ WARN: Face {unique_id} has empty image")
+                            print(f"  WARN: Face {unique_id} has empty image")
                             continue
                             
                         is_success, buffer = cv2.imencode('.jpg', face_crop_img)
                         if not is_success:
-                            print(f"⚠️ WARN: Face {unique_id} failed to encode")
+                            print(f"  WARN: Face {unique_id} failed to encode")
                             continue
                             
                         base64_image = f"data:image/jpeg;base64,{base64.b64encode(buffer).decode('utf-8')}"
                     except Exception as img_error:
-                        print(f"⚠️ WARN: Face {unique_id} image processing error: {img_error}")
+                        print(f"  WARN: Face {unique_id} image processing error: {img_error}")
                         continue
                 else:
-                    print(f"⚠️ WARN: Face {unique_id} is not numpy array")
+                    print(f"  WARN: Face {unique_id} is not numpy array")
                     continue
 
                 if not base64_image:
-                    print(f"⚠️ WARN: Face {unique_id} no base64 image generated")
+                    print(f"  WARN: Face {unique_id} no base64 image generated")
                     continue
 
                 # Timestamp Formatting
@@ -15520,7 +15805,7 @@ def get_unrecognized_faces():
                         else:
                             serializable_encoding = face_encoding
                 except Exception as encoding_error:
-                    print(f"⚠️ WARN: Face {unique_id} encoding error: {encoding_error}")
+                    print(f"  WARN: Face {unique_id} encoding error: {encoding_error}")
                     serializable_encoding = None
 
                 # Only include if we have valid encoding
@@ -15533,17 +15818,17 @@ def get_unrecognized_faces():
                     })
                     processed_count += 1
                 else:
-                    print(f"⚠️ WARN: Face {unique_id} has no serializable encoding")
+                    print(f"  WARN: Face {unique_id} has no serializable encoding")
 
             except Exception as face_error:
-                print(f"❌ ERROR processing face {unique_id}: {face_error}")
+                print(f"  ERROR processing face {unique_id}: {face_error}")
                 continue
 
-        print(f"✅ SUCCESS: Returning {processed_count} processed faces")
+        print(f"   SUCCESS: Returning {processed_count} processed faces")
         return jsonify(unrecognized_list), 200
 
     except Exception as global_error:
-        print(f"❌ GLOBAL ERROR in /api/unrecognized_faces: {global_error}")
+        print(f"  GLOBAL ERROR in /api/unrecognized_faces: {global_error}")
         traceback.print_exc()
         # Return empty list but with 200 status to prevent frontend crashes
         return jsonify([]), 200
@@ -15557,7 +15842,7 @@ def load_faces_from_database():
     try:
         session_id = get_current_session_id()
         if not session_id:
-            print("❌ No active session ID for loading faces")
+            print("  No active session ID for loading faces")
             return
         
         with get_db_cursor() as cursor:
@@ -15570,7 +15855,7 @@ def load_faces_from_database():
             cursor.execute(sql, (session_id,))
             results = cursor.fetchall()
             
-            print(f"🔍 Loading {len(results)} faces from database")
+            print(f"  Loading {len(results)} faces from database")
             
             for row in results:
                 try:
@@ -15596,7 +15881,7 @@ def load_faces_from_database():
                                 if image_path and os.path.exists(image_path):
                                     face_crop_img = cv2.imread(image_path)
                         except Exception as img_error:
-                            print(f"⚠️ Error decoding face image for db_id {db_id}: {img_error}")
+                            print(f"  Error decoding face image for db_id {db_id}: {img_error}")
                             continue
                     
                     # Convert JSON back to numpy array
@@ -15606,7 +15891,7 @@ def load_faces_from_database():
                             encoding_list = json.loads(face_encoding_json)
                             face_encoding = np.array(encoding_list)
                         except Exception as encoding_error:
-                            print(f"⚠️ Error decoding face encoding for db_id {db_id}: {encoding_error}")
+                            print(f"  Error decoding face encoding for db_id {db_id}: {encoding_error}")
                             continue
                     
                     if face_crop_img is not None and face_encoding is not None:
@@ -15623,11 +15908,11 @@ def load_faces_from_database():
                         print(f"📥 LOADED from DB: Face db_{db_id}")
                         
                 except Exception as e:
-                    print(f"❌ ERROR loading face from DB: {e}")
+                    print(f"  ERROR loading face from DB: {e}")
                     continue
                     
     except Exception as e:
-        print(f"❌ ERROR loading faces from database: {e}")
+        print(f"  ERROR loading faces from database: {e}")
 
 def cleanup_unrecognized_faces():
     """
@@ -15673,7 +15958,7 @@ def cleanup_unrecognized_faces():
                 seen_encodings[encoding_signature] = unique_id
                 
         except Exception as e:
-            print(f"⚠️ Error processing face {unique_id}: {e}")
+            print(f"  Error processing face {unique_id}: {e}")
             keys_to_remove.append(unique_id)
     
     # 2. Remove from dictionary
@@ -15701,7 +15986,7 @@ def is_similar_to_unrecognized_face(new_encoding, current_time):
     """
     global UNKNOWN_FACES_FOR_ENROLLMENT
     
-    # 🎯 Use a reasonable threshold for similar faces (different people)
+    #  Use a reasonable threshold for similar faces (different people)
     SIMILARITY_THRESHOLD = 0.4  # Normal threshold for similar faces
     
     for unique_id, face_data in UNKNOWN_FACES_FOR_ENROLLMENT.items():
@@ -15716,14 +16001,14 @@ def is_similar_to_unrecognized_face(new_encoding, current_time):
         
         # If similar (but not exact duplicate) and in cooldown, block it
         if distance < SIMILARITY_THRESHOLD:
-            # 🛑 If cooldown is active, BLOCK this similar face
+            #   If cooldown is active, BLOCK this similar face
             if cooldown_until and cooldown_until > current_time:
                 remaining = (cooldown_until - current_time).total_seconds()
-                print(f"🚫 BLOCKED: Similar face {unique_id} in cooldown ({remaining:.0f}s left)")
+                print(f" BLOCKED: Similar face {unique_id} in cooldown ({remaining:.0f}s left)")
                 return True, unique_id
             else:
                 # Cooldown expired - update the existing face
-                print(f"🔄 UPDATING: Similar face {unique_id} cooldown expired")
+                print(f"  UPDATING: Similar face {unique_id} cooldown expired")
                 face_data.update({
                     'timestamp': current_time,
                     'cooldown_until': current_time + timedelta(seconds=30),
@@ -15752,7 +16037,7 @@ def calculate_face_distance(encoding1, encoding2):
         
         return distance
     except Exception as e:
-        print(f"⚠️ Error calculating face distance: {e}")
+        print(f"  Error calculating face distance: {e}")
         return 1.0
     
 def get_encoding_signature(face_encoding):
@@ -15778,12 +16063,12 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
     
     session_id = get_current_session_id()
     if session_id is None:
-        logger.error("❌ Cannot save face: No active session ID")
+        logger.error("  Cannot save face: No active session ID")
         return False
     
     existing_face_id = find_existing_face_by_encoding(face_encoding)
     if existing_face_id:
-        print(f"🎯 EXACT DUPLICATE FOUND: Face {existing_face_id} already exists - skipping")
+        print(f" EXACT DUPLICATE FOUND: Face {existing_face_id} already exists - skipping")
         
         if existing_face_id in UNKNOWN_FACES_FOR_ENROLLMENT:
             UNKNOWN_FACES_FOR_ENROLLMENT[existing_face_id].update({
@@ -15791,19 +16076,19 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
                 'cooldown_until': current_time + timedelta(seconds=30),
                 'times_seen': UNKNOWN_FACES_FOR_ENROLLMENT[existing_face_id].get('times_seen', 0) + 1
             })
-            print(f"🔄 UPDATED: Existing face {existing_face_id} timestamp and cooldown")
+            print(f"  UPDATED: Existing face {existing_face_id} timestamp and cooldown")
         
         return False
     
     is_similar, similar_face_id = is_similar_to_unrecognized_face(face_encoding, current_time)
     if is_similar:
-        print(f"⏳ SIMILAR FACE IN COOLDOWN: Face {similar_face_id} - skipping duplicate")
+        print(f"  SIMILAR FACE IN COOLDOWN: Face {similar_face_id} - skipping duplicate")
         return False
     
     face_id = generate_face_id(face_encoding)
     
     if face_id in UNKNOWN_FACES_FOR_ENROLLMENT:
-        print(f"🎯 FACE ID COLLISION: {face_id} already exists - updating")
+        print(f" FACE ID COLLISION: {face_id} already exists - updating")
         UNKNOWN_FACES_FOR_ENROLLMENT[face_id].update({
             'face_crop': face_crop,  
             'timestamp': current_time,
@@ -15815,7 +16100,7 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
     
     image_path = save_face_image_to_file(face_crop, session_id, track_id)
     if not image_path:
-        logger.error("❌ Failed to save face image to file")
+        logger.error("  Failed to save face image to file")
         return False
     
     db_face_id = None
@@ -15828,7 +16113,7 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
                 if success:
                     face_image_bytes = buffer.tobytes()
             except Exception as img_error:
-                logger.warning(f"⚠️ Could not encode face image to bytes: {img_error}")
+                logger.warning(f"  Could not encode face image to bytes: {img_error}")
             
             sql = """
                 INSERT INTO unrecognized_faces 
@@ -15857,10 +16142,11 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
             ))
             
             db_face_id = cursor.lastrowid
-            logger.info(f"💾 SAVED: Face to database with ID: {db_face_id}")
+            if DEBUG_MODE: 
+                logger.debug(f"💾 SAVED: Face to database with ID: {db_face_id}")
             
     except Exception as e:
-        logger.error(f"❌ DATABASE ERROR: Failed to save face: {e}")
+        logger.error(f"  DATABASE ERROR: Failed to save face: {e}")
         # Try fallback insert
         try:
             with get_db_cursor() as cursor:
@@ -15877,9 +16163,10 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
                     'pending'
                 ))
                 db_face_id = cursor.lastrowid
-                logger.info(f"💾 SAVED (fallback): Face to database with ID: {db_face_id}")
+                if DEBUG_MODE: 
+                    logger.debug(f"💾 SAVED (fallback): Face to database with ID: {db_face_id}")
         except Exception as fallback_error:
-            logger.error(f"❌ DATABASE FALLBACK ALSO FAILED: {fallback_error}")
+            logger.error(f"  DATABASE FALLBACK ALSO FAILED: {fallback_error}")
             return False
     
     # Save to memory
@@ -15894,7 +16181,8 @@ def add_unknown_face(face_crop, face_encoding, track_id=None):
         'image_path': image_path
     }
     
-    logger.info(f"➕ ADDED: New unknown face {face_id} - Database ID: {db_face_id}")
+    if DEBUG_MODE: 
+        logger.debug(f"➕ ADDED: New unknown face {face_id} - Database ID: {db_face_id}")
     return True
 
 def find_existing_face_by_encoding(new_encoding):
@@ -15904,7 +16192,7 @@ def find_existing_face_by_encoding(new_encoding):
     """
     global UNKNOWN_FACES_FOR_ENROLLMENT
     
-    # 🎯 VERY STRICT threshold for exact duplicates
+    #  VERY STRICT threshold for exact duplicates
     EXACT_DUPLICATE_THRESHOLD = 0.01  # Almost exact match
     
     for existing_id, face_data in UNKNOWN_FACES_FOR_ENROLLMENT.items():
@@ -15918,7 +16206,7 @@ def find_existing_face_by_encoding(new_encoding):
         
         # If distance is very small, it's the exact same face
         if distance < EXACT_DUPLICATE_THRESHOLD:
-            print(f"🎯 EXACT DUPLICATE DETECTED: distance={distance:.6f} (threshold: {EXACT_DUPLICATE_THRESHOLD})")
+            print(f" EXACT DUPLICATE DETECTED: distance={distance:.6f} (threshold: {EXACT_DUPLICATE_THRESHOLD})")
             return existing_id
     
     return None
@@ -15947,11 +16235,11 @@ def save_face_image_to_file(face_crop, session_id, track_id=None):
         if success:
             return filepath
         else:
-            logger.error(f"❌ Failed to save face image to: {filepath}")
+            logger.error(f"  Failed to save face image to: {filepath}")
             return None
             
     except Exception as e:
-        logger.error(f"❌ Error saving face image to file: {e}")
+        logger.error(f"  Error saving face image to file: {e}")
         return None
 
 def get_current_section_id():
@@ -15981,7 +16269,7 @@ def background_cleanup():
     while True:
         try:
             cleanup_unrecognized_faces()
-            print(f"🕒 Background cleanup: {len(UNKNOWN_FACES_FOR_ENROLLMENT)} faces, {len(ACTIVE_FACE_TRACKS)} tracks")
+            print(f"  Background cleanup: {len(UNKNOWN_FACES_FOR_ENROLLMENT)} faces, {len(ACTIVE_FACE_TRACKS)} tracks")
         except Exception as e:
             print(f"Background cleanup error: {e}")
         time.sleep(60)  # 1 minute
@@ -15994,7 +16282,7 @@ def remove_unknown_face_api():
     data = request.get_json()
     face_id = data.get('face_id')
     
-    print(f"🔍 REMOVE API called for face_id: {face_id}")
+    print(f"  REMOVE API called for face_id: {face_id}")
     
     if not face_id:
         return jsonify({'success': False, 'message': 'Missing face_id'}), 400
@@ -16006,7 +16294,7 @@ def remove_unknown_face_api():
         else:
             return jsonify({'success': False, 'message': 'Face not found'}), 404
     except Exception as e:
-        print(f"❌ Error removing face: {e}")
+        print(f"  Error removing face: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 def remove_unknown_face(face_id):
@@ -16027,7 +16315,7 @@ def remove_unknown_face(face_id):
         print(f"🗑️ REMOVED: Face {face_id} from system")
         return True
     
-    print(f"⚠️ Face {face_id} not found in system")
+    print(f"  Face {face_id} not found in system")
     return False
 
 # Start background cleanup thread (add this at the bottom)
@@ -16043,13 +16331,13 @@ def student_left():
         session_id = data.get('session_id')
         
         if not student_id or not session_id:
-            logger.error(f"❌ MISSING PARAMS: student_id={student_id}, session_id={session_id}")
+            logger.error(f"  MISSING PARAMS: student_id={student_id}, session_id={session_id}")
             return jsonify({'success': False, 'message': 'Missing student_id or session_id'}), 400
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # ✅ FIXED: Better student lookup with error handling
+        #    FIXED: Better student lookup with error handling
         student_name = f"Student {student_id}"  # Default name
         
         try:
@@ -16058,9 +16346,9 @@ def student_left():
             if student:
                 student_name = f"{student['first_name']} {student['last_name']}"
             else:
-                logger.warning(f"⚠️ Student ID {student_id} not found in students table, using default name")
+                logger.warning(f"  Student ID {student_id} not found in students table, using default name")
         except Exception as e:
-            logger.warning(f"⚠️ Error fetching student name: {e}, using default name")
+            logger.warning(f"  Error fetching student name: {e}, using default name")
         
         # Check current attendance status
         cursor.execute("""
@@ -16074,7 +16362,7 @@ def student_left():
         if current_attendance:
             current_status = current_attendance['status']
             current_session = current_attendance.get('session_id')
-            # ✅ FIXED: Handle None remarks safely
+            #    FIXED: Handle None remarks safely
             remarks = current_attendance.get('remarks') or ''  # Convert None to empty string
             
             manual_excuse_sessions = ['manual_excuse']  # Only for excused students
@@ -16093,7 +16381,8 @@ def student_left():
             )
             
             if is_manual_status:
-                logger.info(f"🔒 PRESERVING MANUAL STATUS: {student_name} has manual status '{current_status}' - NOT marking as missing")
+                if DEBUG_MODE: 
+                    logger.debug(f"  PRESERVING MANUAL STATUS: {student_name} has manual status '{current_status}' - NOT marking as missing")
                 cursor.close()
                 conn.close()
                 return jsonify({
@@ -16101,7 +16390,8 @@ def student_left():
                     'message': f'Manual status preserved: {student_name} remains {current_status}'
                 }), 400
             else:
-                logger.info(f"🔄 AUTO STATUS: {student_name} has status '{current_status}' - CAN mark as missing")
+                if DEBUG_MODE: 
+                    logger.debug(f"  AUTO STATUS: {student_name} has status '{current_status}' - CAN mark as missing")
         
         # Check for existing missing record
         cursor.execute("""
@@ -16112,7 +16402,8 @@ def student_left():
         existing_missing = cursor.fetchone()
         
         if existing_missing:
-            logger.info(f"⏭️ Student {student_name} already marked as missing")
+            if DEBUG_MODE: 
+                logger.debug(f" Student {student_name} already marked as missing")
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Student already marked as missing'}), 400
@@ -16133,19 +16424,22 @@ def student_left():
                 SET status = 'missing', timestamp = NOW()
                 WHERE id = %s
             """, (current_attendance['id'],))
-            logger.info(f"🔄 UPDATED existing attendance record to 'missing' for {student_name}")
+            if DEBUG_MODE: 
+                logger.debug(f"  UPDATED existing attendance record to 'missing' for {student_name}")
         else:
             cursor.execute("""
                 INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id)
                 VALUES (%s, %s, NOW(), 'student', 'missing', %s)
             """, (student_id, student_name, session_id))
-            logger.info(f"📝 CREATED new 'missing' attendance record for {student_name}")
+            if DEBUG_MODE: 
+                logger.debug(f"📝 CREATED new 'missing' attendance record for {student_name}")
         
         conn.commit()
         cursor.close()
         conn.close()
         
-        logger.info(f"📤 STUDENT LEFT: {student_name} ({student_id}) - Status changed to MISSING (was {original_status})")
+        if DEBUG_MODE: 
+            logger.debug(f"  STUDENT LEFT: {student_name} ({student_id}) - Status changed to MISSING (was {original_status})")
         
         return jsonify({
             'success': True, 
@@ -16153,9 +16447,9 @@ def student_left():
         })
         
     except Exception as e:
-        logger.error(f"❌ Error in student_left: {e}")
+        logger.error(f"  Error in student_left: {e}")
         import traceback
-        logger.error(f"❌ Stack trace: {traceback.format_exc()}")
+        logger.error(f"  Stack trace: {traceback.format_exc()}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/student_returned', methods=['POST'])
@@ -16166,7 +16460,8 @@ def student_returned():
         student_id = data.get('student_id')
         session_id = data.get('session_id', current_session_id)
         
-        logger.info(f"↩️ STUDENT_RETURNED CALLED: student_id={student_id}, session_id={session_id}")
+        if DEBUG_MODE: 
+            logger.debug(f"↩️ STUDENT_RETURNED CALLED: student_id={student_id}, session_id={session_id}")
         
         if not student_id:
             return jsonify({'success': False, 'message': 'Missing student_id'}), 400
@@ -16192,7 +16487,7 @@ def student_returned():
         missing_period = cursor.fetchone()
         
         if not missing_period:
-            logger.warning(f"⚠️ No active missing period found for {student_name}")
+            logger.warning(f"  No active missing period found for {student_name}")
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'No active missing period found'}), 400
@@ -16203,14 +16498,14 @@ def student_returned():
         duration_seconds = int((missing_end - missing_start).total_seconds())
         original_status = missing_period['original_status']
         
-        # 🎯 FIXED: Update missing_periods table
+        #  FIXED: Update missing_periods table
         cursor.execute("""
             UPDATE missing_periods 
             SET missing_end = %s, duration_seconds = %s, returned = TRUE
             WHERE id = %s
         """, (missing_end, duration_seconds, missing_period['id']))
         
-        # 🎯 CRITICAL FIX: Check for existing attendance record BEFORE updating
+        #    Check for existing attendance record BEFORE updating
         cursor.execute("""
             SELECT id, status FROM attendance 
             WHERE student_id = %s AND session_id = %s
@@ -16220,21 +16515,23 @@ def student_returned():
         existing_attendance = cursor.fetchone()
         
         if existing_attendance:
-            # 🎯 UPDATE existing record (PREVENTS DUPLICATE)
+            #  UPDATE existing record (PREVENTS DUPLICATE)
             cursor.execute("""
                 UPDATE attendance 
                 SET status = %s, timestamp = NOW()
                 WHERE id = %s
             """, (original_status, existing_attendance['id']))
-            logger.info(f"🔄 UPDATED existing attendance record: {student_name} -> {original_status}")
+            if DEBUG_MODE: 
+                logger.debug(f"  UPDATED existing attendance record: {student_name} -> {original_status}")
         else:
-            # 🎯 Only INSERT if no record exists
+            #  Only INSERT if no record exists
             cursor.execute("""
                 INSERT INTO attendance 
                 (student_id, name, timestamp, person_type, status, session_id)
                 VALUES (%s, %s, NOW(), 'student', %s, %s)
             """, (student_id, student_name, original_status, session_id))
-            logger.info(f"📝 CREATED new attendance record: {student_name} -> {original_status}")
+            if DEBUG_MODE: 
+                logger.debug(f"📝 CREATED new attendance record: {student_name} -> {original_status}")
         
         conn.commit()
         cursor.close()
@@ -16246,7 +16543,8 @@ def student_returned():
         seconds = duration_seconds % 60
         duration_display = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
-        logger.info(f"✅ SUCCESS: {student_name} returned after {duration_display} - Status: {original_status}")
+        if DEBUG_MODE: 
+            logger.debug(f"   SUCCESS: {student_name} returned after {duration_display} - Status: {original_status}")
         
         return jsonify({
             'success': True, 
@@ -16257,7 +16555,7 @@ def student_returned():
         })
         
     except Exception as e:
-        logger.error(f"❌ ERROR in student_returned: {e}")
+        logger.error(f"  ERROR in student_returned: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/get_missing_students')
@@ -16501,7 +16799,8 @@ def update_my_profile():
         cursor.close()
         conn.close()
         
-        logger.info(f"User {user_id} ({user_type}) updated their profile.")
+        if DEBUG_MODE: 
+            logger.debug(f"User {user_id} ({user_type}) updated their profile.")
         return jsonify({'success': True, 'message': 'Profile updated successfully'})
         
     except Exception as e:
@@ -16570,7 +16869,8 @@ def change_my_password():
         cursor.close()
         conn.close()
         
-        logger.info(f"User {user_id} ({user_type}) changed their password.")
+        if DEBUG_MODE: 
+            logger.debug(f"User {user_id} ({user_type}) changed their password.")
         return jsonify({'success': True, 'message': 'Password updated successfully'})
         
     except Exception as e:
@@ -16709,7 +17009,7 @@ def get_student_details(student_id):
             })
             
     except Exception as e:
-        print(f"❌ ERROR in get_student_details: {e}")
+        print(f"  ERROR in get_student_details: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({
@@ -16999,7 +17299,8 @@ if __name__ == "__main__":
             with open("attendance_log.csv", 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow(['ID', 'Name', 'DateTime', 'Status'])
-            logger.info("Initialized attendance_log.csv")
+            if DEBUG_MODE: 
+                logger.debug("Initialized attendance_log.csv")
     except Exception as e:
         logger.error(f"Failed to initialize CSV file: {e}")
     
@@ -17024,9 +17325,10 @@ if __name__ == "__main__":
         # Check if SSL certificate files exist
         if os.path.exists(cert_file) and os.path.exists(key_file):
             ssl_context = (cert_file, key_file)
-            logger.info("🔐 SSL certificates found - Starting HTTPS server")
+            if DEBUG_MODE: 
+                logger.debug("🔐 SSL certificates found - Starting HTTPS server")
         else:
-            logger.warning("⚠️ SSL certificates not found - Starting HTTP server")
+            logger.warning("  SSL certificates not found - Starting HTTP server")
           
         
         # Start server with proper configuration
@@ -17046,7 +17348,8 @@ if __name__ == "__main__":
             raise e
     
     except KeyboardInterrupt:
-        logger.info("Server stopped by user")
+        if DEBUG_MODE: 
+            logger.debug("Server stopped by user")
     
     finally:
         # Signal all threads to stop
@@ -17066,8 +17369,10 @@ if __name__ == "__main__":
                     writer.writerow(['ID', 'Name', 'DateTime', 'Status'])
                     for sid, data in attendance.items():
                         writer.writerow([sid, data['name'], data['time'], 'present'])
-                logger.info(f"Final save: {len(attendance)} records saved to attendance_log.csv")
+                if DEBUG_MODE: 
+                    logger.debug(f"Final save: {len(attendance)} records saved to attendance_log.csv")
         except Exception as e:
             logger.error(f"Final attendance save failed: {e}")
         
-        logger.info("Application shutdown complete")
+        if DEBUG_MODE: 
+            logger.debug("Application shutdown complete")

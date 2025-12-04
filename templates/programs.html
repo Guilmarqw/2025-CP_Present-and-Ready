@@ -1243,13 +1243,13 @@ function copyAcademicYearsToOtherPrograms(sourceProgramId, academicYear) {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    console.log(`✅ Added ${academicYear} to ${targetProgramId}`);
+                    console.log(`   Added ${academicYear} to ${targetProgramId}`);
                 } else {
-                    console.log(`❌ Failed to add to ${targetProgramId}:`, data.message);
+                    console.log(`  Failed to add to ${targetProgramId}:`, data.message);
                 }
             })
             .catch(error => {
-                console.error(`❌ Error adding to ${targetProgramId}:`, error);
+                console.error(`  Error adding to ${targetProgramId}:`, error);
             });
         }
     });
@@ -2266,7 +2266,7 @@ function displaySemestersForCurriculum(semesters, programCode, academicYear, cur
         `;
     }).join('');
 
-    // ✅ KEEP ONLY THIS EVENT LISTENER - REMOVE THE DUPLICATE ONE
+    //    KEEP ONLY THIS EVENT LISTENER - REMOVE THE DUPLICATE ONE
     document.querySelectorAll('.view-semester').forEach(button => {
         button.addEventListener('click', function(e) {
             e.preventDefault();

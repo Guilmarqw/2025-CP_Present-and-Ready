@@ -1029,7 +1029,7 @@ function getLeftPoseFeedback(result) {
     if (!result) return "No face detected";
     const yaw = result.yaw || 0;
     
-    if (yaw < 0) return "🔄 Turn your head to the LEFT";
+    if (yaw < 0) return "  Turn your head to the LEFT";
     if (yaw < 3) return "↩️ Turn a bit more left";
     return "👍 Almost there! Turn slightly more left";
 }
@@ -1038,7 +1038,7 @@ function getRightPoseFeedback(result) {
     if (!result) return "No face detected";
     const yaw = result.yaw || 0;
     
-    if (yaw > 0) return "🔄 Turn your head to the RIGHT";
+    if (yaw > 0) return "  Turn your head to the RIGHT";
     if (yaw > -3) return "↪️ Turn a bit more right";
     return "👍 Almost there! Turn slightly more right";
 }
@@ -1145,11 +1145,11 @@ function automatedFaceScan() {
                 };
             }
             
-            console.log(`✅ Captured ${currentPose.id} pose`);
+            console.log(`   Captured ${currentPose.id} pose`);
             
             // Visual feedback
             if (instructionEl) {
-                instructionEl.textContent = "✅ Success! Moving to next...";
+                instructionEl.textContent = "   Success! Moving to next...";
                 instructionEl.style.color = "#00aa00";
             }
             
@@ -1202,7 +1202,7 @@ function automatedFaceScan() {
                         feedback = result.message || 'Adjust your position';
                 }
             } else {
-                feedback = '👤 No face detected. Center your face in the frame.';
+                feedback = '  No face detected. Center your face in the frame.';
             }
             
             if (instructionEl) {
@@ -1286,7 +1286,7 @@ async function captureFaceEncodingWithQuality() {
         
         // More lenient quality check
         if (quality < 0.1) {
-            return { message: "💡 Improve lighting for better detection" };
+            return { message: "  Improve lighting for better detection" };
         }
         
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8)); // Lower quality for speed
@@ -1321,7 +1321,7 @@ async function captureFaceEncodingWithQuality() {
         }
     } catch (error) {
         console.error("Error capturing face encoding:", error);
-        return { message: "🔄 Please try again" };
+        return { message: "  Please try again" };
     }
 }
 

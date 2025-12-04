@@ -31,7 +31,7 @@
         <div class="rtsp-section">
             <h3 class="group-title">Camera Settings</h3>
             <div class="input-group">
-                <input type="text" id="rtspUrl" placeholder="Enter RTSP URL (e.g., rtsp://192.168.1.100:554/stream)" value="">
+                <input type="text" id="rtspUrl" placeholder="Enter RTSP URL (e.g., rtsp://admin:@101Pok3r5610@192.168.1.64:554/cam/realmonitor?channel=1&subtype=0)" value="">
                 <button type="button" id="testRtspBtn" class="test-btn">Test Camera</button>
             </div>
             <small class="rtsp-hint">Example: rtsp://username:password@ip_address:port/stream</small>
@@ -646,14 +646,14 @@ async function startSession(event) {
         },
         classDetails: {
             instructor: document.getElementById('subjectInstructor').value,
-            selectedSubjects: selectedSubjects, // 🆕 ARRAY OF SELECTED SUBJECTS
+            selectedSubjects: selectedSubjects, //   ARRAY OF SELECTED SUBJECTS
             yearLevel: document.getElementById('yearLevel').value,
             course: document.getElementById('course').value,
             section: sectionDropdown.value
         },
         rtspUrl: rtspUrl,
         mode: timerMode,
-        scheduleIds: selectedSubjects.map(subject => subject.schedule_id) // 🆕 ARRAY OF SCHEDULE IDs
+        scheduleIds: selectedSubjects.map(subject => subject.schedule_id) //   ARRAY OF SCHEDULE IDs
     };
     
     localStorage.setItem('classSettings', JSON.stringify(settings));
@@ -687,11 +687,11 @@ async function startSession(event) {
         return;
     }
 
-    // 🆕 ENHANCED: Redirect to camfootage with multiple subjects
+    //   ENHANCED: Redirect to camfootage with multiple subjects
     const params = new URLSearchParams({
-        schedule_ids: settings.scheduleIds.join(','), // 🆕 COMMA-SEPARATED SCHEDULE IDs
+        schedule_ids: settings.scheduleIds.join(','), //   COMMA-SEPARATED SCHEDULE IDs
         instructor: settings.classDetails.instructor,
-        subjects: JSON.stringify(selectedSubjects), // 🆕 ALL SUBJECTS DATA AS JSON
+        subjects: JSON.stringify(selectedSubjects), //   ALL SUBJECTS DATA AS JSON
         year_level: settings.classDetails.yearLevel,
         program: settings.classDetails.course,
         section: settings.classDetails.section,
@@ -701,7 +701,7 @@ async function startSession(event) {
         mode: timerMode
     });
 
-    console.log('🚀 REDIRECTING WITH MULTIPLE SUBJECTS:', selectedSubjects);
+    console.log('  REDIRECTING WITH MULTIPLE SUBJECTS:', selectedSubjects);
     
     // Add a small delay to ensure camera is ready
     setTimeout(() => {
