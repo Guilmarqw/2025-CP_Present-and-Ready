@@ -1594,20 +1594,22 @@ def open_stream(rtsp_url=None):
                     pass
                 cap = None
             
-            time.sleep(0.3)
+            time.sleep(0.1)  # Reduced from 0.3
             if DEBUG_MODE:         
                 logger.debug(f"Connecting to RTSP: {rtsp_url}")
             
-            cap = cv2.VideoCapture(rtsp_url)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)  
+            # CRITICAL: Use CAP_FFMPEG for direct RTSP
+            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+            
+            # CRITICAL FIX: Minimal buffering for direct connection
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Changed from 2 to 1
             cap.set(cv2.CAP_PROP_FPS, 30)
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)  # Changed from 480 to 360 (sub-stream)
             
             # Quick connection test
             start_time = time.time()
-            while time.time() - start_time < 3:
+            while time.time() - start_time < 2:  # Reduced from 3 to 2
                 if cap.isOpened():
                     ret, test_frame = cap.read()
                     if ret and test_frame is not None:
@@ -1615,16 +1617,16 @@ def open_stream(rtsp_url=None):
                         use_dummy_feed = False
                         current_rtsp_url = rtsp_url
                         if DEBUG_MODE: 
-                            logger.debug(f"  Camera connected: 640x480 @ 30 FPS")
+                            logger.debug(f"✓ Camera connected: 640x360 @ 30 FPS")
                         return True
-                time.sleep(0.1)
+                time.sleep(0.05)  # Reduced from 0.1
             
             cap.release()
             cap = None
             raise Exception("Camera connection timeout")
                 
     except Exception as e:
-        logger.warning(f"  Camera connection failed: {e}")
+        logger.warning(f"✗ Camera connection failed: {e}")
         camera_available = False
         use_dummy_feed = True
         if cap is not None:
@@ -1633,6 +1635,7 @@ def open_stream(rtsp_url=None):
         return False
 
 def grabber():
+    """CRITICAL FIX: Always grab LATEST frame, skip old buffered frames"""
     global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url, last_frame_time
     empty_count = 0
     consecutive_failures = 0
@@ -1642,13 +1645,20 @@ def grabber():
         
         if use_dummy_feed:
             latest_frame = create_dummy_frame()
-            time.sleep(0.033)  # Consistent timing
+            time.sleep(0.033)
             continue
             
         with cap_lock:
             if cap is None:
                 time.sleep(0.01)
                 continue
+            
+            # *** CRITICAL FIX: Flush old frames ***
+            # This is why VLC is smooth but your app was delayed
+            for _ in range(2):  # Skip 2 old buffered frames
+                cap.grab()
+            
+            # Now retrieve the LATEST frame
             ok, frame = cap.read()
             
         if not ok or frame is None:
@@ -1661,7 +1671,6 @@ def grabber():
                 use_dummy_feed = True
                 consecutive_failures = 0
                 
-                # Attempt recovery in background
                 if current_rtsp_url:
                     def attempt_recovery():
                         time.sleep(2.0)
@@ -1680,9 +1689,8 @@ def grabber():
         latest_frame = frame
         last_frame_time = time.time()
         
-        grab_time = time.time() - grab_start
-        sleep_time = max(0.001, 0.03 - grab_time)  # Target ~33 FPS grabbing
-        time.sleep(sleep_time)
+        # Minimal sleep - we want fresh frames
+        time.sleep(0.001)  # Changed from dynamic calculation
 
 # =========================
 # Tracking & attendance
@@ -2131,19 +2139,18 @@ def save_attendance_to_csv(person_id, name, timestamp, person_type):
 # =========================
 
 def detect_bodies(frame):
-    """Detect people bodies using YOLOv8 - OPTIMIZED FOR HIGH FPS"""
+    """Detect people bodies - OPTIMIZED"""
     if body_detector is None:
         logger.warning("Body detector not initialized")
         return []
     
     try:
-        #   Resize for faster detection (USES YOLO_IMG_SIZE)
+        # Use smaller input for faster detection
         h, w = frame.shape[:2]
-        scale = YOLO_IMG_SIZE / max(h, w)  #   USES CONFIG
+        scale = 320 / max(h, w)  # Changed from YOLO_IMG_SIZE to fixed 320
         new_w, new_h = int(w * scale), int(h * scale)
-        resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
         
-        #   Run detection with FP16 (USES YOLO_IMG_SIZE)
         if DEVICE == "cuda":
             results = body_detector(
                 resized,
@@ -2151,7 +2158,7 @@ def detect_bodies(frame):
                 verbose=False,
                 conf=0.3,
                 half=True,
-                imgsz=YOLO_IMG_SIZE  #   USES CONFIG
+                imgsz=320  # Fixed size for consistency
             )
         else:
             results = body_detector(resized, classes=[0], verbose=False, conf=0.3)
@@ -2160,7 +2167,6 @@ def detect_bodies(frame):
         if len(results) > 0 and results[0].boxes is not None:
             boxes = results[0].boxes
             for box in boxes:
-                # Scale back to original size
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                 x1, y1, x2, y2 = int(x1/scale), int(y1/scale), int(x2/scale), int(y2/scale)
                 conf = float(box.conf[0])
@@ -2169,8 +2175,6 @@ def detect_bodies(frame):
                     'box': [x1, y1, x2, y2],
                     'confidence': conf
                 })
-        if DEBUG_MODE: 
-            logger.debug(f"Body detector found {len(detections)} people")
         return detections
     except Exception as e:
         logger.error(f"Body detection error: {e}")
@@ -4672,11 +4676,12 @@ def update_trackers_with_body(rgb, frame, frame_idx):
 
 @app.route('/video_feed')
 def video_feed():
-    """Stream video feed - OPTIMIZED FOR HIGH FPS"""
+    """Stream video feed - OPTIMIZED FOR LOW LATENCY"""
     def generate():
         global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
         frame_idx = 0
         skip_counter = 0
+        last_encode_time = time.time()
         
         while not stop_flag:
             frame_start = time.time()
@@ -4686,12 +4691,16 @@ def video_feed():
                     time.sleep(0.001)
                     continue
                 
-                #   CRITICAL: Resize to target resolution (USES STREAM_WIDTH, STREAM_HEIGHT)
-                frame = cv2.resize(latest_frame.copy(), (STREAM_WIDTH, STREAM_HEIGHT))
+                # Use latest frame directly (already 640x360 from camera)
+                frame = latest_frame.copy()
+                
+                # Only resize if dimensions don't match
+                if frame.shape[1] != STREAM_WIDTH or frame.shape[0] != STREAM_HEIGHT:
+                    frame = cv2.resize(frame, (STREAM_WIDTH, STREAM_HEIGHT), 
+                                     interpolation=cv2.INTER_LINEAR)
                 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
-                #   CRITICAL: Frame skipping for high FPS (USES DETECT_EVERY)
                 skip_counter += 1
                 should_detect = (skip_counter % DETECT_EVERY == 0)
                 
@@ -4702,14 +4711,13 @@ def video_feed():
                 
                 frame_idx += 1
                 
-                #   Clear GPU cache periodically
                 if frame_idx % 100 == 0:
                     torch.cuda.empty_cache()
                 
-                #   Optimized encoding (USES JPEG_QUALITY)
+                # Fast JPEG encoding
                 ret, buffer = cv2.imencode('.jpg', frame, [
-                    cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY,  #   USES CONFIG
-                    cv2.IMWRITE_JPEG_OPTIMIZE, 1
+                    cv2.IMWRITE_JPEG_QUALITY, 75,  # Increased from JPEG_QUALITY for clarity
+                    cv2.IMWRITE_JPEG_OPTIMIZE, 0   # Disable optimization for speed
                 ])
                 frame_bytes = buffer.tobytes()
                 
@@ -4717,17 +4725,24 @@ def video_feed():
                       b'Content-Type: image/jpeg\r\n\r\n' + 
                       frame_bytes + b'\r\n')
                 
-                #   Target FPS (USES TARGET_FPS)
+                # Target 30 FPS output
                 processing_time = time.time() - frame_start
-                target_frame_time = 1.0 / TARGET_FPS  #   USES CONFIG
-                sleep_time = max(0.001, target_frame_time - processing_time)
+                sleep_time = max(0.001, 0.033 - processing_time)  # 33ms = 30 FPS
                 time.sleep(sleep_time)
                 
             except Exception as e:
                 logger.error(f"Video feed error: {e}")
                 time.sleep(0.001)
     
-    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    response = Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    
+    # CRITICAL: Disable ALL buffering
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    response.headers['X-Accel-Buffering'] = 'no'
+    
+    return response
 
 def get_current_session_id():
     """Get the current active session ID for face capture"""
@@ -17313,8 +17328,8 @@ def open_test_camera(rtsp_url):
             
             test_camera_cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
             
-            # CRITICAL FIX: Zero buffering
-            test_camera_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Changed from 0 to 1 (minimum)
+            # CRITICAL FIX: Minimal buffering
+            test_camera_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             test_camera_cap.set(cv2.CAP_PROP_FPS, 30)
             test_camera_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             test_camera_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
@@ -17339,8 +17354,8 @@ def test_camera_grabber():
         try:
             with test_camera_lock:
                 if test_camera_cap and test_camera_cap.isOpened():
-                    # CRITICAL: Flush old frames
-                    for _ in range(3):  # Skip 3 old frames
+                    # CRITICAL: Flush old frames - skip 2 is enough
+                    for _ in range(2):  # Changed from 3 to 2
                         test_camera_cap.grab()
                     
                     # Get latest frame
@@ -17363,20 +17378,39 @@ def create_test_placeholder():
 
 def generate_test_frames():
     """Generate frames with minimal delay"""
-    global test_frame
+    global test_frame, test_camera_active
+    
+    last_sent = time.time()
     
     while test_camera_active:
-        if test_frame is not None:
-            # Lower JPEG quality for speed
-            ret, buffer = cv2.imencode('.jpg', test_frame, 
-                                     [cv2.IMWRITE_JPEG_QUALITY, 60])
-            if ret:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + 
-                       buffer.tobytes() + b'\r\n')
-        
-        time.sleep(0.033)  # 30 FPS max
-        
+        try:
+            current_time = time.time()
+            
+            # Limit to 30 FPS output
+            if current_time - last_sent < 0.033:
+                time.sleep(0.001)
+                continue
+            
+            if test_frame is not None:
+                # Faster encoding - quality 70 is good balance
+                ret, buffer = cv2.imencode('.jpg', test_frame, 
+                                         [cv2.IMWRITE_JPEG_QUALITY, 70,  # Increased from 60
+                                          cv2.IMWRITE_JPEG_OPTIMIZE, 0])  # Disable optimization
+                if ret:
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + 
+                           buffer.tobytes() + b'\r\n')
+                    last_sent = current_time
+            else:
+                time.sleep(0.001)
+                
+        except GeneratorExit:
+            break
+        except Exception as e:
+            print(f"Frame gen error: {e}")
+            time.sleep(0.01)
+
+
 @app.route('/api/test_camera')
 def test_camera():
     """Endpoint for testing camera feed in modal"""
@@ -17557,10 +17591,10 @@ def test_camera_stream():
                        mimetype='multipart/x-mixed-replace; boundary=frame')
     
     # CRITICAL: Disable all buffering
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
-    response.headers['X-Accel-Buffering'] = 'no'  # For nginx
+    response.headers['X-Accel-Buffering'] = 'no'
     response.headers['Connection'] = 'keep-alive'
     
     return response
