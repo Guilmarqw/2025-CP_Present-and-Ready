@@ -49,6 +49,7 @@ from supervision.tracker.byte_tracker.core import ByteTrack
 import supervision as sv
 from typing import List, Dict, Any, Tuple
 import subprocess
+import socket
 
 
 os.environ['PATH'] = r'C:\libjpeg-turbo-gcc64\bin;' + os.environ['PATH']
@@ -164,6 +165,22 @@ pose_attempts = {}
 student_presence_tracker = {}  # Tracks when students are present/missing
 current_session_id = None  
 DEBUG_MODE = False
+_last_cooldown_log_time = {}
+MIN_FACE_WIDTH_FOR_RECOGNITION = 45  # Minimum face width in pixels
+MIN_FACE_HEIGHT_FOR_RECOGNITION = 45  # Minimum face height in pixels
+
+FAST_LOCK_THRESHOLD = 0.65  
+
+
+_last_cooldown_log_time = defaultdict(float)
+_cooldown_log_interval = 10.0 
+
+RECOGNITION_THRESHOLD = 0.58
+
+frame_queue = queue.Queue(maxsize=3)  # Buffer for smooth playback
+encoded_queue = queue.Queue(maxsize=10)
+grabber_thread = None
+grabber_active = False
 
 # Global variables
 test_camera_cap = None
@@ -209,8 +226,8 @@ locked_track_reid_features = {}
 student_status = {}  # {student_id: 'absent' | 'present' | 'late'}
 current_session_students = []  # List of student IDs for current class
 
-CONFIRMATION_FRAMES_REQUIRED = 2  # 2 consecutive frames = ~0.067 seconds
-CONFIRMATION_SIMILARITY_THRESHOLD = 0.60  # Balanced threshold (not too strict, not too loose)
+CONFIRMATION_FRAMES_REQUIRED = 2   
+CONFIRMATION_SIMILARITY_THRESHOLD = 0.50 
 BODY_MATCH_IOU_THRESHOLD = 0.1
 FACE_TO_BODY_VERTICAL_RATIO = 0.7  # Face should be in upper 60% of body
 REID_DISTANCE_THRESHOLD = 0.15
@@ -239,8 +256,8 @@ dummy_frame = None
 latest_frame = None
 stop_flag = False
 
-MAX_TRACKS = 100
-MAX_UNLOCKED_TRACKS = 30
+MAX_TRACKS = 30
+MAX_UNLOCKED_TRACKS = 5
 EXPAND_BOX_RATIO = 0.4
 
 PASSWORD_RESET_EXPIRE_HOURS = 24
@@ -1713,8 +1730,10 @@ def initialize_faces_for_session():
 cap_lock = threading.Lock()
 cap = None
 last_frame_time = time.time()
+latest_frame = None 
 
 def open_stream(rtsp_url=None):
+    """Open stream with VLC-like optimization and multiple fallback attempts"""
     global cap, camera_available, use_dummy_feed, current_rtsp_url
     
     if not rtsp_url:
@@ -1733,94 +1752,108 @@ def open_stream(rtsp_url=None):
                     pass
                 cap = None
             
-            time.sleep(0.1)  # Reduced from 0.3
-            if DEBUG_MODE:         
-                logger.debug(f"Connecting to RTSP: {rtsp_url}")
+            # Clear queues
+            while not frame_queue.empty():
+                try:
+                    frame_queue.get_nowait()
+                except:
+                    break
+            while not encoded_queue.empty():
+                try:
+                    encoded_queue.get_nowait()
+                except:
+                    break
             
-            # **FIX: Use proper OpenCV backend with optimized settings**
-            # Try different backends in order of preference
-            backends_to_try = [
-                (cv2.CAP_FFMPEG, 'FFMPEG'),
-                (cv2.CAP_ANY, 'ANY'),  # Auto-detect
-                (cv2.CAP_DSHOW, 'DSHOW'),  # Windows only
-                (cv2.CAP_V4L2, 'V4L2')  # Linux only
+            time.sleep(0.1)
+            logger.info(f"Connecting to RTSP: {rtsp_url[:100]}...")
+            
+            # Try multiple connection approaches (using your test camera's approach)
+            connection_attempts = [
+                # 1. Direct with TCP optimization
+                lambda: cv2.VideoCapture(optimize_rtsp_url(rtsp_url), cv2.CAP_FFMPEG),
+                
+                # 2. Direct without optimization
+                lambda: cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG),
+                
+                # 3. Try alternative authentication format (without extra @)
+                lambda: cv2.VideoCapture(rtsp_url.replace("admin:@101Pok3r5610", "admin:101Pok3r5610"), cv2.CAP_FFMPEG),
             ]
             
-            cap = None
-            backend_used = None
-            
-            for backend_code, backend_name in backends_to_try:
+            success = False
+            for i, attempt in enumerate(connection_attempts):
                 try:
-                    # **IMPORTANT: Add RTSP parameters for low latency**
-                    full_url = rtsp_url
-                    if "rtsp://" in rtsp_url.lower():
-                        # Add RTSP parameters for better performance
-                        if "?" not in rtsp_url:
-                            full_url = f"{rtsp_url}?rtsp_transport=tcp&buffer_size=65536&tune=zerolatency"
-                        elif "rtsp_transport" not in rtsp_url:
-                            full_url = f"{rtsp_url}&rtsp_transport=tcp&buffer_size=65536&tune=zerolatency"
+                    logger.info(f"  Attempt {i+1}...")
+                    cap = attempt()
                     
-                    cap = cv2.VideoCapture(full_url, backend_code)
-                    
-                    if cap.isOpened():
-                        backend_used = backend_name
-                        
-                        # **FIX: Set proper camera properties BEFORE reading**
-                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # Small buffer, not 1 (1 can cause issues)
-                        cap.set(cv2.CAP_PROP_FPS, 30)
-                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
-                        
-                        # Try to set for low latency if supported
-                        try:
-                            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
-                            cap.set(cv2.CAP_PROP_LOW_LATENCY, 1)
-                        except:
-                            pass
-                        
-                        logger.info(f"✓ Camera connected using {backend_name} backend: 640x360 @ 30 FPS")
-                        break
-                    
-                    # Close if failed
-                    if cap:
-                        cap.release()
-                        cap = None
-                        
+                    if cap and cap.isOpened():
+                        # Quick test read
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            success = True
+                            logger.info(f"  ✅ Connected with attempt {i+1}")
+                            break
+                        else:
+                            cap.release()
+                            cap = None
                 except Exception as e:
+                    logger.info(f"  ❌ Attempt {i+1} failed: {e}")
                     if cap:
                         cap.release()
                         cap = None
-                    continue
             
-            if cap is None or not cap.isOpened():
-                raise Exception(f"Failed to connect with any backend")
+            if not success:
+                logger.warning("All connection attempts failed")
+                camera_available = False
+                use_dummy_feed = True
+                return False
             
-            # Quick connection test - read a few frames to ensure it works
+            # Get camera specs
+            orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            orig_fps = cap.get(cv2.CAP_PROP_FPS)
+            
+            logger.info(f"Camera specs: {orig_width}x{orig_height} @ {orig_fps:.1f} FPS")
+            
+            # Set optimal buffer size for low latency
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+            
+            # For face recognition, prefer 720p or lower (like test camera)
+            if orig_width > 1280:
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                logger.info("Set to 720p for face recognition optimization")
+            elif orig_width > 640:
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+                logger.info("Set to 640x360 for optimal face recognition")
+            
+            # Test with a few frames
             success_count = 0
-            for _ in range(10):  # Try up to 10 times
-                ret, test_frame = cap.read()
-                if ret and test_frame is not None:
+            for i in range(10):
+                ret, frame = cap.read()
+                if ret and frame is not None:
                     success_count += 1
-                    if success_count >= 2:  # Need at least 2 successful reads
-                        camera_available = True
-                        use_dummy_feed = False
-                        current_rtsp_url = rtsp_url
-                        
-                        # **FIX: Read and discard first few frames to clear buffer**
-                        for _ in range(3):
-                            cap.read()
-                        
-                        logger.info(f"Camera connection successful - {backend_used} backend")
-                        return True
+                    h, w = frame.shape[:2]
+                    if i == 0:
+                        logger.info(f"  First frame: {w}x{h}")
                 time.sleep(0.01)
             
-            # If we got here, connection failed
-            cap.release()
-            cap = None
-            raise Exception("Camera connection timeout - frames not readable")
-                
+            if success_count >= 3:
+                camera_available = True
+                use_dummy_feed = False
+                current_rtsp_url = rtsp_url
+                logger.info(f"Camera ready ({success_count}/10 frames OK)")
+                return True
+            else:
+                cap.release()
+                cap = None
+                logger.warning("Camera not responding consistently")
+                camera_available = False
+                use_dummy_feed = True
+                return False
+            
     except Exception as e:
-        logger.warning(f"✗ Camera connection failed: {e}")
+        logger.warning(f"Camera connection failed: {e}")
         camera_available = False
         use_dummy_feed = True
         if cap is not None:
@@ -1832,96 +1865,109 @@ def open_stream(rtsp_url=None):
         return False
 
 def grabber():
-    """FIXED: Smooth, low-latency frame grabbing without stuttering"""
-    global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url, last_frame_time
-    empty_count = 0
-    consecutive_failures = 0
+    """Optimized frame grabbing with VLC-like buffering (like test camera)"""
+    global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url, last_frame_time, grabber_active
     
-    # **FIX: Target frame rate matching**
-    TARGET_FPS = 30
-    TARGET_FRAME_TIME = 1.0 / TARGET_FPS
-    
-    # **FIX: Performance counters**
     frame_counter = 0
     last_log_time = time.time()
+    error_count = 0
+    last_success_time = time.time()
+    buffer_size = 5  # Increased buffer for smoothness (like test camera)
     
-    while not stop_flag:
-        frame_start_time = time.time()
-        
-        if use_dummy_feed:
-            latest_frame = create_dummy_frame()
-            time.sleep(TARGET_FRAME_TIME)  # Match dummy to real timing
-            continue
+    logger.info("🎥 Grabber started (VLC-like buffering)")
+    
+    while not stop_flag and grabber_active:
+        try:
+            ret = False
+            frame = None
             
-        with cap_lock:
-            if cap is None:
-                time.sleep(0.01)
-                continue
+            with cap_lock:
+                if cap and cap.isOpened():
+                    ret, frame = cap.read()
             
-            # **FIX: REMOVED frame skipping! Don't use cap.grab()**
-            # Just read the latest frame directly
-            ok, frame = cap.read()
-            
-        if not ok or frame is None:
-            empty_count += 1
-            consecutive_failures += 1
-            
-            # **FIX: Better error handling with progressive backoff**
-            if empty_count > 5:
-                logger.warning(f"Camera feed empty ({empty_count} consecutive frames)")
+            if ret and frame is not None:
+                error_count = 0
+                frame_counter += 1
+                last_success_time = time.time()
                 
-            if consecutive_failures > 10:
-                logger.error("Camera connection lost, switching to dummy feed")
-                camera_available = False
-                use_dummy_feed = True
-                consecutive_failures = 0
+                # Store in latest_frame for immediate access
+                latest_frame = frame
+                last_frame_time = time.time()
                 
-                # Try to reconnect in background
-                if current_rtsp_url:
-                    def attempt_recovery():
-                        time.sleep(1.0)  # Wait before reconnection
-                        if DEBUG_MODE: 
-                            logger.debug("Attempting camera reconnection...")
-                        open_stream(current_rtsp_url)
+                # Get frame size
+                h, w = frame.shape[:2]
+                
+                # VLC-LIKE BUFFERING: Keep more frames in queue for smooth playback
+                # Don't clear the queue immediately - let it build up to buffer_size
+                if frame_queue.qsize() < buffer_size:
+                    try:
+                        frame_queue.put_nowait(frame.copy())
+                    except queue.Full:
+                        # If queue is full, replace oldest frame
+                        try:
+                            frame_queue.get_nowait()  # Remove oldest
+                            frame_queue.put_nowait(frame.copy())  # Add newest
+                        except:
+                            pass
+                else:
+                    # Queue has enough frames, we can add more
+                    try:
+                        frame_queue.put_nowait(frame.copy())
+                    except queue.Full:
+                        pass
                     
-                    recovery_thread = threading.Thread(target=attempt_recovery, daemon=True)
-                    recovery_thread.start()
+            else:
+                error_count += 1
+                
+                # VLC behavior: Continue for a while even with errors
+                if error_count > 50:  # Increased tolerance (like test camera)
+                    logger.warning(f"Too many consecutive errors ({error_count})")
+                    if time.time() - last_success_time > 10.0:  # 10 seconds no frames
+                        logger.error("Connection lost for 10+ seconds")
+                        camera_available = False
+                        use_dummy_feed = True
+                        break
+                
+                time.sleep(0.01)  # Slightly longer sleep on error
             
-            # Progressive backoff for temporary issues
-            backoff_time = min(0.1, 0.01 * (2 ** min(empty_count, 10)))
-            time.sleep(backoff_time)
-            continue
-               
-        # **FIX: Reset counters on successful frame**
-        empty_count = 0
-        consecutive_failures = 0
-        
-        # Store the latest frame
-        latest_frame = frame
-        last_frame_time = time.time()
-        frame_counter += 1
-        
-        # **FIX: Maintain proper frame timing**
-        frame_end_time = time.time()
-        frame_elapsed = frame_end_time - frame_start_time
-        
-        # Log performance periodically
-        current_time = time.time()
-        if current_time - last_log_time > 5.0:  # Every 5 seconds
-            if frame_counter > 0:
-                actual_fps = frame_counter / (current_time - last_log_time)
-                if DEBUG_MODE: 
-                    logger.debug(f"Grabber FPS: {actual_fps:.1f} (target: {TARGET_FPS})")
-            frame_counter = 0
-            last_log_time = current_time
-        
-        # **FIX: Proper sleep to maintain target FPS and reduce CPU usage**
-        if frame_elapsed < TARGET_FRAME_TIME:
-            time_to_sleep = TARGET_FRAME_TIME - frame_elapsed
-            time.sleep(time_to_sleep)
-        else:
-            # We're running behind - skip sleep but add tiny yield
-            time.sleep(0.0001)  # Tiny sleep to yield CPU
+            current_time = time.time()
+            if current_time - last_log_time >= 2.0:
+                fps = frame_counter / (current_time - last_log_time)
+                queue_size = frame_queue.qsize()
+                logger.debug(f"🎥 Grab: {fps:.1f} FPS | Q:{queue_size} | {w}x{h}")
+                frame_counter = 0
+                last_log_time = current_time
+                
+        except Exception as e:
+            logger.error(f"Grabber error: {e}")
+            time.sleep(0.01)  # Recoverable error
+    
+    logger.info("🛑 Grabber stopped")
+
+def start_grabber_thread():
+    """Start or restart the grabber thread"""
+    global grabber_thread, grabber_active
+    
+    # Stop existing grabber if running
+    if grabber_thread and grabber_thread.is_alive():
+        grabber_active = False
+        grabber_thread.join(timeout=2.0)
+    
+    # Start new grabber thread
+    grabber_active = True
+    grabber_thread = threading.Thread(target=grabber, daemon=True, name="CameraGrabber")
+    grabber_thread.start()
+    logger.info("Grabber thread started")
+
+def stop_grabber_thread():
+    """Stop the grabber thread"""
+    global grabber_thread, grabber_active
+    
+    if grabber_thread and grabber_thread.is_alive():
+        logger.info("Stopping grabber thread...")
+        grabber_active = False
+        grabber_thread.join(timeout=2.0)
+        logger.info("Grabber thread stopped")
 
 # =========================
 # Tracking & attendance
@@ -2365,51 +2411,9 @@ def save_attendance_to_csv(person_id, name, timestamp, person_type):
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
 
-# =========================
-# Key Functions
-# =========================
 
-def detect_bodies(frame):
-    """Detect people bodies - OPTIMIZED"""
-    if body_detector is None:
-        logger.warning("Body detector not initialized")
-        return []
-    
-    try:
-        # Use smaller input for faster detection
-        h, w = frame.shape[:2]
-        scale = 320 / max(h, w)  # Changed from YOLO_IMG_SIZE to fixed 320
-        new_w, new_h = int(w * scale), int(h * scale)
-        resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
-        
-        if DEVICE == "cuda":
-            results = body_detector(
-                resized,
-                classes=[0],
-                verbose=False,
-                conf=0.3,
-                half=True,
-                imgsz=320  # Fixed size for consistency
-            )
-        else:
-            results = body_detector(resized, classes=[0], verbose=False, conf=0.3)
-        
-        detections = []
-        if len(results) > 0 and results[0].boxes is not None:
-            boxes = results[0].boxes
-            for box in boxes:
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                x1, y1, x2, y2 = int(x1/scale), int(y1/scale), int(x2/scale), int(y2/scale)
-                conf = float(box.conf[0])
-                
-                detections.append({
-                    'box': [x1, y1, x2, y2],
-                    'confidence': conf
-                })
-        return detections
-    except Exception as e:
-        logger.error(f"Body detection error: {e}")
-        return []
+
+
 
 def convert_to_supervision_format(detections):
     """Convert detections to supervision Detections format"""
@@ -2521,87 +2525,93 @@ def cleanup_locked_tracks(current_frame, lock_timeout_frames):
         del locked_tracks[id]
 
 
-def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.7, is_locked_track=False):  # Increased tolerance
+def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.35, is_locked_track=False):
+    """Recognize face with ACTUAL tolerance parameter usage"""
     global KNOWN_FACE_ENCODINGS_ARRAY
+    
     try:
+        # Estimate distance
         distance = estimate_distance(face_width_pixels)
-
-        # INCREASED MAX RECOGNITION DISTANCE
-        if distance > MAX_RECOGNITION_DISTANCE * 1.5:  # 50% more range
+        
+        # Check if face is too far
+        if distance > MAX_RECOGNITION_DISTANCE:
             if DEBUG_MODE: 
                 logger.debug(f"Face too far for recognition: {distance:.1f}m")
             return "Unknown", None, float('inf'), distance, 0.0, None
-
-        # IMPROVED IMAGE ENHANCEMENT for better recognition at distance
+        
+        # Minimal image preprocessing
         if len(face_image.shape) == 3:
-            # More aggressive enhancement for distant faces
             gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
             gray = cv2.equalizeHist(gray)
-            # Apply CLAHE for better contrast
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            gray = clahe.apply(gray)
-            gray = cv2.bilateralFilter(gray, 9, 75, 75)
+            gray = cv2.bilateralFilter(gray, 5, 50, 50)
             enhanced = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         else:
             enhanced = face_image
-
-        start_time = time.time()
+        
+        # Get face embedding
         faces = face_analysis.get(enhanced)
-        if DEBUG_MODE: 
-            logger.debug(f"Face analysis inference time: {time.time() - start_time:.4f} seconds")
         if not faces:
             return "Unknown", None, float('inf'), distance, 0.0, None
-
+        
         face_embedding = faces[0].embedding
-
-        # 👇 OPTIMIZATION: Vectorized Cosine Similarity Calculation
+        
+        # Normalize the embedding
+        face_norm = np.linalg.norm(face_embedding)
+        if face_norm > 0:
+            face_embedding = face_embedding / face_norm
+        else:
+            return "Unknown", None, float('inf'), distance, 0.0, None
+        
+        # Calculate similarities with known faces
         if KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
-            # 1. Calculate dot products (numerator)
-            dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+            # Ensure known embeddings are normalized
+            if not KNOWN_FACE_ENCODINGS_NORMALIZED:
+                rebuild_known_faces_array()
             
-            # 2. Calculate norms (denominator parts)
-            norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
-            norm_b = np.linalg.norm(face_embedding)
-            
-            # 3. Calculate similarities (division)
-            denominator = (norm_a * norm_b)
-            similarities = np.divide(dot_products, denominator, 
-                                     out=np.zeros_like(dot_products), where=denominator!=0)
+            # Calculate cosine similarity
+            similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
         else:
             similarities = np.array([])
-        # 👆 END OF OPTIMIZATION
-
+        
         if similarities.size > 0:
             best_match_index = int(np.argmax(similarities))
             best_similarity = float(similarities[best_match_index])
-
-            # LOWER THRESHOLD for recognition, especially for redetection
-            recognition_threshold = 0.85 if is_locked_track else 0.80  # Reduced thresholds
+            
+            # ✅ ACTUALLY USE THE TOLERANCE PARAMETER!
+            # The tolerance is the recognition threshold
+            recognition_threshold = tolerance  # Now using the parameter!
+            
+            # Even lower for locked tracks (re-detection)
+            if is_locked_track:
+                recognition_threshold = max(0.20, tolerance - 0.10)  # Lower for locked
+            
             confidence = best_similarity
-
+            
+            # ✅ Check against the ACTUAL tolerance threshold
             if is_locked_track or confidence >= recognition_threshold:
                 name = known_face_names[best_match_index]
                 id = known_face_ids[best_match_index]
                 role_type = known_face_types[best_match_index]
-
+                
                 if role_type == 'faculty':
                     name = f"Faculty: {name}"
-
+                
                 return (
                     name,
                     id,
-                    1 - confidence,
-                    distance,
-                    confidence,
+                    1 - confidence,  # Distance metric (lower is better)
+                    distance,        # Physical distance
+                    confidence,      # Similarity score
                     role_type
                 )
-
+        
         return "Unknown", None, float('inf'), distance, 0.0, None
-
+        
     except Exception as e:
         logger.error(f"Error in enhanced_recognize_face: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return "Unknown", None, float('inf'), None, 0.0, None
-
 
 def detect_liveness_cctv(face_image, liveness_threshold):
     try:
@@ -2661,13 +2671,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
     global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
     global KNOWN_FACE_ENCODINGS_NORMALIZED
     
+    
     #   ANTI-SWAP: Initialize tracking history for movement prediction
     global locked_track_history, locked_track_predictions, locked_track_signatures
     
     if detectionStopped:
-        return
-    
-    if frame_idx % 3 != 0: 
         return
     
     # Initialize anti-swap tracking systems
@@ -2705,7 +2713,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         return
     
     # Step 2: Body detection
-    body_detections = detect_bodies(frame)
+    body_detections = detect_bodies(frame, frame_idx)
     
     # Step 3: Use ByteTrack for BODY tracking
     body_tracks = []
@@ -3301,7 +3309,17 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 # 🎯 STAGE 3: FLEXIBLE BODY SIGNATURE VERIFICATION
                 if body_signature and 'signature' in body_track:
                     current_sig = body_track['signature']
-                    
+
+                    avg_width = body_signature.get('avg_width', 0)
+                    avg_height = body_signature.get('avg_height', 0)
+
+                    if avg_width > 0 and avg_height > 0:
+                        width_ratio = current_sig['width'] / avg_width
+                        height_ratio = current_sig['height'] / avg_height
+
+                        if width_ratio < 0.7 or height_ratio < 0.7:
+                            continue
+                           
                     # Check if min_width/max_width exist before using them
                     if ('min_width' in body_signature and 'max_width' in body_signature and 
                         body_signature['min_width'] > 0 and body_signature['max_width'] > 0):
@@ -3516,7 +3534,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             continue
         
         # ============================================
-        #   ENHANCED FACE RECOGNITION SECTION
+        #   ENHANCED FACE RECOGNITION SECTION WITH ADAPTIVE THRESHOLDS
         # ============================================
         name = "Unknown"
         person_id = None
@@ -3558,69 +3576,122 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     face_height = y2 - y1
                     face_area = face_width * face_height
             
+                    # 🎯 Skip very small faces
                     if face_width < 40 or face_height < 40:
                         if DEBUG_MODE: 
                             logger.debug(f"  Face too small: {face_width}x{face_height}")
                         name = "Unknown - Face too small"
-                    else:
-                        # ENSURE embeddings are normalized
-                        if not KNOWN_FACE_ENCODINGS_NORMALIZED:
-                            # Normalize on the fly
-                            norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
-                            norms[norms == 0] = 1
-                            KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
-                            KNOWN_FACE_ENCODINGS_NORMALIZED = True
-                            if DEBUG_MODE: 
-                                logger.debug("  Normalized known embeddings on the fly")
-                
-                        # Calculate cosine similarity
-                        similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
-                
+                        continue
+                    
+                    # Calculate distance from center for adaptive thresholds
+                    face_center_x = (x1 + x2) // 2
+                    face_center_y = (y1 + y2) // 2
+                    distance_from_center = np.sqrt((face_center_x - w//2)**2 + (face_center_y - h//2)**2)
+                    
+                    # 🎯 ADAPTIVE RECOGNITION THRESHOLDS based on distance
+                    if distance_from_center > 400:  # Very far
+                        recognition_threshold = 0.58  # Lowest threshold for very far
+                        min_face_size = 50  # Require larger faces
+                    elif distance_from_center > 300:  # Far
+                        recognition_threshold = 0.60  # Lower threshold for far
+                        min_face_size = 45
+                    elif distance_from_center > 200:  # Medium
+                        recognition_threshold = 0.63  # Medium threshold
+                        min_face_size = 40
+                    else:  # Close
+                        recognition_threshold = 0.65  # Highest threshold for close
+                        min_face_size = 35
+                    
+                    # Check minimum face size for reliable recognition
+                    if face_width < min_face_size or face_height < min_face_size:
                         if DEBUG_MODE: 
-                            logger.debug(f"  Similarities: min={similarities.min():.3f}, max={similarities.max():.3f}")
+                            logger.debug(f"  Face too small for distance: {face_width}x{face_height} at {distance_from_center:.0f}px")
+                        name = "Unknown - Too small for distance"
+                        continue
+                    
+                    # ENSURE embeddings are normalized
+                    if not KNOWN_FACE_ENCODINGS_NORMALIZED:
+                        # Normalize on the fly
+                        norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
+                        norms[norms == 0] = 1
+                        KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
+                        KNOWN_FACE_ENCODINGS_NORMALIZED = True
+                        if DEBUG_MODE: 
+                            logger.debug("  Normalized known embeddings on the fly")
                 
-                        if similarities.size > 0:
-                            best_match_index = int(np.argmax(similarities))
-                            best_similarity = float(similarities[best_match_index])
-                    
-                            # SIMPLIFIED THRESHOLD
-                            recognition_threshold = 0.55  # Much lower for better recognition
-                    
-                            # Adjust for face size
-                            if face_width < 60 or face_height < 60:
-                                recognition_threshold = 0.50  # Even lower for small faces
-                    
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Best match: {known_face_names[best_match_index]} - Similarity: {best_similarity:.3f}, Threshold: {recognition_threshold:.3f}")
-                    
-                            if best_similarity >= recognition_threshold:
-                                matched_id = known_face_ids[best_match_index]
-                                matched_type = known_face_types[best_match_index]
-                                matched_name = known_face_names[best_match_index]
+                    # Calculate cosine similarity
+                    similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Similarities: min={similarities.min():.3f}, max={similarities.max():.3f}")
+
+                    if similarities.size > 0:
+                        best_match_index = int(np.argmax(similarities))
+                        best_similarity = float(similarities[best_match_index])
                         
-                                if DEBUG_MODE: 
-                                    logger.debug(f"  ✅ MATCH: {matched_name} ({matched_id}) - Type: {matched_type}")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Best match: {known_face_names[best_match_index]} - Similarity: {best_similarity:.3f}, Threshold: {recognition_threshold:.3f}")
+                    
+                        # 🎯 TOP-2 CHECK for better accuracy
+                        if similarities.size > 1:
+                            sorted_indices = np.argsort(similarities)[::-1]
+                            best_sim = similarities[sorted_indices[0]]
+                            second_best_sim = similarities[sorted_indices[1]]
+                            
+                            similarity_gap = best_sim - second_best_sim
+                            if similarity_gap < 0.08:  # Too close, might be ambiguous
+                                if DEBUG_MODE:
+                                    logger.debug(f"  AMBIGUOUS: Best match gap too small ({similarity_gap:.3f})")
+                                name = "Unknown - Ambiguous match"
+                                continue
                         
-                                if matched_type == 'faculty':
-                                    name = f"Faculty: {matched_name}"
+                        # 🎯 CONFIDENCE-BASED RECOGNITION DECISION
+                        if best_similarity >= recognition_threshold:
+                            # HIGH/MEDIUM CONFIDENCE MATCH
+                            matched_id = known_face_ids[best_match_index]
+                            matched_type = known_face_types[best_match_index]
+                            matched_name = known_face_names[best_match_index]
+                            
+                            # Additional verification for medium confidence
+                            if best_similarity < 0.70:  # Medium confidence range
+                                # Check if person was recently tracked
+                                person_recently_tracked = False
+                                for tr in tracks:
+                                    if tr.get('id') == matched_id:
+                                        frames_since_seen = frame_idx - tr.get('last_seen', 0)
+                                        if frames_since_seen <= 30:  # Seen within 30 frames (~1 second)
+                                            person_recently_tracked = True
+                                            break
+                                
+                                if not person_recently_tracked:
+                                    # Not recently tracked - be more conservative
+                                    if DEBUG_MODE:
+                                        logger.debug(f"  MEDIUM CONFIDENCE REJECTED: {matched_name} not recently tracked")
+                                    name = "Unknown - Medium confidence, not recently tracked"
+                                    continue
+                            
+                            # 🎯 ACCEPTED RECOGNITION
+                            if matched_type == 'faculty':
+                                name = f"Faculty: {matched_name}"
+                                person_id = matched_id
+                                ptype = 'faculty'
+                                confidence = best_similarity
+                        
+                            elif matched_type == 'student':
+                                if current_section_students and matched_id in current_section_students:
+                                    name = matched_name
                                     person_id = matched_id
-                                    ptype = 'faculty'
+                                    ptype = 'student'
                                     confidence = best_similarity
-                        
-                                elif matched_type == 'student':
-                                    if current_section_students and matched_id in current_section_students:
-                                        name = matched_name
-                                        person_id = matched_id
-                                        ptype = 'student'
-                                        confidence = best_similarity
-                                    else:
-                                        name = "Unknown - Wrong Section"
-                                        if DEBUG_MODE: 
-                                            logger.debug(f"  ❌ Student {matched_name} not in current section")
-                            else:
-                                if DEBUG_MODE: 
-                                    logger.debug(f"  ❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
-                                name = "Unknown"
+                                else:
+                                    name = "Unknown - Wrong Section"
+                                    if DEBUG_MODE: 
+                                        logger.debug(f"  ❌ Student {matched_name} not in current section")
+                        else:
+                            # BELOW THRESHOLD
+                            if DEBUG_MODE: 
+                                logger.debug(f"  ❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
+                            name = "Unknown"
             except Exception as e:
                 logger.error(f"  Error in recognition: {e}")
                 import traceback
@@ -3871,29 +3942,32 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if key in locked_track_signatures:
             del locked_track_signatures[key]
 
-def enhance_face_recognition_settings():
-    """Apply optimal settings for better recognition"""
-    global CONFIRMATION_SIMILARITY_THRESHOLD, CONFIRMATION_FRAMES_REQUIRED
-    
-    # Optimize for easier recognition
-    CONFIRMATION_SIMILARITY_THRESHOLD = 0.58  # Lowered for better recognition
-    CONFIRMATION_FRAMES_REQUIRED = 3  # Reduced for faster locking
-    
-    if DEBUG_MODE: 
-        logger.debug(f"Enhanced recognition: threshold={CONFIRMATION_SIMILARITY_THRESHOLD}, frames={CONFIRMATION_FRAMES_REQUIRED}")
-
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
     🛡️ ULTRA STRONG ANTI-SWAPPING: Body-only tracking for LOCKED tracks with force field protection
-      FIXED: Prevents bounding boxes from jumping to unknown/scanning people
-      ADDED: Body shape signature verification for each locked track
-      ADDED: Movement prediction and path consistency validation
-      ADDED: Temporal consistency with frame history
-      ADDED: Force field protection zones with overlapping rejection
-      ENHANCED: Real-time FPS calculation and optimization
+    FIXED: Automatically uses current server IP for API calls
     """
     global tracks, locked_tracks, pending_confirmations, current_fps
     global detectionStopped, student_presence_tracker, current_session_id, locked_track_reid_features
+    
+    # Get current server IP dynamically
+    def get_server_ip():
+        """Get the current server IP address dynamically"""
+        try:
+            import socket
+            # Get the actual IP address of the server
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            # Fallback to localhost if can't determine IP
+            return "127.0.0.1"
+    
+    # Use dynamic IP for API calls
+    SERVER_IP = get_server_ip()
+    API_BASE_URL = f"https://{SERVER_IP}:5000"  # Use HTTP for internal calls (no SSL needed)
     
     #   ANTI-SWAP: Initialize advanced tracking systems
     global locked_track_history, locked_track_predictions, locked_track_signatures
@@ -3928,7 +4002,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         del student_presence_tracker[invalid_id]
     
     # Step 1: Detect bodies FIRST - this is critical
-    body_detections = detect_bodies(frame)
+    body_detections = detect_bodies(frame, frame_idx)
     if DEBUG_MODE: 
         logger.debug(f"Detected {len(body_detections)} bodies in frame {frame_idx}")
     
@@ -4209,10 +4283,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                         width_diff = abs(locked_sig['avg_width'] - current_sig['width']) / max(locked_sig['avg_width'], current_sig['width'])
                         height_diff = abs(locked_sig['avg_height'] - current_sig['height']) / max(locked_sig['avg_height'], current_sig['height'])
                         
-                        if width_diff > 0.25 or height_diff > 0.25:
-                            # 🛡️ Very different body size - REJECT for this locked track
-                            logger.warning(f"  ANTI-SWAP: Different sized body near {zone_info['lock_info'].get('name', person_id)} - Rejecting")
-                            # Don't add to matched indices - let it be available for other checks
+                        if width_diff > 0.3 or height_diff > 0.3:
                             continue
                 
                 break  # Move to next body detection
@@ -4297,7 +4368,17 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                 locked_track_reid_features[person_id] = body_reid_features[idx]
                             else:
                                 # Weighted update
-                                alpha = 0.85
+                                alpha = 0.95
+                                sig['avg_width'] = (sig['avg_width'] * alpha) + (body_width * (1 - alpha))
+                                sig['avg_height'] = (sig['avg_height'] * alpha) + (body_height * (1 - alpha))
+
+                                if 'min_acceptable_width' not in sig:
+                                    sig['min_acceptable_width'] = int(sig['avg_width'] * 0.7)
+                                    sig['min_acceptable_height'] = int(sig['avg_height'] * 0.7)
+                                else:
+                                    sig['min_acceptable_width'] = max(sig['min_acceptable_width'], int(sig['avg_width'] * 0.65))
+                                    sig['min_acceptable_height'] = max(sig['min_acceptable_height'], int(sig['avg_height'] * 0.65))    
+                                    
                                 locked_track_reid_features[person_id] = (
                                     alpha * locked_track_reid_features[person_id] +
                                     (1 - alpha) * body_reid_features[idx]
@@ -4399,7 +4480,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
             except Exception as e:
                 logger.warning(f"  Error checking manual status: {e}")
             
-            #   Only call student_left API if NOT manual status
+            #   Only call student_left API if NOT manual status - USING DYNAMIC IP
             try:
                 import requests
                 import time
@@ -4411,12 +4492,17 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     'session_id': str(current_session_id)  
                 }
                 
+                # Use dynamic API URL
+                api_url = f"{API_BASE_URL}/api/student_left"
+                if DEBUG_MODE: 
+                    logger.debug(f"  Using API URL: {api_url}")
+                
                 # Try 3 times with better connection handling
                 success = False
                 for attempt in range(3):
                     try:
                         response = requests.post(
-                            'https://192.168.0.100:5000/api/student_left', 
+                            api_url, 
                             json=api_data,  
                             timeout=3,
                             headers={
@@ -4533,7 +4619,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                 except Exception as e:
                                     logger.warning(f"  Error checking manual status: {e}")
                                 
-                                # Only call API if not manual status
+                                # Only call API if not manual status - USING DYNAMIC IP
                                 try:
                                     import requests
                                     import urllib3
@@ -4544,8 +4630,10 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                                             'student_id': str(student_id),
                                             'session_id': str(current_session_id)
                                         }
+                                        
+                                        api_url = f"{API_BASE_URL}/api/student_left"
                                         response = requests.post(
-                                            'https://192.168.0.100:5000/api/student_left', 
+                                            api_url, 
                                             json=api_data,
                                             timeout=2
                                         )
@@ -4775,7 +4863,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                 student_presence_tracker[student_id]['present'] = False
                 student_presence_tracker[student_id]['last_seen'] = datetime.now()
             
-            #   SIMPLE: Call API to mark as missing WITH RETRY LOGIC
+            #   SIMPLE: Call API to mark as missing WITH RETRY LOGIC - USING DYNAMIC IP
             try:
                 import requests
                 import time
@@ -4785,11 +4873,16 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     'session_id': str(current_session_id)
                 }
                 
+                # Use dynamic API URL
+                api_url = f"{API_BASE_URL}/api/student_left"
+                if DEBUG_MODE: 
+                    logger.debug(f"  Using API URL: {api_url}")
+                
                 success = False
                 for attempt in range(3):
                     try:
                         response = requests.post(
-                            'https://192.168.0.100:5000/api/student_left',  
+                            api_url,  
                             json=api_data,
                             timeout=3,
                             headers={'Connection': 'close'}
@@ -5062,221 +5155,501 @@ def update_trackers_with_body(rgb, frame, frame_idx):
         status_y = (conf_y if display_name == "Unknown" else time_y) + status_h + 8
         cv2.rectangle(frame, (x1, status_y - status_h - 4), (x1 + status_w + 8, status_y + 4), (0, 150, 150), -1)
         cv2.putText(frame, status_label, (x1 + 4, status_y), font, font_scale_info, (255, 255, 255), thickness)
+    
     if DEBUG_MODE: 
         logger.debug(f"Total: {len(tracks)} tracks (Locked: {len(locked_tracks)}, Pending: {len(pending_confirmations)})")
 
-@app.route('/video_feed')
-def video_feed():
-    """Stream video feed - ULTRA LOW LATENCY with proper frame timing"""
-    def generate():
-        global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
-        global detectionStopped, current_fps
+# ============================================
+# PART 1: FIXED detect_bodies() - Replace your existing function
+# ============================================
+
+def detect_bodies(frame, frame_idx):
+    """
+    🎯 IMPROVED WHOLE-BODY DETECTION: Better tracking when people move or change pose
+    🎯 ADAPTIVE FILTERING: More flexible for different body postures and movements
+    """
+    if body_detector is None:
+        logger.warning("Body detector not initialized")
+        return []
+    
+    try:
+        # Get frame dimensions
+        h, w = frame.shape[:2]
         
-        frame_idx = 0
-        last_frame_time = time.time()
-        fps_counter = 0
-        last_fps_log = time.time()
+        # 🎯 ADAPTIVE SCALING based on frame size for better detection
+        if w > 1920 or h > 1080:  # Very high resolution
+            scale = 320 / max(h, w)
+        elif w > 1280:  # High resolution
+            scale = 416 / max(h, w)
+        else:  # Normal resolution
+            scale = 640 / max(h, w)
         
-        # **FIX: Separate counters for detection vs display**
-        display_counter = 0
-        detection_counter = 0
+        new_w, new_h = int(w * scale), int(h * scale)
         
-        # **FIX: Performance monitoring**
-        encode_times = []
-        total_times = []
+        # Use AREA interpolation for better feature preservation
+        resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
         
-        while not stop_flag and not detectionStopped:
-            frame_start_time = time.time()
-            
-            try:
-                # **FIX: Get frame WITHOUT processing delay**
-                if latest_frame is None:
-                    pass
+        # 🎯 OPTIMIZED DETECTION SETTINGS for better whole-body tracking
+        if DEVICE == "cuda":
+            results = body_detector(
+                resized,
+                classes=[0],  # Person class only
+                verbose=False,
+                conf=0.25,  # 🎯 LOWERED from 0.30 for better detection
+                iou=0.40,   # 🎯 Reduced NMS threshold for better overlapping detection
+                half=True,
+                imgsz=max(640, min(new_w, new_h)),  # Adaptive image size
+                max_det=25,  # 🎯 Increased from 20 for more detections
+                augment=True  # 🎯 Enable augmentation for better detection
+            )
+        else:
+            results = body_detector(
+                resized, 
+                classes=[0], 
+                verbose=False, 
+                conf=0.25,  # 🎯 LOWERED from 0.30
+                iou=0.40,
+                max_det=25,  # 🎯 Increased from 20
+                augment=True  # 🎯 Enable augmentation
+            )
+        
+        detections = []
+        if len(results) > 0 and results[0].boxes is not None:
+            boxes = results[0].boxes
+            for box in boxes:
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                # Scale back to original size
+                x1, y1, x2, y2 = int(x1/scale), int(y1/scale), int(x2/scale), int(y2/scale)
+                conf = float(box.conf[0])
+                
+                # 🎯 IMPROVED FILTERING for better whole-body tracking
+                box_width = x2 - x1
+                box_height = y2 - y1
+                box_area = box_width * box_height
+                frame_area = w * h
+                
+                # Filter 1: Minimum size (MORE LENIENT for partial/far bodies)
+                min_width = max(25, int(w * 0.02))
+                min_height = max(50, int(h * 0.04))
+
+                if box_width < min_width or box_height < min_height:
                     continue
                 
-                # **FIX: Minimal frame copying**
-                frame = latest_frame.copy()
+                # Filter 2: Maximum size (allow larger detections for close people)
+                if box_width > w * 0.95 or box_height > h * 0.95:  # Changed from 0.9 to 0.95
+                    continue
                 
-                # **FIX: Skip resizing if possible (camera already provides 640x360)**
-                current_height, current_width = frame.shape[:2]
-                if current_width != STREAM_WIDTH or current_height != STREAM_HEIGHT:
-                    # Only resize if absolutely necessary
-                    frame = cv2.resize(frame, (STREAM_WIDTH, STREAM_HEIGHT), 
-                                     interpolation=cv2.INTER_LINEAR)
-                
-                # **FIX: DECOUPLE detection from streaming**
-                # Run detection in separate thread or less frequently
-                detection_counter += 1
-                
-                # Only run detection every 2nd frame for streaming (30fps -> 15fps detection)
-                if detection_counter % 2 == 0:
-                    try:
-                        # Quick RGB conversion
-                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        
-                        # Run minimal detection
-                        refresh_with_detections(frame, rgb, frame_idx)
-                    except:
-                        pass
-                
-                # **FIX: Update tracking more frequently but lightweight**
-                if frame_idx % 3 == 0:  # Every 3rd frame
-                    try:
-                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        update_trackers_with_body(rgb, frame, frame_idx)
-                    except:
-                        pass
-                
-                frame_idx += 1
-                display_counter += 1
-                
-                # **FIX: Draw tracking boxes ONCE per frame (not in detection function)**
-                # Draw locked tracks (green boxes)
-                for person_id, lock_info in locked_tracks.items():
-                    body_box = lock_info.get('body_box')
-                    if body_box:
-                        bx1, by1, bx2, by2 = body_box
-                        # Scale box coordinates if frame was resized
-                        if current_width != STREAM_WIDTH:
-                            scale_w = STREAM_WIDTH / current_width
-                            scale_h = STREAM_HEIGHT / current_height
-                            bx1 = int(bx1 * scale_w)
-                            by1 = int(by1 * scale_h)
-                            bx2 = int(bx2 * scale_w)
-                            by2 = int(by2 * scale_h)
-                        
-                        # Draw green box for locked tracks
-                        cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
-                        
-                        # Draw name
-                        name = lock_info.get('name', f'Person {person_id}')
-                        cv2.putText(frame, name, (bx1, max(20, by1 - 10)), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                        cv2.putText(frame, name, (bx1, max(20, by1 - 10)), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-                
-                # **FIX: Draw pending confirmations (orange boxes)**
-                for person_id, conf_data in pending_confirmations.items():
-                    if conf_data.get('body_boxes'):
-                        body_box = conf_data['body_boxes'][-1]
-                        bx1, by1, bx2, by2 = body_box
-                        
-                        # Scale if needed
-                        if current_width != STREAM_WIDTH:
-                            scale_w = STREAM_WIDTH / current_width
-                            scale_h = STREAM_HEIGHT / current_height
-                            bx1 = int(bx1 * scale_w)
-                            by1 = int(by1 * scale_h)
-                            bx2 = int(bx2 * scale_w)
-                            by2 = int(by2 * scale_h)
-                        
-                        cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 165, 255), 2)
-                
-                # **FIX: Draw unlocked tracks (yellow boxes)**
-                for tr in tracks:
-                    if tr.get('is_locked') or tr.get('id') in locked_tracks:
+                # Filter 3: Aspect ratio - MUCH MORE FLEXIBLE for different poses
+                if box_height > 0 and box_width > 0:
+                    aspect_ratio = box_height / box_width
+                    
+                    # 🎯 ALLOW WIDER BODIES (when arms extended)
+                    # Normal person: height/width ratio typically 1.5-3.5
+                    # Person with arms extended: ratio can be 1.0-2.0
+                    # Very tall/skinny: ratio can be 4.0-5.0
+                    
+                    if aspect_ratio < 0.8:  # Too wide (probably not a person)
+                        continue
+                    if aspect_ratio > 6.0:  # Too tall and skinny
                         continue
                     
-                    face_box = tr.get('box')
-                    if face_box:
-                        fx1, fy1, fx2, fy2 = face_box
-                        
-                        # Scale if needed
-                        if current_width != STREAM_WIDTH:
-                            scale_w = STREAM_WIDTH / current_width
-                            scale_h = STREAM_HEIGHT / current_height
-                            fx1 = int(fx1 * scale_w)
-                            fy1 = int(fy1 * scale_h)
-                            fx2 = int(fx2 * scale_w)
-                            fy2 = int(fy2 * scale_h)
-                        
-                        cv2.rectangle(frame, (fx1, fy1), (fx2, fy2), (0, 255, 255), 2)
+                    # 🎯 SPECIAL CASE: Allow wider boxes for certain confidence levels
+                    if conf > 0.6 and 0.8 <= aspect_ratio < 1.1:
+                        # High confidence but wider aspect - might be person with arms extended
+                        # Check other features before deciding
+                        if box_area > frame_area * 0.05:  # Not too small
+                            # Allow this wider detection
+                            pass
                 
-                # **FIX: Display FPS counter**
-                current_time = time.time()
-                fps_counter += 1
-                
-                if current_time - last_fps_log >= 1.0:
-                    stream_fps = fps_counter / (current_time - last_fps_log)
-                    fps_counter = 0
-                    last_fps_log = current_time
-                    
-                    # Display FPS on frame
-                    fps_text = f"FPS: {stream_fps:.1f}"
-                    cv2.putText(frame, fps_text, (STREAM_WIDTH - 120, 30), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                
-                # **FIX: FASTER JPEG encoding with optimized parameters**
-                encode_start = time.time()
-                ret, buffer = cv2.imencode('.jpg', frame, [
-                    cv2.IMWRITE_JPEG_QUALITY, 70,  # Lower quality = faster encoding
-                    cv2.IMWRITE_JPEG_PROGRESSIVE, 0,  # Disable progressive
-                    cv2.IMWRITE_JPEG_OPTIMIZE, 0,  # Disable optimization
-                    cv2.IMWRITE_JPEG_SAMPLING_FACTOR, 1  # Minimal sampling
-                ])
-                encode_time = time.time() - encode_start
-                encode_times.append(encode_time)
-                
-                if len(encode_times) > 30:
-                    encode_times.pop(0)
-                
-                # Yield the frame
-                frame_bytes = buffer.tobytes()
-                yield (b'--frame\r\n'
-                      b'Content-Type: image/jpeg\r\n\r\n' + 
-                      frame_bytes + b'\r\n')
-                
-                # **FIX: DYNAMIC SLEEP for consistent 30 FPS**
-                frame_end_time = time.time()
-                total_time = frame_end_time - frame_start_time
-                total_times.append(total_time)
-                
-                if len(total_times) > 30:
-                    total_times.pop(0)
-                
-                # Target 30 FPS (33.3ms per frame)
-                target_time = 0.0333
-                sleep_needed = max(0.0005, target_time - total_time)
-                
+                # Filter 4: Area ratio (not too small or too large)
+                area_ratio = box_area / frame_area
+                if area_ratio < 0.001:  # 🎯 Reduced from 0.002 for small/far people
+                    continue
+                if area_ratio > 0.9:  # 🎯 Increased from 0.6 for close-up people
+                    continue
 
-                
-                # **FIX: Memory cleanup every 100 frames**
-                if display_counter % 100 == 0:
-                    # Clear some lists to prevent memory growth
-                    if len(total_times) > 30:
-                        total_times = total_times[-30:]
-                    if len(encode_times) > 30:
-                        encode_times = encode_times[-30:]
-                    
-                    # Optional GPU cleanup
-                    try:
-                        if DEVICE == "cuda":
-                            torch.cuda.empty_cache()
-                    except:
+                if conf > 0.7 and area_ratio > 0.5:
+                    if 1.0 <= aspect_ratio <= 4.0:
                         pass
+                    else:
+                        continue
                 
+                # Filter 5: Position within frame (with more buffer)
+                if x1 < -20 or y1 < -20 or x2 > w + 20 or y2 > h + 20:  # 🎯 More buffer
+                    continue
+                
+                # Filter 6: Valid dimensions
+                if box_width <= 0 or box_height <= 0:
+                    continue
+                
+                # 🎯 SMART CLAMPING with expansion for better tracking
+                # Instead of just clamping, expand slightly for better coverage
+                if box_width > w * 0.3:
+                    expand_margin = min(5, int(box_width * 0.02))
+                else:
+                    expand_margin = min(15, int(box_width * 0.08))
+                
+                clamped_x1 = max(0, min(x1, w - 1)) - expand_margin
+                clamped_y1 = max(0, min(y1, h - 1)) - expand_margin
+                clamped_x2 = max(0, min(x2, w)) + expand_margin
+                clamped_y2 = max(0, min(y2, h)) + expand_margin
+                
+                # Ensure final box is valid
+                final_width = clamped_x2 - clamped_x1
+                final_height = clamped_y2 - clamped_y1
+                
+                if final_width < 25 or final_height < 50:  # 🎯 Reduced minimums
+                    continue
+                
+                # 🎯 ENHANCED BODY VALIDATION based on position and size
+                # Check if detection is in plausible body regions
+                center_y = (clamped_y1 + clamped_y2) // 2
+                
+                # People are typically in the middle/lower part of frame
+                if center_y < h * 0.1:  # Too high in frame (probably not a person)
+                    continue
+                
+                # Calculate confidence adjustment based on position and size
+                position_confidence = 1.0
+                
+                # Higher confidence for detections near center
+                center_x = (clamped_x1 + clamped_x2) // 2
+                distance_from_center = abs(center_x - w//2) / (w//2)
+                if distance_from_center > 0.8:  # Very far from center
+                    position_confidence *= 0.8
+                
+                # Higher confidence for reasonable aspect ratios
+                if 1.2 <= aspect_ratio <= 3.5:
+                    position_confidence *= 1.1
+                
+                adjusted_confidence = conf * position_confidence
+                
+                # 🎯 FINAL VALIDATION: Size progression check
+                # Reject if width is significantly larger than height (unlikely for standing person)
+                if box_width > box_height * 1.8 and conf < 0.5:
+                    continue
+                
+                detections.append({
+                    'box': [clamped_x1, clamped_y1, clamped_x2, clamped_y2],
+                    'confidence': adjusted_confidence,
+                    'original_confidence': conf,
+                    'aspect_ratio': aspect_ratio if box_width > 0 else 0,
+                    'area_ratio': area_ratio
+                })
+        
+        # 🎯 POST-PROCESSING: Merge overlapping detections
+        if len(detections) > 1:
+            merged_detections = []
+            used_indices = set()
+            
+            for i in range(len(detections)):
+                if i in used_indices:
+                    continue
+                    
+                current_box = detections[i]['box']
+                current_confidence = detections[i]['confidence']
+                merged_box = list(current_box)
+                merged_confidence = current_confidence
+                merge_count = 1
+                
+                for j in range(i + 1, len(detections)):
+                    if j in used_indices:
+                        continue
+                    
+                    other_box = detections[j]['box']
+                    overlap_iou = iou(current_box, other_box)
+                    
+                    # Merge if significant overlap
+                    if overlap_iou > 0.3:
+                        # Merge boxes (take union)
+                        merged_box[0] = min(merged_box[0], other_box[0])
+                        merged_box[1] = min(merged_box[1], other_box[1])
+                        merged_box[2] = max(merged_box[2], other_box[2])
+                        merged_box[3] = max(merged_box[3], other_box[3])
+                        
+                        merged_confidence = max(merged_confidence, detections[j]['confidence'])
+                        merge_count += 1
+                        used_indices.add(j)
+                
+                used_indices.add(i)
+                
+                # Calculate merged aspect ratio
+                merged_width = merged_box[2] - merged_box[0]
+                merged_height = merged_box[3] - merged_box[1]
+                merged_aspect = merged_height / merged_width if merged_width > 0 else 0
+                
+                # Final validation on merged box
+                if (merged_width >= 20 and merged_height >= 40 and 
+                    0.8 <= merged_aspect <= 6.0):
+                    
+                    merged_detections.append({
+                        'box': merged_box,
+                        'confidence': merged_confidence,
+                        'original_confidence': merged_confidence,
+                        'aspect_ratio': merged_aspect,
+                        'area_ratio': (merged_width * merged_height) / (w * h),
+                        'merged': merge_count > 1
+                    })
+            
+            detections = merged_detections
+        
+        # 🎯 SORT by confidence (highest first)
+        detections.sort(key=lambda x: x['confidence'], reverse=True)
+        
+        # 🎯 LIMIT number of detections for performance
+        max_detections = 15
+        if len(detections) > max_detections:
+            detections = detections[:max_detections]
+        if DEBUG_MODE:
+            logger.debug(f"Detected {len(detections)} bodies at frame {frame_idx}")
+            
+            if detections:
+                avg_aspect = sum(d['aspect_ratio'] for d in detections) / len(detections)
+                logger.debug(f"  Avg aspect ratio: {avg_aspect:.2f}")
+        
+        return detections
+        
+    except Exception as e:
+        logger.error(f"Body detection error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
+
+# ============================================
+# PART 2: CLEAN video_feed() - Remove FPS/Buffer display
+# ============================================
+
+@app.route('/video_feed')
+def video_feed():
+    """Stream video feed with smooth streaming and detection"""
+    def generate():
+        global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
+        global detectionStopped
+        
+        frame_idx = 0
+        # 🎯 RUN DETECTION EVERY FRAME FOR STABLE TRACKING
+        detection_interval = 1  # 🎯 Changed from 3 to 1
+        tracking_interval = 1   # 🎯 Changed from 2 to 1
+        
+        # Performance monitoring
+        frame_times = []
+        last_fps_time = time.time()
+        last_detection_time = time.time()
+        
+        # Dynamic quality based on resolution (like test camera)
+        TARGET_WIDTH = 1280
+        TARGET_HEIGHT = 720
+        QUALITY = 85
+        
+        while not stop_flag and not detectionStopped:
+            try:
+                # Get frame from queue
+                try:
+                    # Get frame with reasonable timeout
+                    frame = frame_queue.get(timeout=0.05)  # 50ms timeout
+                except queue.Empty:
+                    # No frame available, use latest_frame if exists
+                    if latest_frame is not None:
+                        frame = latest_frame.copy()
+                    else:
+                        time.sleep(0.01)
+                        continue
+                
+                # Get original dimensions
+                h, w = frame.shape[:2]
+                
+                # 🎯 ADAPTIVE PROCESSING: Only do full processing if needed
+                current_time = time.time()
+                time_since_last_detection = current_time - last_detection_time
+                
+                # If we have locked tracks, process MORE OFTEN
+                has_locked_tracks = len(locked_tracks) > 0
+                has_pending = len(pending_confirmations) > 0
+                
+                # 🎯 ALWAYS run detection if we have active tracks
+                should_detect = (has_locked_tracks or has_pending) or (frame_idx % detection_interval == 0)
+                should_track = True  # 🎯 Always track when we have locked tracks
+                
+                if should_detect or should_track:
+                    try:
+                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        
+                        if should_detect:
+                            refresh_with_detections(frame, rgb, frame_idx)
+                            last_detection_time = current_time
+                        
+                        if should_track:
+                            update_trackers_with_body(rgb, frame, frame_idx)
+                            
+                    except Exception as e:
+                        if DEBUG_MODE:
+                            logger.debug(f"Detection/Tracking error: {e}")
+                        # Don't increase intervals - just continue
+                
+                frame_idx += 1
+                
+                # Resize for streaming if needed
+                if w != TARGET_WIDTH or h != TARGET_HEIGHT:
+                    frame_to_encode = cv2.resize(frame, (TARGET_WIDTH, TARGET_HEIGHT), 
+                                               interpolation=cv2.INTER_LINEAR)
+                else:
+                    frame_to_encode = frame
+                
+                # Encode with appropriate quality
+                encode_start = time.time()
+                
+                # USE TURBOJPEG IF AVAILABLE
+                if USE_TURBOJPEG and jpeg is not None:
+                    try:
+                        frame_bytes = jpeg.encode(frame_to_encode, quality=QUALITY, 
+                                                 jpeg_subsample=2 if QUALITY >= 80 else 1)
+                    except Exception as e:
+                        logger.warning(f"TurboJPEG encode failed, falling back to OpenCV: {e}")
+                        encode_params = [cv2.IMWRITE_JPEG_QUALITY, QUALITY]
+                        success, buffer = cv2.imencode('.jpg', frame_to_encode, encode_params)
+                        if not success:
+                            continue
+                        frame_bytes = buffer.tobytes()
+                else:
+                    # Fallback to OpenCV
+                    encode_params = [cv2.IMWRITE_JPEG_QUALITY, QUALITY]
+                    success, buffer = cv2.imencode('.jpg', frame_to_encode, encode_params)
+                    if not success:
+                        continue
+                    frame_bytes = buffer.tobytes()
+                
+                encode_time = (time.time() - encode_start) * 1000
+                
+                # Send the frame with adaptive timing
+                current_time = time.time()
+                target_fps = 30  # Target frame rate
+                frame_delay = 1.0 / target_fps
+                
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + 
+                       frame_bytes + b'\r\n')
+                
+                # Adaptive sleep based on processing load
+                elapsed = time.time() - current_time
+                sleep_time = max(0.001, frame_delay - elapsed)
+                
+                # If we have many tracks, reduce sleep to process faster
+                if len(locked_tracks) > 3:
+                    sleep_time = max(0.0005, sleep_time * 0.7)
+                
+                time.sleep(sleep_time)
+                
+                # Log every 2 seconds
+                current_log_time = time.time()
+                if current_log_time - last_fps_time >= 2.0:
+                    queue_size = frame_queue.qsize()
+                    locked_count = len(locked_tracks)
+                    pending_count = len(pending_confirmations)
+                    
+                    logger.debug(f"📡 Stream: F{frame_idx} | Q:{queue_size} | L:{locked_count} | P:{pending_count}")
+                    last_fps_time = current_log_time
+                
+            except GeneratorExit:
+                logger.info("📡 Stream: Client disconnected")
+                break
             except Exception as e:
-                logger.error(f"Video feed error: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-          
+                logger.error(f"📡 Stream error: {e}")
+                time.sleep(0.01)
     
-    # **FIX: Add streaming headers for even better performance**
-    response = Response(
+    # Streaming headers
+    return Response(
         generate(),
         mimetype='multipart/x-mixed-replace; boundary=frame',
         headers={
-            'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
             'Pragma': 'no-cache',
             'Expires': '0',
             'X-Accel-Buffering': 'no',
-            'X-Accel-Redirect': 'no',
-            'Transfer-Encoding': 'chunked',
             'Connection': 'keep-alive'
         }
     )
+
+def emergency_cleanup():
+    """Emergency cleanup when system is under heavy load"""
+    global latest_frame
     
-    return response
+    logger.warning("Performing emergency cleanup")
+    
+    # Clear latest frame
+    latest_frame = None
+    
+    # Clear queues
+    while not frame_queue.empty():
+        try:
+            frame_queue.get_nowait()
+        except:
+            break
+    
+    while not encoded_queue.empty():
+        try:
+            encoded_queue.get_nowait()
+        except:
+            break
+    
+    # Clear CUDA cache if using GPU
+    if DEVICE == "cuda":
+        try:
+            torch.cuda.empty_cache()
+        except:
+            pass
+    
+    # Force garbage collection
+    import gc
+    gc.collect()
+    
+    logger.info("Emergency cleanup completed")
+
+@app.route('/api/optimize_stream', methods=['POST'])
+def optimize_stream():
+    """Optimize stream settings dynamically"""
+    try:
+        data = request.json
+        target_latency = data.get('target_latency', 0.5)  # Default 500ms
+        target_fps = data.get('target_fps', 25)
+        
+        # Adjust settings based on target
+        if target_latency < 0.3:  # Ultra low latency
+            new_settings = {
+                'buffer_size': 1,
+                'detection_interval': 5,
+                'tracking_interval': 3,
+                'jpeg_quality': 60
+            }
+        elif target_latency < 0.5:  # Low latency
+            new_settings = {
+                'buffer_size': 2,
+                'detection_interval': 3,
+                'tracking_interval': 2,
+                'jpeg_quality': 70
+            }
+        else:  # Balanced
+            new_settings = {
+                'buffer_size': 3,
+                'detection_interval': 2,
+                'tracking_interval': 1,
+                'jpeg_quality': 75
+            }
+        
+        # Apply FPS adjustment
+        new_settings['target_fps'] = min(30, max(15, target_fps))
+        
+        logger.info(f"Stream optimized for {target_latency}s latency, {target_fps} FPS")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Stream optimized for {target_latency}s latency',
+            'settings': new_settings
+        })
+        
+    except Exception as e:
+        logger.error(f"Optimization error: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
 
 def get_current_session_id():
     """Get the current active session ID for face capture"""
@@ -5332,22 +5705,17 @@ def get_remaining_scan_time():
     remaining = max(0, FACE_SCAN_DURATION - elapsed)
     return int(remaining)    
 
-def cleanup_pending_confirmations(current_frame, timeout_frames=10):
-    """
-      FIX #16: Aggressive cleanup of stale pending confirmations
-    Removes confirmations not seen in the last 10 frames (0.33 seconds at 30fps)
-    """
+def cleanup_pending_confirmations(current_frame_idx, timeout_frames=10):
+    """Clean up stale pending confirmations"""
     global pending_confirmations
     
     to_remove = []
-    for person_id, data in pending_confirmations.items():
-        last_seen = data.get('last_seen', data.get('first_seen', current_frame))
-        
-        # Remove if stale (not seen in last 10 frames)
-        if current_frame - last_seen > timeout_frames:
+    for person_id, conf_data in pending_confirmations.items():
+        frames_since_seen = current_frame_idx - conf_data.get('last_seen', conf_data.get('first_seen', 0))
+        if frames_since_seen > timeout_frames:
             to_remove.append(person_id)
-            if DEBUG_MODE: 
-                logger.debug(f"🗑️ Cleanup stale confirmation: {data.get('name', person_id)} (stale {current_frame - last_seen} frames)")
+            if DEBUG_MODE:
+                logger.debug(f"  Removed stale pending confirmation for {conf_data.get('name', person_id)}")
     
     for person_id in to_remove:
         del pending_confirmations[person_id]
@@ -12875,7 +13243,7 @@ def get_sections_with_semester():
 @app.route('/api/set_rtsp_url', methods=['POST'])
 @login_required
 def set_rtsp_url():
-    """Set RTSP URL dynamically"""
+    """Set RTSP URL dynamically and start grabber"""
     try:
         data = request.json
         rtsp_url = data.get('rtsp_url')
@@ -12888,12 +13256,18 @@ def set_rtsp_url():
         import urllib.parse
         rtsp_url = urllib.parse.unquote(rtsp_url)
         
-        logger.info(f"Setting RTSP URL: {stream_type} stream - {rtsp_url}")
+        logger.info(f"Setting RTSP URL: {stream_type} stream - {rtsp_url[:100]}...")
+        
+        # Stop existing grabber
+        stop_grabber_thread()
         
         # Try to connect to the RTSP stream
         success = open_stream(rtsp_url)
         
         if success:
+            # Start grabber thread
+            start_grabber_thread()
+            
             # Get camera info
             width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) if cap else 0
             height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) if cap else 0
@@ -12903,11 +13277,12 @@ def set_rtsp_url():
             
             return jsonify({
                 'success': True, 
-                'message': f'{stream_type.upper()} stream connected',
+                'message': f'{stream_type.upper()} stream connected - VLC-like buffering active',
                 'camera_available': camera_available,
                 'resolution': f"{int(width)}x{int(height)}",
                 'fps': fps,
-                'stream_type': stream_type
+                'stream_type': stream_type,
+                'buffering': 'VLC-like (5 frame buffer)'
             })
         else:
             return jsonify({
@@ -12919,11 +13294,14 @@ def set_rtsp_url():
             
     except Exception as e:
         logger.error(f"Error setting RTSP URL: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({
             'success': False, 
             'message': f'Error: {str(e)}',
             'camera_available': False
         })
+
 
 @app.route('/api/get_session_info', methods=['GET'])
 @login_required
@@ -16865,13 +17243,35 @@ def cleanup_unrecognized_faces():
     if keys_to_remove or tracks_to_remove:
         print(f"🧹 Cleaned {len(keys_to_remove)} faces, {len(tracks_to_remove)} tracks")
 
+
+def log_cooldown_quietly(unique_id, remaining_seconds, quiet_period=5):
+    """
+    Rate-limited logging for cooldown messages to avoid spam
+    """
+    global _last_cooldown_log_time
+    
+    current_time = datetime.now()
+    
+    # Check if we should log this cooldown message
+    should_log = True
+    if unique_id in _last_cooldown_log_time:
+        last_log_time = _last_cooldown_log_time[unique_id]
+        time_since_last_log = (current_time - last_log_time).total_seconds()
+        if time_since_last_log < quiet_period:
+            should_log = False
+    
+    # Log only if enough time has passed since last log
+    if should_log:
+        logger.debug(f"⏳ Similar face {unique_id} in cooldown: {remaining_seconds:.1f}s remaining")
+        _last_cooldown_log_time[unique_id] = current_time
+
 def is_similar_to_unrecognized_face(new_encoding, current_time):
     """
     Check for similar faces (different people) with cooldown
     """
     global UNKNOWN_FACES_FOR_ENROLLMENT
     
-    #  Use a reasonable threshold for similar faces (different people)
+    # Use a reasonable threshold for similar faces (different people)
     SIMILARITY_THRESHOLD = 0.4  # Normal threshold for similar faces
     
     for unique_id, face_data in UNKNOWN_FACES_FOR_ENROLLMENT.items():
@@ -16886,14 +17286,19 @@ def is_similar_to_unrecognized_face(new_encoding, current_time):
         
         # If similar (but not exact duplicate) and in cooldown, block it
         if distance < SIMILARITY_THRESHOLD:
-            #   If cooldown is active, BLOCK this similar face
+            # If cooldown is active, BLOCK this similar face
             if cooldown_until and cooldown_until > current_time:
                 remaining = (cooldown_until - current_time).total_seconds()
-                print(f" BLOCKED: Similar face {unique_id} in cooldown ({remaining:.0f}s left)")
+                # Use rate-limited logging instead of print every time
+                log_cooldown_quietly(unique_id, remaining)
                 return True, unique_id
             else:
                 # Cooldown expired - update the existing face
-                print(f"  UPDATING: Similar face {unique_id} cooldown expired")
+                # Only log once when cooldown expires
+                if unique_id in _last_cooldown_log_time:
+                    logger.debug(f"✓ Cooldown expired: {unique_id}")
+                    del _last_cooldown_log_time[unique_id]  # Clean up
+                
                 face_data.update({
                     'timestamp': current_time,
                     'cooldown_until': current_time + timedelta(seconds=30),
@@ -18282,24 +18687,24 @@ def open_test_camera(rtsp_url):
         return False
 
 def optimize_rtsp_url(rtsp_url):
-    """Add VLC-like optimization parameters to RTSP URL"""
+    """Add VLC-like optimization parameters to RTSP URL - FIXED FOR LOW LATENCY"""
     if "rtsp://" not in rtsp_url.lower():
         return rtsp_url
     
     # Remove existing query params
     base_url = rtsp_url.split('?')[0]
     
-    # VLC-like optimization parameters
+    # OPTIMIZED FOR LOW LATENCY - REDUCED BUFFER
     params = {
         'tcp': '',  # Use TCP for reliability
-        'buffer_size': '3000000',  # 3MB buffer (VLC uses ~3MB)
+        'buffer_size': '100000',  # REDUCED from 3MB to 100KB for low latency
         'rtsp_transport': 'tcp',
-        'stimeout': '10000000',  # 10 second timeout (generous)
-        'max_delay': '1000000',  # 1 second max delay
-        'analyzeduration': '1000000',  # 1 second analysis
-        'probesize': '500000',  # 500KB probe size
-        'fps': '30',  # Request 30 FPS
-        'reorder_queue_size': '1000',  # Handle packet reordering
+        'stimeout': '3000000',  # Reduced to 3 seconds
+        'max_delay': '500000',  # Reduced to 0.5 seconds
+        'analyzeduration': '100000',  # Reduced
+        'probesize': '100000',  # Reduced
+        'reorder_queue_size': '100',  # Reduced
+        'drop_pkts_on_overflow': '1',  # NEW: Drop packets when buffer overflows
     }
     
     # Build URL with parameters
@@ -19109,23 +19514,273 @@ if __name__ == "__main__":
     attendance_save_thread.start()
     
     try:
-      
+        # ========== AUTO SSL CERTIFICATE GENERATION ==========
+        import socket
+        import subprocess
+        
+        def get_current_ip():
+            """Get current IP address"""
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                ip = s.getsockname()[0]
+                s.close()
+                return ip
+            except:
+                return "127.0.0.1"
+        
+        def get_network_info():
+            """Get all network IP addresses"""
+            ips = []
+            try:
+                # Get main IP
+                main_ip = get_current_ip()
+                ips.append(main_ip)
+                
+                # Get hostname for mDNS
+                hostname = socket.gethostname()
+                
+                return ips, hostname
+            except:
+                return ["127.0.0.1"], "localhost"
+        
+        def generate_new_certificates(current_ip):
+            """Generate new SSL certificates for current IP"""
+            cert_file = 'cert.pem'
+            key_file = 'key.pem'
+            hostname = socket.gethostname()
+            
+            try:
+                # Clean up old files
+                for f in [cert_file, key_file, 'ssl_config.cnf', 'csr_config.cnf', 'server.csr']:
+                    if os.path.exists(f):
+                        os.remove(f)
+                
+                # Create certificate with current IP and hostname
+                print("Creating certificate with current network settings...")
+                
+                # Create config that includes current IP
+                config_content = f"""[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = State
+L = City
+O = Organization
+CN = {hostname}.local
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = {hostname}.local
+IP.1 = 127.0.0.1
+IP.2 = {current_ip}
+"""
+                
+                with open('ssl_config.cnf', 'w') as f:
+                    f.write(config_content)
+                
+                # Generate certificate
+                cmd = [
+                    'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
+                    '-keyout', key_file, '-out', cert_file,
+                    '-days', '365', '-nodes',
+                    '-config', 'ssl_config.cnf'
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                # Clean up temp files
+                for temp_file in ['ssl_config.cnf']:
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                
+                if result.returncode == 0:
+                    print(f"✅ SSL certificates created successfully!")
+                    print(f"✅ Valid for IP: {current_ip}")
+                    print(f"✅ Valid for: {hostname}.local")
+                    return True
+                else:
+                    print(f"❌ Certificate creation failed: {result.stderr}")
+                    return False
+                    
+            except Exception as e:
+                print(f"❌ Error generating certificates: {e}")
+                return False
+        
+        def create_ssl_certificate_auto():
+            """Intelligently manage SSL certificates"""
+            cert_file = 'cert.pem'
+            key_file = 'key.pem'
+            
+            # Get current IP
+            current_ip = get_current_ip()
+            print(f"🌐 Current IP address: {current_ip}")
+            
+            # 1. Check if certificates already exist
+            if os.path.exists(cert_file) and os.path.exists(key_file):
+                try:
+                    # Verify they're valid AND contain current IP
+                    cert_valid = False
+                    ip_in_cert = False
+                    
+                    # Check if certificate has BEGIN/END CERTIFICATE
+                    with open(cert_file, 'rb') as f:
+                        content = f.read().decode('utf-8', errors='ignore')
+                        if 'BEGIN CERTIFICATE' in content and 'END CERTIFICATE' in content:
+                            cert_valid = True
+                    
+                    # Check if certificate contains current IP
+                    if cert_valid:
+                        try:
+                            # Read certificate content to check IP
+                            cert_check = subprocess.run(
+                                ['openssl', 'x509', '-in', cert_file, '-text', '-noout'],
+                                capture_output=True, text=True, timeout=3
+                            )
+                            if cert_check.returncode == 0:
+                                cert_text = cert_check.stdout
+                                # Check if current IP or hostname is in certificate
+                                hostname = socket.gethostname()
+                                if (current_ip in cert_text or 
+                                    'localhost' in cert_text or 
+                                    f'{hostname}.local' in cert_text or
+                                    '*.local' in cert_text):
+                                    ip_in_cert = True
+                                    print(f"✅ Existing certificates are valid")
+                                    print(f"✅ Certificate matches current network")
+                                    return True
+                                else:
+                                    print(f"⚠️  Certificate has different IP")
+                                    print(f"   Certificate IP: (not {current_ip})")
+                                    print(f"   Current IP: {current_ip}")
+                                    print(f"   Regenerating certificates...")
+                        except subprocess.TimeoutExpired:
+                            print("⚠️  Certificate check timeout")
+                        except:
+                            pass  # If openssl check fails
+                    
+                    if cert_valid and not ip_in_cert:
+                        # Cert exists but wrong IP - delete and recreate
+                        print(f"🔄 Certificate has wrong IP. Deleting and recreating...")
+                        os.remove(cert_file)
+                        os.remove(key_file)
+                        return generate_new_certificates(current_ip)
+                    elif not cert_valid:
+                        print("⚠️  Invalid certificates found. Regenerating...")
+                        os.remove(cert_file)
+                        os.remove(key_file)
+                        return generate_new_certificates(current_ip)
+                        
+                except Exception as e:
+                    print(f"⚠️  Error checking certificates: {e}")
+                    print("   Regenerating certificates...")
+                    # Clean up and regenerate
+                    for f in [cert_file, key_file]:
+                        if os.path.exists(f):
+                            os.remove(f)
+                    return generate_new_certificates(current_ip)
+            
+            # 2. No certificates exist
+            print("🔐 Generating SSL certificates...")
+            print(f"   For IP address: {current_ip}")
+            return generate_new_certificates(current_ip)
+        
+        def add_firewall_rule():
+            """Add Windows firewall rule if needed"""
+            try:
+                if os.name == 'nt':  # Windows
+                    # Check if rule exists
+                    check_cmd = ['netsh', 'advfirewall', 'firewall', 'show', 'rule', 'name="Flask Port 5000"']
+                    result = subprocess.run(check_cmd, capture_output=True, text=True)
+                    
+                    if "Flask Port 5000" not in result.stdout:
+                        print("🔧 Adding firewall rule...")
+                        add_cmd = [
+                            'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+                            'name="Flask Port 5000"', 'dir=in', 'action=allow',
+                            'protocol=TCP', 'localport=5000'
+                        ]
+                        subprocess.run(add_cmd, capture_output=True)
+                        print("✅ Firewall rule added")
+                    else:
+                        print("✅ Firewall rule already exists")
+            except:
+                pass  # Silently fail if we can't modify firewall
+        
+        # ========== MAIN SERVER SETUP ==========
+        print("\n" + "═" * 60)
+        print("🚀 FACE RECOGNITION ATTENDANCE SYSTEM")
+        print("═" * 60)
+        
+        # Get network information
+        ips, hostname = get_network_info()
+        print(f"💻 Computer name: {hostname}")
+        
+        # Intelligently manage SSL certificates
         ssl_context = None
         cert_file = 'cert.pem'
         key_file = 'key.pem'
         
-        # Check if SSL certificate files exist
-        if os.path.exists(cert_file) and os.path.exists(key_file):
-            ssl_context = (cert_file, key_file)
-            if DEBUG_MODE: 
-                logger.debug("🔐 SSL certificates found - Starting HTTPS server")
+        print("\n🔄 Checking SSL certificates...")
+        if create_ssl_certificate_auto():
+            if os.path.exists(cert_file) and os.path.exists(key_file):
+                ssl_context = (cert_file, key_file)
+                print("✅ HTTPS server ready")
+                
+                # Verify certificate one more time
+                try:
+                    test_cmd = ['openssl', 'x509', '-in', cert_file, '-text', '-noout']
+                    test_result = subprocess.run(test_cmd, capture_output=True, text=True)
+                    if test_result.returncode == 0:
+                        print("✅ Certificate verified")
+                except:
+                    print("⚠️  Could not verify certificate (but will use it)")
+            else:
+                print("❌ Certificates not created, using HTTP")
+                ssl_context = None
         else:
-            logger.warning("  SSL certificates not found - Starting HTTP server")
-          
+            print("❌ Using HTTP (camera may not work)")
+            ssl_context = None
+        
+        # Add firewall rule
+        add_firewall_rule()
+        
+        # Display access information
+        print(f"\n📱 ACCESS FROM PHONE:")
+        print(f"   1. Connect phone to SAME WiFi network")
+        print(f"   2. Open browser and visit:")
+        
+        if ssl_context:
+            # Show HTTPS URLs
+            for ip in ips:
+                print(f"      → https://{ip}:5000")
+            print(f"      → https://{hostname}.local:5000")
+            print(f"\n⚠️  FIRST TIME ACCESS:")
+            print(f"   1. You'll see 'Not Secure' warning")
+            print(f"   2. Click 'Advanced'")
+            print(f"   3. Click 'Proceed to {ips[0]} (unsafe)'")
+            print(f"   4. This is NORMAL for self-signed certificates")
+        else:
+            # Show HTTP URLs
+            for ip in ips:
+                print(f"      → http://{ip}:5000")
+            print(f"\n❌ WARNING: Camera requires HTTPS!")
+            print(f"   HTTPS failed, so camera may not work")
+        
+        print(f"\n🔧 Starting server on port 5000...")
+        print(f"═" * 60 + "\n")
         
         # Start server with proper configuration
         app.run(
-            host="192.168.56.1", 
+            host="0.0.0.0",  # Accept connections from all interfaces
             port=5000,
             debug=False,
             threaded=True,
@@ -19135,6 +19790,7 @@ if __name__ == "__main__":
     except OSError as e:
         if "10049" in str(e) or "not valid" in str(e):
             logger.error("Network address issue. Trying localhost only...")
+            print("\n⚠️  Network error, starting on localhost only...")
             app.run(host="127.0.0.1", port=5000, debug=False, threaded=True, ssl_context=None)
         else:
             raise e
@@ -19142,6 +19798,13 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         if DEBUG_MODE: 
             logger.debug("Server stopped by user")
+        print("\n🛑 Server stopped by user")
+    
+    except Exception as e:
+        logger.error(f"Server error: {e}")
+        print(f"\n❌ Server error: {e}")
+        print("Press Enter to exit...")
+        input()
     
     finally:
         # Signal all threads to stop

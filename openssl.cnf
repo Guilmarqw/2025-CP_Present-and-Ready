@@ -20,3 +20,2083 @@ subjectAltName = @alt_names
 IP.1 = 192.168.254.110
 IP.2 = 127.0.0.1
 DNS.1 = localhost
+
+# =========================
+# OPTIMIZED CAMERA CAPTURE
+# =========================
+cap_lock = threading.Lock()
+cap = None
+last_frame_time = time.time()
+
+def open_stream(rtsp_url=None):
+    global cap, camera_available, use_dummy_feed, current_rtsp_url
+    
+    if not rtsp_url:
+        logger.warning("No RTSP URL provided")
+        camera_available = False
+        use_dummy_feed = True
+        return False
+    
+    try:
+        with cap_lock:
+            # Release existing capture
+            if cap is not None:
+                try:
+                    cap.release()
+                except:
+                    pass
+                cap = None
+            
+            time.sleep(0.1)  # Reduced from 0.3
+            if DEBUG_MODE:         
+                logger.debug(f"Connecting to RTSP: {rtsp_url}")
+            
+            # CRITICAL: Use CAP_FFMPEG for direct RTSP
+            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+            
+            # CRITICAL FIX: Minimal buffering for direct connection
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Changed from 2 to 1
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)  # Changed from 480 to 360 (sub-stream)
+            
+            # Quick connection test
+            start_time = time.time()
+            while time.time() - start_time < 2:  # Reduced from 3 to 2
+                if cap.isOpened():
+                    ret, test_frame = cap.read()
+                    if ret and test_frame is not None:
+                        camera_available = True
+                        use_dummy_feed = False
+                        current_rtsp_url = rtsp_url
+                        if DEBUG_MODE: 
+                            logger.debug(f"✓ Camera connected: 640x360 @ 30 FPS")
+                        return True
+                time.sleep(0.05)  # Reduced from 0.1
+            
+            cap.release()
+            cap = None
+            raise Exception("Camera connection timeout")
+                
+    except Exception as e:
+        logger.warning(f"✗ Camera connection failed: {e}")
+        camera_available = False
+        use_dummy_feed = True
+        if cap is not None:
+            cap.release()
+            cap = None
+        return False
+
+def grabber():
+    """CRITICAL FIX: Always grab LATEST frame, skip old buffered frames"""
+    global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url, last_frame_time
+    empty_count = 0
+    consecutive_failures = 0
+    
+    while not stop_flag:
+        grab_start = time.time()
+        
+        if use_dummy_feed:
+            latest_frame = create_dummy_frame()
+            time.sleep(0.033)
+            continue
+            
+        with cap_lock:
+            if cap is None:
+                time.sleep(0.01)
+                continue
+            
+            # *** CRITICAL FIX: Flush old frames ***
+            # This is why VLC is smooth but your app was delayed
+            for _ in range(2):  # Skip 2 old buffered frames
+                cap.grab()
+            
+            # Now retrieve the LATEST frame
+            ok, frame = cap.read()
+            
+        if not ok or frame is None:
+            empty_count += 1
+            consecutive_failures += 1
+            
+            if empty_count > 10 or consecutive_failures > 5:
+                logger.warning("Camera connection issues, switching to dummy feed")
+                camera_available = False
+                use_dummy_feed = True
+                consecutive_failures = 0
+                
+                if current_rtsp_url:
+                    def attempt_recovery():
+                        time.sleep(2.0)
+                        if DEBUG_MODE: 
+                            logger.debug("Attempting camera reconnection...")
+                        open_stream(current_rtsp_url)
+                    
+                    recovery_thread = threading.Thread(target=attempt_recovery, daemon=True)
+                    recovery_thread.start()
+            else:
+                time.sleep(0.01)
+            continue
+               
+        empty_count = 0
+        consecutive_failures = 0
+        latest_frame = frame
+        last_frame_time = time.time()
+        
+        # Minimal sleep - we want fresh frames
+        time.sleep(0.001)  # Changed from dynamic calculation
+
+# =========================
+# Tracking & attendance
+# =========================
+tracks = []
+locked_tracks = {}  # {person_id: {'track': track_obj, 'body_tracker': bytetrack_id, ...}}
+attendance = {}
+tracking_history = {}
+
+def periodic_attendance_save():
+    """Periodically save attendance data to CSV"""
+    while not stop_flag:
+        try:
+            if attendance:  # Only save if there's data
+                with open(ATTENDANCE_CSV_FILE, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['ID', 'Name', 'DateTime', 'Status'])
+                    for sid, data in attendance.items():
+                        writer.writerow([sid, data['name'], data['time'], 'present'])
+                if DEBUG_MODE:         
+                    logger.debug(f"Periodic backup: Saved {len(attendance)} attendance records to CSV")
+        except Exception as e:
+            logger.error(f"Periodic attendance save failed: {e}")
+        
+        time.sleep(attendance_save_interval)
+
+# Start the periodic save thread in your main function
+attendance_save_thread = threading.Thread(target=periodic_attendance_save, daemon=True)
+attendance_save_thread.start()
+
+def mark_attendance(name, id, type, session_id=None):
+    """Mark attendance for both students and faculty - FIXED: Better manual status detection and duplicate prevention"""
+    global session_start_time, current_session_id, session_threshold_seconds, session_total_duration_seconds
+    global student_presence_tracker, student_status
+    
+    if not session_threshold_seconds and current_session_id:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT threshold_seconds_total 
+                FROM attendance_sessions 
+                WHERE session_id = %s
+            """, (current_session_id,))
+            session_data = cursor.fetchone()
+            if session_data and session_data.get('threshold_seconds_total'):
+                session_threshold_seconds = session_data['threshold_seconds_total']
+                if DEBUG_MODE: 
+                    logger.debug(f"  Loaded threshold from database: {session_threshold_seconds} seconds")
+            else:
+                logger.warning(f"  No threshold found for session {current_session_id}, using default 900s")
+                session_threshold_seconds = 900
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"  Could not load threshold from database: {e}")
+            session_threshold_seconds = 900
+    
+    if type not in ['student', 'faculty']:
+        return
+    
+    current_time = datetime.now()
+    time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Use current session ID if not provided
+    if not session_id:
+        session_id = current_session_id
+    
+    #   Update presence tracker (ALWAYS update this regardless of manual status)
+    if type == 'student' and session_id:
+        student_presence_tracker[id] = {
+            'last_seen': current_time,
+            'last_body_seen': current_time,
+            'name': name,
+            'present': True
+        }
+        if DEBUG_MODE: 
+            logger.debug(f"  PRESENCE TRACKER UPDATED: {name} is currently present")
+    
+    #   Get section_id AND SUBJECT INFO for this session
+    section_id = None
+    subject_code = None
+    subject_name = None
+    room = None
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT section_id, subject_code, subject_name, room 
+            FROM attendance_sessions 
+            WHERE session_id = %s
+        """, (session_id,))
+        session_result = cursor.fetchone()
+        
+        if session_result:
+            section_id = session_result.get('section_id')
+            subject_code = session_result.get('subject_code')
+            subject_name = session_result.get('subject_name')
+            room = session_result.get('room')
+            if DEBUG_MODE: 
+                logger.debug(f"🔗 Found session info - Section: {section_id}, Subject: {subject_code}")
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error getting session info: {e}")
+    
+    #     BETTER Manual Status Detection
+    is_manual_status = False
+    original_status = None
+    existing_record_id = None
+    existing_session_id = None
+    existing_remarks = None
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        #   Get the MOST RECENT attendance record for this student in this session
+        cursor.execute("""
+            SELECT id, status, timestamp, session_id, remarks FROM attendance 
+            WHERE student_id = %s AND session_id = %s
+            ORDER BY timestamp DESC LIMIT 1
+        """, (id, session_id))
+        existing_record = cursor.fetchone()
+        
+        if existing_record:
+            existing_record_id = existing_record['id']
+            original_status = existing_record['status']
+            existing_session_id = existing_record.get('session_id')
+            existing_remarks = existing_record.get('remarks', '')
+            
+            #   CONSISTENT MANUAL STATUS DETECTION (SAME AS ALL OTHER ENDPOINTS)
+            manual_excuse_sessions = ['manual_excuse']  # Only for excused students
+            manual_status_sessions = ['manual_status']  # Only for manual present/late/absent
+            manual_statuses = ['excused']  # Only truly manual statuses
+            
+            is_manual_status = (
+                # Only specific manual session types (not manual_add)
+                existing_session_id in manual_excuse_sessions or
+                existing_session_id in manual_status_sessions or
+                # Only specific manual statuses
+                original_status in manual_statuses or
+                # Only specific manual remarks (not temp_id)
+                'Manually marked' in existing_remarks or
+                'Manual status' in existing_remarks or
+                'Manually marked as excused' in existing_remarks
+            )
+            
+            if is_manual_status:
+                if DEBUG_MODE: 
+                    logger.debug(f"  MANUAL STATUS DETECTED: {name} has manual status '{original_status}' (session: {existing_session_id}, remarks: {existing_remarks}) - PRESERVING")
+            else:
+                if DEBUG_MODE: 
+                    logger.debug(f"  AUTO STATUS: {name} has status '{original_status}' (session: {existing_session_id}) - CAN BE UPDATED")
+            
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error checking existing status: {e}")
+    
+    if is_manual_status and original_status:
+        if type == 'student':
+            student_status[id] = original_status
+        
+        try:
+            csv_file = "attendance_log.csv"
+            file_exists = os.path.isfile(csv_file)
+            
+            with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room', 'MissingDuration', 'IsReturning', 'RestoredStatus', 'WasMissing', 'ManualStatus'])
+                writer.writerow([id, name, time_str, type, original_status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A', 0, False, 'N/A', False, True])
+            if DEBUG_MODE: 
+                logger.debug(f"📄 CSV saved: {name} - MANUAL STATUS PRESERVED: {original_status}")
+        except Exception as e:
+            logger.error(f"Failed to save attendance to CSV: {e}")
+        
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            if existing_record_id:
+                cursor.execute("""
+                    UPDATE attendance 
+                    SET timestamp = %s
+                    WHERE id = %s
+                """, (time_str, existing_record_id))
+                if DEBUG_MODE: 
+                    logger.debug(f"  Updated timestamp only for {name} - Status '{original_status}' preserved")
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Failed to update timestamp in database: {e}")
+        
+        #   CRITICAL: EARLY RETURN - don't process auto-detection logic
+        return
+
+    #   STANDARD STATUS DETERMINATION (only runs if NOT manual status)
+    # Continue with your existing logic for non-manual statuses...
+    missing_duration = 0
+    is_returning_from_missing = False
+    restored_original_status = None
+    is_currently_missing = False
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        #   CHECK IF STUDENT IS CURRENTLY MISSING
+        cursor.execute("""
+            SELECT id, status FROM attendance 
+            WHERE student_id = %s AND session_id = %s AND status = 'missing'
+            ORDER BY timestamp DESC LIMIT 1
+        """, (id, session_id))
+        
+        missing_record = cursor.fetchone()
+        if missing_record:
+            is_currently_missing = True
+            if DEBUG_MODE: 
+                logger.debug(f"  Student {name} is CURRENTLY MISSING")
+        
+        #   Check if student is currently in missing_periods
+        cursor.execute("""
+            SELECT id, missing_start, original_status, TIMESTAMPDIFF(SECOND, missing_start, NOW()) as missing_seconds
+            FROM missing_periods 
+            WHERE student_id = %s AND session_id = %s AND returned = FALSE
+            LIMIT 1
+        """, (id, session_id))
+        
+        active_missing_period = cursor.fetchone()
+        
+        if active_missing_period:
+            is_returning_from_missing = True
+            missing_duration = active_missing_period['missing_seconds'] or 0
+            restored_original_status = active_missing_period['original_status']
+            if DEBUG_MODE: 
+                logger.debug(f"  Student {name} is RETURNING from missing - was missing for {missing_duration} seconds, original status: {restored_original_status}")
+            
+            #   MARK THE MISSING PERIOD AS RETURNED
+            cursor.execute("""
+                UPDATE missing_periods 
+                SET missing_end = NOW(), duration_seconds = %s, returned = TRUE
+                WHERE id = %s
+            """, (missing_duration, active_missing_period['id']))
+            if DEBUG_MODE: 
+                logger.debug(f"  Marked missing period as returned for {name}")
+        
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error checking missing status: {e}")
+    
+    #   STATUS DETERMINATION LOGIC (your existing code continues here)
+    if is_currently_missing:
+        if is_returning_from_missing and restored_original_status in ['present', 'late']:
+            status = restored_original_status
+            if DEBUG_MODE: 
+                logger.debug(f"  RESTORING ORIGINAL STATUS (from missing): {name} -> {status}")
+        elif original_status in ['present', 'late']:
+            status = original_status
+            if DEBUG_MODE: 
+                logger.debug(f"  RESTORING ORIGINAL STATUS (fallback from missing): {name} -> {status}")
+        else:
+            status = 'present'
+            if session_start_time:
+                time_difference = current_time - session_start_time
+                time_diff_seconds = time_difference.total_seconds()
+                
+                threshold_seconds = session_threshold_seconds
+                
+                if time_diff_seconds > threshold_seconds:
+                    status = 'late'
+                    if DEBUG_MODE: 
+                        logger.debug(f"  LATE (after missing): {name} arrived {time_diff_seconds:.1f}s after start")
+                else:
+                    if DEBUG_MODE: 
+                        logger.debug(f"  PRESENT (after missing): {name} arrived on time")
+    
+    elif is_returning_from_missing and restored_original_status in ['present', 'late']:
+        status = restored_original_status
+        if DEBUG_MODE: 
+            logger.debug(f"  RESTORING ORIGINAL STATUS: {name} returning from missing -> {status}")
+        
+    elif is_returning_from_missing and original_status in ['present', 'late']:
+        status = original_status
+        if DEBUG_MODE: 
+            logger.debug(f"  RESTORING ORIGINAL STATUS (fallback): {name} returning from missing -> {status}")
+        
+    else:
+        # New detection or no previous status - calculate based on arrival time
+        status = 'present'
+        if session_start_time:
+            time_difference = current_time - session_start_time
+            time_diff_seconds = time_difference.total_seconds()
+            
+            threshold_seconds = session_threshold_seconds
+            
+            if time_diff_seconds > threshold_seconds:
+                status = 'late'
+                if DEBUG_MODE: 
+                    logger.debug(f"  LATE: {name} arrived {time_diff_seconds:.1f}s after start")
+            else:
+                if DEBUG_MODE: 
+                    logger.debug(f"  PRESENT: {name} arrived on time")
+    
+    # Save to memory
+    attendance[id] = {
+        "name": name, 
+        "time": time_str, 
+        "type": type,
+        "status": status
+    }
+    
+    #   Update student status for frontend
+    if type == 'student':
+        student_status[id] = status
+        if DEBUG_MODE: 
+            logger.debug(f"  STUDENT STATUS: {name} -> {status}")
+    
+    # Save to CSV
+    try:
+        csv_file = "attendance_log.csv"
+        file_exists = os.path.isfile(csv_file)
+        
+        with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status', 'SessionID', 'SectionID', 'SubjectCode', 'SubjectName', 'Room', 'MissingDuration', 'IsReturning', 'RestoredStatus', 'WasMissing', 'ManualStatus'])
+            writer.writerow([id, name, time_str, type, status, session_id or 'N/A', section_id or 'N/A', subject_code or 'N/A', subject_name or 'N/A', room or 'N/A', missing_duration, is_returning_from_missing, restored_original_status or 'N/A', is_currently_missing, False])
+        if DEBUG_MODE: 
+            logger.debug(f"📄 CSV saved: {name} ({id}) - {type} - {status} - Missing: {missing_duration}s - Returning: {is_returning_from_missing} - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
+    except Exception as e:
+        logger.error(f"Failed to save attendance to CSV: {e}")
+    
+    #   Update database with proper status handling
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if type == 'student':
+            # Check if record already exists first
+            cursor.execute("""
+                SELECT id, status, timestamp FROM attendance 
+                WHERE student_id = %s AND session_id = %s
+                ORDER BY timestamp DESC LIMIT 1
+            """, (id, session_id))
+            
+            existing_record = cursor.fetchone()
+            
+            if existing_record:
+                # Record exists - UPDATE it
+                existing_id = existing_record[0]
+                existing_db_status = existing_record[1]
+                existing_timestamp = existing_record[2]
+                
+                # Convert string timestamp to datetime if needed
+                if isinstance(existing_timestamp, str):
+                    existing_timestamp = datetime.strptime(existing_timestamp, "%Y-%m-%d %H:%M:%S")
+                
+                time_since_update = (current_time - existing_timestamp).total_seconds()
+                
+                #   CRITICAL: Only update if status changed OR student is returning from missing OR was missing
+                if existing_db_status != status or is_returning_from_missing or is_currently_missing:
+                    #   Update with missing_duration and proper status
+                    cursor.execute("""
+                        UPDATE attendance 
+                        SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s, missing_duration = %s
+                        WHERE id = %s
+                    """, (status, time_str, name, subject_code, subject_name, room, missing_duration, existing_id))
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Updated attendance: {name} - {status} (was {existing_db_status}) - Missing: {missing_duration}s - Restored: {restored_original_status} - WasMissing: {is_currently_missing}")
+                else:
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Skipping update for {name} - status unchanged: {status}")
+            else:
+                # No record exists - INSERT new one
+                if section_id:
+                    cursor.execute("""
+                        INSERT INTO attendance 
+                        (student_id, name, timestamp, person_type, status, session_id, section_id, subject_code, subject_name, room, missing_duration)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'student', status, session_id, section_id, subject_code, subject_name, room, missing_duration))
+                else:
+                    cursor.execute("""
+                        INSERT INTO attendance 
+                        (student_id, name, timestamp, person_type, status, session_id, subject_code, subject_name, room, missing_duration)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'student', status, session_id, subject_code, subject_name, room, missing_duration))
+                if DEBUG_MODE:     
+                    logger.debug(f"📝 Created NEW attendance record: {name} - {status}")
+        else:  # faculty
+            # Faculty logic remains the same
+            cursor.execute("""
+                UPDATE attendance 
+                SET status = %s, timestamp = %s, name = %s, subject_code = %s, subject_name = %s, room = %s
+                WHERE faculty_id = %s AND session_id = %s
+            """, (status, time_str, name, subject_code, subject_name, room, id, session_id))
+            
+            if cursor.rowcount == 0:
+                if section_id:
+                    cursor.execute("""
+                        INSERT INTO attendance 
+                        (faculty_id, name, timestamp, person_type, status, session_id, section_id, subject_code, subject_name, room)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'faculty', status, session_id, section_id, subject_code, subject_name, room))
+                else:
+                    cursor.execute("""
+                        INSERT INTO attendance 
+                        (faculty_id, name, timestamp, person_type, status, session_id, subject_code, subject_name, room)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (id, name, time_str, 'faculty', status, session_id, subject_code, subject_name, room))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        if DEBUG_MODE: 
+            logger.debug(f"💾 Database UPDATED: {name} ({id}) - {status} - Missing Duration: {missing_duration}s - Returning: {is_returning_from_missing} - Restored Status: {restored_original_status} - Was Missing: {is_currently_missing}")
+        
+    except Exception as e:
+        logger.error(f"Failed to update attendance in database: {e}")
+
+# Also update the CSV saving function
+def save_attendance_to_csv(person_id, name, timestamp, person_type):
+    """Save attendance entry to CSV in real-time"""
+    try:
+        csv_file = "attendance_log.csv"
+        file_exists = os.path.isfile(csv_file)
+        
+        with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['ID', 'Name', 'DateTime', 'Type', 'Status'])
+            writer.writerow([person_id, name, timestamp, person_type, 'present'])
+        if DEBUG_MODE: 
+            logger.debug(f"Attendance saved to CSV: {name} ({person_id}) - {person_type}")
+    except Exception as e:
+        logger.error(f"Failed to save attendance to CSV: {e}")
+
+# =========================
+# Key Functions
+# =========================
+
+def detect_bodies(frame):
+    """Detect people bodies - OPTIMIZED"""
+    if body_detector is None:
+        logger.warning("Body detector not initialized")
+        return []
+    
+    try:
+        # Use smaller input for faster detection
+        h, w = frame.shape[:2]
+        scale = 320 / max(h, w)  # Changed from YOLO_IMG_SIZE to fixed 320
+        new_w, new_h = int(w * scale), int(h * scale)
+        resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+        
+        if DEVICE == "cuda":
+            results = body_detector(
+                resized,
+                classes=[0],
+                verbose=False,
+                conf=0.3,
+                half=True,
+                imgsz=320  # Fixed size for consistency
+            )
+        else:
+            results = body_detector(resized, classes=[0], verbose=False, conf=0.3)
+        
+        detections = []
+        if len(results) > 0 and results[0].boxes is not None:
+            boxes = results[0].boxes
+            for box in boxes:
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                x1, y1, x2, y2 = int(x1/scale), int(y1/scale), int(x2/scale), int(y2/scale)
+                conf = float(box.conf[0])
+                
+                detections.append({
+                    'box': [x1, y1, x2, y2],
+                    'confidence': conf
+                })
+        return detections
+    except Exception as e:
+        logger.error(f"Body detection error: {e}")
+        return []
+
+def convert_to_supervision_format(detections):
+    """Convert detections to supervision Detections format"""
+    from supervision import Detections
+    
+    if not detections:
+        return Detections.empty()
+    
+    xyxy = np.array([d['box'] for d in detections])
+    confidence = np.array([d['confidence'] for d in detections])
+    class_id = np.zeros(len(detections), dtype=int)
+    
+    return Detections(
+        xyxy=xyxy,
+        confidence=confidence,
+        class_id=class_id
+    )
+
+
+def match_face_to_body(face_box, body_detections, iou_threshold=0.1):
+    """
+    Match a face detection to a body detection with improved accuracy.
+    Face should be in the upper portion of the body bounding box.
+    """
+    best_match_idx = None
+    best_score = 0
+    
+    fx1, fy1, fx2, fy2 = face_box
+    face_center_x = (fx1 + fx2) / 2
+    face_center_y = (fy1 + fy2) / 2
+    face_width = fx2 - fx1
+    
+    for idx, body_det in enumerate(body_detections):
+        bx1, by1, bx2, by2 = body_det['box']
+        
+        # Check if face center is inside body box (with some tolerance)
+        tolerance_x = (bx2 - bx1) * 0.1  # 10% horizontal tolerance
+        tolerance_y = (by2 - by1) * 0.1  # 10% vertical tolerance
+        
+        if not ((bx1 - tolerance_x) <= face_center_x <= (bx2 + tolerance_x) and 
+                (by1 - tolerance_y) <= face_center_y <= (by2 + tolerance_y)):
+            continue
+        
+        body_width = bx2 - bx1
+        body_height = by2 - by1
+        
+        # Face should be in upper portion of body
+        face_relative_y = face_center_y - by1
+        
+        if face_relative_y > body_height * FACE_TO_BODY_VERTICAL_RATIO:
+            continue  # Face too low in body
+        
+        # Check if face size is proportional to body size
+        expected_face_width = body_width * 0.3  # Face should be ~30% of body width
+        width_ratio = min(face_width, expected_face_width) / max(face_width, expected_face_width)
+        
+        if width_ratio < 0.4:  # Face size too different from expected
+            continue
+        
+        # Calculate position score (higher = better)
+        position_score = 1.0 - (face_relative_y / (body_height * FACE_TO_BODY_VERTICAL_RATIO))
+        
+        # Calculate IoU
+        overlap_iou = iou((fx1, fy1, fx2, fy2), (bx1, by1, bx2, by2))
+        
+        # Size matching score
+        size_score = width_ratio
+        
+        # Combined score (weighted average)
+        total_score = (position_score * 0.4) + (overlap_iou * 0.4) + (size_score * 0.2)
+        
+        if total_score > best_score and overlap_iou > iou_threshold:
+            best_score = total_score
+            best_match_idx = idx
+    
+    return best_match_idx, best_score
+
+def calculate_real_fps():
+    """Calculate real FPS based on recent frames"""
+    global frame_timestamps, current_fps
+    now = time.time()
+    frame_timestamps.append(now)
+    
+    # Keep only last 30 frames for calculation
+    if len(frame_timestamps) > 30:
+        frame_timestamps.pop(0)
+    
+    # Calculate FPS based on actual timing
+    if len(frame_timestamps) >= 2:
+        time_span = frame_timestamps[-1] - frame_timestamps[0]
+        if time_span > 0:
+            current_fps = len(frame_timestamps) / time_span
+        else:
+            current_fps = 30.0  # Fallback
+    
+    return current_fps
+
+def cleanup_locked_tracks(current_frame, lock_timeout_frames):
+    global locked_tracks
+    
+    to_remove = []
+    for id, lock_info in locked_tracks.items():
+        if current_frame - lock_info['last_seen'] > lock_timeout_frames * 2:
+            to_remove.append(id)
+            if DEBUG_MODE: 
+                logger.debug(f"Cleaning up locked track for {id}")
+    
+    for id in to_remove:
+        del locked_tracks[id]
+
+
+def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.7, is_locked_track=False):  # Increased tolerance
+    global KNOWN_FACE_ENCODINGS_ARRAY
+    try:
+        distance = estimate_distance(face_width_pixels)
+
+        # INCREASED MAX RECOGNITION DISTANCE
+        if distance > MAX_RECOGNITION_DISTANCE * 1.5:  # 50% more range
+            if DEBUG_MODE: 
+                logger.debug(f"Face too far for recognition: {distance:.1f}m")
+            return "Unknown", None, float('inf'), distance, 0.0, None
+
+        # IMPROVED IMAGE ENHANCEMENT for better recognition at distance
+        if len(face_image.shape) == 3:
+            # More aggressive enhancement for distant faces
+            gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
+            gray = cv2.equalizeHist(gray)
+            # Apply CLAHE for better contrast
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            gray = clahe.apply(gray)
+            gray = cv2.bilateralFilter(gray, 9, 75, 75)
+            enhanced = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        else:
+            enhanced = face_image
+
+        start_time = time.time()
+        faces = face_analysis.get(enhanced)
+        if DEBUG_MODE: 
+            logger.debug(f"Face analysis inference time: {time.time() - start_time:.4f} seconds")
+        if not faces:
+            return "Unknown", None, float('inf'), distance, 0.0, None
+
+        face_embedding = faces[0].embedding
+
+        # 👇 OPTIMIZATION: Vectorized Cosine Similarity Calculation
+        if KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
+            # 1. Calculate dot products (numerator)
+            dot_products = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+            
+            # 2. Calculate norms (denominator parts)
+            norm_a = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
+            norm_b = np.linalg.norm(face_embedding)
+            
+            # 3. Calculate similarities (division)
+            denominator = (norm_a * norm_b)
+            similarities = np.divide(dot_products, denominator, 
+                                     out=np.zeros_like(dot_products), where=denominator!=0)
+        else:
+            similarities = np.array([])
+        # 👆 END OF OPTIMIZATION
+
+        if similarities.size > 0:
+            best_match_index = int(np.argmax(similarities))
+            best_similarity = float(similarities[best_match_index])
+
+            # LOWER THRESHOLD for recognition, especially for redetection
+            recognition_threshold = 0.85 if is_locked_track else 0.80  # Reduced thresholds
+            confidence = best_similarity
+
+            if is_locked_track or confidence >= recognition_threshold:
+                name = known_face_names[best_match_index]
+                id = known_face_ids[best_match_index]
+                role_type = known_face_types[best_match_index]
+
+                if role_type == 'faculty':
+                    name = f"Faculty: {name}"
+
+                return (
+                    name,
+                    id,
+                    1 - confidence,
+                    distance,
+                    confidence,
+                    role_type
+                )
+
+        return "Unknown", None, float('inf'), distance, 0.0, None
+
+    except Exception as e:
+        logger.error(f"Error in enhanced_recognize_face: {e}")
+        return "Unknown", None, float('inf'), None, 0.0, None
+
+
+def detect_liveness_cctv(face_image, liveness_threshold):
+    try:
+        gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
+        fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+        adjusted_threshold = liveness_threshold * 0.8
+        if fm < adjusted_threshold:
+            logger.warning(f"Liveness detection failed: variance {fm} < threshold {adjusted_threshold}")
+            return False
+        if DEBUG_MODE: 
+            logger.debug(f"Liveness detection passed: variance {fm}")
+        return True
+    except Exception as e:
+        logger.error(f"Liveness detection error: {e}")
+        return True
+
+
+def estimate_distance(face_width_pixels):
+    if face_width_pixels < 20:
+        return float('inf')
+    estimated_distance = (FACE_SIZE_FOR_DISTANCE * 2) / face_width_pixels
+    return estimated_distance
+
+
+def recognize_face_with_anti_spoofing(face_image, tolerance=0.6, liveness_threshold=100):
+    if not detect_liveness_cctv(face_image, liveness_threshold):
+        return "Unknown", None, float('inf'), False, 0.0
+    face_width = face_image.shape[1]
+    name, student_id, distance, est_distance, confidence, role_type = enhanced_recognize_face(face_image, face_width, tolerance)
+    return name, student_id, distance, est_distance, True, confidence
+
+
+def calculate_late_status(attendance_time, session_start, threshold_minutes):
+    """Calculate if student is late based on threshold"""
+    try:
+        att_time = datetime.strptime(attendance_time, "%Y-%m-%d %H:%M:%S")
+        time_diff = (att_time - session_start).total_seconds() / 60
+        
+        if time_diff <= threshold_minutes:
+            return 'present'
+        else:
+            return 'late'
+    except:
+        return 'present'
+
+def refresh_with_detections(frame, rgb, frame_idx):
+    """
+    🎯 IMPROVED FOLLOWING: Allows green bounding boxes to follow people even when far away or partially visible
+      RELAXED: Less strict protection zones for better tracking
+      ENHANCED: Better far-away tracking with adaptive thresholds
+      FIXED: Allows tracking through obstacles and partial occlusion
+      RETAINED: Still prevents identity swapping but with more flexibility
+    """
+    if DEBUG_MODE: 
+        logger.debug(f"  refresh_with_detections CALLED - Frame {frame_idx}")
+    global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
+    global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
+    global KNOWN_FACE_ENCODINGS_NORMALIZED
+    
+    #   ANTI-SWAP: Initialize tracking history for movement prediction
+    global locked_track_history, locked_track_predictions, locked_track_signatures
+    
+    if detectionStopped:
+        return
+    
+    # Initialize anti-swap tracking systems
+    if 'locked_track_history' not in globals():
+        locked_track_history = {}  # Stores past positions for movement prediction
+    if 'locked_track_predictions' not in globals():
+        locked_track_predictions = {}  # Stores next predicted positions
+    if 'locked_track_signatures' not in globals():
+        locked_track_signatures = {}  # Stores body shape signatures
+    
+    # Skip every other frame if FPS is too low
+    if current_fps < 10 and frame_idx % 2 == 0:
+        return
+    
+    h, w = frame.shape[:2]
+    
+    # Dynamic detection frequency
+    if len(tracks) > MAX_TRACKS:
+        locked_track_count = len(locked_tracks)
+        unlocked_tracks = [tr for tr in tracks if tr.get('id') not in locked_tracks]
+        unlocked_tracks.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+        unlocked_tracks = unlocked_tracks[:MAX_UNLOCKED_TRACKS]
+        tracks[:] = unlocked_tracks
+        if DEBUG_MODE: 
+            logger.debug(f"Track cleanup: {locked_track_count} locked + {len(unlocked_tracks)} unlocked")
+    
+    # Cleanup stale pending confirmations
+    cleanup_pending_confirmations(frame_idx, timeout_frames=15)
+    
+    # Step 1: Face detection
+    try:
+        faces = face_analysis.get(rgb)
+    except Exception as e:
+        logger.error(f"Face detection failed: {e}")
+        return
+    
+    # Step 2: Body detection
+    body_detections = detect_bodies(frame)
+    
+    # Step 3: Use ByteTrack for BODY tracking
+    body_tracks = []
+    if len(body_detections) > 0:
+        # Convert to proper ByteTrack format
+        detections_list = []
+        for body_det in body_detections:
+            body_box = body_det['box']
+            x1, y1, x2, y2 = body_box
+            conf = body_det['confidence']
+        
+            #   ENHANCED: Allow half-bodies (reduced from 50px to 25px width)
+            if (x2 - x1) < 25 or (y2 - y1) < 60:
+                continue
+            
+            detections_list.append([x1, y1, x2, y2, conf])
+    
+        if detections_list:
+            detections_array = np.array(detections_list)
+        
+            try:
+                supervision_detections = sv.Detections(
+                    xyxy=detections_array[:, :4],
+                    confidence=detections_array[:, 4],
+                    class_id=np.array([0] * len(detections_array))
+                )
+            
+                tracks_byte = byte_tracker.update_with_detections(
+                    detections=supervision_detections
+                )
+            
+                if tracks_byte is not None and hasattr(tracks_byte, 'xyxy'):
+                    xyxy = tracks_byte.xyxy
+                    tracker_ids = tracks_byte.tracker_id if hasattr(tracks_byte, 'tracker_id') else None
+                    confidences = tracks_byte.confidence if hasattr(tracks_byte, 'confidence') else np.array([0.8] * len(xyxy))
+                    
+                    if tracker_ids is not None:
+                        for idx in range(len(xyxy)):
+                            try:
+                                x1, y1, x2, y2 = xyxy[idx]
+                                track_id = int(tracker_ids[idx])
+                                confidence = float(confidences[idx]) if idx < len(confidences) else 0.8
+                                
+                                body_box = (int(x1), int(y1), int(x2), int(y2))
+                                
+                                # Extract ReID features
+                                reid_features = extract_reid_features(frame, body_box)
+                                
+                                # Calculate body shape signature
+                                body_width = x2 - x1
+                                body_height = y2 - y1
+                                aspect_ratio = body_width / body_height if body_height > 0 else 0
+                                body_area = body_width * body_height
+                                
+                                body_tracks.append({
+                                    'track_id': track_id,
+                                    'body_box': body_box,
+                                    'confidence': confidence,
+                                    'reid_features': reid_features,
+                                    'signature': {
+                                        'width': body_width,
+                                        'height': body_height,
+                                        'aspect_ratio': aspect_ratio,
+                                        'area': body_area
+                                    }
+                                })
+                            except Exception as e:
+                                logger.warning(f"Error processing track {idx}: {e}")
+                                continue
+                    else:
+                        # No tracker_ids - fallback to index-based IDs
+                        logger.warning("  ByteTrack returned detections without tracker_ids")
+                        for idx in range(len(xyxy)):
+                            x1, y1, x2, y2 = xyxy[idx]
+                            confidence = float(confidences[idx]) if idx < len(confidences) else 0.8
+                            
+                            body_box = (int(x1), int(y1), int(x2), int(y2))
+                            reid_features = extract_reid_features(frame, body_box)
+                            
+                            body_width = x2 - x1
+                            body_height = y2 - y1
+                            aspect_ratio = body_width / body_height if body_height > 0 else 0
+                            body_area = body_width * body_height
+                            
+                            body_tracks.append({
+                                'track_id': frame_idx * 1000 + idx,
+                                'body_box': body_box,
+                                'confidence': confidence,
+                                'reid_features': reid_features,
+                                'signature': {
+                                    'width': body_width,
+                                    'height': body_height,
+                                    'aspect_ratio': aspect_ratio,
+                                    'area': body_area
+                                }
+                            })
+                if DEBUG_MODE: 
+                    logger.debug(f"  ByteTrack: {len(body_tracks)} body tracks")
+            
+            except Exception as e:
+                logger.error(f"  ByteTrack failed: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Fallback with ReID features
+                for i, det in enumerate(detections_list):
+                    body_box = (int(det[0]), int(det[1]), int(det[2]), int(det[3]))
+                    reid_features = extract_reid_features(frame, body_box)
+                    
+                    body_width = body_box[2] - body_box[0]
+                    body_height = body_box[3] - body_box[1]
+                    aspect_ratio = body_width / body_height if body_height > 0 else 0
+                    body_area = body_width * body_height
+                
+                    body_tracks.append({
+                        'track_id': i + frame_idx * 1000,
+                        'body_box': body_box,
+                        'confidence': det[4],
+                        'reid_features': reid_features,
+                        'signature': {
+                            'width': body_width,
+                            'height': body_height,
+                            'aspect_ratio': aspect_ratio,
+                            'area': body_area
+                        }
+                    })
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Fallback: {len(body_tracks)} body tracks")
+    
+    # ============================================
+    # 🎯 FLEXIBLE ANTI-SWAPPING WITH BETTER FOLLOWING
+    # ============================================
+    
+    #   1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
+    for person_id, lock_info in locked_tracks.items():
+        current_body_box = lock_info.get('body_box')
+        if current_body_box:
+            # Update movement history
+            if person_id not in locked_track_history:
+                locked_track_history[person_id] = []
+            
+            # Add current position to history
+            locked_track_history[person_id].append({
+                'frame': frame_idx,
+                'body_box': current_body_box,
+                'center_x': (current_body_box[0] + current_body_box[2]) // 2,
+                'center_y': (current_body_box[1] + current_body_box[3]) // 2
+            })
+            
+            # Keep more history for better prediction (increased from 15 to 20)
+            if len(locked_track_history[person_id]) > 20:
+                locked_track_history[person_id].pop(0)
+            
+            # 🎯 IMPROVED PREDICTION for far-away and obstacle tracking
+            if len(locked_track_history[person_id]) >= 2:  # Reduced from 3 to 2 for quicker adaptation
+                last_positions = locked_track_history[person_id][-2:]  # Just last 2 positions
+                
+                # Calculate movement vector
+                if len(last_positions) >= 2:
+                    prev = last_positions[-2]
+                    curr = last_positions[-1]
+                    dx = curr['center_x'] - prev['center_x']
+                    dy = curr['center_y'] - prev['center_y']
+                    
+                    # 🎯 ADAPTIVE MOMENTUM for far-away tracking
+                    current_center_x = (current_body_box[0] + current_body_box[2]) // 2
+                    current_center_y = (current_body_box[1] + current_body_box[3]) // 2
+                    
+                    # Calculate distance from center
+                    frame_center_x = w // 2
+                    frame_center_y = h // 2
+                    distance_from_center = np.sqrt(
+                        (current_center_x - frame_center_x)**2 + 
+                        (current_center_y - frame_center_y)**2
+                    )
+                    
+                    # 🎯 MORE AGGRESSIVE PREDICTION for far-away people
+                    if distance_from_center > 400:  # Very far
+                        momentum_factor = 1.8
+                        prediction_distance = 120  # pixels to search
+                    elif distance_from_center > 300:  # Far
+                        momentum_factor = 1.5
+                        prediction_distance = 90
+                    elif distance_from_center > 200:  # Medium distance
+                        momentum_factor = 1.3
+                        prediction_distance = 70
+                    else:  # Close
+                        momentum_factor = 1.1
+                        prediction_distance = 50
+                    
+                    predicted_center_x = current_center_x + int(dx * momentum_factor)
+                    predicted_center_y = current_center_y + int(dy * momentum_factor)
+                    
+                    # Create predicted box with EXPANDED search area
+                    box_width = current_body_box[2] - current_body_box[0]
+                    box_height = current_body_box[3] - current_body_box[1]
+                    
+                    # 🎯 ALLOW HALF-BODY DETECTION: Reduce minimum size requirements
+                    min_width = max(25, int(box_width * 0.4))  # Allow 40% of original width
+                    min_height = max(50, int(box_height * 0.4))  # Allow 40% of original height
+                    
+                    predicted_box = (
+                        max(0, predicted_center_x - min_width // 2),
+                        max(0, predicted_center_y - min_height // 2),
+                        min(w, predicted_center_x + min_width // 2),
+                        min(h, predicted_center_y + min_height // 2)
+                    )
+                    
+                    locked_track_predictions[person_id] = {
+                        'predicted_box': predicted_box,
+                        'predicted_center': (predicted_center_x, predicted_center_y),
+                        'movement_vector': (dx, dy),
+                        'momentum_factor': momentum_factor,
+                        'search_distance': prediction_distance,  # How far to search
+                        'allow_half_body': True,  # Allow partial detection
+                        'confidence': min(0.95, len(locked_track_history[person_id]) / 20.0)
+                    }
+            
+            #   2. UPDATE BODY SHAPE SIGNATURE for this locked track
+            body_width = current_body_box[2] - current_body_box[0]
+            body_height = current_body_box[3] - current_body_box[1]
+            aspect_ratio = body_width / body_height if body_height > 0 else 0
+            body_area = body_width * body_height
+            
+            if person_id not in locked_track_signatures:
+                # Initialize with all required fields
+                locked_track_signatures[person_id] = {
+                    'width': body_width,
+                    'height': body_height,
+                    'aspect_ratio': aspect_ratio,
+                    'area': body_area,
+                    'avg_width': body_width,
+                    'avg_height': body_height,
+                    'samples': 1,
+                    'min_width': max(25, int(body_width * 0.5)),  # Allow 50% reduction for half-body
+                    'max_width': int(body_width * 1.5),  # Allow 50% expansion
+                    'min_height': max(50, int(body_height * 0.5)),  # Allow 50% reduction for half-body
+                    'max_height': int(body_height * 1.5),  # Allow 50% expansion
+                    'initialized': True
+                }
+            else:
+                sig = locked_track_signatures[person_id]
+                # Ensure all required fields exist
+                if 'min_width' not in sig:
+                    sig['min_width'] = max(25, int(body_width * 0.5))
+                if 'max_width' not in sig:
+                    sig['max_width'] = int(body_width * 1.5)
+                if 'min_height' not in sig:
+                    sig['min_height'] = max(50, int(body_height * 0.5))
+                if 'max_height' not in sig:
+                    sig['max_height'] = int(body_height * 1.5)
+                
+                # Update rolling average with slower adaptation for stability
+                alpha = 0.9  # Increased from 0.8 for more stable tracking
+                sig['avg_width'] = (sig['avg_width'] * (1 - alpha)) + (body_width * alpha)
+                sig['avg_height'] = (sig['avg_height'] * (1 - alpha)) + (body_height * alpha)
+                sig['samples'] += 1
+                
+                # Update min/max ranges with more flexibility for far-away people
+                distance_from_center = np.sqrt(
+                    ((current_body_box[0] + current_body_box[2])//2 - w//2)**2 +
+                    ((current_body_box[1] + current_body_box[3])//2 - h//2)**2
+                )
+                
+                if distance_from_center > 300:
+                    # Far away - allow more size variation
+                    sig['min_width'] = min(sig['min_width'], max(25, int(body_width * 0.4)))
+                    sig['max_width'] = max(sig['max_width'], int(body_width * 1.6))
+                    sig['min_height'] = min(sig['min_height'], max(50, int(body_height * 0.4)))
+                    sig['max_height'] = max(sig['max_height'], int(body_height * 1.6))
+                else:
+                    # Close - more precise
+                    sig['min_width'] = min(sig['min_width'], max(30, int(body_width * 0.6)))
+                    sig['max_width'] = max(sig['max_width'], int(body_width * 1.4))
+                    sig['min_height'] = min(sig['min_height'], max(60, int(body_height * 0.6)))
+                    sig['max_height'] = max(sig['max_height'], int(body_height * 1.4))
+    
+    #   2. CREATE FLEXIBLE PROTECTION ZONES for locked tracks
+    locked_track_protection_zones = {}
+    
+    for person_id, lock_info in locked_tracks.items():
+        body_box = lock_info.get('body_box')
+        if body_box:
+            bx1, by1, bx2, by2 = body_box
+            body_center_x = (bx1 + bx2) // 2
+            body_center_y = (by1 + by2) // 2
+            
+            # Calculate distance from center for adaptive thresholds
+            distance_from_center = np.sqrt((body_center_x - w//2)**2 + (body_center_y - h//2)**2)
+            
+            # 🎯 ADAPTIVE MARGINS based on distance
+            if distance_from_center > 400:
+                # Very far - use larger margins for better tracking
+                inner_margin_multiplier = 0.3  # Reduced from 0.4
+                outer_margin_multiplier = 0.5  # Reduced from 0.7
+                iou_threshold = 0.15  # Lower IoU requirement for far away
+            elif distance_from_center > 300:
+                # Far - moderate margins
+                inner_margin_multiplier = 0.2  # Reduced from 0.3
+                outer_margin_multiplier = 0.3  # Reduced from 0.5
+                iou_threshold = 0.25
+            else:
+                # Close - tighter margins
+                inner_margin_multiplier = 0.15  # Reduced from 0.2
+                outer_margin_multiplier = 0.2  # Reduced from 0.3
+                iou_threshold = 0.35  # Reduced from 0.4
+            
+            # 🛡️ INNER PROTECTION ZONE
+            inner_margin_x = int((bx2 - bx1) * inner_margin_multiplier)
+            inner_margin_y = int((by2 - by1) * inner_margin_multiplier)
+            inner_protection_zone = (
+                max(0, bx1 - inner_margin_x),
+                max(0, by1 - inner_margin_y),
+                min(w, bx2 + inner_margin_x),
+                min(h, by2 + inner_margin_y)
+            )
+            
+            # 🛡️ OUTER EXCLUSION ZONE
+            outer_margin_x = int((bx2 - bx1) * outer_margin_multiplier)
+            outer_margin_y = int((by2 - by1) * outer_margin_multiplier)
+            outer_exclusion_zone = (
+                max(0, bx1 - outer_margin_x),
+                max(0, by1 - outer_margin_y),
+                min(w, bx2 + outer_margin_x),
+                min(h, by2 + outer_margin_y)
+            )
+            
+            # 🛡️ ADD PREDICTION ZONE
+            prediction_zone = None
+            if person_id in locked_track_predictions:
+                pred_box = locked_track_predictions[person_id]['predicted_box']
+                pred_margin_x = int((pred_box[2] - pred_box[0]) * 0.35)  # Increased from 0.4
+                pred_margin_y = int((pred_box[3] - pred_box[1]) * 0.35)  # Increased from 0.4
+                prediction_zone = (
+                    max(0, pred_box[0] - pred_margin_x),
+                    max(0, pred_box[1] - pred_margin_y),
+                    min(w, pred_box[2] + pred_margin_x),
+                    min(h, pred_box[3] + pred_margin_y)
+                )
+            
+            locked_track_protection_zones[person_id] = {
+                'inner_zone': inner_protection_zone,
+                'outer_zone': outer_exclusion_zone,
+                'prediction_zone': prediction_zone,
+                'body_box': body_box,
+                'body_center': (body_center_x, body_center_y),
+                'lock_info': lock_info,
+                'distance_factor': distance_from_center,
+                'iou_threshold': iou_threshold  # Store adaptive threshold
+            }
+    
+    # Filter out locked faces
+    locked_body_boxes = []
+    for person_id, lock_info in locked_tracks.items():
+        body_box = lock_info.get('body_box')
+        if body_box:
+            bx1, by1, bx2, by2 = body_box
+            # 🎯 INCREASED EXPANSION for better matching when far away
+            distance_from_center = np.sqrt(((bx1+bx2)//2 - w//2)**2 + ((by1+by2)//2 - h//2)**2)
+            
+            if distance_from_center > 300:
+                expand_margin = 20  # Larger margin for far away
+            else:
+                expand_margin = 15  # Standard margin
+            
+            expanded_body_box = (
+                max(0, bx1 - expand_margin),
+                max(0, by1 - expand_margin),
+                min(w, bx2 + expand_margin),
+                min(h, by2 + expand_margin)
+            )
+            locked_body_boxes.append((person_id, expanded_body_box, lock_info.get('name', person_id)))
+    
+    # Check if locked students who were missing are now detected
+    for person_id, lock_info in locked_tracks.items():
+        if (lock_info.get('type') == 'student' and
+            person_id in student_presence_tracker and
+            not student_presence_tracker[person_id].get('present', True)):
+        
+            for face in faces:
+                try:
+                    x1, y1, x2, y2 = face.bbox.astype(int)
+                    face_center_x = (x1 + x2) // 2
+                    face_center_y = (y1 + y2) // 2
+                
+                    body_box = lock_info.get('body_box')
+                    if body_box:
+                        bx1, by1, bx2, by2 = body_box
+                        if (bx1 <= face_center_x <= bx2 and by1 <= face_center_y <= by2):
+                            if DEBUG_MODE: 
+                                logger.debug(f"Missing locked student detected: {lock_info.get('name')}")
+                            mark_attendance(lock_info.get('name'), person_id, lock_info.get('type', 'student'))
+                            break
+                except Exception as e:
+                    continue
+    
+    # ============================================
+    #   PROCESS FACE DETECTIONS WITH RELAXED PROTECTION
+    # ============================================
+    
+    # Step 4: Process face detections with RELAXED protection
+    dets = []
+    face_embeddings = []
+    
+    for idx, face in enumerate(faces):
+        face_idx = idx
+        face_obj = face
+        try:
+            x1, y1, x2, y2 = face.bbox.astype(int)
+            conf = face.det_score
+        
+            if x2 > x1 and y2 > y1:
+                is_within_bounds = (x1 >= -30 and y1 >= -30 and x2 <= w + 30 and y2 <= h + 30)
+                if is_within_bounds:
+                    box_width = x2 - x1
+                    box_height = y2 - y1
+                
+                    if box_width >= 30 and box_height >= 30:
+                        face_center_x = (x1 + x2) // 2
+                        face_center_y = (y1 + y2) // 2
+                        face_box = (x1, y1, x2, y2)
+                        
+                        # 🎯 RELAXED: Check if this face violates any protection zones
+                        should_reject_face = False
+                        rejection_reason = ""
+                        
+                        for person_id, zone_info in locked_track_protection_zones.items():
+                            inner_zone = zone_info['inner_zone']
+                            outer_zone = zone_info['outer_zone']
+                            prediction_zone = zone_info['prediction_zone']
+                            locked_body_box = zone_info['body_box']
+                            adaptive_iou_threshold = zone_info.get('iou_threshold', 0.4)
+                            
+                            # 🎯 1. Check INNER ZONE (more lenient)
+                            iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
+                            if (iz_x1 <= face_center_x <= iz_x2 and iz_y1 <= face_center_y <= iz_y2):
+                                face_iou = iou(face_box, locked_body_box)
+                                
+                                # Use adaptive threshold based on distance
+                                if face_iou < adaptive_iou_threshold:
+                                    # Check if this might be the same person (half-body case)
+                                    face_area = (x2 - x1) * (y2 - y1)
+                                    body_area = (locked_body_box[2] - locked_body_box[0]) * (locked_body_box[3] - locked_body_box[1])
+                                    face_to_body_ratio = face_area / body_area if body_area > 0 else 0
+                                    
+                                    # If face is within reasonable size ratio, allow it
+                                    if 0.02 <= face_to_body_ratio <= 0.3:
+                                        # Might be the same person, don't reject
+                                        pass
+                                    else:
+                                        should_reject_face = True
+                                        rejection_reason = f"inner zone violation (IoU: {face_iou:.2f}, threshold: {adaptive_iou_threshold})"
+                                        break
+                            
+                            # 🎯 2. Check OUTER ZONE (more lenient)
+                            if not should_reject_face:
+                                oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
+                                if (oz_x1 <= face_center_x <= oz_x2 and oz_y1 <= face_center_y <= oz_y2):
+                                    distance_to_center = np.sqrt(
+                                        (face_center_x - zone_info['body_center'][0])**2 + 
+                                        (face_center_y - zone_info['body_center'][1])**2
+                                    )
+                                    max_allowed_distance = (locked_body_box[2] - locked_body_box[0]) * 1.0  # Increased from 0.8
+                                    
+                                    if distance_to_center < max_allowed_distance:
+                                        # Check if face might belong to this body
+                                        face_iou = iou(face_box, locked_body_box)
+                                        if face_iou < 0.1:  # Very low overlap
+                                            should_reject_face = True
+                                            rejection_reason = f"close to locked person but no overlap ({int(distance_to_center)}px)"
+                                            break
+                            
+                            # 🎯 3. Check PREDICTION ZONE (allow faces in prediction path)
+                            if not should_reject_face and prediction_zone:
+                                pz_x1, pz_y1, pz_x2, pz_y2 = prediction_zone
+                                if (pz_x1 <= face_center_x <= pz_x2 and pz_y1 <= face_center_y <= pz_y2):
+                                    # Faces in prediction zone are OK - they might be the person moving
+                                    pass
+                        
+                        if should_reject_face:
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Rejecting face in {rejection_reason}")
+                            continue
+                        
+                        # Original locked face check
+                        is_locked_face = False
+                        for locked_person_id, locked_body_box, locked_name in locked_body_boxes:
+                            bx1, by1, bx2, by2 = locked_body_box
+                        
+                            if (bx1 <= face_center_x <= bx2 and by1 <= face_center_y <= by2):
+                                body_height = by2 - by1
+                                body_width = bx2 - bx1
+                                face_relative_y = face_center_y - by1
+                                face_relative_x = face_center_x - bx1
+                            
+                                face_area = box_width * box_height
+                                body_area = body_width * body_height
+                            
+                                # 🎯 MORE LENIENT thresholds for far-away/half-body
+                                if distance_from_center > 300:
+                                    height_threshold = 0.6  # Increased from 0.5
+                                    width_min = 0.05  # Reduced from 0.1
+                                    area_min = 0.008  # Reduced from 0.01
+                                else:
+                                    height_threshold = 0.5
+                                    width_min = 0.1
+                                    area_min = 0.01
+                                
+                                if (face_relative_y < body_height * height_threshold and
+                                    face_relative_x > body_width * width_min and
+                                    face_relative_x < body_width * 0.9 and
+                                    face_area > body_area * area_min and
+                                    face_area < body_area * 0.25):
+                                    is_locked_face = True
+                                    break
+                    
+                        if not is_locked_face:
+                            try:
+                                embedding = face_obj.embedding
+                                face_embeddings.append(embedding)
+                            except:
+                                face_embeddings.append(None)
+                            
+                            dets.append((x1, y1, x2, y2, conf, face_idx, face_obj))
+    
+        except Exception as e:
+            logger.error(f"Error processing face detection (idx: {face_idx}): {e}")
+            continue
+    
+    if DEBUG_MODE: 
+        logger.debug(f"Frame {frame_idx}: {len(faces)} faces detected → {len(dets)} NEW faces after relaxed filtering") 
+    
+    # ============================================
+    #   IMPROVED ReID MATCHING FOR LOCKED TRACKS
+    # ============================================
+    
+    new_tracks = []
+    used_detections = set()
+    used_body_tracks = set()
+    
+    # 🎯 IMPROVED: More flexible ReID matching for better following
+    for person_id, lock_info in locked_tracks.items():
+        last_reid_features = lock_info.get('reid_features')
+        last_body_box = lock_info.get('body_box')
+    
+        if last_reid_features is not None and body_tracks:
+            best_match_idx = None
+            best_reid_distance = 0.25  # Increased from 0.15 for better matching
+            
+            # Get body signature for this locked track
+            body_signature = locked_track_signatures.get(person_id)
+            
+            # Try ReID matching with more flexible validation
+            for idx, body_track in enumerate(body_tracks):
+                if idx in used_body_tracks:
+                    continue
+                
+                current_reid_features = body_track['reid_features']
+                if current_reid_features is None:
+                    continue
+            
+                # 🎯 STAGE 1: Calculate ReID distance (more lenient)
+                reid_dist = calculate_reid_distance(last_reid_features, current_reid_features)
+                if reid_dist >= best_reid_distance:
+                    continue
+            
+                # 🎯 STAGE 2: FLEXIBLE SPATIAL CONSTRAINT
+                if last_body_box:
+                    movement = calculate_box_distance(last_body_box, body_track['body_box'])
+                    
+                    last_center_x = (last_body_box[0] + last_body_box[2]) // 2
+                    last_center_y = (last_body_box[1] + last_body_box[3]) // 2
+                    distance_from_center = np.sqrt((last_center_x - w//2)**2 + (last_center_y - h//2)**2)
+                    
+                    # 🎯 ALLOW MORE MOVEMENT for far-away people
+                    if distance_from_center > 300:
+                        max_movement = 120  # Increased from 80
+                    elif distance_from_center > 200:
+                        max_movement = 90   # Increased from 80
+                    else:
+                        max_movement = 70   # Increased from 50
+                    
+                    if movement > max_movement:
+                        continue
+                    
+                    # Check movement prediction
+                    if person_id in locked_track_predictions:
+                        pred_box = locked_track_predictions[person_id]['predicted_box']
+                        pred_distance = calculate_box_distance(pred_box, body_track['body_box'])
+                        max_pred_distance = 80 if distance_from_center > 300 else 60  # Increased
+                        if pred_distance > max_pred_distance:
+                            continue
+            
+                # 🎯 STAGE 3: FLEXIBLE BODY SIGNATURE VERIFICATION
+                if body_signature and 'signature' in body_track:
+                    current_sig = body_track['signature']
+                    
+                    # Check if min_width/max_width exist before using them
+                    if ('min_width' in body_signature and 'max_width' in body_signature and 
+                        body_signature['min_width'] > 0 and body_signature['max_width'] > 0):
+                        # 🎯 ALLOW MORE SIZE VARIATION
+                        width_ratio = current_sig['width'] / body_signature['avg_width'] if body_signature['avg_width'] > 0 else 1.0
+                        if width_ratio < 0.4 or width_ratio > 1.8:  # More flexible than 0.7-1.3
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Warning: width ratio {width_ratio:.2f} out of range, but allowing for tracking")
+                            # Don't reject immediately for far-away tracking
+                    
+                    # Check if min_height/max_height exist
+                    if ('min_height' in body_signature and 'max_height' in body_signature and
+                        body_signature['min_height'] > 0 and body_signature['max_height'] > 0):
+                        # 🎯 ALLOW MORE SIZE VARIATION
+                        height_ratio = current_sig['height'] / body_signature['avg_height'] if body_signature['avg_height'] > 0 else 1.0
+                        if height_ratio < 0.4 or height_ratio > 1.8:  # More flexible
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Warning: height ratio {height_ratio:.2f} out of range, but allowing for tracking")
+                            # Don't reject immediately
+                
+                # 🎯 STAGE 4: TEMPORAL CONSISTENCY (more lenient)
+                if last_body_box and person_id in locked_track_history:
+                    hist_positions = locked_track_history[person_id]
+                    if len(hist_positions) >= 2:
+                        avg_movement_x = 0
+                        avg_movement_y = 0
+                        
+                        for i in range(1, len(hist_positions)):
+                            prev = hist_positions[i-1]
+                            curr = hist_positions[i]
+                            avg_movement_x += curr['center_x'] - prev['center_x']
+                            avg_movement_y += curr['center_y'] - prev['center_y']
+                        
+                        if len(hist_positions) > 1:
+                            avg_movement_x /= (len(hist_positions) - 1)
+                            avg_movement_y /= (len(hist_positions) - 1)
+                            
+                            current_center_x = (body_track['body_box'][0] + body_track['body_box'][2]) // 2
+                            current_center_y = (body_track['body_box'][1] + body_track['body_box'][3]) // 2
+                            last_center_x = (last_body_box[0] + last_body_box[2]) // 2
+                            last_center_y = (last_body_box[1] + last_body_box[3]) // 2
+                            
+                            actual_movement_x = current_center_x - last_center_x
+                            actual_movement_y = current_center_y - last_center_y
+                            
+                            # 🎯 ALLOW MORE ABRUPT MOVEMENT for far-away
+                            movement_factor = 3.0 if distance_from_center > 300 else 2.0  # Increased
+                            if (abs(actual_movement_x) > abs(avg_movement_x) * movement_factor or 
+                                abs(actual_movement_y) > abs(avg_movement_y) * movement_factor):
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  Warning: movement abrupt but allowing for tracking")
+                                # Don't reject - might be sudden movement
+                
+                # 🎯 STAGE 5: OVERLAP VALIDATION (more lenient)
+                if last_body_box:
+                    overlap = iou(tuple(body_track['body_box']), last_body_box)
+                    distance_from_center = np.sqrt(
+                        ((last_body_box[0] + last_body_box[2])//2 - w//2)**2 +
+                        ((last_body_box[1] + last_body_box[3])//2 - h//2)**2
+                    )
+                    
+                    # 🎯 LOWER OVERLAP REQUIREMENTS for far-away
+                    if distance_from_center > 300:
+                        min_overlap = 0.1  # Reduced from 0.15
+                    elif distance_from_center > 200:
+                        min_overlap = 0.15  # Reduced from 0.25
+                    else:
+                        min_overlap = 0.2   # Reduced from 0.25
+                    
+                    if overlap < min_overlap:
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Warning: low overlap ({overlap:.2f}) but allowing for tracking")
+                        # Don't reject - might be partial occlusion
+        
+                # All validations passed (or warnings only)
+                best_reid_distance = reid_dist
+                best_match_idx = idx
+                if DEBUG_MODE: 
+                    logger.debug(f"  Good match: ReID={reid_dist:.3f}, Movement={movement:.1f}px")
+    
+            if best_match_idx is not None:
+                # Found matching body
+                matched_body = body_tracks[best_match_idx]
+                used_body_tracks.add(best_match_idx)
+            
+                lock_info['body_box'] = matched_body['body_box']
+                lock_info['last_seen'] = frame_idx
+                lock_info['missed_detections'] = 0
+                
+                if matched_body['reid_features'] is not None:
+                    # Update ReID features with slower adaptation for stability
+                    distance_from_center = np.sqrt(
+                        ((matched_body['body_box'][0] + matched_body['body_box'][2])//2 - w//2)**2 +
+                        ((matched_body['body_box'][1] + matched_body['body_box'][3])//2 - h//2)**2
+                    )
+                    
+                    # 🎯 SLOWER ADAPTATION for far-away tracking
+                    if distance_from_center > 300:
+                        alpha = 0.95  # Very slow adaptation
+                    elif distance_from_center > 200:
+                        alpha = 0.93  # Slow adaptation
+                    else:
+                        alpha = 0.9   # Standard adaptation
+                    
+                    lock_info['reid_features'] = (
+                        alpha * last_reid_features +
+                        (1 - alpha) * matched_body['reid_features']
+                    )
+                if DEBUG_MODE: 
+                    logger.debug(f"  Locked {lock_info.get('name', person_id)} updated via ReID (dist: {best_reid_distance:.3f})")
+            else:
+                # No match - but be more tolerant
+                lock_info['missed_detections'] = lock_info.get('missed_detections', 0) + 1
+                if DEBUG_MODE and lock_info['missed_detections'] % 10 == 0:
+                    logger.debug(f"  No match for {lock_info.get('name', person_id)} - Missed: {lock_info['missed_detections']}")
+
+    # Add existing locked tracks to new_tracks
+    for person_id, lock_info in locked_tracks.items():
+        lock_start = lock_info.get('lock_start', frame_idx)
+        tracking_seconds = (frame_idx - lock_start) // 30
+    
+        locked_track_obj = {
+            'id': person_id,
+            'name': lock_info.get('name', f'Person {person_id}'),
+            'type': lock_info.get('type', 'student'),
+            'is_locked': True,
+            'body_box': lock_info.get('body_box'),
+            'last_seen': lock_info.get('last_seen', frame_idx),
+            'confidence': 1.0,
+            'tracking_duration': tracking_seconds,
+            'lock_start': lock_start
+        }
+        new_tracks.append(locked_track_obj)
+    
+    # Update existing unlocked tracks
+    for tr in tracks:
+        if tr.get('id') in locked_tracks:
+            continue
+    
+        frames_since_seen = frame_idx - tr.get('last_seen', 0)
+        if frames_since_seen > 20:
+            continue
+    
+        best_detection = None
+        best_iou = 0.0
+        best_idx = -1
+        tr_box = tr.get('box')
+        if tr_box:
+            for idx_det, (x1, y1, x2, y2, conf, face_idx_val, face_obj) in enumerate(dets):
+                if idx_det in used_detections:
+                    continue
+                overlap_iou = iou((x1, y1, x2, y2), tr_box)
+                if overlap_iou > best_iou:
+                    best_iou = overlap_iou
+                    best_detection = (x1, y1, x2, y2, conf, face_idx_val, face_obj)
+                    best_idx = idx_det
+            if best_detection:
+                used_detections.add(best_idx)
+                x1, y1, x2, y2, conf, face_idx_val, face_obj = best_detection
+                tr['box'] = (x1, y1, x2, y2)
+                tr['last_seen'] = frame_idx
+                new_tracks.append(tr)
+            else:
+                if frames_since_seen < 8:
+                    new_tracks.append(tr)
+    
+    # ============================================
+    #   PROCESS NEW FACE DETECTIONS WITH RELAXED PROTECTION
+    # ============================================
+    
+    # Step 5: Process NEW face detections with relaxed protection
+    for idx_det, (x1, y1, x2, y2, conf, face_idx_val, face_obj) in enumerate(dets):
+        if idx_det in used_detections:
+            continue
+        
+        # Check overlap with existing tracks
+        overlaps_existing = False
+        for existing_tr in new_tracks:
+            if iou((x1, y1, x2, y2), existing_tr.get('box', (0, 0, 0, 0))) > 0.3:
+                overlaps_existing = True
+                break
+        if overlaps_existing:
+            continue
+        
+        # 🎯 RELAXED: Check if this face is in any protected zone
+        face_center_x = (x1 + x2) // 2
+        face_center_y = (y1 + y2) // 2
+        face_too_close_to_locked = False
+        
+        for person_id, zone_info in locked_track_protection_zones.items():
+            inner_zone = zone_info['inner_zone']
+            outer_zone = zone_info['outer_zone']
+            
+            iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
+            oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
+            
+            # 🎯 Only reject if clearly in inner zone with no overlap
+            if (iz_x1 <= face_center_x <= iz_x2 and iz_y1 <= face_center_y <= iz_y2):
+                locked_body_box = zone_info['body_box']
+                face_box = (x1, y1, x2, y2)
+                face_iou = iou(face_box, locked_body_box)
+                
+                adaptive_threshold = zone_info.get('iou_threshold', 0.4)
+                if face_iou < adaptive_threshold * 0.8:  # Even more lenient
+                    face_too_close_to_locked = True
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Face rejected: in locked person's inner zone (IoU: {face_iou:.2f})")
+                    break
+        
+        if face_too_close_to_locked:
+            used_detections.add(idx_det)
+            continue
+        
+        # ============================================
+        #   ENHANCED FACE RECOGNITION SECTION
+        # ============================================
+        name = "Unknown"
+        person_id = None
+        ptype = None
+        confidence = conf
+        face_embedding = None
+        best_similarity = 0
+
+        if conf >= 0.20 and KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
+            try:
+                face_embedding = face_obj.embedding
+        
+                # Normalize the live face embedding
+                face_norm = np.linalg.norm(face_embedding)
+                if face_norm > 0:
+                    face_embedding = face_embedding / face_norm
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Normalized live face: norm={face_norm:.4f}")
+                else:
+                    if DEBUG_MODE: 
+                        logger.debug("  Zero norm face embedding")
+                    name = "Unknown"
+                    face_embedding = None
+        
+                if face_embedding is None:
+                    # Skip if normalization failed
+                    continue
+            
+                if len(known_face_names) == 0 or len(KNOWN_FACE_ENCODINGS_ARRAY) == 0:
+                    logger.warning("No known faces loaded for recognition")
+                    name = "Unknown"
+                else:
+                    current_section_students = get_current_section_student_ids()
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Current section has {len(current_section_students)} students")
+            
+                    # Check face quality
+                    face_width = x2 - x1
+                    face_height = y2 - y1
+                    face_area = face_width * face_height
+            
+                    if face_width < 40 or face_height < 40:
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Face too small: {face_width}x{face_height}")
+                        name = "Unknown - Face too small"
+                    else:
+                        # ENSURE embeddings are normalized
+                        if not KNOWN_FACE_ENCODINGS_NORMALIZED:
+                            # Normalize on the fly
+                            norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
+                            norms[norms == 0] = 1
+                            KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
+                            KNOWN_FACE_ENCODINGS_NORMALIZED = True
+                            if DEBUG_MODE: 
+                                logger.debug("  Normalized known embeddings on the fly")
+                
+                        # Calculate cosine similarity
+                        similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Similarities: min={similarities.min():.3f}, max={similarities.max():.3f}")
+                
+                        if similarities.size > 0:
+                            best_match_index = int(np.argmax(similarities))
+                            best_similarity = float(similarities[best_match_index])
+                    
+                            # SIMPLIFIED THRESHOLD
+                            recognition_threshold = 0.55  # Much lower for better recognition
+                    
+                            # Adjust for face size
+                            if face_width < 60 or face_height < 60:
+                                recognition_threshold = 0.50  # Even lower for small faces
+                    
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Best match: {known_face_names[best_match_index]} - Similarity: {best_similarity:.3f}, Threshold: {recognition_threshold:.3f}")
+                    
+                            if best_similarity >= recognition_threshold:
+                                matched_id = known_face_ids[best_match_index]
+                                matched_type = known_face_types[best_match_index]
+                                matched_name = known_face_names[best_match_index]
+                        
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  ✅ MATCH: {matched_name} ({matched_id}) - Type: {matched_type}")
+                        
+                                if matched_type == 'faculty':
+                                    name = f"Faculty: {matched_name}"
+                                    person_id = matched_id
+                                    ptype = 'faculty'
+                                    confidence = best_similarity
+                        
+                                elif matched_type == 'student':
+                                    if current_section_students and matched_id in current_section_students:
+                                        name = matched_name
+                                        person_id = matched_id
+                                        ptype = 'student'
+                                        confidence = best_similarity
+                                    else:
+                                        name = "Unknown - Wrong Section"
+                                        if DEBUG_MODE: 
+                                            logger.debug(f"  ❌ Student {matched_name} not in current section")
+                            else:
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  ❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
+                                name = "Unknown"
+            except Exception as e:
+                logger.error(f"  Error in recognition: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                name = "Unknown"
+        
+        # Handle unknown faces
+        if name == "Unknown" and face_embedding is not None and not name.startswith("Unknown - Wrong Section"):
+            try:
+                face_crop = frame[y1:y2, x1:x2]
+                if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
+                    session_id = get_current_session_id()
+                    if session_id:
+                        success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
+                        if success:
+                            if DEBUG_MODE: 
+                                logger.debug(f"📸 CAPTURED UNKNOWN FACE - Added to enrollment system")
+            except Exception as e:
+                logger.error(f"  Error capturing unknown face: {e}")
+        
+        # Match face to body
+        matched_body_track = None
+        face_center_x = (x1 + x2) // 2
+        face_center_y = (y1 + y2) // 2
+    
+        for body_track in body_tracks:
+            if body_track['track_id'] in used_body_tracks:
+                continue
+            
+            body_box = body_track['body_box']
+            bx1, by1, bx2, by2 = body_box
+        
+            body_height = by2 - by1
+            upper_body_y1 = max(by1, by1 - int(body_height * 0.1))
+            upper_body_y2 = by1 + int(body_height * 0.7)
+            
+            distance_from_center = np.sqrt((face_center_x - w//2)**2 + (face_center_y - h//2)**2)
+            horizontal_margin = int((bx2 - bx1) * 0.25) if distance_from_center > 300 else int((bx2 - bx1) * 0.15)  # Increased
+            
+            if (bx1 - horizontal_margin <= face_center_x <= bx2 + horizontal_margin and
+                upper_body_y1 <= face_center_y <= upper_body_y2):
+                
+                face_area = (x2 - x1) * (y2 - y1)
+                body_area = (bx2 - bx1) * (by2 - by1)
+                face_body_ratio = face_area / body_area if body_area > 0 else 0
+                
+                # 🎯 MORE LENIENT RATIOS for far-away/half-body
+                if distance_from_center > 300:
+                    min_ratio = 0.008  # Reduced from 0.01
+                    max_ratio = 0.3    # Increased from 0.25
+                else:
+                    min_ratio = 0.012  # Reduced from 0.015
+                    max_ratio = 0.25   # Increased from 0.20
+                
+                if min_ratio <= face_body_ratio <= max_ratio:
+                    body_center_x = (bx1 + bx2) // 2
+                    body_center_y = (by1 + by2) // 2
+                    
+                    body_in_protected_zone = False
+                    for locked_person_id, zone_info in locked_track_protection_zones.items():
+                        inner_zone = zone_info['inner_zone']
+                        iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
+                        
+                        if (iz_x1 <= body_center_x <= iz_x2 and iz_y1 <= body_center_y <= iz_y2):
+                            locked_body_box = zone_info['body_box']
+                            overlap_iou = iou(tuple(body_box), locked_body_box)
+                            
+                            # 🎯 MORE LENIENT for far-away
+                            if distance_from_center > 300:
+                                min_iou = 0.3  # Reduced from 0.4
+                            else:
+                                min_iou = 0.4  # Reduced from 0.5
+                            
+                            if overlap_iou < min_iou:
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  Body in protection zone but low overlap ({overlap_iou:.2f})")
+                                body_in_protected_zone = True
+                                break
+                    
+                    if not body_in_protected_zone:
+                        matched_body_track = body_track
+                        used_body_tracks.add(body_track['track_id'])
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Face-Body matched: track_id={body_track['track_id']}, ratio={face_body_ratio:.3f}")
+                        break
+        
+        # If still unknown after recognition attempt
+        if person_id is None:
+            unique_id = f"U-{frame_idx}-{x1}"
+        
+            if matched_body_track:
+                track_obj = {
+                    'id': unique_id,
+                    'box': (x1, y1, x2, y2),
+                    'body_box': matched_body_track['body_box'],
+                    'byte_track_id': matched_body_track['track_id'],
+                    'confidence': max(0.3, conf),
+                    'last_seen': frame_idx,
+                    'is_locked': False,
+                    'name': name if name.startswith("Unknown") else "Unknown",
+                    'type': 'unknown',
+                    'start_frame': frame_idx,
+                    'reid_features': matched_body_track['reid_features']
+                }
+                new_tracks.append(track_obj)
+                if DEBUG_MODE: 
+                    logger.debug(f"  Unknown face with body tracking")
+            else:
+                new_tracks.append({
+                    'id': unique_id,
+                    'box': (x1, y1, x2, y2),
+                    'confidence': max(0.3, conf),
+                    'last_seen': frame_idx,
+                    'is_locked': False,
+                    'name': name if name.startswith("Unknown") else "Unknown",
+                    'type': 'unknown',
+                    'start_frame': frame_idx
+                })
+                if DEBUG_MODE: 
+                    logger.debug(f"  Unknown face without body")
+        else:
+            # Known person
+            if matched_body_track and person_id not in locked_tracks:
+                if person_id not in pending_confirmations:
+                    pending_confirmations[person_id] = {
+                        'id': person_id,
+                        'frames': [],
+                        'body_boxes': [],
+                        'name': name,
+                        'type': ptype,
+                        'similarities': [],
+                        'first_seen': frame_idx,
+                        'last_seen': frame_idx,
+                        'byte_track_id': matched_body_track['track_id'],
+                        'reid_features': matched_body_track['reid_features']
+                    }
+                    if DEBUG_MODE: 
+                        logger.debug(f"  NEW PENDING: {name} (ID: {person_id})")
+            
+                pending_confirmations[person_id]['frames'].append(frame_idx)
+                pending_confirmations[person_id]['body_boxes'].append(matched_body_track['body_box'])
+                pending_confirmations[person_id]['similarities'].append(best_similarity)
+                pending_confirmations[person_id]['last_seen'] = frame_idx
+            
+                max_frames_to_keep = CONFIRMATION_FRAMES_REQUIRED + 2
+                if len(pending_confirmations[person_id]['frames']) > max_frames_to_keep:
+                    pending_confirmations[person_id]['frames'].pop(0)
+                    pending_confirmations[person_id]['body_boxes'].pop(0)
+                    pending_confirmations[person_id]['similarities'].pop(0)
+            
+                confirmation_data = pending_confirmations[person_id]
+                consecutive_frames = len(confirmation_data['frames'])
+                avg_similarity = sum(confirmation_data['similarities']) / len(confirmation_data['similarities'])
+                if DEBUG_MODE: 
+                    logger.debug(f"  PENDING PROGRESS: {name} - Frames: {consecutive_frames}, Avg Similarity: {avg_similarity:.3f}")
+            
+                if (consecutive_frames >= max(3, CONFIRMATION_FRAMES_REQUIRED - 2) and
+                    avg_similarity >= CONFIRMATION_SIMILARITY_THRESHOLD - 0.05):
+                
+                    # LOCK with ReID features
+                    locked_tracks[person_id] = {
+                        'id': person_id,
+                        'name': name,
+                        'type': ptype,
+                        'body_box': matched_body_track['body_box'],
+                        'last_seen': frame_idx,
+                        'reid_features': matched_body_track['reid_features'],
+                        'lock_start': frame_idx,
+                        'missed_detections': 0,
+                        'byte_track_id': matched_body_track['track_id']
+                    }
+                
+                    locked_track_obj = {
+                        'id': person_id,
+                        'name': name,
+                        'type': ptype,
+                        'is_locked': True,
+                        'body_box': matched_body_track['body_box'],
+                        'last_seen': frame_idx,
+                        'confidence': 1.0,
+                        'tracking_duration': 0,
+                        'lock_start': frame_idx,
+                        'byte_track_id': matched_body_track['track_id']
+                    }
+                    new_tracks.append(locked_track_obj)
+                
+                    if ptype == 'faculty' or (ptype == 'student' and current_section_students and person_id in current_section_students):
+                        mark_attendance(name, person_id, ptype)
+                        if DEBUG_MODE: 
+                            logger.debug(f"  LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
+                    else:
+                        if DEBUG_MODE: 
+                            logger.debug(f"  LOCKED but NO ATTENDANCE (wrong section) for {name} ({person_id})")
+                    
+                    del pending_confirmations[person_id]
+                else:
+                    temp_track = {
+                        'id': person_id,
+                        'box': (x1, y1, x2, y2),
+                        'body_box': matched_body_track['body_box'],
+                        'confidence': confidence,
+                        'last_seen': frame_idx,
+                        'is_locked': False,
+                        'name': name,
+                        'is_pending': True,
+                        'byte_track_id': matched_body_track['track_id']
+                    }
+                    new_tracks.append(temp_track)
+            else:
+                if person_id not in locked_tracks:
+                    if DEBUG_MODE: 
+                        logger.debug(f"  {name} recognized but no body match")
+                new_tracks.append({
+                    'id': person_id,
+                    'box': (x1, y1, x2, y2),
+                    'confidence': confidence,
+                    'last_seen': frame_idx,
+                    'is_locked': False,
+                    'name': name
+                })
+    
+    # Confidence decay for unlocked tracks
+    for tr in new_tracks[:]:
+        if not tr.get('is_locked'):
+            tr['confidence'] = max(0.1, tr.get('confidence', 0.5) * 0.85)
+            if tr['confidence'] < 0.2 and frame_idx - tr.get('last_seen', 0) > 10:
+                new_tracks.remove(tr)
+    
+    tracks[:] = new_tracks
+    
+    # Cleanup old unknown tracks
+    current_tracks = [
+        tr for tr in tracks
+        if not (tr.get('name') == "Unknown" and frame_idx - tr.get('last_seen', 0) > 30)
+    ]
+    tracks[:] = current_tracks
+    
+    # Cleanup old tracking history
+    expired_history_keys = []
+    for person_id in list(locked_track_history.keys()):
+        if person_id not in locked_tracks:
+            expired_history_keys.append(person_id)
+    
+    for key in expired_history_keys:
+        del locked_track_history[key]
+        if key in locked_track_predictions:
+            del locked_track_predictions[key]
+        if key in locked_track_signatures:
+            del locked_track_signatures[key]
+
+def enhance_face_recognition_settings():
+    """Apply optimal settings for better recognition"""
+    global CONFIRMATION_SIMILARITY_THRESHOLD, CONFIRMATION_FRAMES_REQUIRED
+    
+    # Optimize for easier recognition
+    CONFIRMATION_SIMILARITY_THRESHOLD = 0.58  # Lowered for better recognition
+    CONFIRMATION_FRAMES_REQUIRED = 3  # Reduced for faster locking
+    
+    if DEBUG_MODE: 
+        logger.debug(f"Enhanced recognition: threshold={CONFIRMATION_SIMILARITY_THRESHOLD}, frames={CONFIRMATION_FRAMES_REQUIRED}")
