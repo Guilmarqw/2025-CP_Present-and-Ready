@@ -197,7 +197,9 @@
   <audio id="bellSound" src="static/Hotel bell ringing - Sounds effect.mp3" preload="auto"></audio>
 
   <script>
-         const container = document.querySelector(".container");
+    const container = document.querySelector(".container");
+
+    
 
   document.addEventListener("DOMContentLoaded", function () {
     const termsModal = document.getElementById("termsModal");
@@ -442,6 +444,27 @@ function validateStep2() {
         console.error("Error:", error);
     });
 }
+
+function handleOtpPaste(event) {
+    event.preventDefault();
+    const pasteData = event.clipboardData.getData('text');
+    const otpDigits = pasteData.replace(/\D/g, '').split('');
+    
+    for (let i = 0; i < Math.min(otpDigits.length, 6); i++) {
+        const otpInput = document.getElementById(`otp${i + 1}`);
+        if (otpInput) {
+            otpInput.value = otpDigits[i];
+        }
+    }
+    
+    // Focus on the last filled input
+    const lastIndex = Math.min(otpDigits.length, 6);
+    const lastInput = document.getElementById(`otp${lastIndex}`);
+    if (lastInput) {
+        lastInput.focus();
+    }
+}
+
 
 function resendOTP() {
     const resendLink = event.target;

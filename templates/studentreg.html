@@ -257,50 +257,23 @@
 <script>
 const container = document.querySelector(".container");
 
-// Global variables
-let currentPose = 'frontal';
 let encodingProgress = 0;
 let uploadedFaceEncoding = null;
 let scannedFaceEncoding = null;
 let encodingInterval = null;
 let isEncodingComplete = false;
 let qualityCheckCount = 0;
-const REQUIRED_QUALITY_CHECKS = 5; // Need 5 consecutive good checks
-let faceQualityScore = 0;
+const REQUIRED_QUALITY_CHECKS = 3; // Need 3 consecutive good checks
 let faceEncoding = null;
-let faceEncodings = [];
-let currentActiveAcademicYear = null;
-let currentActiveSemester = null;
 let uploadedPhoto = null;
 let availableAcademicYears = [];
 let currentAcademicYear = null;
 let selectedAcademicYear = null;
 let videoStream = null;
-let scanState = 0;
-let scanInterval = null;
 let userEmail = "";
-let faceScanState = {
-    frontal: { captured: false, encoding: null, quality: 0 },
-    left: { captured: false, encoding: null, quality: 0 },
-    right: { captured: false, encoding: null, quality: 0 },
-    up: { captured: false, encoding: null, quality: 0 },
-    down: { captured: false, encoding: null, quality: 0 },
-    mouth_open: { captured: false, encoding: null, quality: 0 },
-    eyes_closed: { captured: false, encoding: null, quality: 0 }
-};
 
 let scanAttempts = 0;
-const MAX_SCAN_ATTEMPTS = 10;
-
-const POSE_STATES = [
-    { id: 'frontal', name: 'Front View', instruction: 'Please look straight at the camera' },
-    { id: 'left', name: 'Left Side', instruction: 'Please slowly turn your head to the left' },
-    { id: 'right', name: 'Right Side', instruction: 'Please slowly turn your head to the right' },
-    { id: 'up', name: 'Looking Up', instruction: 'Please slowly tilt your head up' },
-    { id: 'down', name: 'Looking Down', instruction: 'Please slowly tilt your head down' },
-    { id: 'mouth_open', name: 'Mouth Open', instruction: 'Please open your mouth slightly' },
-    { id: 'eyes_closed', name: 'Eyes Closed', instruction: 'Please close your eyes gently' }
-];
+const MAX_SCAN_ATTEMPTS = 40;
 
 
 function fetchAcademicYears() {
@@ -782,6 +755,26 @@ function handleOtpKeydown(current, event) {
     }
 }
 
+function handleOtpPaste(event) {
+    event.preventDefault();
+    const pasteData = event.clipboardData.getData('text');
+    const otpDigits = pasteData.replace(/\D/g, '').split('');
+    
+    for (let i = 0; i < Math.min(otpDigits.length, 6); i++) {
+        const otpInput = document.getElementById(`otp${i + 1}`);
+        if (otpInput) {
+            otpInput.value = otpDigits[i];
+        }
+    }
+    
+    // Focus on the last filled input
+    const lastIndex = Math.min(otpDigits.length, 6);
+    const lastInput = document.getElementById(`otp${lastIndex}`);
+    if (lastInput) {
+        lastInput.focus();
+    }
+}
+
 function validateStep2() {
     const boxes = document.querySelectorAll(".otp-boxes input");
     let otp = "";
@@ -1018,13 +1011,17 @@ function validateStep3() {
         return;
     }
     
-    if (!uploadedFaceEncoding) {
+    if (!uploadedFaceEncoding || uploadedFaceEncoding.length === 0) {
         showModal("Warning", "Unable to process uploaded photo. Please upload a clear photo of your face.");
         return;
     }
     
+    console.log("Step 3 validation passed, moving to face scan");
+    console.log("Uploaded face encoding available:", !!uploadedFaceEncoding);
+    
     nextStep(4);
 }
+
 
 
 function startCamera() {
@@ -1056,7 +1053,7 @@ function startCamera() {
             video.srcObject = stream;
             videoStream = stream;
             
-            // Fix mirror effect - flip the video horizontally
+            // Keep mirror effect for natural user experience
             video.style.transform = "scaleX(-1)";
             
             video.onloadedmetadata = () => {
@@ -1083,6 +1080,167 @@ function startCamera() {
         });
 }
 
+function calculateSmartEncodingProgress(faceData) {
+    let progress = encodingProgress;
+    
+    if (faceData.detected) {
+        const quality = faceData.quality || 0;
+        const isCentered = faceData.is_centered || false;
+        const isOptimalSize = faceData.is_optimal_size || false;
+        const hasGoodLighting = faceData.has_good_lighting || false;
+        
+        // Calculate target progress based on conditions
+        let targetProgress = 0;
+        
+        // Base from quality (max 35%)
+        targetProgress += Math.min(35, quality * 35);
+        
+        // Add for centering (max 25%)
+        if (isCentered) targetProgress += 25;
+        else targetProgress += quality * 15; // Partial credit
+        
+        // Add for size (max 20%)
+        if (isOptimalSize) targetProgress += 20;
+        else targetProgress += quality * 12; // Partial credit
+        
+        // Add for lighting (max 20%)
+        if (hasGoodLighting) targetProgress += 20;
+        else targetProgress += quality * 12; // Partial credit
+        
+        // Cap at 100%
+        targetProgress = Math.min(100, targetProgress);
+        
+        // Smooth progression (max 5% increase per second, 3% decrease)
+        if (targetProgress > progress) {
+            const increase = Math.min(5, targetProgress - progress);
+            progress += increase;
+        } else if (targetProgress < progress) {
+            const decrease = Math.min(3, progress - targetProgress);
+            progress -= decrease;
+        }
+        
+        // Special boost: if all conditions excellent, allow faster final progress
+        if (quality >= 0.75 && isCentered && isOptimalSize && hasGoodLighting && progress >= 80) {
+            progress = Math.min(100, progress + 3);
+        }
+        
+    } else {
+        // Decrease progress faster if no face
+        progress = Math.max(0, progress - 8);
+    }
+    
+    encodingProgress = Math.round(progress);
+}
+
+function getSmartProgressMessage(progress, faceData) {
+    if (!faceData || !faceData.detected) {
+        return "No face detected - position your face in frame";
+    }
+    
+    if (progress < 25) {
+        return "Starting face detection...";
+    } else if (progress < 50) {
+        return "Analyzing facial features...";
+    } else if (progress < 75) {
+        return "Capturing facial details...";
+    } else if (progress < 95) {
+        return "Almost there - hold steady...";
+    } else if (qualityCheckCount < REQUIRED_QUALITY_CHECKS) {
+        return `Hold position... ${qualityCheckCount}/${REQUIRED_QUALITY_CHECKS}`;
+    } else {
+        return "Perfect! Finalizing...";
+    }
+}
+
+function updateTipsBasedOnQuality(faceData) {
+    const tips = {
+        tipLighting: document.getElementById('tipLighting'),
+        tipPosition: document.getElementById('tipPosition'),
+        tipDistance: document.getElementById('tipDistance'),
+        tipExpression: document.getElementById('tipExpression'),
+        tipBackground: document.getElementById('tipBackground')
+    };
+    
+    if (!faceData) {
+        resetTipsUI();
+        return;
+    }
+    
+    // Update lighting tip
+    if (tips.tipLighting) {
+        if (faceData.has_good_lighting) {
+            tips.tipLighting.style.color = "#00aa00";
+            tips.tipLighting.innerHTML = "✅ Good lighting";
+        } else {
+            tips.tipLighting.style.color = "#ff8800";
+            tips.tipLighting.innerHTML = "⚠️ Improve lighting";
+        }
+    }
+    
+    // Update position tip
+    if (tips.tipPosition) {
+        if (faceData.is_centered) {
+            tips.tipPosition.style.color = "#00aa00";
+            tips.tipPosition.innerHTML = "✅ Face centered";
+        } else {
+            tips.tipPosition.style.color = "#ff8800";
+            tips.tipPosition.innerHTML = "⚠️ Center your face";
+        }
+    }
+    
+    // Update distance tip
+    if (tips.tipDistance) {
+        if (faceData.is_optimal_size) {
+            tips.tipDistance.style.color = "#00aa00";
+            tips.tipDistance.innerHTML = "✅ Good distance";
+        } else {
+            tips.tipDistance.style.color = "#ff8800";
+            tips.tipDistance.innerHTML = "⚠️ Adjust distance";
+        }
+    }
+    
+    // Update expression tip (always show as good since we can't detect this easily)
+    if (tips.tipExpression) {
+        if (faceData.quality >= 0.7) {
+            tips.tipExpression.style.color = "#00aa00";
+            tips.tipExpression.innerHTML = "✅ Good expression";
+        } else {
+            tips.tipExpression.style.color = "#666";
+            tips.tipExpression.innerHTML = "○ Look straight ahead";
+        }
+    }
+    
+    // Update background tip (always show as good for simplicity)
+    if (tips.tipBackground) {
+        if (faceData.quality >= 0.6) {
+            tips.tipBackground.style.color = "#00aa00";
+            tips.tipBackground.innerHTML = "✅ Clear background";
+        } else {
+            tips.tipBackground.style.color = "#666";
+            tips.tipBackground.innerHTML = "○ Use plain background";
+        }
+    }
+}
+
+function resetTipsUI() {
+    const tips = ['tipLighting', 'tipPosition', 'tipDistance', 'tipExpression', 'tipBackground'];
+    const defaultTexts = {
+        tipLighting: '○ Ensure good, even lighting',
+        tipPosition: '○ Keep face centered in frame',
+        tipDistance: '○ Maintain 1-2 feet distance',
+        tipExpression: '○ Neutral expression, look straight',
+        tipBackground: '○ Use plain background'
+    };
+    
+    tips.forEach(tipId => {
+        const tipElement = document.getElementById(tipId);
+        if (tipElement) {
+            tipElement.style.color = "#666";
+            tipElement.innerHTML = defaultTexts[tipId];
+        }
+    });
+}
+
 function startFaceScan() {
     encodingProgress = 0;
     isEncodingComplete = false;
@@ -1096,47 +1254,72 @@ function startFaceScan() {
 }
 
 
-function processFaceEncoding() {
+async function processFaceEncoding() {
     if (isEncodingComplete) {
         clearInterval(encodingInterval);
         return;
     }
     
+    scanAttempts++;
+    
+    // AUTO-TRIGGER after 30 seconds if decent progress
+    if (scanAttempts >= 35 && encodingProgress >= 80 && !isEncodingComplete) {
+        console.log("Auto-triggering after 28 seconds...");
+        completeFaceEncoding();
+        return;
+    }
+    
     // Check if face is detected and get quality
-    checkFaceQuality().then(result => {
-        if (result && result.detected) {
-            // Calculate new progress - SLOW AND CAREFUL
-            calculateEncodingProgress(result);
-            
-            // Update feedback
-            updateFaceFeedback(result);
-            
-            // Update progress UI
-            updateProgressUI(encodingProgress, result.message);
-            
-            // Check if quality is consistently good
-            if (result.quality >= 0.7 && result.is_centered && result.is_optimal_size && result.has_good_lighting) {
-                qualityCheckCount++;
-                updateProgressUI(encodingProgress, `Good quality (${qualityCheckCount}/${REQUIRED_QUALITY_CHECKS})...`);
+    const result = await checkFaceQuality();
+    
+    if (result && result.detected) {
+        // Calculate new progress - FASTER and SMARTER
+        calculateSmartEncodingProgress(result);
+        
+        // Update feedback
+        updateFaceFeedback(result);
+        
+        // Update tips
+        updateTipsBasedOnQuality(result);
+        
+        // Update progress UI
+        updateProgressUI(encodingProgress, getSmartProgressMessage(encodingProgress, result));
+        
+        // Check if quality is consistently good
+        if (result.quality >= 0.7 && result.is_centered && result.is_optimal_size && result.has_good_lighting) {
+            qualityCheckCount++;
+            console.log(`Good quality check: ${qualityCheckCount}/${REQUIRED_QUALITY_CHECKS}`);
+        } else {
+            qualityCheckCount = Math.max(0, qualityCheckCount - 1);
+        }
+        
+        // Trigger final encoding when conditions are met
+        if (encodingProgress >= 95 && !isEncodingComplete) {
+            if (qualityCheckCount >= REQUIRED_QUALITY_CHECKS) {
+                console.log(`✅ All conditions met! Triggering final encoding...`);
+                completeFaceEncoding();
             } else {
-                qualityCheckCount = Math.max(0, qualityCheckCount - 1);
-            }
-            
-            // Only trigger final encoding after consistent good quality
-            if (qualityCheckCount >= REQUIRED_QUALITY_CHECKS && encodingProgress >= 95 && !isEncodingComplete) {
-                // Don't auto-complete, wait for perfect conditions
-                if (result.quality >= 0.8) {
-                    completeFaceEncoding();
+                // Tell user what's missing
+                let missing = [];
+                if (result.quality < 0.7) missing.push("better quality");
+                if (!result.is_centered) missing.push("center face");
+                if (!result.is_optimal_size) missing.push("adjust distance");
+                if (!result.has_good_lighting) missing.push("improve lighting");
+                
+                if (missing.length > 0) {
+                    updateProgressUI(encodingProgress, `Almost there! Need: ${missing.join(", ")}`);
                 }
             }
-            
-        } else {
-            // No face detected - reset quality counter
-            qualityCheckCount = 0;
-            updateProgressUI(encodingProgress, result?.message || "No face detected");
-            updateFaceFeedback({ detected: false });
         }
-    });
+        
+    } else {
+        // No face detected - reset progress faster
+        encodingProgress = Math.max(0, encodingProgress - 15);
+        qualityCheckCount = 0;
+        updateProgressUI(encodingProgress, result?.message || "No face detected");
+        updateFaceFeedback({ detected: false });
+        resetTipsUI();
+    }
 }
 
 
@@ -1277,26 +1460,68 @@ function updateFaceFeedback(faceData) {
     if (!positionIndicator || !feedbackText) return;
     
     if (faceData.detected) {
-        // Update position indicator based on face position
-        if (faceData.is_centered) {
-            positionIndicator.style.borderColor = "#00aa00";
-            positionIndicator.innerHTML = '<div class="indicator-center" style="background-color: #00aa00;"></div>';
-            feedbackText.textContent = "Perfect! Keep your face centered";
-            feedbackText.style.color = "#00aa00";
-        } else {
-            positionIndicator.style.borderColor = "#ffaa00";
-            positionIndicator.innerHTML = '<div class="indicator-center" style="background-color: #ffaa00;"></div>';
+        // Create directional indicator
+        let indicatorHTML = '<div class="indicator-center"></div>';
+        let indicatorStyle = "";
+        
+        // Determine which direction to show
+        if (faceData.position_hint) {
+            const hint = faceData.position_hint.toLowerCase();
             
-            if (faceData.position_hint) {
-                feedbackText.textContent = faceData.position_hint;
+            if (hint.includes("right")) {
+                indicatorHTML = '<div class="indicator-arrow" style="border-left-color: #ffaa00; margin-left: 20px;">▶</div>';
+                indicatorStyle = "border-color: #ffaa00;";
+            } else if (hint.includes("left")) {
+                indicatorHTML = '<div class="indicator-arrow" style="border-right-color: #ffaa00; margin-right: 20px;">◀</div>';
+                indicatorStyle = "border-color: #ffaa00;";
+            } else if (hint.includes("down")) {
+                indicatorHTML = '<div class="indicator-arrow" style="border-top-color: #ffaa00; margin-top: 20px;">▼</div>';
+                indicatorStyle = "border-color: #ffaa00;";
+            } else if (hint.includes("up")) {
+                indicatorHTML = '<div class="indicator-arrow" style="border-bottom-color: #ffaa00; margin-bottom: 20px;">▲</div>';
+                indicatorStyle = "border-color: #ffaa00;";
+            } else if (hint.includes("closer") || hint.includes("further")) {
+                // For distance, show expanding/shrinking circle
+                if (hint.includes("closer")) {
+                    indicatorHTML = '<div class="indicator-expand" style="animation: pulse-in 1s infinite;">⟳</div>';
+                    indicatorStyle = "border-color: #ffaa00;";
+                } else {
+                    indicatorHTML = '<div class="indicator-shrink" style="animation: pulse-out 1s infinite;">⟳</div>';
+                    indicatorStyle = "border-color: #ffaa00;";
+                }
+            } else if (hint.includes("perfect")) {
+                indicatorHTML = '<div class="indicator-center" style="background-color: #00aa00;"></div>';
+                indicatorStyle = "border-color: #00aa00;";
             } else {
-                feedbackText.textContent = "Move your face to the center";
+                indicatorHTML = '<div class="indicator-center" style="background-color: #ffaa00;"></div>';
+                indicatorStyle = "border-color: #ffaa00;";
             }
+        }
+        
+        positionIndicator.innerHTML = indicatorHTML;
+        positionIndicator.style.borderColor = indicatorStyle.includes("#00aa00") ? "#00aa00" : 
+                                            indicatorStyle.includes("#ffaa00") ? "#ffaa00" : "#ffaa00";
+        
+        // Update feedback text with specific instructions
+        if (faceData.position_hint) {
+            feedbackText.textContent = faceData.position_hint;
+            
+            // Color code based on urgency
+            if (faceData.position_hint.includes("Perfect")) {
+                feedbackText.style.color = "#00aa00";
+            } else if (faceData.position_hint.includes("Too") || faceData.quality < 0.5) {
+                feedbackText.style.color = "#ff4444";
+            } else {
+                feedbackText.style.color = "#ffaa00";
+            }
+        } else {
+            feedbackText.textContent = "Adjust position for better encoding";
             feedbackText.style.color = "#ffaa00";
         }
+        
     } else {
         positionIndicator.style.borderColor = "#ff4444";
-        positionIndicator.innerHTML = '<div class="indicator-center" style="background-color: #ff4444;"></div>';
+        positionIndicator.innerHTML = '<div class="indicator-center" style="background-color: #ff4444;">✗</div>';
         feedbackText.textContent = "No face detected. Position your face in the frame";
         feedbackText.style.color = "#ff4444";
     }
@@ -1331,6 +1556,17 @@ function getProgressMessage(progress) {
     }
 }
 
+async function debugEncodings() {
+    console.log("=== ENCODINGS DEBUG ===");
+    console.log("uploadedFaceEncoding exists:", !!uploadedFaceEncoding);
+    console.log("Type:", typeof uploadedFaceEncoding);
+    console.log("Is array:", Array.isArray(uploadedFaceEncoding));
+    console.log("Length:", uploadedFaceEncoding?.length);
+    console.log("First 5 values:", uploadedFaceEncoding?.slice(0, 5));
+    console.log("=== END DEBUG ===");
+}
+
+// Update the completeFaceEncoding function
 async function completeFaceEncoding() {
     clearInterval(encodingInterval);
     isEncodingComplete = true;
@@ -1349,16 +1585,24 @@ async function completeFaceEncoding() {
         
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // IMPORTANT: Mirror the canvas to match how the image is saved
+        // The video appears mirrored to the user, but we need to capture it mirrored too
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+        ctx.restore();
         
         // Wait another second
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+        
+        // Send the blob for encoding (it's already in the correct orientation)
         const formData = new FormData();
         formData.append('image', blob, 'final_face.jpg');
+        formData.append('is_upload_photo', 'true');
         
-        // Send for final encoding
         const response = await fetch('/api/encode_face', {
             method: 'POST',
             body: formData
@@ -1366,64 +1610,121 @@ async function completeFaceEncoding() {
         
         const data = await response.json();
         
+        console.log("=== SCAN ENCODING DEBUG ===");
+        console.log("Scan encoding response:", data);
+        
         if (data.success && data.encoding) {
             scannedFaceEncoding = Array.from(data.encoding);
             
-            // COMPARE FACES
-            if (uploadedFaceEncoding) {
-                const similarity = await compareFaces(uploadedFaceEncoding, scannedFaceEncoding);
-                
-                if (similarity >= 0.6) { // Adjust threshold as needed
-                    console.log(`✅ Faces match! Similarity: ${similarity.toFixed(2)}`);
-                    
-                    // Play success sound
-                    const bellSound = document.getElementById('bellSound');
-                    if (bellSound) {
-                        bellSound.currentTime = 0;
-                        bellSound.play().catch(e => console.log('Audio play failed:', e));
-                    }
-                    
-                    updateProgressUI(100, "Face verification successful!");
-                    
-                    // Store for registration
-                    window.faceEncoding = scannedFaceEncoding;
-                    
-                    // Stop camera
-                    if (videoStream) {
-                        videoStream.getTracks().forEach(track => track.stop());
-                        videoStream = null;
-                    }
-                    
-                    // Move to next step after delay
-                    setTimeout(() => {
-                        nextStep(5);
-                    }, 2000);
-                    
-                } else {
-                    showModal("Face Mismatch", 
-                        `Uploaded photo and scanned face do not match (similarity: ${(similarity * 100).toFixed(1)}%). ` +
-                        `Please ensure you are the same person in both photos.`);
-                    
-                    // Restart encoding
-                    setTimeout(() => {
-                        encodingProgress = 0;
-                        qualityCheckCount = 0;
-                        isEncodingComplete = false;
-                        scannedFaceEncoding = null;
-                        startFaceScan();
-                    }, 3000);
-                }
-            } else {
-                // No uploaded face encoding
-                showModal("Warning", "Please upload a photo first before face scanning.");
-                
-                // Go back to step 3
+            console.log("=== FACE COMPARISON DEBUG ===");
+            console.log("1. uploadedFaceEncoding exists:", !!uploadedFaceEncoding);
+            console.log("2. uploadedFaceEncoding length:", uploadedFaceEncoding?.length);
+            console.log("3. scannedFaceEncoding length:", scannedFaceEncoding?.length);
+            console.log("4. Are both arrays?", Array.isArray(uploadedFaceEncoding) && Array.isArray(scannedFaceEncoding));
+            
+            // Check if encodings are valid
+            if (!uploadedFaceEncoding || !Array.isArray(uploadedFaceEncoding) || uploadedFaceEncoding.length === 0) {
+                console.error("ERROR: uploadedFaceEncoding is invalid!");
+                showModal("Error", "Uploaded photo encoding is invalid. Please re-upload your photo.");
                 setTimeout(() => {
                     nextStep(3);
                 }, 2000);
+                return;
+            }
+            
+            if (!scannedFaceEncoding || !Array.isArray(scannedFaceEncoding) || scannedFaceEncoding.length === 0) {
+                console.error("ERROR: scannedFaceEncoding is invalid!");
+                showModal("Error", "Face scan encoding failed. Please try scanning again.");
+                setTimeout(() => {
+                    encodingProgress = 0;
+                    qualityCheckCount = 0;
+                    isEncodingComplete = false;
+                    scannedFaceEncoding = null;
+                    startFaceScan();
+                }, 2000);
+                return;
+            }
+            
+            console.log("5. First 3 values comparison:");
+            console.log("   Uploaded:", uploadedFaceEncoding.slice(0, 3));
+            console.log("   Scanned:", scannedFaceEncoding.slice(0, 3));
+            console.log("=== END DEBUG ===");
+            
+            // COMPARE FACES
+            const similarity = await compareFaces(uploadedFaceEncoding, scannedFaceEncoding);
+            
+            console.log(`Face similarity result: ${similarity.toFixed(4)} (${(similarity * 100).toFixed(1)}%)`);
+            
+            // Lower threshold to 55% for better match rate
+            if (similarity >= 0.55) {
+                console.log(`✅ Faces match! Similarity: ${similarity.toFixed(2)}`);
+                
+                // Play success sound
+                const bellSound = document.getElementById('bellSound');
+                if (bellSound) {
+                    bellSound.currentTime = 0;
+                    bellSound.play().catch(e => console.log('Audio play failed:', e));
+                }
+                
+                updateProgressUI(100, "Face verification successful!");
+                
+                // Store for registration
+                window.faceEncoding = scannedFaceEncoding;
+                
+                // Stop camera
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                    videoStream = null;
+                }
+                
+                // Show success message
+                showModal("Success", `Face verification successful! Similarity: ${(similarity * 100).toFixed(1)}%`);
+                
+                // Move to next step after delay
+                setTimeout(() => {
+                    nextStep(5);
+                }, 2000);
+                
+            } else {
+                console.log(`❌ Faces don't match. Similarity: ${similarity.toFixed(2)}`);
+                showModal("Face Mismatch", 
+                    `Uploaded photo and scanned face do not match (similarity: ${(similarity * 100).toFixed(1)}%). ` +
+                    `Minimum required: 55%. ` +
+                    `\n\nPlease ensure:\n\n` +
+                    `1. You are the same person in both photos\n` +
+                    `2. Both photos show your full face clearly\n` +
+                    `3. You are looking straight at the camera\n` +
+                    `4. Good lighting in both photos\n` +
+                    `5. No hats, sunglasses, or face coverings`);
+                
+                // Go back to step 3 to re-upload photo
+                setTimeout(() => {
+                    // Reset everything
+                    uploadedPhoto = null;
+                    uploadedFaceEncoding = null;
+                    scannedFaceEncoding = null;
+                    encodingProgress = 0;
+                    qualityCheckCount = 0;
+                    isEncodingComplete = false;
+                    hasSeenGuidelines = true;
+                    
+                    // Clear photo preview
+                    const uploadPreview = document.getElementById("uploadPreview");
+                    if (uploadPreview) {
+                        uploadPreview.innerHTML = '<span>Click to Upload</span>';
+                    }
+
+                    const uploadInput = document.getElementById("photo")
+                    if (uploadInput) {
+                        uploadInput.value = '';
+                    }    
+                    
+                    nextStep(3);
+                }, 3000);
             }
             
         } else {
+            console.error("Failed to encode scanned face:", data.message);
             showModal("Error", data.message || "Failed to encode face. Please try again.");
             // Restart encoding
             setTimeout(() => {
@@ -1436,6 +1737,7 @@ async function completeFaceEncoding() {
         }
         
     } catch (error) {
+        console.error("Error in completeFaceEncoding:", error);
         showModal("Error", "Failed to complete face encoding. Please try again.");
         setTimeout(() => {
             encodingProgress = 0;
@@ -1447,9 +1749,10 @@ async function completeFaceEncoding() {
     }
 }
 
+
 async function compareFaces(encoding1, encoding2) {
     try {
-        console.log("Comparing faces...");
+        console.log("=== COMPARE FACES START ===");
         console.log("Encoding1 length:", encoding1?.length);
         console.log("Encoding2 length:", encoding2?.length);
         
@@ -1477,6 +1780,7 @@ async function compareFaces(encoding1, encoding2) {
         }
         
         console.log("Comparison response:", data);
+        console.log("=== COMPARE FACES END ===");
         
         if (data.success) {
             const similarityScore = document.getElementById("similarityScore");
@@ -1508,8 +1812,9 @@ async function compareFaces(encoding1, encoding2) {
     }
 }
 
+
 async function previewUploadedImage(event) {
-    console.log("=== previewUploadedImage START ===");
+    console.log("=== PREVIEW UPLOADED IMAGE START ===");
     
     const file = event.target.files[0];
     if (file) {
@@ -1547,22 +1852,46 @@ async function previewUploadedImage(event) {
                          style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;">
                 `;
                 
-                // Change text to show success
-                uploadPreviewEl.style.position = 'relative';
-                
                 console.log("✅ Photo uploaded and previewed successfully");
                 
-                // ENCODE THE UPLOADED FACE
+                // ENCODE THE UPLOADED FACE - WITH PREPROCESSING
                 try {
                     console.log("Encoding uploaded face...");
-                    uploadedFaceEncoding = await encodeImageFile(file);
-                    if (uploadedFaceEncoding) {
-                        console.log("✅ Uploaded face encoded successfully");
-                    } else {
-                        console.warn("⚠ Could not encode uploaded face");
-                    }
+                    
+                    // Create an image element to preprocess
+                    const img = new Image();
+                    img.onload = async function() {
+                        // Create canvas to normalize the image
+                        const tempCanvas = document.createElement('canvas');
+                        const tempCtx = tempCanvas.getContext('2d');
+                        
+                        // Set canvas size
+                        tempCanvas.width = img.width;
+                        tempCanvas.height = img.height;
+                        
+                        // Draw image (no flipping for uploaded photos)
+                        tempCtx.drawImage(img, 0, 0);
+                        
+                        // Convert to blob
+                        tempCanvas.toBlob(async (blob) => {
+                            const encoding = await encodeImageBlob(blob, false); // false = don't flip
+                            if (encoding) {
+                                uploadedFaceEncoding = Array.from(encoding);
+                                console.log("✅ Uploaded face encoded successfully");
+                                console.log("Encoding length:", uploadedFaceEncoding.length);
+                                console.log("First 5 values:", uploadedFaceEncoding.slice(0, 5));
+                            } else {
+                                console.warn("⚠ Could not encode uploaded face");
+                                showModal('Warning', 'Could not process face in uploaded photo. Please ensure:\n\n1. Your face is clearly visible\n2. Good lighting\n3. Looking straight at camera\n4. No other people in photo');
+                            }
+                        }, 'image/jpeg', 0.95);
+                    };
+                    
+                    img.src = uploadedPhoto;
+                    
                 } catch (error) {
                     console.error("Error encoding uploaded face:", error);
+                    showModal('Error', 'Error processing photo: ' + error.message);
                 }
             }
         };
@@ -1580,63 +1909,94 @@ async function previewUploadedImage(event) {
         uploadedFaceEncoding = null;
     }
     
-    console.log("=== previewUploadedImage END ===");
+    console.log("=== PREVIEW UPLOADED IMAGE END ===");
 }
 
+async function encodeImageBlob(blob, shouldFlip = false) {
+    console.log("=== ENCODE IMAGE BLOB START ===");
+    console.log("Blob size:", blob.size, "Should flip:", shouldFlip);
+    
+    return new Promise((resolve, reject) => {
+        const formData = new FormData();
+        formData.append('image', blob, 'face.jpg');
+        formData.append('is_upload_photo', 'true');
+        formData.append('should_flip', shouldFlip ? 'true' : 'false');
+        
+        console.log("Sending to /api/encode_face...");
+        
+        fetch('/api/encode_face', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            console.log("Response status:", response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("Encode response:", data);
+            
+            if (data.success && data.encoding) {
+                console.log("✅ Face encoded successfully");
+                console.log("Encoding length:", data.encoding.length);
+                console.log("First 3 values:", data.encoding.slice(0, 3));
+                resolve(data.encoding);
+            } else {
+                console.error("❌ Face encoding failed:", data.message);
+                reject(new Error(data.message || 'Failed to process face.'));
+            }
+        })
+        .catch(error => {
+            console.error("Network error encoding image:", error);
+            reject(error);
+        });
+    });
+}
+
+
 async function encodeImageFile(file) {
-    console.log("Encoding image file...");
+    console.log("=== ENCODE IMAGE FILE START ===");
+    console.log("File:", file.name, file.size, file.type);
     
     return new Promise((resolve, reject) => {
         const formData = new FormData();
         formData.append('image', file);
         formData.append('is_upload_photo', 'true');
         
+        console.log("Sending to /api/encode_face...");
+        
         fetch('/api/encode_face', {
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log("Response status:", response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
-            console.log("Encode response:", data);
+            console.log("Upload photo encode response:", data);
             
             if (data.success && data.encoding) {
-                console.log("Encoding successful, length:", data.encoding.length);
-                
-                // Validate encoding
-                if (!Array.isArray(data.encoding)) {
-                    console.error("Encoding is not an array:", typeof data.encoding);
-                    reject(new Error("Invalid encoding format"));
-                    return;
-                }
-                
-                if (data.encoding.length !== 512) {
-                    console.warn(`Encoding length is ${data.encoding.length}, expected 512`);
-                }
-                
+                console.log("✅ Upload photo encoded successfully");
+                console.log("Encoding length:", data.encoding.length);
+                console.log("First 3 values:", data.encoding.slice(0, 3));
                 resolve(data.encoding);
             } else {
-                console.error("Encoding failed:", data.message);
-                
-                // Show appropriate error message
-                let errorMsg = data.message || 'Failed to process uploaded photo.';
-                if (errorMsg.includes('No face detected')) {
-                    errorMsg = 'No face detected in uploaded photo. Please upload a clear photo of your face.';
-                } else if (errorMsg.includes('Multiple faces')) {
-                    errorMsg = 'Multiple faces detected. Please upload a photo with only your face.';
-                }
-                
-                showModal('Photo Error', errorMsg);
-                reject(new Error(errorMsg));
+                console.error("❌ Upload photo encoding failed:", data.message);
+                reject(new Error(data.message || 'Failed to process uploaded photo.'));
             }
         })
         .catch(error => {
             console.error("Network error encoding image:", error);
-            showModal('Error', 'Network error. Please try again.');
             reject(error);
         });
     });
 }
-
 
 
 function registerStudent() {
@@ -1746,7 +2106,7 @@ document.addEventListener("DOMContentLoaded", function () {
     console.log("DOM loaded, initializing registration form...");
     
     // Set the current active academic year
-    window.currentActiveAcademicYear = "2025-2026"; // Hardcoded for now
+    window.currentActiveAcademicYear = "2025-2026"; 
     
     // Initialize terms modal first
     const termsModal = document.getElementById("termsModal");
@@ -1837,16 +2197,13 @@ document.addEventListener("DOMContentLoaded", function () {
     
     console.log("Registration form initialization complete");
     
-    // ========== PHOTO UPLOAD MODAL FUNCTIONALITY - FIXED ==========
+// ========== PHOTO UPLOAD MODAL FUNCTIONALITY - FIXED ==========
 const photoGuidelinesModal = document.getElementById('photoGuidelinesModal');
 const closePhotoBtn = document.getElementById('closePhotoGuidelines');
 const uploadPreview = document.getElementById('uploadPreview');
 const uploadInput = document.getElementById('photo');
 
-// Check if device is mobile
-function isMobileDevice() {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-}
+let hasSeenGuidelines = false; // Track if user has seen guidelines
 
 // Function to open photo guidelines modal
 function openPhotoGuidelines(e) {
@@ -1856,61 +2213,102 @@ function openPhotoGuidelines(e) {
     }
     
     console.log("Opening photo guidelines modal");
-    photoGuidelinesModal.style.display = 'flex';
-    document.body.classList.add('modal-open');
+    if (photoGuidelinesModal) {
+        photoGuidelinesModal.style.display = 'flex';
+        document.body.classList.add('modal-open');
+    }
 }
 
-// Function to close photo guidelines modal
+// Function to close photo guidelines modal and open file picker
 function closePhotoGuidelines() {
     console.log("Closing photo guidelines modal");
-    photoGuidelinesModal.style.display = 'none';
+    if (photoGuidelinesModal) {
+        photoGuidelinesModal.style.display = 'none';
+    }
     document.body.classList.remove('modal-open');
     
-    // Open file picker/camera after a short delay
+    // Mark that user has seen guidelines
+    hasSeenGuidelines = true;
+    
+    // Open file picker after a short delay
     setTimeout(() => {
         if (uploadInput) {
-            console.log("Opening file picker/camera");
-            
-            // For mobile: use capture="user" for camera
-            // For desktop: open regular file picker
+            console.log("Opening file picker");
             uploadInput.click();
         }
     }, 100);
 }
 
-// SIMPLIFIED Event listeners
+// Function to directly open file picker (skip modal if already seen)
+function openFilePicker(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    console.log("Opening file picker directly");
+    if (uploadInput) {
+        uploadInput.click();
+    }
+}
+
+// Event listener for upload preview click
 if (uploadPreview) {
     uploadPreview.addEventListener('click', function(e) {
-        console.log("Click to Upload clicked");
-        openPhotoGuidelines(e);
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log("Upload preview clicked. Has seen guidelines:", hasSeenGuidelines);
+        
+        // If user has already seen guidelines, skip modal and go straight to file picker
+        if (hasSeenGuidelines) {
+            openFilePicker(e);
+        } else {
+            // First time - show guidelines
+            openPhotoGuidelines(e);
+        }
     });
 }
 
+// Event listener for "Got it!" button
 if (closePhotoBtn) {
     closePhotoBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
         console.log("Got it! button clicked");
         closePhotoGuidelines();
     });
 }
 
+// Event listener for file input change
 if (uploadInput) {
-    // Handle file selection
     uploadInput.addEventListener('change', function(e) {
-        console.log("File selected");
-        previewUploadedImage(e);
+        console.log("File input changed");
         
-        // After file is selected, ensure modal is closed
-        closePhotoGuidelines();
+        // Check if a file was actually selected
+        if (this.files && this.files.length > 0) {
+            console.log("File selected:", this.files[0].name);
+            previewUploadedImage(e);
+            
+            // Ensure modal is closed
+            if (photoGuidelinesModal) {
+                photoGuidelinesModal.style.display = 'none';
+            }
+            document.body.classList.remove('modal-open');
+        } else {
+            console.log("No file selected (user cancelled)");
+        }
     });
-    
-    // Remove the click event listener that was preventing file input
-    // Keep it simple - let the modal handle everything
 }
 
 // Close modal on escape key
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && photoGuidelinesModal.style.display === 'flex') {
-        closePhotoGuidelines();
+    if (e.key === 'Escape' && photoGuidelinesModal && photoGuidelinesModal.style.display === 'flex') {
+        // Just close modal without opening file picker
+        if (photoGuidelinesModal) {
+            photoGuidelinesModal.style.display = 'none';
+        }
+        document.body.classList.remove('modal-open');
     }
 });
 
@@ -1918,15 +2316,12 @@ document.addEventListener('keydown', function(e) {
 if (photoGuidelinesModal) {
     photoGuidelinesModal.addEventListener('click', function(e) {
         if (e.target === photoGuidelinesModal) {
-            closePhotoGuidelines();
+            // Just close modal without opening file picker
+            photoGuidelinesModal.style.display = 'none';
+            document.body.classList.remove('modal-open');
         }
     });
-}
-});
-
-// Debug info
-console.log("Device type:", isMobileDevice() ? "Mobile" : "Desktop");
-console.log("File input capture attribute:", uploadInput?.getAttribute('capture'));
+}})
 
 </script>
 </body>

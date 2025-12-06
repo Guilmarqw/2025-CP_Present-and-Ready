@@ -8477,6 +8477,7 @@ def encode_face():
         # Check if this is for an uploaded photo
         is_upload_photo = request.form.get('is_upload_photo', 'false').lower() == 'true'
         check_quality_only = request.form.get('check_quality_only', 'false').lower() == 'true'
+        should_flip = request.form.get('should_flip', 'false').lower() == 'true'
         
         image_file = request.files['image']
         img_array = np.frombuffer(image_file.read(), np.uint8)
@@ -8488,7 +8489,10 @@ def encode_face():
                 'message': 'Failed to load image.'
             }), 400
         
-        logger.debug(f"Image loaded: shape={img.shape}, is_upload={is_upload_photo}")
+        # Flip image if requested (for camera captures that need orientation correction)
+        if should_flip:
+            img = cv2.flip(img, 1)  # Horizontal flip
+            logger.debug("Image flipped horizontally")
         
         # Detect face using InsightFace
         faces = face_analysis.get(img)
@@ -8514,87 +8518,146 @@ def encode_face():
                 'quality': 0.3
             }), 200
         
-        # Get the embedding from InsightFace
-        face_embedding = face.embedding
+        # Calculate quality metrics
+        h, w = img.shape[:2]
         
-        # Convert to numpy array
-        face_embedding = np.array(face_embedding, dtype=np.float32)
+        # Basic quality checks
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        brightness = float(np.mean(gray))
+        contrast = float(np.std(gray))
         
-        # DEBUG: Log embedding info
-        logger.debug(f"InsightFace embedding shape: {face_embedding.shape}")
-        logger.debug(f"InsightFace embedding norm: {np.linalg.norm(face_embedding):.6f}")
-        logger.debug(f"InsightFace embedding first 5 values: {face_embedding[:5]}")
+        # Face bounding box
+        bbox = face.bbox.astype(int)
+        face_width = bbox[2] - bbox[0]
+        face_height = bbox[3] - bbox[1]
+        face_area = face_width * face_height
+        img_area = h * w
+        face_ratio = face_area / img_area
         
-        # Normalize the embedding (InsightFace embeddings are already normalized to some extent)
-        norm = np.linalg.norm(face_embedding)
+        # Calculate face center position (normalized 0-1)
+        face_center_x = (bbox[0] + bbox[2]) / 2 / w
+        face_center_y = (bbox[1] + bbox[3]) / 2 / h
         
-        if norm > 0:
-            # Some InsightFace models don't normalize embeddings, so we normalize them
-            face_embedding = face_embedding / norm
-            logger.debug(f"After normalization, norm: {np.linalg.norm(face_embedding):.6f}")
+        # More lenient thresholds for better match rate
+        is_centered = 0.35 <= face_center_x <= 0.65 and 0.35 <= face_center_y <= 0.65
+        is_optimal_size = 0.20 <= face_ratio <= 0.40
+        has_good_lighting = 60 <= brightness <= 170 and contrast > 35
+        
+        # Calculate detailed position feedback
+        position_feedback = []
+        
+        # Horizontal feedback
+        if face_center_x < 0.35:
+            position_feedback.append(f"Move {int((0.5 - face_center_x) * 100)}% RIGHT")
+        elif face_center_x > 0.65:
+            position_feedback.append(f"Move {int((face_center_x - 0.5) * 100)}% LEFT")
+        
+        # Vertical feedback
+        if face_center_y < 0.35:
+            position_feedback.append(f"Move {int((0.5 - face_center_y) * 100)}% DOWN")
+        elif face_center_y > 0.65:
+            position_feedback.append(f"Move {int((face_center_y - 0.5) * 100)}% UP")
+        
+        # Distance feedback
+        if face_ratio < 0.20:
+            distance_percent = int((0.3 - face_ratio) * 300)
+            position_feedback.append(f"Move {distance_percent}% CLOSER")
+        elif face_ratio > 0.40:
+            distance_percent = int((face_ratio - 0.3) * 300)
+            position_feedback.append(f"Move {distance_percent}% BACK")
+        
+        # Lighting feedback
+        if brightness < 60:
+            position_feedback.append("Too DARK - increase lighting")
+        elif brightness > 170:
+            position_feedback.append("Too BRIGHT - reduce lighting")
+        elif contrast < 35:
+            position_feedback.append("Low CONTRAST - adjust lighting")
+        
+        # Generate hint message
+        if position_feedback:
+            position_hint = " • " + " • ".join(position_feedback[:3])
+        elif is_centered and is_optimal_size and has_good_lighting:
+            position_hint = "✓ Perfect position! Hold still"
         else:
-            logger.error("Zero norm embedding from InsightFace")
-            return jsonify({
-                'success': False,
-                'message': 'Face encoding error - zero norm.'
-            }), 400
+            position_hint = "Adjust position for better encoding"
         
-        # For quality checks (only for live scan)
-        quality_info = {}
-        if not is_upload_photo and not check_quality_only:
-            h, w = img.shape[:2]
-            
-            # Basic quality checks
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            brightness = np.mean(gray)
-            contrast = np.std(gray)
-            
-            # Face bounding box for size check
-            bbox = face.bbox.astype(int)
-            face_width = bbox[2] - bbox[0]
-            face_height = bbox[3] - bbox[1]
-            face_area = face_width * face_height
-            img_area = h * w
-            face_ratio = face_area / img_area
-            
-            # Quality score based on multiple factors
-            quality_score = 0.7  # Base score
-            
-            # Adjust based on lighting
-            if 50 <= brightness <= 200 and contrast > 25:
-                quality_score += 0.15
-            
-            # Adjust based on face size (optimal: 20-40% of frame)
-            if 0.2 <= face_ratio <= 0.4:
-                quality_score += 0.15
-            
-            quality_info = {
-                'quality': min(1.0, quality_score),
-                'has_good_lighting': brightness >= 50 and contrast > 25,
-                'brightness': float(brightness),
-                'contrast': float(contrast),
-                'face_ratio': float(face_ratio)
-            }
+        # More generous quality scoring
+        quality_score = 0.4  # Higher base score
         
-        # If just checking quality (for live scan progress bar)
+        # Points for centering
+        center_distance = max(abs(face_center_x - 0.5), abs(face_center_y - 0.5))
+        if center_distance < 0.15:
+            quality_score += 0.35
+        elif center_distance < 0.25:
+            quality_score += 0.25
+        else:
+            quality_score += 0.15
+        
+        # Points for size
+        if 0.20 <= face_ratio <= 0.40:
+            quality_score += 0.35
+        elif 0.15 <= face_ratio <= 0.45:
+            quality_score += 0.25
+        else:
+            quality_score += 0.15
+        
+        # Points for lighting
+        if 60 <= brightness <= 170 and contrast > 35:
+            quality_score += 0.3
+        elif 50 <= brightness <= 180 and contrast > 30:
+            quality_score += 0.2
+        else:
+            quality_score += 0.1
+        
+        quality_score = min(1.0, max(0.1, quality_score))
+        
+        quality_info = {
+            'quality': float(quality_score),
+            'is_centered': bool(is_centered),
+            'is_optimal_size': bool(is_optimal_size),
+            'has_good_lighting': bool(has_good_lighting),
+            'brightness': float(brightness),
+            'contrast': float(contrast),
+            'face_ratio': float(face_ratio),
+            'face_center_x': float(face_center_x),
+            'face_center_y': float(face_center_y),
+            'position_hint': position_hint
+        }
+        
+        # If just checking quality
         if check_quality_only and not is_upload_photo:
             return jsonify({
                 'success': True,
                 'detected': True,
-                'message': 'Face detected and ready for encoding',
-                'quality': quality_info.get('quality', 0.8),
-                'has_good_lighting': quality_info.get('has_good_lighting', True),
-                'face_ratio': quality_info.get('face_ratio', 0.3)
+                'message': position_hint,
+                **quality_info
             })
         
-        # Return the encoding
+        # Get face embedding
+        face_embedding = face.embedding
+        face_embedding = np.array(face_embedding, dtype=np.float32)
+        
+        # Normalize
+        norm = np.linalg.norm(face_embedding)
+        if norm > 0:
+            face_embedding = face_embedding / norm
+            
+            # Ensure 512 dimensions
+            if face_embedding.shape[0] != 512:
+                if face_embedding.shape[0] < 512:
+                    padding = np.zeros(512 - face_embedding.shape[0], dtype=np.float32)
+                    face_embedding = np.concatenate([face_embedding, padding])
+                else:
+                    face_embedding = face_embedding[:512]
+        
+        logger.info(f"Face encoded successfully. Quality: {quality_score:.2f}, Flipped: {should_flip}")
+        
         return jsonify({
             'success': True,
             'detected': True,
             'message': 'Face successfully encoded!',
             'encoding': face_embedding.tolist(),
-            'embedding_length': len(face_embedding),
-            'embedding_norm': float(np.linalg.norm(face_embedding)),
             **quality_info
         })
         
@@ -8604,32 +8667,6 @@ def encode_face():
             'success': False,
             'message': f'Error processing face: {str(e)}'
         }), 500
-
-def generate_hint(is_centered, is_optimal_size, has_good_lighting,
-                 face_center_x, face_center_y, w, h, face_ratio, brightness):
-    if not is_centered:
-        if face_center_x < w/3:
-            return "Move face to the right"
-        elif face_center_x > 2*w/3:
-            return "Move face to the left"
-        elif face_center_y < h/3:
-            return "Move face down"
-        else:
-            return "Move face up"
-    elif not is_optimal_size:
-        if face_ratio < 0.25:
-            return "Move closer to camera"
-        else:
-            return "Move further from camera"
-    elif not has_good_lighting:
-        if brightness < 60:
-            return "Too dark - improve lighting"
-        elif brightness > 180:
-            return "Too bright - reduce lighting"
-        else:
-            return "Adjust lighting for better contrast"
-    else:
-        return "Perfect! Hold still"
 
 @app.route('/api/compare_faces', methods=['POST'])
 def compare_faces():
@@ -8658,8 +8695,8 @@ def compare_faces():
         enc2_array = np.array(encoding2, dtype=np.float32)
         
         # Calculate norms for debugging
-        norm1 = np.linalg.norm(enc1_array)
-        norm2 = np.linalg.norm(enc2_array)
+        norm1 = float(np.linalg.norm(enc1_array))
+        norm2 = float(np.linalg.norm(enc2_array))
         
         logger.debug(f"Norms before normalization: norm1={norm1:.6f}, norm2={norm2:.6f}")
         
@@ -8670,18 +8707,18 @@ def compare_faces():
             enc2_array = enc2_array / norm2
         
         # Calculate norms after normalization
-        norm1_after = np.linalg.norm(enc1_array)
-        norm2_after = np.linalg.norm(enc2_array)
+        norm1_after = float(np.linalg.norm(enc1_array))
+        norm2_after = float(np.linalg.norm(enc2_array))
         
         logger.debug(f"Norms after normalization: norm1={norm1_after:.6f}, norm2={norm2_after:.6f}")
         
         # Calculate cosine similarity
-        similarity = np.dot(enc1_array, enc2_array)
+        similarity = float(np.dot(enc1_array, enc2_array))
         
         # Ensure similarity is between 0 and 1
-        similarity = max(0, min(1, similarity))
+        similarity = max(0.0, min(1.0, similarity))
         
-        logger.debug(f"Face comparison similarity: {similarity:.4f} ({similarity*100:.1f}%)")
+        logger.info(f"Face comparison similarity: {similarity:.4f} ({similarity*100:.1f}%)")
         
         # Check for extremely low similarity
         if similarity < 0.1:
@@ -8693,11 +8730,11 @@ def compare_faces():
             'success': True,
             'similarity': float(similarity),
             'percentage': float(similarity * 100),
-            'match': similarity >= 0.6,
+            'match': bool(similarity >= 0.55),  # Convert numpy bool to Python bool
             'debug': {
                 'norms_before': [float(norm1), float(norm2)],
                 'norms_after': [float(norm1_after), float(norm2_after)],
-                'encoding_lengths': [len(encoding1), len(encoding2)]
+                'encoding_lengths': [int(len(encoding1)), int(len(encoding2))]
             }
         })
         
