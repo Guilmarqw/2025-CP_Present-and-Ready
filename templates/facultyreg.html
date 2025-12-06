@@ -117,17 +117,44 @@
 <div id="step4" class="hidden">
     <div class="header">FACE SCAN</div>
     <div class="content">
-        <h2>Facial Biometrics Detection</h2>
-        <div class="scan-instruction" id="scanInstruction">Please look straight at the camera</div>
+        <h2>Facial Biometrics Encoding</h2>
+        <div class="scan-instruction" id="scanInstruction">Position your face in the center of the frame</div>
         <div class="face-scan">
             <video id="video" autoplay playsinline></video>
             <canvas id="canvas" style="display: none;"></canvas>
         </div>
-        <div class="scan-progress">
-            <div class="progress-step" id="step-frontal"></div>
+        
+        <!-- Progress Bar -->
+        <div class="encoding-progress-container">
+            <div class="progress-text">
+                <span id="progressPercentage">0%</span>
+                <span id="progressMessage">Initializing face encoding...</span>
+            </div>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
         </div>
-        <div id="scanStatus" style="margin-top: 15px; font-weight: bold; color: #5a4522;">
-            Processing... Please keep your face in the frame
+        
+        <!-- Face Position Feedback -->
+        <div id="faceFeedback" class="face-feedback">
+            <div id="positionIndicator" class="position-indicator">
+                <div class="indicator-center"></div>
+            </div>
+            <div id="feedbackText" class="feedback-text">
+                Move your face to the center of the frame
+            </div>
+        </div>
+        
+        <!-- Tips for Better Encoding -->
+        <div class="encoding-tips">
+            <h3>Tips for Best Results:</h3>
+            <ul>
+                <li id="tipLighting">✅ Ensure good, even lighting</li>
+                <li id="tipPosition">✅ Keep face centered in frame</li>
+                <li id="tipDistance">✅ Maintain 1-2 feet distance from camera</li>
+                <li id="tipExpression">✅ Use neutral expression, look straight ahead</li>
+                <li id="tipBackground">✅ Use plain, uncluttered background</li>
+            </ul>
         </div>
     </div>
 </div>
@@ -652,359 +679,288 @@ function startCamera() {
 }
 
 function startFaceScan() {
-    scanState = 0;
-    faceEncodings = [];
-    faceScanState = {
-        frontal: { captured: false, encoding: null, quality: 0 },
-        left: { captured: false, encoding: null, quality: 0 },
-        right: { captured: false, encoding: null, quality: 0 },
-        up: { captured: false, encoding: null, quality: 0 },
-        down: { captured: false, encoding: null, quality: 0 },
-        mouth_open: { captured: false, encoding: null, quality: 0 },
-        eyes_closed: { captured: false, encoding: null, quality: 0 }
-    };
-    scanAttempts = 0;
-    updateScanProgress();
+    encodingProgress = 0;
+    isEncodingComplete = false;
+    faceQualityScore = 0;
     
-    const instructionEl = document.getElementById("scanInstruction");
-    if (instructionEl) {
-        instructionEl.textContent = POSE_STATES[scanState].instruction;
-        instructionEl.style.color = "#5a4522"; // Reset color
-    }
+    // Reset UI
+    updateProgressUI(0, "Initializing face encoding...");
+    updateTipsUI();
     
-    // FASTER scanning - reduced from 3000ms to 2000ms
-    scanInterval = setInterval(automatedFaceScan, 2000);
+    // Start the encoding process
+    encodingInterval = setInterval(processFaceEncoding, 500); // Check every 500ms
 }
 
-function getLeftPoseFeedback(result) {
-    if (!result) return "No face detected";
-    const yaw = result.yaw || 0;
-    
-    if (yaw < 0) return "  Turn your head to the LEFT";
-    if (yaw < 3) return "↩️ Turn a bit more left";
-    return "👍 Almost there! Turn slightly more left";
-}
-
-function getRightPoseFeedback(result) {
-    if (!result) return "No face detected";
-    const yaw = result.yaw || 0;
-    
-    if (yaw > 0) return "  Turn your head to the RIGHT";
-    if (yaw > -3) return "↪️ Turn a bit more right";
-    return "👍 Almost there! Turn slightly more right";
-}
-
-function getMouthOpenFeedback(result) {
-    if (!result) return "No face detected";
-    return "😮 Open your mouth slightly";
-}
-
-function getEyesClosedFeedback(result) {
-    if (!result) return "No face detected";
-    return "😌 Close your eyes gently";
-}
-
-function checkPose(result, poseId) {
-    if (!result) return false;
-    if (result.success) return true;
-
-    switch (poseId) {
-        case 'frontal':
-            return result.is_frontal || 
-                   (Math.abs(result.yaw || 0) <= 15 && 
-                    Math.abs(result.pitch || 0) <= 15);
-        case 'left':
-            return result.is_left || (result.yaw >= 8);
-        case 'right':
-            return result.is_right || (result.yaw <= -8);
-        case 'up':
-            return result.is_up || (result.pitch <= -10);  // MORE SENSITIVE: -5° (was -10°)
-        case 'down':
-            return result.is_down || (result.pitch >= 10);  // MORE SENSITIVE: 4° (was 10°)
-        case 'mouth_open':
-            return result.is_mouth_open || (result.mar >= 0.07);
-        case 'eyes_closed':
-            return result.is_eyes_closed || 
-                   (((result.left_ear || 0.3) + (result.right_ear || 0.3)) / 2 <= 0.35);
-        default:
-            return false;
-    }
-}
-
-function getUpPoseFeedback(result) {
-    if (!result) return "No face detected";
-    const pitch = result.pitch || 0;
-    
-    if (pitch > 5) return "🔼 Tilt your head UP (chin up, look at ceiling)";
-    if (pitch > 0) return "⬆️ Tilt more upward";
-    if (pitch > -5) return "👆 A bit more upward";
-    return "👍 Almost there! Tilt slightly more up";
-}
-
-function getDownPoseFeedback(result) {
-    if (!result) return "No face detected";
-    const pitch = result.pitch || 0;
-    
-    if (pitch < -5) return "🔽 Tilt your head DOWN (chin down, look at floor)";
-    if (pitch < 0) return "⬇️ Tilt more downward";
-    if (pitch < 5) return "👇 A bit more downward";
-    return "👍 Almost there! Tilt slightly more down";
-}
-
-function automatedFaceScan() {
-    if (scanAttempts >= MAX_SCAN_ATTEMPTS) {
-        clearInterval(scanInterval);
-        const instructionEl = document.getElementById("scanInstruction");
-        if (instructionEl) {
-            instructionEl.textContent = "Let's try again! Ensure good lighting.";
-            instructionEl.style.color = "#ff4444";
-        }
-        showModal("Info", "Let's restart the face scan. Make sure you're in good lighting!");
-        setTimeout(() => {
-            scanState = 0;
-            scanAttempts = 0;
-            startFaceScan();
-        }, 2000);
+function processFaceEncoding() {
+    if (isEncodingComplete) {
+        clearInterval(encodingInterval);
         return;
     }
     
-    scanAttempts++;
+    // Check if face is detected and get quality
+    checkFaceQuality().then(result => {
+        if (result && result.detected) {
+            // Calculate progress based on quality and other factors
+            calculateEncodingProgress(result);
+            
+            // Update feedback
+            updateFaceFeedback(result);
+            
+            // Update progress UI
+            updateProgressUI(encodingProgress, result.message || getProgressMessage(encodingProgress));
+            
+            // Check if encoding is complete
+            if (encodingProgress >= 100) {
+                completeFaceEncoding();
+            }
+        } else {
+            // No face detected
+            updateProgressUI(encodingProgress, result?.message || "No face detected. Please position your face in the frame.");
+            updateFaceFeedback({ detected: false });
+        }
+    });
+}
+
+async function checkFaceQuality() {
+    try {
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        if (!video || !canvas) {
+            return { detected: false, message: "Camera not ready" };
+        }
+        
+        const ctx = canvas.getContext("2d");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        if (video.videoWidth === 0 || video.videoHeight === 0) {
+            return { detected: false, message: "Camera not ready" };
+        }
+        
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Send to backend for face analysis
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+        const formData = new FormData();
+        formData.append('image', blob, 'face.jpg');
+        formData.append('check_quality_only', 'true'); // Add flag to indicate we only want quality check
+        
+        const response = await fetch('/api/encode_face', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        // Return format expected by our progress system
+        return {
+            detected: data.detected || data.success || false,
+            quality: data.quality || 0,
+            is_centered: data.is_centered || false,
+            is_optimal_size: data.is_optimal_size || false,
+            has_good_lighting: data.has_good_lighting || false,
+            position_hint: data.position_hint || data.message || '',
+            message: data.message || ''
+        };
+        
+    } catch (error) {
+        console.error("Error checking face quality:", error);
+        return { detected: false, message: "Error analyzing face" };
+    }
+}
+
+function calculateEncodingProgress(faceData) {
+    let progress = encodingProgress;
     
-    const currentPose = POSE_STATES[scanState];
-    const instructionEl = document.getElementById("scanInstruction");
+    // Calculate new progress based on face quality metrics
+    if (faceData.detected) {
+        // Base progress from quality score (0-60%)
+        const qualityProgress = Math.min(60, Math.max(0, (faceData.quality || 0) * 60));
+        
+        // Additional progress from face position (0-20%)
+        const positionProgress = faceData.is_centered ? 20 : 0;
+        
+        // Additional progress from face size (0-10%)
+        const sizeProgress = faceData.is_optimal_size ? 10 : 0;
+        
+        // Additional progress from lighting (0-10%)
+        const lightingProgress = faceData.has_good_lighting ? 10 : 0;
+        
+        // Calculate total potential progress
+        const totalPotential = qualityProgress + positionProgress + sizeProgress + lightingProgress;
+        
+        // Smoothly increase progress (don't jump too fast)
+        if (totalPotential > progress) {
+            // Increase by 2-5% each check, but don't exceed the potential
+            const increase = Math.min(5, Math.max(2, totalPotential - progress));
+            progress = Math.min(totalPotential, progress + increase);
+        } else if (totalPotential < progress) {
+            // Decrease slightly if conditions worsen
+            progress = Math.max(totalPotential, progress - 1);
+        }
+        
+        // Store face quality for final encoding
+        faceQualityScore = faceData.quality || 0;
+    } else {
+        // Slight decrease if no face detected
+        progress = Math.max(0, progress - 1);
+    }
     
-    captureFaceEncodingWithQuality().then(result => {
-        if (result && checkPose(result, currentPose.id)) {
-            // Success - play sound and move to next
+    encodingProgress = Math.round(progress);
+}
+
+function updateProgressUI(progress, message) {
+    const progressPercentage = document.getElementById("progressPercentage");
+    const progressMessage = document.getElementById("progressMessage");
+    const progressFill = document.getElementById("progressFill");
+    
+    if (progressPercentage) {
+        progressPercentage.textContent = `${progress}%`;
+    }
+    
+    if (progressMessage) {
+        progressMessage.textContent = message;
+    }
+    
+    if (progressFill) {
+        progressFill.style.width = `${progress}%`;
+        
+        // Update color based on progress
+        if (progress < 30) {
+            progressFill.style.backgroundColor = "#ff4444";
+        } else if (progress < 60) {
+            progressFill.style.backgroundColor = "#ffaa00";
+        } else if (progress < 90) {
+            progressFill.style.backgroundColor = "#88cc00";
+        } else {
+            progressFill.style.backgroundColor = "#00aa00";
+        }
+    }
+}
+
+function updateFaceFeedback(faceData) {
+    const positionIndicator = document.getElementById("positionIndicator");
+    const feedbackText = document.getElementById("feedbackText");
+    
+    if (!positionIndicator || !feedbackText) return;
+    
+    if (faceData.detected) {
+        // Update position indicator based on face position
+        if (faceData.is_centered) {
+            positionIndicator.style.borderColor = "#00aa00";
+            positionIndicator.innerHTML = '<div class="indicator-center" style="background-color: #00aa00;"></div>';
+            feedbackText.textContent = "Perfect! Keep your face centered";
+            feedbackText.style.color = "#00aa00";
+        } else {
+            positionIndicator.style.borderColor = "#ffaa00";
+            positionIndicator.innerHTML = '<div class="indicator-center" style="background-color: #ffaa00;"></div>';
+            
+            if (faceData.position_hint) {
+                feedbackText.textContent = faceData.position_hint;
+            } else {
+                feedbackText.textContent = "Move your face to the center";
+            }
+            feedbackText.style.color = "#ffaa00";
+        }
+    } else {
+        positionIndicator.style.borderColor = "#ff4444";
+        positionIndicator.innerHTML = '<div class="indicator-center" style="background-color: #ff4444;"></div>';
+        feedbackText.textContent = "No face detected. Position your face in the frame";
+        feedbackText.style.color = "#ff4444";
+    }
+}
+
+function updateTipsUI() {
+    // These would update based on what needs improvement
+    // For now, they all show as completed
+    const tips = ['tipLighting', 'tipPosition', 'tipDistance', 'tipExpression', 'tipBackground'];
+    tips.forEach(tipId => {
+        const tipElement = document.getElementById(tipId);
+        if (tipElement) {
+            tipElement.style.color = "#666";
+            tipElement.innerHTML = tipElement.innerHTML.replace('✅', '○');
+        }
+    });
+}
+
+function getProgressMessage(progress) {
+    if (progress < 30) {
+        return "Capturing basic facial features...";
+    } else if (progress < 60) {
+        return "Analyzing facial structure...";
+    } else if (progress < 90) {
+        return "Enhancing facial details...";
+    } else if (progress < 100) {
+        return "Finalizing encoding...";
+    } else {
+        return "Face encoding complete!";
+    }
+}
+
+async function completeFaceEncoding() {
+    clearInterval(encodingInterval);
+    isEncodingComplete = true;
+    
+    updateProgressUI(100, "Finalizing face encoding...");
+    
+    // Capture final face encoding
+    try {
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+        const formData = new FormData();
+        formData.append('image', blob, 'final_face.jpg');
+        
+        // Use the same endpoint for final encoding
+        const response = await fetch('/api/encode_face', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.encoding) {
+            window.faceEncoding = Array.from(data.encoding);
+            
+            // Play success sound
             const bellSound = document.getElementById('bellSound');
             if (bellSound) {
                 bellSound.currentTime = 0;
                 bellSound.play().catch(e => console.log('Audio play failed:', e));
             }
             
-            if (currentPose.id === 'frontal' && result.encoding && result.encoding.length > 0) {
-                faceScanState[currentPose.id] = {
-                    captured: true,
-                    encoding: Array.from(result.encoding),
-                    quality: result.quality || 0.5
-                };
-            } else if (currentPose.id !== 'frontal') {
-                faceScanState[currentPose.id] = {
-                    captured: true,
-                    encoding: null,
-                    quality: result.quality || 0.5
-                };
+            updateProgressUI(100, "Face encoding successful!");
+            
+            // Stop camera
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
             }
             
-            console.log(`   Captured ${currentPose.id} pose`);
-            
-            // Visual feedback
-            if (instructionEl) {
-                instructionEl.textContent = "   Success! Moving to next...";
-                instructionEl.style.color = "#00aa00";
-            }
-            
-            updateScanProgress();
-            
-            // Faster transition - reduced from 1000ms to 500ms
+            // Move to next step after delay
             setTimeout(() => {
-                scanState++;
-                scanAttempts = 0;
-                
-                if (scanState >= POSE_STATES.length) {
-                    finishFaceScan();
-                } else {
-                    const nextPose = POSE_STATES[scanState];
-                    if (instructionEl) {
-                        instructionEl.textContent = nextPose.instruction;
-                        instructionEl.style.color = "#5a4522";
-                    }
-                    updateScanProgress();
-                }
-            }, 500);
+                nextStep(5);
+            }, 1500);
             
         } else {
-            // Provide friendly feedback
-            let feedback = '';
-            if (result) {
-                switch (currentPose.id) {
-                    case 'frontal':
-                        feedback = result.message || '👀 Look straight at the camera';
-                        break;
-                    case 'left':
-                        feedback = getLeftPoseFeedback(result);
-                        break;
-                    case 'right':
-                        feedback = getRightPoseFeedback(result);
-                        break;
-                    case 'up':
-                        feedback = getUpPoseFeedback(result);
-                        break;
-                    case 'down':
-                        feedback = getDownPoseFeedback(result);
-                        break;
-                    case 'mouth_open':
-                        feedback = getMouthOpenFeedback(result);
-                        break;
-                    case 'eyes_closed':
-                        feedback = getEyesClosedFeedback(result);
-                        break;
-                    default:
-                        feedback = result.message || 'Adjust your position';
-                }
-            } else {
-                feedback = '  No face detected. Center your face in the frame.';
-            }
-            
-            if (instructionEl) {
-                instructionEl.textContent = `${currentPose.instruction} (${feedback})`;
-                // Color coding for attempts
-                if (scanAttempts > 3) {
-                    instructionEl.style.color = "#ff8800";
-                }
-            }
+            showModal("Error", data.message || "Failed to encode face. Please try again.");
+            // Restart encoding
+            setTimeout(startFaceScan, 3000);
         }
-    });
-}
-
-function assessImageQuality(imageData) {
-    // Simplified quality check - just check basic brightness
-    const data = imageData.data;
-    let brightness = 0;
-    
-    // Sample fewer pixels for speed
-    for (let i = 0; i < data.length; i += 16) {
-        brightness += (data[i] + data[i+1] + data[i+2]) / 3;
-    }
-    brightness /= (data.length / 16);
-    
-    const brightnessScore = 1 - Math.abs(brightness - 127) / 127;
-    
-    // More lenient quality threshold
-    return Math.max(0, Math.min(1, brightnessScore));
-}
-
-function finishFaceScan() {
-    clearInterval(scanInterval);
-    
-    // Use frontal encoding only, as per backend logic
-    if (!faceScanState.frontal.captured || !faceScanState.frontal.encoding) {
-        const instructionEl = document.getElementById("scanInstruction");
-        if (instructionEl) {
-            instructionEl.textContent = "Face scan failed. Please try again.";
-        }
-        showModal("Error", "No valid frontal face encoding captured. Please try again.");
+        
+    } catch (error) {
+        console.error("Error completing face encoding:", error);
+        showModal("Error", "Failed to complete face encoding. Please try again.");
         setTimeout(startFaceScan, 3000);
-        return;
-    }
-    
-    window.faceEncoding = faceScanState.frontal.encoding;
-    
-    if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-        videoStream = null;
-    }
-    
-    const instructionEl = document.getElementById("scanInstruction");
-    if (instructionEl) {
-        instructionEl.textContent = "Face scan completed!";
-    }
-    
-    setTimeout(() => nextStep(5), 1000);
-}
-
-async function captureFaceEncodingWithQuality() {
-    try {
-        const video = document.getElementById("video");
-        const canvas = document.getElementById("canvas");
-        if (!video || !canvas) {
-            console.error("Video or canvas element not found");
-            return null;
-        }
-        const ctx = canvas.getContext("2d");
-        
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        
-        if (video.videoWidth === 0 || video.videoHeight === 0) {
-            return null;
-        }
-        
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const quality = assessImageQuality(imageData);
-        
-        // More lenient quality check
-        if (quality < 0.1) {
-            return { message: "  Improve lighting for better detection" };
-        }
-        
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8)); // Lower quality for speed
-        
-        const formData = new FormData();
-        formData.append('image', blob, 'face.jpg');
-        formData.append('current_pose', POSE_STATES[scanState].id);
-        
-        const response = await fetch('/api/encode_face', {
-            method: 'POST',
-            body: formData
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            return { 
-                encoding: data.encoding ? new Float32Array(data.encoding) : [],
-                quality: quality,
-                is_frontal: data.is_frontal || false,
-                is_left: data.is_left || false,
-                is_right: data.is_right || false,
-                is_up: data.is_up || false,
-                is_down: data.is_down || false,
-                is_mouth_open: data.is_mouth_open || false,
-                is_eyes_closed: data.is_eyes_closed || false,
-                message: data.message,
-                yaw: data.yaw,
-                pitch: data.pitch
-            };
-        } else {
-            return { message: data.message };
-        }
-    } catch (error) {
-        console.error("Error capturing face encoding:", error);
-        return { message: "  Please try again" };
     }
 }
 
-async function detectFacePosition(canvas) {
-    try {
-        return { isCentered: true, size: 0.5 };
-    } catch (error) {
-        console.error("Face position detection error:", error);
-        return { isCentered: true, size: 0.5 };
-    }
-}
-
-function updateScanProgress() {
-    for (let i = 0; i < POSE_STATES.length; i++) {
-        const stepEl = document.getElementById(`step-${POSE_STATES[i].id}`);
-        if (stepEl) {
-            stepEl.classList.remove("active", "completed");
-            if (i < scanState) {
-                stepEl.classList.add("completed");
-            } else if (i === scanState) {
-                stepEl.classList.add("active");
-            }
-        }
-    }
-    
-    if (scanState < POSE_STATES.length) {
-        const instructionEl = document.getElementById("scanInstruction");
-        if (instructionEl) {
-            instructionEl.textContent = POSE_STATES[scanState].instruction;
-        }
-    }
-}
 
 function registerFaculty() {
     const formData = new FormData();

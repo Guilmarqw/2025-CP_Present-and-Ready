@@ -560,3 +560,175 @@ video {
     .modal-open {
         overflow: hidden;
     }
+
+    /* Face Encoding Progress Styles */
+.encoding-progress-container {
+    margin: 20px 0;
+    background: #f8f8f8;
+    border-radius: 10px;
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+}
+
+.progress-text {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+#progressPercentage {
+    font-weight: bold;
+    color: #5a4522;
+    font-size: 16px;
+}
+
+#progressMessage {
+    color: #666;
+    text-align: right;
+    flex-grow: 1;
+    margin-left: 10px;
+}
+
+.progress-bar {
+    height: 10px;
+    background: #e0e0e0;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #ff4444;
+    border-radius: 5px;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+/* Face Feedback Styles */
+.face-feedback {
+    margin: 20px 0;
+    text-align: center;
+}
+
+.position-indicator {
+    width: 100px;
+    height: 100px;
+    border: 3px solid #ff4444;
+    border-radius: 50%;
+    margin: 0 auto 15px;
+    position: relative;
+    transition: border-color 0.3s ease;
+}
+
+.indicator-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px;
+    height: 20px;
+    background-color: #ff4444;
+    border-radius: 50%;
+    transition: background-color 0.3s ease;
+}
+
+.feedback-text {
+    color: #ff4444;
+    font-weight: bold;
+    font-size: 14px;
+    transition: color 0.3s ease;
+}
+
+/* Encoding Tips */
+.encoding-tips {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f0f7ff;
+    border-radius: 8px;
+    border: 1px solid #d0e3ff;
+}
+
+.encoding-tips h3 {
+    margin-top: 0;
+    color: #2c5282;
+    font-size: 16px;
+}
+
+.encoding-tips ul {
+    margin: 10px 0 0 0;
+    padding-left: 20px;
+}
+
+.encoding-tips li {
+    margin: 5px 0;
+    color: #666;
+    font-size: 14px;
+    transition: color 0.3s ease;
+}
+
+/* Video styling */
+.face-scan {
+    position: relative;
+    width: 320px;
+    height: 240px;
+    margin: 0 auto 20px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+#video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* Mirror effect for natural feel */
+}
+
+.scan-instruction {
+    text-align: center;
+    margin: 15px 0;
+    font-size: 16px;
+    color: #5a4522;
+    font-weight: bold;
+    min-height: 24px;
+}
+
+.face-comparison-status {
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    text-align: center;
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.face-comparison-status.hidden {
+    display: none;
+}
+
+.comparison-icon {
+    font-size: 24px;
+    animation: spin 1s linear infinite;
+}
+
+.comparison-text {
+    font-weight: bold;
+}
+
+.similarity-score {
+    font-weight: bold;
+    font-size: 18px;
+    padding: 5px 10px;
+    border-radius: 5px;
+    background: #333;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

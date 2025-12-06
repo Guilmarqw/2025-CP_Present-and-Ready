@@ -35,17 +35,14 @@
     <div class="stream-type-selector">
         <label class="radio-label">
             <input type="radio" name="streamType" value="main">
-            <span>Main Stream (4K) - High Quality</span>
+            <span>Main Stream (4K) - Recommended for Face Recognition</span>
         </label>
-        <label class="radio-label">
-            <input type="radio" name="streamType" value="sub" checked>
-            <span>Sub-Stream (640x360) - Recommended for Face Recognition</span>
-        </label>
+    
     </div>
     
     <div class="input-group">
         <input type="text" id="rtspUrl" placeholder="Enter RTSP URL" 
-               value="rtsp://admin:@101Pok3r5610@192.168.1.64:554/Streaming/Channels/102">
+               aria-placeholder="rtsp://admin:@101Pok3r5610@192.168.1.64:554/Streaming/Channels/101">
         <button type="button" id="testRtspBtn" class="test-btn">Test Camera</button>
     </div>
     <small class="rtsp-hint">Sub-stream recommended: Channel 102 (640x360 @ 30 FPS)</small>
