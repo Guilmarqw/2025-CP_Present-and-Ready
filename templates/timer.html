@@ -297,10 +297,54 @@ async function loadDefaultSettings() {
         const classInfo = data.class_info;
         const timer = data.timer;
         
+        // Calculate REAL-TIME remaining time based on current time vs schedule
+        let remainingHours = timer.session.hours;
+        let remainingMinutes = timer.session.minutes;
+        let remainingSeconds = timer.session.seconds;
+        
+        // If we have actual schedule times, calculate real remaining time
+        if (classInfo.start_time && classInfo.end_time) {
+            const now = new Date();
+            const today = now.toISOString().split('T')[0]; // Get today's date YYYY-MM-DD
+            
+            // Parse start and end times
+            const startTimeStr = `${today}T${classInfo.start_time}`;
+            const endTimeStr = `${today}T${classInfo.end_time}`;
+            
+            const startTime = new Date(startTimeStr);
+            const endTime = new Date(endTimeStr);
+            const currentTime = now;
+            
+            // Check if class is in progress
+            if (currentTime >= startTime && currentTime <= endTime) {
+                // Calculate remaining time
+                const remainingMs = endTime - currentTime;
+                
+                // Convert to hours, minutes, seconds
+                const totalSeconds = Math.floor(remainingMs / 1000);
+                remainingHours = Math.floor(totalSeconds / 3600);
+                remainingMinutes = Math.floor((totalSeconds % 3600) / 60);
+                remainingSeconds = totalSeconds % 60;
+                
+                console.log('Real-time calculation:', {
+                    now: currentTime.toLocaleTimeString(),
+                    start: startTime.toLocaleTimeString(),
+                    end: endTime.toLocaleTimeString(),
+                    remaining: `${remainingHours}h ${remainingMinutes}m ${remainingSeconds}s`
+                });
+            } else if (currentTime < startTime) {
+                // Class hasn't started yet - show full duration
+                console.log('Class starts later today');
+            } else {
+                // Class already ended
+                console.log('Class has already ended for today');
+                // Show 0:00:00 or full duration? Let's show full duration
+            }
+        }
+        
         // SAFELY populate class details with null checks
         const yearLevelInput = document.getElementById('yearLevel');
         const courseInput = document.getElementById('course');
-        const curriculumDropdown = document.getElementById('curriculum'); // NOW THIS EXISTS
         const subjectDropdown = document.getElementById('subjectCode');
         const sectionDropdown = document.getElementById('courseSection');
         
@@ -316,16 +360,48 @@ async function loadDefaultSettings() {
             courseInput.setAttribute('readonly', true);
         }
         
-        // Populate curriculum dropdown SAFELY
-        if (curriculumDropdown) {
-            curriculumDropdown.innerHTML = `<option value="${classInfo.curriculum_year || 'N/A'}" selected>${classInfo.curriculum_year || 'Default Curriculum'}</option>`;
-            curriculumDropdown.disabled = true;
-        }
-        
-        // Populate subject dropdown
+        // CRITICAL FIX: Handle the new multiple select structure
         if (subjectDropdown) {
-            subjectDropdown.innerHTML = `<option value="${classInfo.schedule_id}" selected>${classInfo.subject_with_type} - ${classInfo.subject_name}</option>`;
-            subjectDropdown.disabled = true;
+            // Clear existing options
+            subjectDropdown.innerHTML = '<option value="" disabled>Select Subject Code(s)</option>';
+            
+            // Create the current class as a single selected option
+            const option = document.createElement('option');
+            option.value = classInfo.schedule_id;
+            option.selected = true; // Make it selected
+            
+            let subjectDisplay = classInfo.subject_code;
+            if (classInfo.class_type === 'lecture') {
+                subjectDisplay += ' (Lecture)';
+            } else if (classInfo.class_type === 'laboratory') {
+                subjectDisplay += ' (Laboratory)';
+            }
+            subjectDisplay += ` - ${classInfo.subject_name}`;
+            subjectDisplay += ` [${classInfo.curriculum_year || 'Default'}]`;
+            
+            option.textContent = subjectDisplay;
+            
+            // Store all data as JSON in dataset (matching custom mode format)
+            option.dataset.subjectData = JSON.stringify({
+                schedule_id: classInfo.schedule_id,
+                subject_code: classInfo.subject_code,
+                subject_name: classInfo.subject_name,
+                class_type: classInfo.class_type,
+                year_level: classInfo.year_level,
+                section_name: classInfo.section_name,
+                program_name: classInfo.program_name,
+                curriculum_year: classInfo.curriculum_year,
+                curriculum_id: classInfo.curriculum_id,
+                start_time: classInfo.start_time,
+                end_time: classInfo.end_time,
+                units: classInfo.units || 3 // Default to 3 units if not specified
+            });
+            
+            subjectDropdown.appendChild(option);
+            subjectDropdown.disabled = true; // Disable since it's auto-populated
+            
+            // Also update the selected subjects display for consistency
+            updateSelectedSubjects();
         }
         
         // Populate section dropdown
@@ -334,18 +410,22 @@ async function loadDefaultSettings() {
             sectionDropdown.disabled = true;
         }
         
-        // Set timer values
+        // Set timer values - USING REAL-TIME CALCULATION
         const sessionHours = document.getElementById('sessionHours');
         const sessionMinutes = document.getElementById('sessionMinutes');
         const sessionSeconds = document.getElementById('sessionSeconds');
         
         if (sessionHours && sessionMinutes && sessionSeconds) {
-            sessionHours.value = timer.session.hours;
-            sessionMinutes.value = timer.session.minutes;
-            sessionSeconds.value = timer.session.seconds;
+            sessionHours.value = String(remainingHours).padStart(2, '0');
+            sessionMinutes.value = String(remainingMinutes).padStart(2, '0');
+            sessionSeconds.value = String(remainingSeconds).padStart(2, '0');
             sessionHours.setAttribute('readonly', true);
             sessionMinutes.setAttribute('readonly', true);
             sessionSeconds.setAttribute('readonly', true);
+            
+            // Also calculate and store total seconds for session start
+            const totalSeconds = (remainingHours * 3600) + (remainingMinutes * 60) + remainingSeconds;
+            sessionHours.dataset.totalSeconds = totalSeconds;
         }
         
         // Threshold is editable
@@ -357,13 +437,26 @@ async function loadDefaultSettings() {
             thresholdHours.removeAttribute('readonly');
             thresholdMinutes.removeAttribute('readonly');
             thresholdSeconds.removeAttribute('readonly');
+            
+            // Set default threshold based on subject units
+            const units = classInfo.units || 3;
+            let defaultThresholdMinutes = 15; // Default 15 minutes
+            
+            // Adjust threshold based on units
+            if (units === 1) defaultThresholdMinutes = 5;
+            else if (units === 2) defaultThresholdMinutes = 10;
+            else if (units === 3) defaultThresholdMinutes = 15;
+            else if (units === 4) defaultThresholdMinutes = 20;
+            else if (units === 5) defaultThresholdMinutes = 25;
+            else if (units >= 6) defaultThresholdMinutes = 30;
+            
+            thresholdHours.value = '00';
+            thresholdMinutes.value = String(defaultThresholdMinutes).padStart(2, '0');
+            thresholdSeconds.value = '00';
         }
         
-        // Store schedule_id for session start
-        const startBtn = document.getElementById('startBtn');
-        if (startBtn) {
-            startBtn.dataset.scheduleId = classInfo.schedule_id;
-        }
+        // Also update class summary to show the selected subject
+        updateClassSummary();
         
         console.log('Current Class Loaded:', {
             instructor: data.logged_in_user,
@@ -373,7 +466,9 @@ async function loadDefaultSettings() {
             curriculum: classInfo.curriculum_year,
             section: classInfo.section_name,
             class_type: classInfo.class_type_display,
-            time: `${classInfo.start_time} - ${classInfo.end_time}`
+            time: `${classInfo.start_time} - ${classInfo.end_time}`,
+            units: classInfo.units,
+            duration: `${remainingHours}:${remainingMinutes}:${remainingSeconds}`
         });
         
     } catch (error) {
@@ -424,6 +519,10 @@ async function loadCustomSettings() {
                 subjectDisplay += ` - ${sched.subject_name}`;
                 subjectDisplay += ` [${sched.curriculum_year || 'Default'}]`;
                 
+                // Add units info
+                const units = sched.units || 3;
+                subjectDisplay += ` | ${units} unit${units > 1 ? 's' : ''}`;
+                
                 option.textContent = subjectDisplay;
                 
                 // Store all data as JSON in dataset
@@ -436,7 +535,10 @@ async function loadCustomSettings() {
                     section_name: sched.section_name,
                     program_name: sched.program_name,
                     curriculum_year: sched.curriculum_year,
-                    curriculum_id: sched.curriculum_id
+                    curriculum_id: sched.curriculum_id,
+                    units: units,
+                    start_time: sched.start_time,
+                    end_time: sched.end_time
                 });
                 
                 subjectDropdown.appendChild(option);
@@ -451,6 +553,7 @@ async function loadCustomSettings() {
         subjectDropdown.addEventListener('change', function() {
             updateSelectedSubjects();
             updateClassSummary();
+            updateDurationBasedOnUnits(); // NEW: Update duration based on selected subjects
         });
         
         // Make all timer inputs editable
@@ -463,6 +566,62 @@ async function loadCustomSettings() {
         console.error('Error loading custom settings:', error);
         showModal('Error', 'Failed to load schedules: ' + error.message);
     }
+}
+
+function updateDurationBasedOnUnits() {
+    const subjectDropdown = document.getElementById('subjectCode');
+    const selectedOptions = Array.from(subjectDropdown.selectedOptions).filter(opt => opt.value);
+    
+    if (selectedOptions.length === 0) {
+        // Reset to default if no subjects selected
+        document.getElementById('sessionHours').value = '01';
+        document.getElementById('sessionMinutes').value = '00';
+        document.getElementById('sessionSeconds').value = '00';
+        return;
+    }
+    
+    // Calculate total units for selected subjects
+    let totalUnits = 0;
+    selectedOptions.forEach(option => {
+        const subjectData = JSON.parse(option.dataset.subjectData);
+        totalUnits += parseInt(subjectData.units) || 3;
+    });
+    
+    // Convert units to hours (1 unit = 1 hour of lecture, 2-3 hours for lab)
+    // For simplicity, let's assume: 1 unit = 1 hour for lecture, 1 unit = 2 hours for lab
+    let totalHours = 0;
+    
+    selectedOptions.forEach(option => {
+        const subjectData = JSON.parse(option.dataset.subjectData);
+        if (subjectData.class_type === 'laboratory') {
+            // For lab: 1 unit = 2 hours
+            totalHours += (parseInt(subjectData.units) || 3) * 2;
+        } else {
+            // For lecture: 1 unit = 1 hour
+            totalHours += parseInt(subjectData.units) || 3;
+        }
+    });
+    
+    // Round up to nearest 0.5 hour
+    totalHours = Math.ceil(totalHours * 2) / 2;
+    
+    // Calculate hours, minutes
+    const hours = Math.floor(totalHours);
+    const minutes = Math.round((totalHours - hours) * 60);
+    
+    // Update timer display
+    document.getElementById('sessionHours').value = String(hours).padStart(2, '0');
+    document.getElementById('sessionMinutes').value = String(minutes).padStart(2, '0');
+    document.getElementById('sessionSeconds').value = '00';
+    
+    // Also update threshold based on total hours
+    updateThresholdBasedOnDuration(hours, minutes);
+    
+    console.log('Duration updated based on units:', {
+        totalUnits: totalUnits,
+        totalHours: totalHours,
+        display: `${hours}h ${minutes}m`
+    });
 }
 
 function updateSelectedSubjects() {
@@ -564,6 +723,9 @@ function updateClassSummary() {
         }
         sectionDropdown.disabled = false;
     }
+    
+    // Update duration based on selected subjects' units
+    updateDurationBasedOnUnits();
     
     console.log('Selected Subjects:', selectedOptions.map(opt => JSON.parse(opt.dataset.subjectData)));
 }
