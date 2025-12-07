@@ -1186,11 +1186,12 @@ def calculate_mar(landmarks, mouth_indices):
 # =========================
 # Load known faces from database
 # =========================
-known_face_encodings = []  # CHANGED from np.array([]) to []
+known_face_encodings = []
 known_face_names = []
 known_face_ids = []
 known_face_types = []  # 'student' or 'faculty'
 KNOWN_FACE_ENCODINGS_ARRAY = None 
+KNOWN_FACE_ENCODINGS_NORMALIZED = False  # ADD THIS FLAG
 
 def get_current_section_student_ids():
     """Get student IDs for the current session's section"""
@@ -1313,90 +1314,135 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
         return False
     
 def parse_face_encoding(face_encoding):
-    """Parse face encoding from TEXT field and normalize it"""
+    """Parse face encoding from TEXT field and normalize it - IMPROVED"""
     if face_encoding is None:
         return None
     
     try:
+        encoding_array = None
+        
+        # Handle different input formats
         if isinstance(face_encoding, str):
             encoding_str = face_encoding.strip()
+            
+            # Remove brackets if present
             if encoding_str.startswith('[') and encoding_str.endswith(']'):
                 encoding_str = encoding_str[1:-1]
             
+            # Try different delimiters
             if ', ' in encoding_str:
                 parts = encoding_str.split(', ')
             elif ',' in encoding_str:
                 parts = encoding_str.split(',')
-            else:
+            elif ' ' in encoding_str:
                 parts = encoding_str.split()
-            
-            encoding = np.array([float(x) for x in parts], dtype=np.float32)
-            
-            # 🟢 IMPROVED: Better normalization
-            norm = np.linalg.norm(encoding)
-            if norm > 0:
-                encoding = encoding / norm
-                # 🟢 NEW: Double-check normalization
-                if not np.isclose(np.linalg.norm(encoding), 1.0, atol=0.001):
-                    logger.warning(f"Normalization failed: norm={np.linalg.norm(encoding):.4f}")
-                    encoding = encoding / np.linalg.norm(encoding)
             else:
-                logger.warning("Zero norm encoding found in database")
+                # Might be a single number or malformed
+                logger.warning(f"Unusual encoding format: {encoding_str[:50]}...")
                 return None
             
-            return encoding
-            
+            # Convert to float array
+            try:
+                encoding_array = np.array([float(x.strip()) for x in parts if x.strip()], dtype=np.float32)
+            except ValueError as e:
+                logger.warning(f"Failed to parse encoding string: {e}")
+                return None
+                
         elif isinstance(face_encoding, (bytes, bytearray)):
-            encoding = np.frombuffer(face_encoding, dtype=np.float32)
-            # Normalize
-            norm = np.linalg.norm(encoding)
-            if norm > 0:
-                encoding = encoding / norm
-            else:
-                logger.warning("Zero norm encoding found in database (bytes)")
+            try:
+                encoding_array = np.frombuffer(face_encoding, dtype=np.float32)
+            except Exception as e:
+                logger.warning(f"Failed to parse bytes encoding: {e}")
                 return None
-            return encoding
+                
         elif isinstance(face_encoding, list):
-            encoding = np.array(face_encoding, dtype=np.float32)
-            # Normalize
-            norm = np.linalg.norm(encoding)
-            if norm > 0:
-                encoding = encoding / norm
-            else:
-                logger.warning("Zero norm encoding found in database (list)")
-                return None
-            return encoding
+            encoding_array = np.array(face_encoding, dtype=np.float32)
+        elif isinstance(face_encoding, np.ndarray):
+            encoding_array = face_encoding.astype(np.float32)
         else:
-            logger.error(f"Unknown encoding type: {type(face_encoding)}")
+            logger.warning(f"Unknown encoding type: {type(face_encoding)}")
+            return None
+        
+        # Validate size
+        if encoding_array is None:
             return None
             
+        if encoding_array.size != 512:
+            logger.warning(f"Encoding size mismatch: expected 512, got {encoding_array.size}")
+            # Try to pad or truncate
+            if encoding_array.size < 512:
+                # Pad with zeros
+                padded = np.zeros(512, dtype=np.float32)
+                padded[:encoding_array.size] = encoding_array
+                encoding_array = padded
+            else:
+                # Truncate
+                encoding_array = encoding_array[:512]
+        
+        # Normalize
+        norm = np.linalg.norm(encoding_array)
+        if norm > 0:
+            encoding_array = encoding_array / norm
+            # Verify normalization
+            final_norm = np.linalg.norm(encoding_array)
+            if not np.isclose(final_norm, 1.0, atol=0.001):
+                logger.debug(f"Re-normalizing: {final_norm:.6f} -> 1.0")
+                encoding_array = encoding_array / final_norm
+        else:
+            logger.warning("Zero norm encoding found")
+            return None
+        
+        return encoding_array
+        
     except Exception as e:
         logger.error(f"Failed to parse encoding: {e}")
         return None
+
     
 def rebuild_known_faces_array():
-    """Rebuild the consolidated array - WITH NORMALIZATION"""
+    """Rebuild the consolidated array - WITH PROPER NORMALIZATION"""
     global KNOWN_FACE_ENCODINGS_ARRAY, KNOWN_FACE_ENCODINGS_NORMALIZED
     
-    if known_face_encodings:
-        KNOWN_FACE_ENCODINGS_ARRAY = np.vstack(known_face_encodings)
-        
-        # 🆕 NORMALIZE the array
+    if known_face_encodings and len(known_face_encodings) > 0:
         try:
+            # Stack all encodings
+            KNOWN_FACE_ENCODINGS_ARRAY = np.vstack(known_face_encodings)
+            
+            # 🟢 CRITICAL FIX: Ensure each embedding is normalized
+            # Calculate norms for each row (face)
             norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
-            norms[norms == 0] = 1  # Avoid division by zero
+            
+            # Check if any are zero
+            zero_mask = norms == 0
+            if np.any(zero_mask):
+                logger.warning(f"Found {np.sum(zero_mask)} zero-norm embeddings")
+                # Replace zero norms with 1 to avoid division by zero
+                norms[zero_mask] = 1
+            
+            # Normalize
             KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
             KNOWN_FACE_ENCODINGS_NORMALIZED = True
-            if DEBUG_MODE: 
-                logger.debug(f"✅ Normalized KNOWN_FACE_ENCODINGS_ARRAY shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+            
+            # Verify normalization
+            final_norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
+            if not np.allclose(final_norms, 1.0, atol=0.01):
+                logger.warning(f"Normalization verification failed! Norms: min={final_norms.min():.4f}, max={final_norms.max():.4f}")
+                # Force re-normalization
+                norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
+                norms[norms == 0] = 1
+                KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
+            
+            logger.info(f"✅ Built face encodings array: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+            
         except Exception as e:
-            logger.error(f"❌ Failed to normalize embeddings: {e}")
+            logger.error(f"❌ Failed to build face encodings array: {e}")
+            KNOWN_FACE_ENCODINGS_ARRAY = np.array([])
             KNOWN_FACE_ENCODINGS_NORMALIZED = False
     else:
         KNOWN_FACE_ENCODINGS_ARRAY = np.array([])
         KNOWN_FACE_ENCODINGS_NORMALIZED = False
-        if DEBUG_MODE: 
-            logger.debug("No known faces loaded.")
+        logger.warning("No known faces to build array from")
+
 
 def debug_embedding_quality():
     """Debug the quality of loaded embeddings"""
@@ -1433,186 +1479,201 @@ def debug_embedding_quality():
 debug_embedding_quality()            
 
 def load_known_faces_from_db():
-    """Load ALL known faces from database - FIXED VERSION"""
+    """Load ALL known faces from database - COMPLETELY REWRITTEN"""
     global known_face_encodings, known_face_names, known_face_ids, known_face_types
     
     try:
-        # 🟢 FIX 1: Use TEMPORARY arrays first - DON'T clear globals yet!
-        temp_encodings = []
-        temp_names = []
-        temp_ids = []
-        temp_types = []
+        logger.info("📥 Loading faces from database...")
         
-        # 🟢 FIX 2: Track loading statistics
-        faculty_count = 0
-        student_count = 0
-        parse_errors = 0
+        # Clear existing arrays
+        known_face_encodings.clear()
+        known_face_names.clear()
+        known_face_ids.clear()
+        known_face_types.clear()
         
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 1. Load ALL faculty faces INTO TEMP ARRAYS
-        cursor.execute("""
-            SELECT faculty_id, first_name, last_name, face_encoding 
-            FROM faculty 
-            WHERE face_encoding IS NOT NULL 
-            AND face_encoding != ''
-            AND TRIM(face_encoding) != ''
-            AND (status = 'active' OR status IS NULL)
-        """)
+        total_loaded = 0
+        errors = 0
         
-        for (id, first_name, last_name, face_encoding) in cursor:
-            try:
-                encoding = parse_face_encoding(face_encoding)
-                if encoding is not None and encoding.size == 512:
-                    temp_encodings.append(encoding)
-                    temp_names.append(f"{first_name} {last_name}")
-                    temp_ids.append(str(id))
-                    temp_types.append('faculty')
-                    faculty_count += 1
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Loaded faculty: {first_name} {last_name} ({id})")
+        # 🟢 FIX 1: Check if tables exist first
+        cursor.execute("SHOW TABLES LIKE 'students'")
+        if not cursor.fetchone():
+            logger.error("❌ 'students' table doesn't exist!")
+            cursor.close()
+            conn.close()
+            return False
+        
+        cursor.execute("SHOW TABLES LIKE 'faculty'")
+        if not cursor.fetchone():
+            logger.warning("⚠️ 'faculty' table doesn't exist, skipping faculty faces")
+        
+        # 🟢 FIX 2: Load STUDENTS with better error handling
+        try:
+            # Check what columns exist in students table
+            cursor.execute("DESCRIBE students")
+            columns = [row[0] for row in cursor.fetchall()]
+            logger.info(f"Students table columns: {columns}")
+            
+            # Build query based on available columns
+            select_columns = []
+            if 'student_id' in columns:
+                select_columns.append('student_id')
+            if 'first_name' in columns:
+                select_columns.append('first_name')
+            if 'last_name' in columns:
+                select_columns.append('last_name')
+            if 'face_encoding' in columns:
+                select_columns.append('face_encoding')
+            
+            if len(select_columns) < 4:
+                logger.error(f"❌ Missing required columns in students table")
+                cursor.close()
+                conn.close()
+                return False
+            
+            query = f"SELECT {', '.join(select_columns)} FROM students WHERE face_encoding IS NOT NULL AND face_encoding != ''"
+            
+            # Add status filter if column exists
+            if 'status' in columns:
+                query += " AND (status = 'active' OR status IS NULL)"
+            
+            logger.debug(f"Executing query: {query}")
+            cursor.execute(query)
+            
+            student_count = 0
+            for row in cursor.fetchall():
+                try:
+                    student_id = str(row[0])
+                    first_name = str(row[1]) if row[1] else "Unknown"
+                    last_name = str(row[2]) if row[2] else "Unknown"
+                    face_encoding = row[3]
+                    
+                    # Parse the encoding
+                    encoding = parse_face_encoding(face_encoding)
+                    
+                    if encoding is not None and encoding.size == 512:
+                        known_face_encodings.append(encoding)
+                        known_face_names.append(f"{first_name} {last_name}")
+                        known_face_ids.append(student_id)
+                        known_face_types.append('student')
+                        student_count += 1
+                        total_loaded += 1
+                        
+                        if DEBUG_MODE and student_count <= 5:
+                            logger.debug(f"  Loaded student: {first_name} {last_name} ({student_id})")
+                    else:
+                        errors += 1
+                        logger.warning(f"  Invalid encoding for student {student_id}")
+                        
+                except Exception as e:
+                    errors += 1
+                    logger.error(f"  Error processing student row: {e}")
+            
+            logger.info(f"  Loaded {student_count} students")
+            
+        except Exception as e:
+            logger.error(f"❌ Error loading students: {e}")
+        
+        # 🟢 FIX 3: Load FACULTY (if table exists)
+        try:
+            cursor.execute("SHOW TABLES LIKE 'faculty'")
+            if cursor.fetchone():
+                cursor.execute("DESCRIBE faculty")
+                columns = [row[0] for row in cursor.fetchall()]
+                
+                select_columns = []
+                if 'faculty_id' in columns:
+                    select_columns.append('faculty_id')
+                if 'first_name' in columns:
+                    select_columns.append('first_name')
+                if 'last_name' in columns:
+                    select_columns.append('last_name')
+                if 'face_encoding' in columns:
+                    select_columns.append('face_encoding')
+                
+                if len(select_columns) >= 4:
+                    query = f"SELECT {', '.join(select_columns)} FROM faculty WHERE face_encoding IS NOT NULL AND face_encoding != ''"
+                    
+                    # Add status filter if column exists
+                    if 'status' in columns:
+                        query += " AND (status = 'active' OR status IS NULL)"
+                    
+                    cursor.execute(query)
+                    
+                    faculty_count = 0
+                    for row in cursor.fetchall():
+                        try:
+                            faculty_id = str(row[0])
+                            first_name = str(row[1]) if row[1] else "Unknown"
+                            last_name = str(row[2]) if row[2] else "Unknown"
+                            face_encoding = row[3]
+                            
+                            encoding = parse_face_encoding(face_encoding)
+                            
+                            if encoding is not None and encoding.size == 512:
+                                known_face_encodings.append(encoding)
+                                known_face_names.append(f"{first_name} {last_name}")
+                                known_face_ids.append(f"faculty_{faculty_id}")
+                                known_face_types.append('faculty')
+                                faculty_count += 1
+                                total_loaded += 1
+                                
+                                if DEBUG_MODE and faculty_count <= 5:
+                                    logger.debug(f"  Loaded faculty: {first_name} {last_name} ({faculty_id})")
+                            else:
+                                errors += 1
+                                logger.warning(f"  Invalid encoding for faculty {faculty_id}")
+                                
+                        except Exception as e:
+                            errors += 1
+                            logger.error(f"  Error processing faculty row: {e}")
+                    
+                    logger.info(f"  Loaded {faculty_count} faculty")
                 else:
-                    parse_errors += 1
-                    logger.warning(f"  Invalid encoding for faculty {id} (size: {encoding.size if encoding is not None else 'None'})")
-            except Exception as e:
-                parse_errors += 1
-                logger.error(f"Error parsing faculty {id}: {e}")
-        
-        # 2. Load ALL student faces INTO TEMP ARRAYS
-        cursor.execute("""
-            SELECT student_id, first_name, last_name, face_encoding 
-            FROM students 
-            WHERE face_encoding IS NOT NULL 
-            AND face_encoding != ''
-            AND TRIM(face_encoding) != ''
-            AND (status = 'active' OR status IS NULL)
-        """)
-        
-        for (id, first_name, last_name, face_encoding) in cursor:
-            try:
-                encoding = parse_face_encoding(face_encoding)
-                if encoding is not None and encoding.size == 512:
-                    temp_encodings.append(encoding)
-                    temp_names.append(f"{first_name} {last_name}")
-                    temp_ids.append(str(id))
-                    temp_types.append('student')
-                    student_count += 1
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Loaded student: {first_name} {last_name} ({id})")
-                else:
-                    parse_errors += 1
-                    logger.warning(f"  Invalid encoding for student {id} (size: {encoding.size if encoding is not None else 'None'})")
-            except Exception as e:
-                parse_errors += 1
-                logger.error(f"Error parsing student {id}: {e}")
+                    logger.warning("  Faculty table missing required columns")
+            else:
+                logger.info("  Faculty table doesn't exist, skipping")
+                
+        except Exception as e:
+            logger.error(f"❌ Error loading faculty: {e}")
         
         cursor.close()
         conn.close()
         
-        # 🟢 FIX 3: ONLY UPDATE GLOBALS IF WE SUCCESSFULLY LOADED FACES
-        if len(temp_names) > 0:
-            # Clear old data
-            known_face_encodings.clear()
-            known_face_names.clear()
-            known_face_ids.clear()
-            known_face_types.clear()
-            
-            # Copy temp arrays to globals
-            known_face_encodings.extend(temp_encodings)
-            known_face_names.extend(temp_names)
-            known_face_ids.extend(temp_ids)
-            known_face_types.extend(temp_types)
-            
-            # 3. Rebuild array
+        # 🟢 FIX 4: Rebuild array if we loaded anything
+        if total_loaded > 0:
             rebuild_known_faces_array()
             
-            # 4. Log results
-            total_faces = len(known_face_names)
-            logger.info(f"✅ Successfully loaded {total_faces} faces from database")
-            logger.info(f"   - Faculty: {faculty_count}")
-            logger.info(f"   - Students: {student_count}")
-            if parse_errors > 0:
-                logger.warning(f"   - Parse errors: {parse_errors}")
+            logger.info(f"✅ Successfully loaded {total_loaded} faces total")
+            logger.info(f"   - Students: {len([t for t in known_face_types if t == 'student'])}")
+            logger.info(f"   - Faculty: {len([t for t in known_face_types if t == 'faculty'])}")
+            if errors > 0:
+                logger.warning(f"   - Errors: {errors}")
             
-            # 5. Additional info about current session (if any)
-            global current_session_id
-            if current_session_id:
-                try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor(dictionary=True)
-                    
-                    cursor.execute("""
-                        SELECT 
-                            a.section_id,
-                            y.section_name,
-                            y.year_level,
-                            y.program_id,
-                            COUNT(DISTINCT s.student_id) as total_students_in_section,
-                            SUM(CASE WHEN s.face_encoding IS NOT NULL AND s.face_encoding != '' THEN 1 ELSE 0 END) as students_with_faces
-                        FROM attendance_sessions a
-                        LEFT JOIN year_sections y ON a.section_id = y.section_id
-                        LEFT JOIN students s ON a.section_id = s.section_id
-                        WHERE a.session_id = %s
-                        GROUP BY a.section_id, y.section_name, y.year_level, y.program_id
-                    """, (current_session_id,))
-                    
-                    session_info = cursor.fetchone()
-                    if session_info:
-                        logger.info(f"📊 Session Info - Section: {session_info.get('section_name', 'Unknown')}")
-                        logger.info(f"   Total students in section: {session_info.get('total_students_in_section', 0)}")
-                        logger.info(f"   Students with faces loaded: {session_info.get('students_with_faces', 0)}")
-                    
-                    cursor.close()
-                    conn.close()
-                except Exception as e:
-                    logger.warning(f"Could not get session info: {e}")
+            # Debug info
+            if DEBUG_MODE:
+                logger.debug(f"First 5 loaded faces:")
+                for i in range(min(5, len(known_face_names))):
+                    logger.debug(f"  {i}: {known_face_names[i]} ({known_face_ids[i]}) - {known_face_types[i]}")
             
-            # 🟢 FIX 4: Verify the array was built
-            if KNOWN_FACE_ENCODINGS_ARRAY is None:
-                logger.error("❌ CRITICAL: KNOWN_FACE_ENCODINGS_ARRAY is None after rebuild!")
-                return False
-                
-            if KNOWN_FACE_ENCODINGS_ARRAY.size == 0:
-                logger.error("❌ CRITICAL: KNOWN_FACE_ENCODINGS_ARRAY is empty after rebuild!")
-                return False
-                
-            logger.info(f"   Embeddings array shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
             return True
         else:
-            # 🟢 FIX 5: KEEP OLD FACES if database load failed or returned empty!
-            logger.error("❌ Failed to load any faces from database!")
-            logger.info(f"   Database query returned 0 valid faces")
-            logger.info(f"   Preserving {len(known_face_names)} existing faces in memory")
-            
-            # If we have existing faces, keep them
-            if len(known_face_names) > 0:
-                logger.warning(f"⚠️ Using {len(known_face_names)} cached faces from previous load")
-                # Ensure array is rebuilt
-                if KNOWN_FACE_ENCODINGS_ARRAY is None or KNOWN_FACE_ENCODINGS_ARRAY.size == 0:
-                    rebuild_known_faces_array()
-                return True
-            else:
-                # No faces at all - this is critical
-                logger.error("🚨 CRITICAL: No faces in memory and database load failed!")
-                return False
+            logger.error("❌ No faces loaded from database!")
+            logger.info("   Possible reasons:")
+            logger.info("   1. Database tables don't exist")
+            logger.info("   2. No face encodings in database")
+            logger.info("   3. Face encoding format is incorrect")
+            logger.info("   4. Database connection failed")
+            return False
         
     except Exception as e:
-        logger.error(f"❌ Failed to load faces from database: {e}")
-        # 🟢 FIX 6: DON'T CLEAR ARRAYS ON ERROR!
-        logger.info(f"   Preserving {len(known_face_names)} existing faces in memory after error")
-        
-        # If we have existing faces, keep them
-        if len(known_face_names) > 0:
-            logger.warning(f"⚠️ Database error, using {len(known_face_names)} cached faces")
-            # Ensure array is rebuilt
-            if KNOWN_FACE_ENCODINGS_ARRAY is None or KNOWN_FACE_ENCODINGS_ARRAY.size == 0:
-                rebuild_known_faces_array()
-            return True
-        else:
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
+        logger.error(f"❌ CRITICAL: Failed to load faces from database: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
 
 # =========================
 # LOAD FACES FROM DATABASE ON STARTUP - WITH RETRY
@@ -1863,14 +1924,132 @@ def debug_loaded_faces():
     })
 
 def initialize_faces_for_session():
-    """Initialize faces after session is created"""
-    if DEBUG_MODE: 
-        logger.debug("  Initializing faces for new session...")
-    load_known_faces_from_db()
-    load_known_faculties_from_db()
-    rebuild_known_faces_array()
-    if DEBUG_MODE: 
-        logger.debug(f"   Loaded {len(known_face_names)} faces for session")
+    """Initialize faces for the current session - FIXED VERSION"""
+    global known_face_encodings, known_face_names, known_face_ids, known_face_types
+    
+    try:
+        logger.info("🔄 Initializing faces for current session...")
+        
+        # Get current section students
+        current_section_students = get_current_section_student_ids()
+        logger.info(f"📋 Current section has {len(current_section_students)} students")
+        
+        # Clear existing arrays
+        known_face_encodings.clear()
+        known_face_names.clear()
+        known_face_ids.clear()
+        known_face_types.clear()
+        
+        if not current_section_students:
+            logger.warning("⚠️ No current section students found - loading all faces")
+            # Fallback: load all faces
+            load_known_faces_from_db()
+            rebuild_known_faces_array()
+            return
+        
+        # Load only faces for current section students
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        total_loaded = 0
+        
+        # Load current section students
+        if current_section_students:
+            placeholders = ','.join(['%s'] * len(current_section_students))
+            query = f"""
+                SELECT student_id, first_name, last_name, face_encoding 
+                FROM students 
+                WHERE student_id IN ({placeholders}) 
+                AND face_encoding IS NOT NULL 
+                AND face_encoding != ''
+                AND TRIM(face_encoding) != ''
+                AND (status = 'active' OR status IS NULL)
+            """
+            
+            cursor.execute(query, tuple(current_section_students))
+            
+            for row in cursor.fetchall():
+                try:
+                    student_id = str(row[0])
+                    first_name = str(row[1]) if row[1] else "Unknown"
+                    last_name = str(row[2]) if row[2] else "Unknown"
+                    face_encoding = row[3]
+                    
+                    # Parse the encoding
+                    encoding = parse_face_encoding(face_encoding)
+                    
+                    if encoding is not None and encoding.size == 512:
+                        known_face_encodings.append(encoding)
+                        known_face_names.append(f"{first_name} {last_name}")
+                        known_face_ids.append(student_id)
+                        known_face_types.append('student')
+                        total_loaded += 1
+                        
+                        if DEBUG_MODE and total_loaded <= 5:
+                            logger.debug(f"  Loaded student: {first_name} {last_name} ({student_id})")
+                    else:
+                        logger.warning(f"  Invalid encoding for student {student_id}")
+                        
+                except Exception as e:
+                    logger.error(f"  Error processing student row: {e}")
+        
+        # Also load all faculty (they can be recognized in any session)
+        try:
+            cursor.execute("""
+                SELECT faculty_id, first_name, last_name, face_encoding 
+                FROM faculty 
+                WHERE face_encoding IS NOT NULL 
+                AND face_encoding != ''
+                AND TRIM(face_encoding) != ''
+                AND (status = 'active' OR status IS NULL)
+            """)
+            
+            faculty_count = 0
+            for row in cursor.fetchall():
+                try:
+                    faculty_id = str(row[0])
+                    first_name = str(row[1]) if row[1] else "Unknown"
+                    last_name = str(row[2]) if row[2] else "Unknown"
+                    face_encoding = row[3]
+                    
+                    encoding = parse_face_encoding(face_encoding)
+                    
+                    if encoding is not None and encoding.size == 512:
+                        known_face_encodings.append(encoding)
+                        known_face_names.append(f"{first_name} {last_name}")
+                        known_face_ids.append(f"faculty_{faculty_id}")
+                        known_face_types.append('faculty')
+                        faculty_count += 1
+                        total_loaded += 1
+                        
+                        if DEBUG_MODE and faculty_count <= 3:
+                            logger.debug(f"  Loaded faculty: {first_name} {last_name} ({faculty_id})")
+                    else:
+                        logger.warning(f"  Invalid encoding for faculty {faculty_id}")
+                        
+                except Exception as e:
+                    logger.error(f"  Error processing faculty row: {e}")
+                    
+            logger.info(f"  Loaded {faculty_count} faculty members")
+                
+        except Exception as e:
+            logger.error(f"❌ Error loading faculty: {e}")
+        
+        cursor.close()
+        conn.close()
+        
+        # Rebuild array
+        rebuild_known_faces_array()
+        
+        logger.info(f"✅ Loaded {total_loaded} faces for current session")
+        logger.info(f"   - Students: {len([t for t in known_face_types if t == 'student'])}")
+        logger.info(f"   - Faculty: {len([t for t in known_face_types if t == 'faculty'])}")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize faces for session: {e}")
+        # Fallback to loading all faces
+        load_known_faces_from_db()
+        rebuild_known_faces_array()
 
 # =========================
 # OPTIMIZED CAMERA CAPTURE - FIXED VERSION
@@ -2320,7 +2499,6 @@ def mark_attendance(name, id, type, session_id=None):
         return
 
     #   STANDARD STATUS DETERMINATION (only runs if NOT manual status)
-    # Continue with your existing logic for non-manual statuses...
     missing_duration = 0
     is_returning_from_missing = False
     restored_original_status = None
@@ -2374,25 +2552,28 @@ def mark_attendance(name, id, type, session_id=None):
     except Exception as e:
         logger.error(f"Error checking missing status: {e}")
     
-    #   STATUS DETERMINATION LOGIC (your existing code continues here)
+    #   STATUS DETERMINATION LOGIC
+    threshold_seconds = session_threshold_seconds
+    
     if is_currently_missing:
         if is_returning_from_missing and restored_original_status in ['present', 'late']:
+            # When returning from missing, RESTORE ORIGINAL STATUS
             status = restored_original_status
             if DEBUG_MODE: 
-                logger.debug(f"  RESTORING ORIGINAL STATUS (from missing): {name} -> {status}")
+                logger.debug(f"  RETURNING FROM MISSING: {name} restored to original status: {restored_original_status}")
         elif original_status in ['present', 'late']:
+            # For fallback case, restore original status
             status = original_status
             if DEBUG_MODE: 
-                logger.debug(f"  RESTORING ORIGINAL STATUS (fallback from missing): {name} -> {status}")
+                logger.debug(f"  FALLBACK RESTORE: {name} restored to original status: {original_status}")
         else:
+            # New student (no previous status) arriving while marked as missing
             status = 'present'
             if session_start_time:
                 time_difference = current_time - session_start_time
                 time_diff_seconds = time_difference.total_seconds()
                 
-                threshold_seconds = session_threshold_seconds
-                
-                if time_diff_seconds > threshold_seconds:
+                if time_diff_seconds >= threshold_seconds:
                     status = 'late'
                     if DEBUG_MODE: 
                         logger.debug(f"  LATE (after missing): {name} arrived {time_diff_seconds:.1f}s after start")
@@ -2401,11 +2582,13 @@ def mark_attendance(name, id, type, session_id=None):
                         logger.debug(f"  PRESENT (after missing): {name} arrived on time")
     
     elif is_returning_from_missing and restored_original_status in ['present', 'late']:
+        # Student returning from missing (not currently marked as missing)
         status = restored_original_status
         if DEBUG_MODE: 
             logger.debug(f"  RESTORING ORIGINAL STATUS: {name} returning from missing -> {status}")
         
     elif is_returning_from_missing and original_status in ['present', 'late']:
+        # Fallback case for returning
         status = original_status
         if DEBUG_MODE: 
             logger.debug(f"  RESTORING ORIGINAL STATUS (fallback): {name} returning from missing -> {status}")
@@ -2417,9 +2600,7 @@ def mark_attendance(name, id, type, session_id=None):
             time_difference = current_time - session_start_time
             time_diff_seconds = time_difference.total_seconds()
             
-            threshold_seconds = session_threshold_seconds
-            
-            if time_diff_seconds > threshold_seconds:
+            if time_diff_seconds >= threshold_seconds:
                 status = 'late'
                 if DEBUG_MODE: 
                     logger.debug(f"  LATE: {name} arrived {time_diff_seconds:.1f}s after start")
@@ -2559,10 +2740,6 @@ def save_attendance_to_csv(person_id, name, timestamp, person_type):
             logger.debug(f"Attendance saved to CSV: {name} ({person_id}) - {person_type}")
     except Exception as e:
         logger.error(f"Failed to save attendance to CSV: {e}")
-
-
-
-
 
 def convert_to_supervision_format(detections):
     """Convert detections to supervision Detections format"""
@@ -2802,21 +2979,6 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.35, is_lo
         logger.error(traceback.format_exc())
         return "Unknown", None, float('inf'), None, 0.0, None
 
-def detect_liveness_cctv(face_image, liveness_threshold):
-    try:
-        gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-        fm = cv2.Laplacian(gray, cv2.CV_64F).var()
-        adjusted_threshold = liveness_threshold * 0.8
-        if fm < adjusted_threshold:
-            logger.warning(f"Liveness detection failed: variance {fm} < threshold {adjusted_threshold}")
-            return False
-        if DEBUG_MODE: 
-            logger.debug(f"Liveness detection passed: variance {fm}")
-        return True
-    except Exception as e:
-        logger.error(f"Liveness detection error: {e}")
-        return True
-
 
 def estimate_distance(face_width_pixels, face_box=None, method="adaptive"):
     """
@@ -2957,6 +3119,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
       ENHANCED: Better far-away tracking with adaptive thresholds
       FIXED: Allows tracking through obstacles and partial occlusion
       RETAINED: Still prevents identity swapping but with more flexibility
+    
+    🚨 CRITICAL FIXES APPLIED:
+    1. Fixed section validation - only recognizes students in current section
+    2. Fixed false recognition - stricter thresholds and additional verification
+    3. Fixed recognition when no face is present - better face validation
     """
     # 🚨🚨🚨 CRITICAL FIX: ADD THIS AT THE VERY BEGINNING 🚨🚨🚨
     global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
@@ -2979,11 +3146,18 @@ def refresh_with_detections(frame, rgb, frame_idx):
     if DEBUG_MODE: 
         logger.debug(f"  refresh_with_detections CALLED - Frame {frame_idx}")
     
-    
-    #   ANTI-SWAP: Initialize tracking history for movement prediction
+    # ANTI-SWAP: Initialize tracking history for movement prediction
     global locked_track_history, locked_track_predictions, locked_track_signatures
-
-     # DEBUG: Log face recognition status
+    
+    # Initialize if not exists
+    if 'locked_track_history' not in globals():
+        locked_track_history = {}  # Stores past positions for movement prediction
+    if 'locked_track_predictions' not in globals():
+        locked_track_predictions = {}  # Stores next predicted positions
+    if 'locked_track_signatures' not in globals():
+        locked_track_signatures = {}  # Stores body shape signatures
+    
+    # DEBUG: Log face recognition status
     if frame_idx % 100 == 0:  # Every 100 frames
         logger.info(f"📊 Detection Status: {len(known_face_names)} known faces | "
                    f"Array: {'Yes' if KNOWN_FACE_ENCODINGS_ARRAY is not None else 'No'} | "
@@ -3014,14 +3188,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
     if detectionStopped:
         return
     
-    # Initialize anti-swap tracking systems
-    if 'locked_track_history' not in globals():
-        locked_track_history = {}  # Stores past positions for movement prediction
-    if 'locked_track_predictions' not in globals():
-        locked_track_predictions = {}  # Stores next predicted positions
-    if 'locked_track_signatures' not in globals():
-        locked_track_signatures = {}  # Stores body shape signatures
-    
     # Skip every other frame if FPS is too low
     if current_fps < 10 and frame_idx % 30 == 0:
         logger.warning(f"⚠️ Low FPS: {current_fps:.1f} - Detection may be slow")
@@ -3041,12 +3207,62 @@ def refresh_with_detections(frame, rgb, frame_idx):
     # Cleanup stale pending confirmations
     cleanup_pending_confirmations(frame_idx, timeout_frames=15)
     
-    # Step 1: Face detection
+    # Step 1: Face detection - ENHANCED FOR SIDE FACES
     try:
         faces = face_analysis.get(rgb)
+        
+        # ============================================
+        # 🚨 CRITICAL FIX: Validate face detections
+        # ============================================
+        validated_faces = []
+        for face in faces:
+            try:
+                x1, y1, x2, y2 = face.bbox.astype(int)
+                # 🚨 Fix: Check if this is a valid face detection (not noise)
+                if (x2 - x1) > 0 and (y2 - y1) > 0:  # Valid dimensions
+                    # Additional validation: face should have reasonable aspect ratio
+                    aspect_ratio = (y2 - y1) / (x2 - x1) if (x2 - x1) > 0 else 0
+                    if 0.8 <= aspect_ratio <= 2.0:  # Reasonable face aspect ratio
+                        # Check confidence score
+                        if hasattr(face, 'det_score') and face.det_score >= 0.2:
+                            validated_faces.append(face)
+                        elif not hasattr(face, 'det_score'):
+                            validated_faces.append(face)  # Accept if no score available
+            except:
+                continue
+        
+        faces = validated_faces
+        
+        # If no faces detected, try with lower detection threshold for side faces
+        if not faces and hasattr(face_analysis.det_model, 'det_thresh'):
+            try:
+                original_threshold = face_analysis.det_model.det_thresh
+                # Lower threshold for better side face detection
+                face_analysis.det_model.det_thresh = 0.2
+                faces = face_analysis.get(rgb)
+                face_analysis.det_model.det_thresh = original_threshold
+                
+                # Validate these faces too
+                validated_faces = []
+                for face in faces:
+                    try:
+                        x1, y1, x2, y2 = face.bbox.astype(int)
+                        if (x2 - x1) > 0 and (y2 - y1) > 0:
+                            validated_faces.append(face)
+                    except:
+                        continue
+                faces = validated_faces
+                
+                if faces:
+                    logger.debug(f"Face detected with low threshold ({len(faces)} faces)")
+            except Exception as e:
+                logger.warning(f"Failed to adjust InsightFace threshold: {e}")
+                if hasattr(face_analysis.det_model, 'det_thresh'):
+                    face_analysis.det_model.det_thresh = original_threshold
+        
     except Exception as e:
         logger.error(f"Face detection failed: {e}")
-        return
+        faces = []
     
     # Step 2: Body detection
     body_detections = detect_bodies(frame, frame_idx)
@@ -3061,7 +3277,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             x1, y1, x2, y2 = body_box
             conf = body_det['confidence']
         
-            #   ENHANCED: Allow half-bodies (reduced from 50px to 25px width)
+            # ENHANCED: Allow half-bodies (reduced from 50px to 25px width)
             if (x2 - x1) < 25 or (y2 - y1) < 60:
                 continue
             
@@ -3182,7 +3398,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
     # 🎯 FLEXIBLE ANTI-SWAPPING WITH BETTER FOLLOWING
     # ============================================
     
-    #   1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
+    # 1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
     for person_id, lock_info in locked_tracks.items():
         current_body_box = lock_info.get('body_box')
         if current_body_box:
@@ -3267,7 +3483,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         'confidence': min(0.95, len(locked_track_history[person_id]) / 20.0)
                     }
             
-            #   2. UPDATE BODY SHAPE SIGNATURE for this locked track
+            # 2. UPDATE BODY SHAPE SIGNATURE for this locked track
             body_width = current_body_box[2] - current_body_box[0]
             body_height = current_body_box[3] - current_body_box[1]
             aspect_ratio = body_width / body_height if body_height > 0 else 0
@@ -3326,7 +3542,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     sig['min_height'] = min(sig['min_height'], max(60, int(body_height * 0.6)))
                     sig['max_height'] = max(sig['max_height'], int(body_height * 1.4))
     
-    #   2. CREATE FLEXIBLE PROTECTION ZONES for locked tracks
+    # 2. CREATE FLEXIBLE PROTECTION ZONES for locked tracks
     locked_track_protection_zones = {}
     
     for person_id, lock_info in locked_tracks.items():
@@ -3870,7 +4086,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             continue
         
         # ============================================
-        #   ENHANCED FACE RECOGNITION SECTION WITH PHYSICAL DISTANCE DETECTION
+        #   ENHANCED FACE RECOGNITION SECTION WITH MULTI-ANGLE SUPPORT
         # ============================================
         name = "Unknown"
         person_id = None
@@ -3913,7 +4129,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     face_area = face_width * face_height
             
                     # 🎯 Skip very small faces
-                    if face_width < 40 or face_height < 40:
+                    if face_width < 45 or face_height < 45:
                         if DEBUG_MODE: 
                             logger.debug(f"  Face too small: {face_width}x{face_height}")
                         name = "Unknown - Face too small"
@@ -3924,63 +4140,66 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     face_center_y = (y1 + y2) // 2
                     pixel_distance_from_center = np.sqrt((face_center_x - w//2)**2 + (face_center_y - h//2)**2)
                     
-                    # 🎯 NEW: Calculate PHYSICAL distance from camera (in meters)
-                    face_box = (x1, y1, x2, y2)
-                    physical_distance_meters = estimate_distance(face_width, face_box, method="advanced")
+                    # 🎯 NEW: Detect face orientation (for side face recognition)
+                    face_orientation = "front"  # Default
+                    if hasattr(face_obj, 'kps') and face_obj.kps is not None and len(face_obj.kps) >= 5:
+                        kps = face_obj.kps
+                        left_eye = kps[0]
+                        right_eye = kps[1]
+                        nose = kps[2]
+                        
+                        # Calculate yaw (horizontal rotation)
+                        eye_distance = abs(right_eye[0] - left_eye[0])
+                        if eye_distance > 0 and face_width > 0:
+                            eye_ratio = eye_distance / face_width
+                            
+                            if eye_ratio < 0.4:  # Profile face
+                                # Determine left or right profile
+                                eye_midpoint = (left_eye[0] + right_eye[0]) / 2
+                                if nose[0] < eye_midpoint - (face_width * 0.1):
+                                    face_orientation = "right"  # Right profile
+                                elif nose[0] > eye_midpoint + (face_width * 0.1):
+                                    face_orientation = "left"   # Left profile
                     
-                    # Log both distances for debugging
-                    if DEBUG_MODE and physical_distance_meters is not None and physical_distance_meters != float('inf'):
-                        logger.debug(f"  Physical distance: {physical_distance_meters:.2f}m, Pixel distance: {pixel_distance_from_center:.0f}px")
+                    if DEBUG_MODE and face_orientation != "front":
+                        logger.debug(f"  Face orientation: {face_orientation} (eye_ratio: {eye_ratio:.2f})")
                     
-                    # 🎯 ADAPTIVE RECOGNITION THRESHOLDS based on PHYSICAL DISTANCE (meters)
-                    # Use physical distance if available, otherwise fall back to pixel distance
-                    if physical_distance_meters is not None and physical_distance_meters != float('inf'):
-                        # PHYSICAL DISTANCE THRESHOLDS (in meters)
-                        if physical_distance_meters > 6.0:  # Very far (>6 meters)
-                            recognition_threshold = 0.58  # Lowest threshold for very far
-                            min_face_size = 50  # Require larger faces
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Very far: {physical_distance_meters:.1f}m -> threshold {recognition_threshold:.3f}")
-                        elif physical_distance_meters > 4.0:  # Far (4-6 meters)
-                            recognition_threshold = 0.60  # Lower threshold for far
-                            min_face_size = 45
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Far: {physical_distance_meters:.1f}m -> threshold {recognition_threshold:.3f}")
-                        elif physical_distance_meters > 2.0:  # Medium (2-4 meters)
-                            recognition_threshold = 0.63  # Medium threshold
-                            min_face_size = 40
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Medium: {physical_distance_meters:.1f}m -> threshold {recognition_threshold:.3f}")
-                        else:  # Close (<2 meters)
-                            recognition_threshold = 0.65  # Highest threshold for close
-                            min_face_size = 35
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Close: {physical_distance_meters:.1f}m -> threshold {recognition_threshold:.3f}")
-                    else:
-                        # FALLBACK: Pixel-based thresholds (original logic)
+                    # 🎯 ADAPTIVE RECOGNITION THRESHOLDS based on orientation
+                    if face_orientation == "front":
+                        # Frontal face - normal thresholds
                         if pixel_distance_from_center > 400:  # Very far
-                            recognition_threshold = 0.58
+                            recognition_threshold = 0.61
                             min_face_size = 50
                         elif pixel_distance_from_center > 300:  # Far
-                            recognition_threshold = 0.60
+                            recognition_threshold = 0.63
                             min_face_size = 45
                         elif pixel_distance_from_center > 200:  # Medium
-                            recognition_threshold = 0.63
+                            recognition_threshold = 0.66
                             min_face_size = 40
                         else:  # Close
-                            recognition_threshold = 0.65
+                            recognition_threshold = 0.68
                             min_face_size = 35
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Using pixel distance: {pixel_distance_from_center:.0f}px -> threshold {recognition_threshold:.3f}")
+                    else:
+                        # Side/profile face - LOWER THRESHOLDS
+                        if pixel_distance_from_center > 400:  # Very far
+                            recognition_threshold = 0.58  # Lower for side faces
+                            min_face_size = 50
+                        elif pixel_distance_from_center > 300:  # Far
+                            recognition_threshold = 0.60  # Lower for side faces
+                            min_face_size = 45
+                        elif pixel_distance_from_center > 200:  # Medium
+                            recognition_threshold = 0.63  # Lower for side faces
+                            min_face_size = 40
+                        else:  # Close
+                            recognition_threshold = 0.65  # Lower for side faces
+                            min_face_size = 35
+                        
+                        logger.debug(f"  Side face detection - using lower threshold: {recognition_threshold:.3f}")
                     
                     # Check minimum face size for reliable recognition
                     if face_width < min_face_size or face_height < min_face_size:
-                        if physical_distance_meters is not None:
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Face too small for distance: {face_width}x{face_height} at {physical_distance_meters:.1f}m")
-                        else:
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Face too small for distance: {face_width}x{face_height} at {pixel_distance_from_center:.0f}px")
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Face too small for distance: {face_width}x{face_height} at {pixel_distance_from_center:.0f}px")
                         name = "Unknown - Too small for distance"
                         continue
                     
@@ -3994,15 +4213,82 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         if DEBUG_MODE: 
                             logger.debug("  Normalized known embeddings on the fly")
                 
-                    # Calculate cosine similarity
-                    similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                    # 🎯 ENHANCED: MULTI-ANGLE FACE RECOGNITION
+                    # Load multi-angle encodings for better side face recognition
+                    multi_angle_encodings = load_multi_angle_encodings()
+                    
+                    if face_orientation != "front" and multi_angle_encodings:
+                        # For side faces, try matching with profile encodings
+                        profile_encodings = []
+                        profile_ids = []
+                        profile_names = []
+                        
+                        for student_id, encodings in multi_angle_encodings.items():
+                            if isinstance(encodings, list):
+                                # Add primary frontal encoding
+                                primary_idx = known_face_ids.index(student_id) if student_id in known_face_ids else -1
+                                if primary_idx != -1:
+                                    profile_encodings.append(KNOWN_FACE_ENCODINGS_ARRAY[primary_idx])
+                                    profile_ids.append(student_id)
+                                    profile_names.append(known_face_names[primary_idx])
+                                
+                                # Add multi-angle encodings
+                                for i, enc in enumerate(encodings):
+                                    if isinstance(enc, list) and len(enc) == 512:
+                                        enc_array = np.array(enc, dtype=np.float32)
+                                        norm = np.linalg.norm(enc_array)
+                                        if norm > 0:
+                                            enc_array = enc_array / norm
+                                            profile_encodings.append(enc_array)
+                                            profile_ids.append(f"{student_id}_angle{i}")
+                                            profile_names.append(f"{known_face_names[primary_idx]}_angle{i}")
+                        
+                        if profile_encodings:
+                            # Create array from all encodings (frontal + multi-angle)
+                            all_encodings_array = np.array(profile_encodings)
+                            
+                            # Calculate similarity with all encodings
+                            all_similarities = np.dot(all_encodings_array, face_embedding)
+                            
+                            if all_similarities.size > 0:
+                                best_match_index = int(np.argmax(all_similarities))
+                                best_similarity = float(all_similarities[best_match_index])
+                                
+                                # Get the original student ID (strip "_angleX" suffix)
+                                matched_profile_id = profile_ids[best_match_index]
+                                original_student_id = matched_profile_id.split('_')[0] if '_' in matched_profile_id else matched_profile_id
+                                
+                                if best_similarity >= recognition_threshold:
+                                    matched_id = original_student_id
+                                    matched_name = known_face_names[known_face_ids.index(matched_id)] if matched_id in known_face_ids else "Unknown"
+                                    
+                                    logger.info(f"🎯 SIDE FACE MATCH: {matched_name} ({face_orientation} profile) - Similarity: {best_similarity:.3f}")
+                                else:
+                                    # Fall back to regular recognition
+                                    similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                                    best_match_index = int(np.argmax(similarities))
+                                    best_similarity = float(similarities[best_match_index])
+                            else:
+                                # Regular recognition
+                                similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                                best_match_index = int(np.argmax(similarities))
+                                best_similarity = float(similarities[best_match_index])
+                        else:
+                            # Regular recognition
+                            similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                            best_match_index = int(np.argmax(similarities))
+                            best_similarity = float(similarities[best_match_index])
+                    else:
+                        # Regular frontal face recognition
+                        similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                        best_match_index = int(np.argmax(similarities))
+                        best_similarity = float(similarities[best_match_index])
                 
                     if DEBUG_MODE: 
                         logger.debug(f"  Similarities: min={similarities.min():.3f}, max={similarities.max():.3f}")
 
                     if similarities.size > 0:
-                        best_match_index = int(np.argmax(similarities))
-                        best_similarity = float(similarities[best_match_index])
+                        # Already got best_similarity above
                         
                         if DEBUG_MODE: 
                             logger.debug(f"  Best match: {known_face_names[best_match_index]} - Similarity: {best_similarity:.3f}, Threshold: {recognition_threshold:.3f}")
@@ -4014,7 +4300,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             second_best_sim = similarities[sorted_indices[1]]
                             
                             similarity_gap = best_sim - second_best_sim
-                            if similarity_gap < 0.08:  # Too close, might be ambiguous
+                            if similarity_gap < 0.12:  # Too close, might be ambiguous
                                 if DEBUG_MODE:
                                     logger.debug(f"  AMBIGUOUS: Best match gap too small ({similarity_gap:.3f})")
                                 name = "Unknown - Ambiguous match"
@@ -4027,8 +4313,27 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             matched_type = known_face_types[best_match_index]
                             matched_name = known_face_names[best_match_index]
                             
+                            # ============================================
+                            # 🚨 CRITICAL FIX: SECTION VALIDATION
+                            # ============================================
+                            if matched_type == 'student':
+                                # Get current section students
+                                current_section_students = get_current_section_student_ids()
+                                
+                                if matched_id not in current_section_students:
+                                    # This student is NOT in current section
+                                    name = "Unknown - Wrong Section"
+                                    logger.warning(f"⚠️ Student {matched_name} ({matched_id}) recognized but NOT in current section!")
+                                    
+                                    # Don't mark attendance or lock this track
+                                    # Just show as "Unknown - Wrong Section"
+                                    person_id = None
+                                    ptype = None
+                                    confidence = best_similarity
+                                    continue  # Skip further processing for this face
+                            
                             # Additional verification for medium confidence
-                            if best_similarity < 0.70:  # Medium confidence range
+                            if best_similarity < 0.75:  # Medium confidence range
                                 # Check if person was recently tracked
                                 person_recently_tracked = False
                                 for tr in tracks:
@@ -4045,6 +4350,31 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                     name = "Unknown - Medium confidence, not recently tracked"
                                     continue
                             
+                            # ============================================
+                            # 🚨 CRITICAL FIX: FALSE POSITIVE PREVENTION
+                            # ============================================
+                            # Additional verification to prevent false positives
+                            if best_similarity < 0.78:  # Medium-high confidence
+                                # Check if this face has valid facial features
+                                if hasattr(face_obj, 'kps'):
+                                    kps = face_obj.kps
+                                    if len(kps) >= 5:
+                                        # Check if facial landmarks are reasonable
+                                        left_eye = kps[0]
+                                        right_eye = kps[1]
+                                        nose = kps[2]
+                                        
+                                        # Calculate eye distance relative to face width
+                                        eye_distance = abs(right_eye[0] - left_eye[0])
+                                        if eye_distance > 0:
+                                            eye_face_ratio = eye_distance / face_width
+                                            if eye_face_ratio < 0.2 or eye_face_ratio > 0.8:
+                                                # Unreasonable eye positioning
+                                                name = "Unknown - Invalid facial features"
+                                                if DEBUG_MODE:
+                                                    logger.debug(f"  Rejecting: eye-face ratio {eye_face_ratio:.2f} is unreasonable")
+                                                continue
+                            
                             # 🎯 ACCEPTED RECOGNITION
                             if matched_type == 'faculty':
                                 name = f"Faculty: {matched_name}"
@@ -4053,15 +4383,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 confidence = best_similarity
                         
                             elif matched_type == 'student':
-                                if current_section_students and matched_id in current_section_students:
-                                    name = matched_name
-                                    person_id = matched_id
-                                    ptype = 'student'
-                                    confidence = best_similarity
-                                else:
-                                    name = "Unknown - Wrong Section"
-                                    if DEBUG_MODE: 
-                                        logger.debug(f"  ❌ Student {matched_name} not in current section")
+                                # 🟢 FIX: Already validated section membership above
+                                name = matched_name
+                                person_id = matched_id
+                                ptype = 'student'
+                                confidence = best_similarity
                         else:
                             # BELOW THRESHOLD
                             if DEBUG_MODE: 
@@ -4155,7 +4481,16 @@ def refresh_with_detections(frame, rgb, frame_idx):
         
         # If still unknown after recognition attempt
         if person_id is None:
+            # 🚨 FIX: Use section info in unknown label
             unique_id = f"U-{frame_idx}-{x1}"
+            
+            # Check if this might be a student from wrong section
+            if name == "Unknown - Wrong Section":
+                display_name = "Unknown - Wrong Section"
+            elif name.startswith("Unknown - "):
+                display_name = name
+            else:
+                display_name = "Unknown"
         
             if matched_body_track:
                 track_obj = {
@@ -4166,7 +4501,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'confidence': max(0.3, conf),
                     'last_seen': frame_idx,
                     'is_locked': False,
-                    'name': name if name.startswith("Unknown") else "Unknown",
+                    'name': display_name,
                     'type': 'unknown',
                     'start_frame': frame_idx,
                     'reid_features': matched_body_track['reid_features']
@@ -4181,7 +4516,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     'confidence': max(0.3, conf),
                     'last_seen': frame_idx,
                     'is_locked': False,
-                    'name': name if name.startswith("Unknown") else "Unknown",
+                    'name': display_name,
                     'type': 'unknown',
                     'start_frame': frame_idx
                 })
@@ -4253,13 +4588,13 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     }
                     new_tracks.append(locked_track_obj)
                 
-                    if ptype == 'faculty' or (ptype == 'student' and current_section_students and person_id in current_section_students):
+                    if ptype == 'faculty' or ptype == 'student':
                         mark_attendance(name, person_id, ptype)
                         if DEBUG_MODE: 
                             logger.debug(f"  LOCKED & ATTENDANCE MARKED for {name} ({person_id})")
                     else:
                         if DEBUG_MODE: 
-                            logger.debug(f"  LOCKED but NO ATTENDANCE (wrong section) for {name} ({person_id})")
+                            logger.debug(f"  LOCKED but NO ATTENDANCE (not student/faculty) for {name} ({person_id})")
                     
                     del pending_confirmations[person_id]
                 else:
@@ -4316,7 +4651,87 @@ def refresh_with_detections(frame, rgb, frame_idx):
             del locked_track_predictions[key]
         if key in locked_track_signatures:
             del locked_track_signatures[key]
-            
+
+def load_multi_angle_encodings():
+    """Load multi-angle face encodings from database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get current section's students
+        current_section_students = get_current_section_student_ids()
+        if not current_section_students:
+            return {}
+        
+        # Create placeholders for IN clause
+        placeholders = ','.join(['%s'] * len(current_section_students))
+        
+        cursor.execute(
+            f"SELECT student_id, multi_angle_encodings FROM students WHERE student_id IN ({placeholders})",
+            tuple(current_section_students)
+        )
+        
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        multi_angle_dict = {}
+        for student_id, multi_angle_json in results:
+            if multi_angle_json and multi_angle_json != '[]':
+                try:
+                    encodings = json.loads(multi_angle_json)
+                    if isinstance(encodings, list) and len(encodings) > 0:
+                        multi_angle_dict[student_id] = encodings
+                except Exception as e:
+                    logger.warning(f"Failed to parse multi-angle encodings for {student_id}: {e}")
+        
+        logger.info(f"Loaded multi-angle encodings for {len(multi_angle_dict)} students")
+        return multi_angle_dict
+        
+    except Exception as e:
+        logger.error(f"Error loading multi-angle encodings: {e}")
+        return {}
+
+
+def detect_face_orientation(face_kps, face_width):
+    """Detect if face is frontal, left, or right profile"""
+    if face_kps is None or len(face_kps) < 5:
+        return "front"
+    
+    left_eye = face_kps[0]
+    right_eye = face_kps[1]
+    nose = face_kps[2]
+    
+    # Calculate yaw (horizontal rotation)
+    eye_distance = abs(right_eye[0] - left_eye[0])
+    if eye_distance > 0 and face_width > 0:
+        eye_ratio = eye_distance / face_width
+        
+        if eye_ratio < 0.4:  # Profile face
+            # Determine left or right profile
+            eye_midpoint = (left_eye[0] + right_eye[0]) / 2
+            if nose[0] < eye_midpoint - (face_width * 0.1):
+                return "right"  # Right profile
+            elif nose[0] > eye_midpoint + (face_width * 0.1):
+                return "left"   # Left profile
+    
+    return "front"
+
+
+def normalize_embedding(embedding):
+    """Normalize face embedding vector"""
+    if embedding is None:
+        return None
+    
+    try:
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            return embedding / norm
+        return embedding
+    except Exception as e:
+        logger.warning(f"Normalization error: {e}")
+        return embedding
+
 def update_trackers_with_body(rgb, frame, frame_idx):
     """
     🛡️ ULTRA STRONG ANTI-SWAPPING: Body-only tracking for LOCKED tracks with force field protection
@@ -8474,10 +8889,12 @@ def encode_face():
         if 'image' not in request.files:
             return jsonify({'success': False, 'message': 'No image provided'}), 400
         
-        # Check if this is for an uploaded photo
+        # Check request parameters
         is_upload_photo = request.form.get('is_upload_photo', 'false').lower() == 'true'
         check_quality_only = request.form.get('check_quality_only', 'false').lower() == 'true'
         should_flip = request.form.get('should_flip', 'false').lower() == 'true'
+        is_multi_angle = request.form.get('multi_angle', 'false').lower() == 'true'
+        angle_name = request.form.get('angle', 'front')  # front, left, right
         
         image_file = request.files['image']
         img_array = np.frombuffer(image_file.read(), np.uint8)
@@ -8494,29 +8911,136 @@ def encode_face():
             img = cv2.flip(img, 1)  # Horizontal flip
             logger.debug("Image flipped horizontally")
         
-        # Detect face using InsightFace
-        faces = face_analysis.get(img)
+        # ENHANCED FACE DETECTION FOR SIDE/PROFILE FACES
+        faces = []
+        detection_method = "insightface"
+        
+        try:
+            # First try InsightFace with default settings
+            faces = face_analysis.get(img, max_num=3)
+            
+            # If no faces found, try with lower detection threshold for profile faces
+            if not faces and hasattr(face_analysis.det_model, 'det_thresh'):
+                original_threshold = face_analysis.det_model.det_thresh
+                try:
+                    # Lower threshold for better side face detection
+                    face_analysis.det_model.det_thresh = 0.2
+                    faces = face_analysis.get(img, max_num=3)
+                    face_analysis.det_model.det_thresh = original_threshold
+                    
+                    if faces:
+                        detection_method = "insightface_low_thresh"
+                        logger.debug(f"Face detected with low threshold ({len(faces)} faces)")
+                except Exception as e:
+                    logger.warning(f"Failed to adjust InsightFace threshold: {e}")
+                    if hasattr(face_analysis.det_model, 'det_thresh'):
+                        face_analysis.det_model.det_thresh = original_threshold
+            
+            # FALLBACK: Try OpenCV cascade classifier for profile faces
+            if not faces:
+                try:
+                    # Load Haar cascades for face detection
+                    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                    profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
+                    
+                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                    gray = cv2.equalizeHist(gray)  # Improve contrast
+                    
+                    # Detect frontal faces
+                    frontal_faces = face_cascade.detectMultiScale(
+                        gray,
+                        scaleFactor=1.1,
+                        minNeighbors=5,
+                        minSize=(60, 60),
+                        flags=cv2.CASCADE_SCALE_IMAGE
+                    )
+                    
+                    # Detect profile faces
+                    profile_faces = profile_cascade.detectMultiScale(
+                        gray,
+                        scaleFactor=1.1,
+                        minNeighbors=5,
+                        minSize=(60, 60),
+                        flags=cv2.CASCADE_SCALE_IMAGE
+                    )
+                    
+                    # Convert OpenCV detections to InsightFace format
+                    all_faces = []
+                    
+                    for (x, y, w, h) in frontal_faces:
+                        all_faces.append({
+                            'bbox': np.array([x, y, x+w, y+h]),
+                            'score': 0.8,  # Estimated confidence
+                            'type': 'frontal'
+                        })
+                    
+                    for (x, y, w, h) in profile_faces:
+                        all_faces.append({
+                            'bbox': np.array([x, y, x+w, y+h]),
+                            'score': 0.7,  # Lower confidence for profile
+                            'type': 'profile'
+                        })
+                    
+                    if all_faces:
+                        detection_method = "opencv_cascade"
+                        logger.debug(f"Face detected with OpenCV ({len(all_faces)} faces)")
+                        
+                        # Try to get embeddings for detected faces
+                        for face_info in all_faces:
+                            try:
+                                # Crop face region
+                                bbox = face_info['bbox'].astype(int)
+                                x1, y1, x2, y2 = bbox
+                                
+                                # Ensure within image bounds
+                                x1 = max(0, x1)
+                                y1 = max(0, y1)
+                                x2 = min(img.shape[1], x2)
+                                y2 = min(img.shape[0], y2)
+                                
+                                if x2 > x1 and y2 > y1:
+                                    # Try to get embedding from InsightFace with cropped region
+                                    cropped_face = img[y1:y2, x1:x2]
+                                    if cropped_face.size > 0:
+                                        # Resize if too small
+                                        if cropped_face.shape[0] < 100 or cropped_face.shape[1] < 100:
+                                            cropped_face = cv2.resize(cropped_face, (112, 112))
+                                        
+                                        temp_faces = face_analysis.get(cropped_face, max_num=1)
+                                        if temp_faces:
+                                            face = temp_faces[0]
+                                            # Adjust bbox to original image coordinates
+                                            face.bbox = bbox
+                                            faces.append(face)
+                                            logger.debug(f"Successfully extracted embedding for {face_info['type']} face")
+                            except Exception as e:
+                                logger.debug(f"Failed to extract embedding for {face_info['type']} face: {e}")
+                                
+                except Exception as e:
+                    logger.warning(f"OpenCV cascade detection failed: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Face detection error: {e}")
+            faces = []
         
         if not faces:
-            logger.warning("No faces detected")
+            logger.warning("No faces detected with any method")
             return jsonify({
                 'success': False,
                 'detected': False,
                 'message': 'No face detected. Please ensure your face is clearly visible.',
-                'quality': 0.1
+                'quality': 0.1,
+                'is_profile': False,
+                'angle': angle_name
             }), 200
-        
-        face = faces[0]
         
         # Check for multiple faces
         if len(faces) > 1:
             logger.warning(f"Multiple faces detected: {len(faces)}")
-            return jsonify({
-                'success': False,
-                'detected': True,
-                'message': 'Multiple faces detected. Ensure only your face is visible.',
-                'quality': 0.3
-            }), 200
+            # Choose the largest face
+            faces = [max(faces, key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]))]
+        
+        face = faces[0]
         
         # Calculate quality metrics
         h, w = img.shape[:2]
@@ -8538,77 +9062,166 @@ def encode_face():
         face_center_x = (bbox[0] + bbox[2]) / 2 / w
         face_center_y = (bbox[1] + bbox[3]) / 2 / h
         
-        # More lenient thresholds for better match rate
-        is_centered = 0.35 <= face_center_x <= 0.65 and 0.35 <= face_center_y <= 0.65
-        is_optimal_size = 0.20 <= face_ratio <= 0.40
-        has_good_lighting = 60 <= brightness <= 170 and contrast > 35
+        # MORE LENIENT THRESHOLDS FOR SIDE FACES
+        # Side faces often appear off-center and smaller
+        
+        # Determine if this is a side/profile face
+        is_profile = False
+        profile_type = "front"
+        yaw_angle = 0
+        
+        if hasattr(face, 'kps') and face.kps is not None and len(face.kps) >= 5:
+            # Use landmarks to detect face orientation
+            kps = face.kps
+            left_eye = kps[0]
+            right_eye = kps[1]
+            nose = kps[2]
+            
+            # Calculate yaw (horizontal rotation)
+            eye_distance = abs(right_eye[0] - left_eye[0])
+            if eye_distance > 0 and face_width > 0:
+                eye_ratio = eye_distance / face_width
+                
+                # Detect profile based on eye visibility
+                if eye_ratio < 0.4:  # One eye mostly hidden
+                    is_profile = True
+                    
+                    # Determine left or right profile
+                    eye_midpoint = (left_eye[0] + right_eye[0]) / 2
+                    if nose[0] < eye_midpoint - (face_width * 0.1):
+                        profile_type = "right"  # Nose to left = right profile
+                    elif nose[0] > eye_midpoint + (face_width * 0.1):
+                        profile_type = "left"   # Nose to right = left profile
+                    
+                    yaw_angle = (0.5 - eye_ratio) * 90  # Approximate yaw in degrees
+                    logger.debug(f"Profile detected: {profile_type}, yaw: {yaw_angle:.1f}°, eye_ratio: {eye_ratio:.2f}")
+        
+        # ADJUST THRESHOLDS BASED ON FACE ANGLE
+        if is_profile:
+            # More lenient thresholds for side faces
+            is_centered = 0.25 <= face_center_x <= 0.75  # Wider center range
+            is_optimal_size = 0.15 <= face_ratio <= 0.35  # Smaller size okay
+            has_good_lighting = 50 <= brightness <= 180  # Wider lighting range
+        else:
+            # Standard thresholds for frontal faces
+            is_centered = 0.35 <= face_center_x <= 0.65 and 0.35 <= face_center_y <= 0.65
+            is_optimal_size = 0.20 <= face_ratio <= 0.40
+            has_good_lighting = 60 <= brightness <= 170 and contrast > 35
         
         # Calculate detailed position feedback
         position_feedback = []
         
-        # Horizontal feedback
-        if face_center_x < 0.35:
-            position_feedback.append(f"Move {int((0.5 - face_center_x) * 100)}% RIGHT")
-        elif face_center_x > 0.65:
-            position_feedback.append(f"Move {int((face_center_x - 0.5) * 100)}% LEFT")
+        if is_profile:
+            # Special feedback for profile faces
+            if profile_type == "left":
+                position_feedback.append(f"Left profile detected")
+            elif profile_type == "right":
+                position_feedback.append(f"Right profile detected")
+            
+            # Horizontal feedback (more lenient)
+            if face_center_x < 0.25:
+                position_feedback.append(f"Too far left")
+            elif face_center_x > 0.75:
+                position_feedback.append(f"Too far right")
+        else:
+            # Standard feedback for frontal faces
+            if face_center_x < 0.35:
+                position_feedback.append(f"Move {int((0.5 - face_center_x) * 100)}% RIGHT")
+            elif face_center_x > 0.65:
+                position_feedback.append(f"Move {int((face_center_x - 0.5) * 100)}% LEFT")
+            
+            # Vertical feedback
+            if face_center_y < 0.35:
+                position_feedback.append(f"Move {int((0.5 - face_center_y) * 100)}% DOWN")
+            elif face_center_y > 0.65:
+                position_feedback.append(f"Move {int((face_center_y - 0.5) * 100)}% UP")
         
-        # Vertical feedback
-        if face_center_y < 0.35:
-            position_feedback.append(f"Move {int((0.5 - face_center_y) * 100)}% DOWN")
-        elif face_center_y > 0.65:
-            position_feedback.append(f"Move {int((face_center_y - 0.5) * 100)}% UP")
+        # Distance feedback (adjusted for profile)
+        optimal_min_ratio = 0.15 if is_profile else 0.20
+        optimal_max_ratio = 0.35 if is_profile else 0.40
         
-        # Distance feedback
-        if face_ratio < 0.20:
-            distance_percent = int((0.3 - face_ratio) * 300)
+        if face_ratio < optimal_min_ratio:
+            distance_percent = int((optimal_min_ratio - face_ratio) * 300)
             position_feedback.append(f"Move {distance_percent}% CLOSER")
-        elif face_ratio > 0.40:
-            distance_percent = int((face_ratio - 0.3) * 300)
+        elif face_ratio > optimal_max_ratio:
+            distance_percent = int((face_ratio - optimal_max_ratio) * 300)
             position_feedback.append(f"Move {distance_percent}% BACK")
         
         # Lighting feedback
-        if brightness < 60:
+        if brightness < 50:
             position_feedback.append("Too DARK - increase lighting")
-        elif brightness > 170:
+        elif brightness > 180:
             position_feedback.append("Too BRIGHT - reduce lighting")
-        elif contrast < 35:
+        elif contrast < 25:
             position_feedback.append("Low CONTRAST - adjust lighting")
         
         # Generate hint message
         if position_feedback:
             position_hint = " • " + " • ".join(position_feedback[:3])
         elif is_centered and is_optimal_size and has_good_lighting:
-            position_hint = "✓ Perfect position! Hold still"
+            if is_profile:
+                position_hint = f"✓ Good {profile_type} profile! Hold still"
+            else:
+                position_hint = "✓ Perfect position! Hold still"
         else:
             position_hint = "Adjust position for better encoding"
         
-        # More generous quality scoring
+        # ENHANCED QUALITY SCORING FOR SIDE FACES
         quality_score = 0.4  # Higher base score
         
-        # Points for centering
+        # Points for face type
+        if is_profile:
+            quality_score += 0.2  # Bonus for capturing profile
+            logger.debug(f"Profile face quality bonus added: {profile_type}")
+        
+        # Points for centering (adjusted for profile)
         center_distance = max(abs(face_center_x - 0.5), abs(face_center_y - 0.5))
-        if center_distance < 0.15:
-            quality_score += 0.35
-        elif center_distance < 0.25:
-            quality_score += 0.25
+        if is_profile:
+            if center_distance < 0.25:
+                quality_score += 0.35
+            elif center_distance < 0.35:
+                quality_score += 0.25
+            else:
+                quality_score += 0.15
         else:
-            quality_score += 0.15
+            if center_distance < 0.15:
+                quality_score += 0.35
+            elif center_distance < 0.25:
+                quality_score += 0.25
+            else:
+                quality_score += 0.15
         
         # Points for size
-        if 0.20 <= face_ratio <= 0.40:
-            quality_score += 0.35
-        elif 0.15 <= face_ratio <= 0.45:
-            quality_score += 0.25
+        if is_profile:
+            if 0.15 <= face_ratio <= 0.35:
+                quality_score += 0.35
+            elif 0.10 <= face_ratio <= 0.45:
+                quality_score += 0.25
+            else:
+                quality_score += 0.15
         else:
-            quality_score += 0.15
+            if 0.20 <= face_ratio <= 0.40:
+                quality_score += 0.35
+            elif 0.15 <= face_ratio <= 0.45:
+                quality_score += 0.25
+            else:
+                quality_score += 0.15
         
         # Points for lighting
-        if 60 <= brightness <= 170 and contrast > 35:
-            quality_score += 0.3
-        elif 50 <= brightness <= 180 and contrast > 30:
-            quality_score += 0.2
+        if is_profile:
+            if 50 <= brightness <= 180:
+                quality_score += 0.3
+            elif 40 <= brightness <= 200:
+                quality_score += 0.2
+            else:
+                quality_score += 0.1
         else:
-            quality_score += 0.1
+            if 60 <= brightness <= 170 and contrast > 35:
+                quality_score += 0.3
+            elif 50 <= brightness <= 180 and contrast > 30:
+                quality_score += 0.2
+            else:
+                quality_score += 0.1
         
         quality_score = min(1.0, max(0.1, quality_score))
         
@@ -8622,7 +9235,11 @@ def encode_face():
             'face_ratio': float(face_ratio),
             'face_center_x': float(face_center_x),
             'face_center_y': float(face_center_y),
-            'position_hint': position_hint
+            'position_hint': position_hint,
+            'is_profile': bool(is_profile),
+            'profile_type': profile_type,
+            'yaw_angle': float(yaw_angle),
+            'detection_method': detection_method
         }
         
         # If just checking quality
@@ -8650,9 +9267,25 @@ def encode_face():
                     face_embedding = np.concatenate([face_embedding, padding])
                 else:
                     face_embedding = face_embedding[:512]
+        else:
+            logger.warning("Zero norm embedding detected")
+            face_embedding = np.zeros(512, dtype=np.float32)
         
-        logger.info(f"Face encoded successfully. Quality: {quality_score:.2f}, Flipped: {should_flip}")
+        logger.info(f"Face encoded successfully. Quality: {quality_score:.2f}, Profile: {is_profile}, Angle: {angle_name}")
         
+        # For multi-angle requests, return minimal info
+        if is_multi_angle:
+            return jsonify({
+                'success': True,
+                'detected': True,
+                'encoding': face_embedding.tolist(),
+                'angle': angle_name,
+                'is_profile': bool(is_profile),
+                'profile_type': profile_type,
+                'quality': float(quality_score)
+            })
+        
+        # For regular requests
         return jsonify({
             'success': True,
             'detected': True,
@@ -8672,78 +9305,321 @@ def encode_face():
 def compare_faces():
     try:
         data = request.json
+        
+        # Extract encodings from request
         encoding1 = data.get('encoding1', [])
         encoding2 = data.get('encoding2', [])
         
-        logger.debug(f"Received encodings: encoding1 length={len(encoding1)}, encoding2 length={len(encoding2)}")
+        # Extract multi-angle encodings if provided
+        multi_encodings1 = data.get('multi_encodings1', [])
+        multi_encodings2 = data.get('multi_encodings2', [])
         
-        if not encoding1 or not encoding2:
-            logger.warning("One or both encodings are empty")
-            return jsonify({'success': False, 'message': 'Both encodings are required'}), 400
+        # Extract profile information if provided
+        encoding1_is_profile = data.get('encoding1_is_profile', False)
+        encoding2_is_profile = data.get('encoding2_is_profile', False)
+        encoding1_profile_type = data.get('encoding1_profile_type', 'front')
+        encoding2_profile_type = data.get('encoding2_profile_type', 'front')
         
-        # Check if encodings are valid
-        if not isinstance(encoding1, list) or not isinstance(encoding2, list):
-            logger.warning(f"Encodings not in list format: encoding1={type(encoding1)}, encoding2={type(encoding2)}")
-            return jsonify({'success': False, 'message': 'Invalid encoding format'}), 400
+        logger.debug(f"Comparing faces: encoding1_len={len(encoding1) if encoding1 else 0}, "
+                    f"encoding2_len={len(encoding2) if encoding2 else 0}, "
+                    f"multi1_len={len(multi_encodings1)}, "
+                    f"multi2_len={len(multi_encodings2)}, "
+                    f"profile1={encoding1_is_profile}({encoding1_profile_type}), "
+                    f"profile2={encoding2_is_profile}({encoding2_profile_type})")
         
-        if len(encoding1) != 512 or len(encoding2) != 512:
-            logger.warning(f"Encoding length mismatch: encoding1={len(encoding1)}, encoding2={len(encoding2)}")
-            return jsonify({'success': False, 'message': f'Encoding length should be 512, got {len(encoding1)} and {len(encoding2)}'}), 400
+        # Validate inputs
+        if not encoding1 and not multi_encodings1:
+            return jsonify({
+                'success': False, 
+                'message': 'No first encoding provided'
+            }), 400
         
-        # Convert to numpy arrays
-        enc1_array = np.array(encoding1, dtype=np.float32)
-        enc2_array = np.array(encoding2, dtype=np.float32)
+        if not encoding2 and not multi_encodings2:
+            return jsonify({
+                'success': False, 
+                'message': 'No second encoding provided'
+            }), 400
         
-        # Calculate norms for debugging
-        norm1 = float(np.linalg.norm(enc1_array))
-        norm2 = float(np.linalg.norm(enc2_array))
+        # COLLECT ALL POSSIBLE ENCODINGS FOR COMPARISON
+        all_encodings1 = []
+        all_encodings2 = []
         
-        logger.debug(f"Norms before normalization: norm1={norm1:.6f}, norm2={norm2:.6f}")
+        # Add single encoding if provided
+        if encoding1 and isinstance(encoding1, list) and len(encoding1) == 512:
+            all_encodings1.append({
+                'encoding': encoding1,
+                'is_profile': encoding1_is_profile,
+                'profile_type': encoding1_profile_type,
+                'weight': 1.0  # Full weight for primary encoding
+            })
         
-        # Normalize encodings
-        if norm1 > 0:
-            enc1_array = enc1_array / norm1
-        if norm2 > 0:
-            enc2_array = enc2_array / norm2
+        if encoding2 and isinstance(encoding2, list) and len(encoding2) == 512:
+            all_encodings2.append({
+                'encoding': encoding2,
+                'is_profile': encoding2_is_profile,
+                'profile_type': encoding2_profile_type,
+                'weight': 1.0  # Full weight for primary encoding
+            })
         
-        # Calculate norms after normalization
-        norm1_after = float(np.linalg.norm(enc1_array))
-        norm2_after = float(np.linalg.norm(enc2_array))
+        # Add multi-angle encodings
+        if multi_encodings1 and isinstance(multi_encodings1, list):
+            for i, enc in enumerate(multi_encodings1):
+                if isinstance(enc, list) and len(enc) == 512:
+                    all_encodings1.append({
+                        'encoding': enc,
+                        'is_profile': i > 0,  # First is usually front, others are profiles
+                        'profile_type': 'left' if i == 1 else 'right' if i == 2 else 'front',
+                        'weight': 0.9 if i > 0 else 1.0  # Slightly lower weight for profile angles
+                    })
         
-        logger.debug(f"Norms after normalization: norm1={norm1_after:.6f}, norm2={norm2_after:.6f}")
+        if multi_encodings2 and isinstance(multi_encodings2, list):
+            for i, enc in enumerate(multi_encodings2):
+                if isinstance(enc, list) and len(enc) == 512:
+                    all_encodings2.append({
+                        'encoding': enc,
+                        'is_profile': i > 0,  # First is usually front, others are profiles
+                        'profile_type': 'left' if i == 1 else 'right' if i == 2 else 'front',
+                        'weight': 0.9 if i > 0 else 1.0  # Slightly lower weight for profile angles
+                    })
         
-        # Calculate cosine similarity
-        similarity = float(np.dot(enc1_array, enc2_array))
+        if not all_encodings1 or not all_encodings2:
+            logger.warning("No valid encodings found for comparison")
+            return jsonify({
+                'success': False,
+                'message': 'No valid encodings found'
+            }), 400
         
-        # Ensure similarity is between 0 and 1
-        similarity = max(0.0, min(1.0, similarity))
+        logger.debug(f"Total encodings for comparison: enc1={len(all_encodings1)}, enc2={len(all_encodings2)}")
         
-        logger.info(f"Face comparison similarity: {similarity:.4f} ({similarity*100:.1f}%)")
+        # STRATEGY 1: EXHAUSTIVE COMPARISON - Find best match
+        best_similarity = 0
+        best_pair = None
+        comparison_results = []
         
-        # Check for extremely low similarity
-        if similarity < 0.1:
-            logger.warning(f"Very low similarity detected: {similarity:.4f}")
-            logger.debug(f"First 5 values of encoding1: {encoding1[:5]}")
-            logger.debug(f"First 5 values of encoding2: {encoding2[:5]}")
+        for enc1_info in all_encodings1:
+            enc1 = enc1_info['encoding']
+            enc1_profile = enc1_info['is_profile']
+            enc1_profile_type = enc1_info['profile_type']
+            
+            for enc2_info in all_encodings2:
+                enc2 = enc2_info['encoding']
+                enc2_profile = enc2_info['is_profile']
+                enc2_profile_type = enc2_info['profile_type']
+                
+                # Calculate similarity
+                similarity = calculate_cosine_similarity(enc1, enc2)
+                
+                # ADJUST SIMILARITY BASED ON FACE ANGLES
+                adjusted_similarity = adjust_similarity_for_angles(
+                    similarity, 
+                    enc1_profile, enc1_profile_type,
+                    enc2_profile, enc2_profile_type
+                )
+                
+                # Apply weight adjustments
+                weighted_similarity = adjusted_similarity * enc1_info['weight'] * enc2_info['weight']
+                
+                comparison_results.append({
+                    'similarity': float(similarity),
+                    'adjusted_similarity': float(adjusted_similarity),
+                    'weighted_similarity': float(weighted_similarity),
+                    'enc1_profile': enc1_profile,
+                    'enc1_profile_type': enc1_profile_type,
+                    'enc2_profile': enc2_profile,
+                    'enc2_profile_type': enc2_profile_type,
+                    'weights': [float(enc1_info['weight']), float(enc2_info['weight'])]
+                })
+                
+                # Track best similarity
+                if weighted_similarity > best_similarity:
+                    best_similarity = weighted_similarity
+                    best_pair = {
+                        'enc1_profile': enc1_profile,
+                        'enc1_profile_type': enc1_profile_type,
+                        'enc2_profile': enc2_profile,
+                        'enc2_profile_type': enc2_profile_type,
+                        'raw_similarity': float(similarity)
+                    }
         
+        # STRATEGY 2: ENSEMBLE VOTING - Combine multiple comparisons
+        if len(comparison_results) > 1:
+            # Calculate ensemble similarity (weighted average of top N comparisons)
+            sorted_results = sorted(comparison_results, key=lambda x: x['weighted_similarity'], reverse=True)
+            
+            # Take top 3 comparisons
+            top_n = min(3, len(sorted_results))
+            top_results = sorted_results[:top_n]
+            
+            # Calculate ensemble similarity
+            ensemble_weights = [1.0, 0.8, 0.6][:top_n]  # Decreasing weights
+            total_weight = sum(ensemble_weights)
+            
+            ensemble_similarity = sum(
+                r['weighted_similarity'] * w for r, w in zip(top_results, ensemble_weights)
+            ) / total_weight
+            
+            # Boost if multiple comparisons agree on high similarity
+            high_similarity_count = sum(1 for r in top_results if r['weighted_similarity'] >= 0.5)
+            if high_similarity_count >= 2:
+                ensemble_similarity = min(1.0, ensemble_similarity * 1.1)  # 10% boost
+            
+            logger.debug(f"Ensemble similarity: {ensemble_similarity:.4f} (based on {top_n} comparisons)")
+            
+            # Use the higher of best or ensemble similarity
+            final_similarity = max(best_similarity, ensemble_similarity)
+        else:
+            final_similarity = best_similarity
+        
+        # STRATEGY 3: PROFILE-SPECIFIC THRESHOLDS
+        # Lower threshold when comparing profiles
+        is_profile_comparison = False
+        if best_pair:
+            is_profile_comparison = (
+                best_pair['enc1_profile'] or 
+                best_pair['enc2_profile'] or
+                best_pair['enc1_profile_type'] != 'front' or
+                best_pair['enc2_profile_type'] != 'front'
+            )
+        
+        # Dynamic threshold based on comparison type
+        if is_profile_comparison:
+            # Lower threshold for profile comparisons
+            match_threshold = 0.45  # 45% for profile-to-profile or profile-to-frontal
+            logger.debug(f"Using profile comparison threshold: {match_threshold}")
+        else:
+            # Standard threshold for frontal-to-frontal
+            match_threshold = 0.55  # 55% for frontal-to-frontal
+            logger.debug(f"Using frontal comparison threshold: {match_threshold}")
+        
+        # Final match decision
+        is_match = final_similarity >= match_threshold
+        
+        # Calculate confidence score (0-100)
+        confidence_score = 0
+        if final_similarity > match_threshold:
+            # Scale confidence from threshold to 1.0
+            confidence_range = 1.0 - match_threshold
+            normalized_similarity = (final_similarity - match_threshold) / confidence_range
+            confidence_score = min(100, int(normalized_similarity * 100))
+        
+        # Log detailed results
+        logger.info(f"Face comparison result: {final_similarity:.4f} ({final_similarity*100:.1f}%), "
+                   f"Match: {is_match}, Confidence: {confidence_score}%, "
+                   f"Threshold: {match_threshold}, Profile comparison: {is_profile_comparison}")
+        
+        if best_pair:
+            logger.debug(f"Best pair: {best_pair['enc1_profile_type']}->{best_pair['enc2_profile_type']}, "
+                        f"Raw similarity: {best_pair['raw_similarity']:.4f}")
+        
+        # Return comprehensive results
         return jsonify({
             'success': True,
-            'similarity': float(similarity),
-            'percentage': float(similarity * 100),
-            'match': bool(similarity >= 0.55),  # Convert numpy bool to Python bool
+            'similarity': float(final_similarity),
+            'percentage': float(final_similarity * 100),
+            'match': bool(is_match),
+            'confidence_score': int(confidence_score),
+            'threshold_used': float(match_threshold),
+            'is_profile_comparison': bool(is_profile_comparison),
+            'comparison_type': f"{best_pair['enc1_profile_type'] if best_pair else 'unknown'}_to_{best_pair['enc2_profile_type'] if best_pair else 'unknown'}",
+            'num_comparisons': len(comparison_results),
             'debug': {
-                'norms_before': [float(norm1), float(norm2)],
-                'norms_after': [float(norm1_after), float(norm2_after)],
-                'encoding_lengths': [int(len(encoding1)), int(len(encoding2))]
+                'best_raw_similarity': best_pair['raw_similarity'] if best_pair else 0,
+                'num_encodings_compared': [len(all_encodings1), len(all_encodings2)],
+                'top_3_similarities': [float(r['weighted_similarity']) for r in sorted(comparison_results, key=lambda x: x['weighted_similarity'], reverse=True)[:3]] if comparison_results else []
             }
         })
         
     except Exception as e:
         logger.error(f"Error comparing faces: {str(e)}", exc_info=True)
-        return jsonify({'success': False, 'message': f'Error comparing faces: {str(e)}'}), 500
+        return jsonify({
+            'success': False, 
+            'message': f'Error comparing faces: {str(e)}'
+        }), 500
+
+
+# HELPER FUNCTIONS
+def calculate_cosine_similarity(encoding1, encoding2):
+    """Calculate cosine similarity between two 512D encodings"""
+    try:
+        if not isinstance(encoding1, list) or not isinstance(encoding2, list):
+            return 0.0
+        
+        if len(encoding1) != 512 or len(encoding2) != 512:
+            logger.warning(f"Encoding length mismatch: {len(encoding1)} vs {len(encoding2)}")
+            return 0.0
+        
+        # Convert to numpy arrays
+        enc1_array = np.array(encoding1, dtype=np.float32)
+        enc2_array = np.array(encoding2, dtype=np.float32)
+        
+        # Calculate norms
+        norm1 = np.linalg.norm(enc1_array)
+        norm2 = np.linalg.norm(enc2_array)
+        
+        # Handle zero vectors
+        if norm1 == 0 or norm2 == 0:
+            logger.warning("Zero norm encoding detected")
+            return 0.0
+        
+        # Normalize
+        enc1_normalized = enc1_array / norm1
+        enc2_normalized = enc2_array / norm2
+        
+        # Calculate cosine similarity
+        similarity = float(np.dot(enc1_normalized, enc2_normalized))
+        
+        # Clip to valid range
+        similarity = max(-1.0, min(1.0, similarity))
+        similarity = max(0.0, similarity)  # We don't expect negative similarities
+        
+        return similarity
+        
+    except Exception as e:
+        logger.error(f"Error calculating cosine similarity: {e}")
+        return 0.0
+
+
+def adjust_similarity_for_angles(similarity, enc1_profile, enc1_profile_type, 
+                                enc2_profile, enc2_profile_type):
+    """Adjust similarity score based on face angles being compared"""
+    adjusted = similarity
+    
+    # Case 1: Comparing same profile angles (left-left or right-right)
+    if enc1_profile_type == enc2_profile_type and enc1_profile_type in ['left', 'right']:
+        # Slight boost for same profile comparisons
+        adjusted = min(1.0, similarity * 1.05)  # 5% boost
+        logger.debug(f"Same profile comparison ({enc1_profile_type}-{enc2_profile_type}): "
+                    f"{similarity:.4f} -> {adjusted:.4f}")
+    
+    # Case 2: Comparing left profile with right profile
+    elif (enc1_profile_type == 'left' and enc2_profile_type == 'right') or \
+         (enc1_profile_type == 'right' and enc2_profile_type == 'left'):
+        # Profile views are mirrored - apply mirror adjustment
+        adjusted = similarity * 0.9  # 10% reduction
+        logger.debug(f"Mirrored profile comparison: {similarity:.4f} -> {adjusted:.4f}")
+    
+    # Case 3: Profile to frontal comparison
+    elif (enc1_profile and enc2_profile_type == 'front') or \
+         (enc2_profile and enc1_profile_type == 'front'):
+        # Profile to frontal is harder - moderate adjustment
+        if enc1_profile_type in ['left', 'right'] or enc2_profile_type in ['left', 'right']:
+            adjusted = similarity * 0.95  # 5% reduction
+            logger.debug(f"Profile-frontal comparison: {similarity:.4f} -> {adjusted:.4f}")
+    
+    # Case 4: Both frontal faces
+    elif enc1_profile_type == 'front' and enc2_profile_type == 'front':
+        # No adjustment for frontal-frontal
+        pass
+    
+    return adjusted
 
 @app.route('/api/register_student', methods=['POST'])
 def register_student():
+    global known_face_ids, known_face_names, known_face_encodings
+    known_face_ids = []
+    known_face_names = []
+    known_face_encodings = []
+
     try:
         data = request.form
         email = data.get('email', '').strip().lower()
@@ -8753,8 +9629,11 @@ def register_student():
         last_name = data.get('last_name', '').strip()
         middle_name = data.get('middle_name', '').strip()
         section_id = data.get('section_id', '').strip()
-        program_id = data.get('program_id', '').strip()  # Get program_id from frontend
+        program_id = data.get('program_id', '').strip()
         password = data.get('password', '').strip()
+        
+        # Get multi-angle encodings if provided
+        multi_angle_encodings_data = data.get('multi_angle_encodings', '')
         
         if not all([email, student_id, first_name, last_name, section_id, program_id, password]):
             logger.warning("Missing required fields in register_student request")
@@ -8770,12 +9649,10 @@ def register_student():
         # Extract curriculum year from student ID (first 4 digits)
         if len(student_id) >= 4:
             curriculum_year = student_id[:4]
-            # Validate it's a reasonable year (between 2000 and current year + 1)
             current_year = datetime.now().year
             if not (2000 <= int(curriculum_year) <= current_year + 1):
-                curriculum_year = str(current_year)  # Fallback to current year
+                curriculum_year = str(current_year)
         else:
-            # Fallback if student ID format is unexpected
             current_year = datetime.now().year
             curriculum_year = str(current_year)
         
@@ -8823,15 +9700,16 @@ def register_student():
             curriculum_result = cursor.fetchone()
             curriculum_id = curriculum_result[0] if curriculum_result else None
         
-        # Log curriculum assignment
         if curriculum_id:
             if DEBUG_MODE: 
-                logger.debug(f"Assigned curriculum {curriculum_id} to student {student_id} (program: {program_id}, year: {curriculum_year})")
+                logger.debug(f"Assigned curriculum {curriculum_id} to student {student_id}")
         else:
-            logger.warning(f"No active curriculum found for student {student_id} (program: {program_id}, year: {curriculum_year})")
+            logger.warning(f"No active curriculum found for student {student_id}")
         
+        # PROCESS PRIMARY FACE ENCODING
         face_encoding_data = data.get('face_encoding', '')
         encoding_str = None
+        primary_embedding = None
         
         try:
             if face_encoding_data:
@@ -8841,14 +9719,15 @@ def register_student():
                     norm = np.linalg.norm(encoding_array)
                     if norm > 0:
                         encoding_array = encoding_array / norm
-                        # FIX 1: CONVERT TO STRING FOR DATABASE STORAGE
+                        # Store as string for database
                         encoding_str = "[" + ",".join(str(x) for x in encoding_array) + "]"
+                        primary_embedding = encoding_array  # Keep numpy array for memory
                         if DEBUG_MODE:
-                            logger.debug(f"Normalized student embedding saved to DB: norm={np.linalg.norm(encoding_array):.6f}")
+                            logger.debug(f"Primary embedding saved: norm={norm:.6f}")
                     else:
                         raise ValueError("Zero norm encoding")
                 else:
-                    raise ValueError("Invalid face encoding length")
+                    raise ValueError(f"Invalid face encoding length: {len(face_encoding)}")
             else:
                 raise ValueError("No face encoding provided")
         except Exception as e:
@@ -8857,6 +9736,49 @@ def register_student():
             logger.error(f"Invalid face encoding format: {e}")
             return jsonify({'success': False, 'message': 'Invalid face encoding. Please complete face scanning.'})
         
+        # PROCESS MULTI-ANGLE ENCODINGS
+        multi_angle_json = '[]'
+        multi_angle_embeddings = []
+        
+        if multi_angle_encodings_data:
+            try:
+                multi_angle_data = json.loads(multi_angle_encodings_data)
+                if isinstance(multi_angle_data, list):
+                    valid_angles = []
+                    
+                    for i, angle_encoding in enumerate(multi_angle_data):
+                        if isinstance(angle_encoding, list) and len(angle_encoding) == 512:
+                            enc_array = np.array(angle_encoding, dtype=np.float32)
+                            norm = np.linalg.norm(enc_array)
+                            
+                            if norm > 0:
+                                # Normalize
+                                enc_array = enc_array / norm
+                                
+                                # Store for memory addition
+                                multi_angle_embeddings.append(enc_array)
+                                
+                                # Convert to string for JSON storage
+                                angle_str = "[" + ",".join(str(x) for x in enc_array) + "]"
+                                valid_angles.append(angle_str)
+                                
+                                if DEBUG_MODE:
+                                    logger.debug(f"Multi-angle {i+1} saved: norm={norm:.6f}")
+                            else:
+                                logger.warning(f"Zero norm in multi-angle encoding {i+1}")
+                        else:
+                            logger.warning(f"Invalid multi-angle encoding format at index {i}")
+                    
+                    if valid_angles:
+                        multi_angle_json = json.dumps(valid_angles)
+                        logger.info(f"Saved {len(valid_angles)} multi-angle encodings for {student_id}")
+                    else:
+                        logger.warning("No valid multi-angle encodings found")
+                        
+            except Exception as e:
+                logger.warning(f"Failed to parse multi-angle encodings: {e}")
+        
+        # Save photo
         photo_path = None
         if 'photo' in request.files:
             photo = request.files['photo']
@@ -8867,25 +9789,103 @@ def register_student():
                     photo_path = f"static/images/student_photos/{student_id}.jpg"
                     
                     try:
-                        photo.save(photo_path)
-                        if DEBUG_MODE: 
-                            logger.debug(f"Saved photo for {student_id} at {photo_path}")
+                        # Optimize and save photo
+                        img_array = np.frombuffer(photo.read(), np.uint8)
+                        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                        
+                        if img is not None:
+                            # Resize to reasonable dimensions
+                            height, width = img.shape[:2]
+                            max_dimension = 1024
+                            
+                            if height > max_dimension or width > max_dimension:
+                                scale = max_dimension / max(height, width)
+                                new_width = int(width * scale)
+                                new_height = int(height * scale)
+                                img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                            
+                            # Save as JPEG with good quality
+                            cv2.imwrite(photo_path, img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            
+                            if DEBUG_MODE: 
+                                logger.debug(f"Saved optimized photo for {student_id} at {photo_path}")
+                        else:
+                            # Fallback to original save
+                            photo.seek(0)  # Reset file pointer
+                            photo.save(photo_path)
+                            
                     except Exception as e:
-                        logger.error(f"Failed to save photo: {e}")
-                        photo_path = None
+                        logger.error(f"Failed to optimize/save photo: {e}")
+                        # Try direct save as fallback
+                        try:
+                            photo.seek(0)
+                            photo.save(photo_path)
+                        except Exception as e2:
+                            logger.error(f"Failed to save photo at all: {e2}")
+                            photo_path = None
         
-        # FIX 2: Insert student WITH ACTUAL ENCODING (not None)
+        # INSERT STUDENT INTO DATABASE WITH ALL ENCODINGS
         cursor.execute(
             """INSERT INTO students 
             (student_id, first_name, last_name, middle_name, section_id, email, 
-             face_encoding, photo_path, password_hash, curriculum_id) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+             face_encoding, multi_angle_encodings, photo_path, password_hash, curriculum_id, 
+             created_at, updated_at, status) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 'active')""",
             (student_id, first_name, last_name, middle_name or None, section_id, email, 
-             encoding_str if encoding_str is not None else "[]", photo_path, password_hash, curriculum_id)
+             encoding_str if encoding_str is not None else "[]", 
+             multi_angle_json, 
+             photo_path, 
+             password_hash, 
+             curriculum_id)
         )
-        conn.commit()
         
-        # Handle invite token (your existing code)
+        # ADD TO IN-MEMORY FACE RECOGNITION SYSTEM
+        try:
+            # Add primary embedding to memory
+            if primary_embedding is not None:
+                # Format: [id, first_name, last_name, encoding_array, person_type]
+                face_entry = [
+                    student_id,
+                    first_name,
+                    last_name,
+                    primary_embedding.tolist(),  # Convert to list
+                    'student'
+                ]
+                
+                
+                
+                known_face_ids.append(student_id)
+                known_face_names.append(f"{first_name} {last_name}")
+                known_face_encodings.append(primary_embedding)
+                
+                # Also add multi-angle embeddings for better recognition
+                for i, angle_embedding in enumerate(multi_angle_embeddings):
+                    angle_id = f"{student_id}_angle{i+1}"
+                    angle_name = f"{first_name} {last_name} [Angle{i+1}]"
+                    
+                    known_face_ids.append(angle_id)
+                    known_face_names.append(angle_name)
+                    known_face_encodings.append(angle_embedding)
+                    
+                    if DEBUG_MODE:
+                        logger.debug(f"Added multi-angle {i+1} to memory for {student_id}")
+                
+                logger.info(f"✅ Added student {student_id} to memory with {len(multi_angle_embeddings)} additional angles")
+                
+                # Verify storage
+                if student_id in known_face_ids:
+                    idx = known_face_ids.index(student_id)
+                    if DEBUG_MODE:
+                        logger.debug(f"✅ VERIFIED: Student {student_id} is at index {idx} in known_face_ids")
+                        logger.debug(f"Total faces in memory: {len(known_face_ids)}")
+                else:
+                    logger.error(f"❌ CRITICAL: Student {student_id} NOT found in known_face_ids after registration!")
+                    
+        except Exception as e:
+            logger.error(f"Failed to add student {student_id} to memory: {e}")
+            # Continue with registration even if memory addition fails
+        
+        # Handle invite token
         if invite_token:
             try:
                 conn_invite = get_db_connection()
@@ -8908,7 +9908,7 @@ def register_student():
                         (invite_token,)
                     )
                     if DEBUG_MODE: 
-                        logger.debug(f"Invite token {invite_token} has reached max uses and marked as used")
+                        logger.debug(f"Invite token {invite_token} has reached max uses")
 
                 conn_invite.commit()
                 cursor_invite.close()
@@ -8919,42 +9919,44 @@ def register_student():
             except Exception as e:
                 logger.error(f"Failed to update invite uses: {e}")
         
+        # Commit database changes
+        conn.commit()
         cursor.close()
         conn.close()
         
-        # FIX 3: Add to memory with VALID encoding string
-        try:
-            if encoding_str and encoding_str != "[]":
-                add_face_to_memory(
-                    id=student_id,
-                    first_name=first_name,
-                    last_name=last_name,
-                    face_encoding=encoding_str,  # This is now the actual encoding string
-                    person_type='student'
-                )
-                if DEBUG_MODE: 
-                    logger.debug(f"Successfully added student {student_id} to memory")
-            else:
-                logger.warning(f"No valid encoding to add to memory for student {student_id}")
-        except Exception as e:
-            logger.error(f"Failed to add student {student_id} to memory: {e}")
+        # LOG SUCCESS WITH DETAILS
+        logger.info(f"✅ Student registered successfully: {student_id} ({first_name} {last_name})")
+        logger.info(f"   - Curriculum: {curriculum_id}")
+        logger.info(f"   - Section: {section_id}")
+        logger.info(f"   - Multi-angle encodings: {len(multi_angle_embeddings)}")
+        logger.info(f"   - Photo saved: {'Yes' if photo_path else 'No'}")
         
-        if DEBUG_MODE: 
-            logger.debug(f"Student registered successfully: {student_id} ({first_name} {last_name}) with curriculum {curriculum_id}")
-        
-        # FIX 4: Verify the face was added properly
-        if student_id in known_face_ids:
-            idx = known_face_ids.index(student_id)
-            if DEBUG_MODE: 
-                logger.debug(f"✅ VERIFIED: Student {student_id} is at index {idx} in known_face_ids")
-        else:
-            logger.error(f"❌ WARNING: Student {student_id} NOT found in known_face_ids after registration!")
-        
-        return jsonify({'success': True, 'message': 'Student registered successfully'})
+        # Return success with additional info
+        return jsonify({
+            'success': True, 
+            'message': 'Student registered successfully',
+            'student_id': student_id,
+            'curriculum_id': curriculum_id,
+            'multi_angle_count': len(multi_angle_embeddings),
+            'photo_saved': bool(photo_path)
+        })
 
     except Exception as e:
         logger.error(f"Registration error: {str(e)}", exc_info=True)
-        return jsonify({'success': False, 'message': f'Registration failed: {str(e)}'})
+        
+        # Clean up any created files if registration failed
+        try:
+            if 'student_id' in locals() and 'photo_path' in locals() and photo_path:
+                if os.path.exists(photo_path):
+                    os.remove(photo_path)
+                    logger.debug(f"Cleaned up photo file: {photo_path}")
+        except:
+            pass
+            
+        return jsonify({
+            'success': False, 
+            'message': f'Registration failed: {str(e)}'
+        })
     
 
 @app.route('/api/register_faculty', methods=['POST'])
@@ -14157,7 +15159,6 @@ def initialize_session():
         
         current_session_id = unique_session_id
 
-        initialize_faces_for_session()
         # Handle duration and threshold
         try:
             session_total_duration_seconds = int(data.get('duration', 3600))
@@ -14694,6 +15695,17 @@ def initialize_session():
                     # Don't raise error, just log it - session can continue without DB entry
                     pass
         
+        # 🟢 CRITICAL FIX: Initialize faces AFTER session is saved to database
+        initialize_faces_for_session()
+        
+        if connection and connection.is_connected():
+            try:
+                connection.commit()
+                if DEBUG_MODE: 
+                    logger.debug("   Database changes committed successfully")
+            except Exception as commit_error:
+                logger.error(f"  Could not commit changes: {commit_error}")
+        
         # Format display times
         def format_time_display(seconds):
             hours = seconds // 3600
@@ -14772,14 +15784,6 @@ def initialize_session():
         # ADD CURRICULUM INFO IF AVAILABLE
         if curriculum_info:
             session_data['curriculum_info'] = curriculum_info
-        
-        if connection and connection.is_connected():
-            try:
-                connection.commit()
-                if DEBUG_MODE: 
-                    logger.debug("   Database changes committed successfully")
-            except Exception as commit_error:
-                logger.error(f"  Could not commit changes: {commit_error}")
         
         if DEBUG_MODE: 
             logger.debug(f"  DEBUG: threshold input = {data.get('threshold')}")
@@ -14966,6 +15970,29 @@ def get_class_students():
             logger.error(f"  No section found for {program_id_to_search} {year_level_num}{section_to_search}")
             return jsonify({'success': False, 'message': 'Section not found'}), 404
         
+        #  🔧 NEW: GET SESSION START TIME AND THRESHOLD
+        session_start_time = None
+        threshold_seconds = 900  # Default 15 minutes
+        
+        if session_id:
+            cursor.execute("""
+                SELECT started_at, threshold_seconds_total 
+                FROM attendance_sessions 
+                WHERE session_id = %s
+            """, (session_id,))
+            session_info = cursor.fetchone()
+            cursor.fetchall()  # Consume any remaining results
+            
+            if session_info:
+                session_start_time = session_info['started_at']
+                threshold_seconds = session_info.get('threshold_seconds_total') or 900
+                
+                if DEBUG_MODE:
+                    logger.debug(f"  Session start: {session_start_time}, Threshold: {threshold_seconds}s")
+            else:
+                if DEBUG_MODE:
+                    logger.debug(f"  No session info found, using default threshold: {threshold_seconds}s")
+        
         #  STEP 2: GET REGULAR STUDENTS USING SECTION_ID (NOT PROGRAM/YEAR/SECTION)
         #  FIX: Ensure we fetch all results and close this query properly
         cursor.execute("""
@@ -15059,13 +16086,14 @@ def get_class_students():
         for temp_student in temporary_students:
             formatted_students.append(temp_student)
         
-        #  STEP 5: UPDATE STATUSES FROM ATTENDANCE
+        #  🔧 STEP 5: UPDATE STATUSES FROM ATTENDANCE WITH LATE THRESHOLD CHECK
         if session_id:
             #  FIX: Clear any previous results before new query
             cursor.fetchall()
             
+            # Get attendance records with timestamps
             cursor.execute("""
-                SELECT student_id, status 
+                SELECT student_id, status, timestamp
                 FROM attendance 
                 WHERE session_id = %s 
                 AND student_id IS NOT NULL
@@ -15076,12 +16104,37 @@ def get_class_students():
             attendance_records = cursor.fetchall()
             cursor.fetchall()  # Consume any remaining results
             
-            # Create a mapping of student_id to latest status
+            # Create a mapping of student_id to latest status WITH LATE THRESHOLD CHECK
             status_map = {}
             for record in attendance_records:
                 if record['student_id'] not in status_map:
-                    status_map[record['student_id']] = record['status']
+                    current_status = record['status']
+                    
+                    # 🔧 CHECK LATE THRESHOLD - Only if status is 'present' and we have session start time
+                    if current_status == 'present' and session_start_time:
+                        arrival_time = record['timestamp']
+                        
+                        # Convert string to datetime if needed
+                        if isinstance(arrival_time, str):
+                            from datetime import datetime
+                            arrival_time = datetime.strptime(arrival_time, "%Y-%m-%d %H:%M:%S")
+                        
+                        # Calculate time difference
+                        time_difference = arrival_time - session_start_time
+                        time_diff_seconds = time_difference.total_seconds()
+                        
+                        # 🔧 CRITICAL FIX: Use >= instead of >
+                        if time_diff_seconds >= threshold_seconds:
+                            current_status = 'late'
+                            if DEBUG_MODE:
+                                logger.debug(f"  ⏰ {record['student_id']} marked LATE: {time_diff_seconds}s >= {threshold_seconds}s")
+                        else:
+                            if DEBUG_MODE:
+                                logger.debug(f"  ✅ {record['student_id']} is PRESENT: {time_diff_seconds}s < {threshold_seconds}s")
+                    
+                    status_map[record['student_id']] = current_status
             
+            # Apply statuses to formatted students
             for student in formatted_students:
                 if student['type'] == 'regular' and student['id'] in status_map:
                     student['status'] = status_map[student['id']]
@@ -15089,9 +16142,11 @@ def get_class_students():
                 # Temporary students already have their status from the attendance query above
         
         detected_count = len([s for s in formatted_students if s['status'] in ['present', 'late']])
+        late_count = len([s for s in formatted_students if s['status'] == 'late'])
+        present_count = len([s for s in formatted_students if s['status'] == 'present'])
         
         if DEBUG_MODE: 
-            logger.debug(f"  Final student count: {len(formatted_students)} total, {detected_count} detected")
+            logger.debug(f"  📊 Final counts - Total: {len(formatted_students)}, Present: {present_count}, Late: {late_count}, Detected: {detected_count}")
         
         return jsonify({
             'success': True, 
@@ -15100,7 +16155,11 @@ def get_class_students():
             'regular_count': len(regular_students),
             'temporary_count': len(temporary_students),
             'detected_count': detected_count,
-            'section_id': section_id
+            'present_count': present_count,
+            'late_count': late_count,
+            'section_id': section_id,
+            'threshold_seconds': threshold_seconds,
+            'session_start_time': session_start_time.isoformat() if session_start_time else None
         })
         
     except Exception as e:
@@ -15425,6 +16484,7 @@ def get_student_status():
             
             # Priority 2: Currently detected (real-time tracking)
             if student_id in safe_present_ids:
+                # FIX: Check if they're late based on current time
                 current_status = 'present'
                 
                 # Check if they were previously missing
@@ -15460,9 +16520,41 @@ def get_student_status():
                         
                         if DEBUG_MODE: 
                             logger.debug(f"  STUDENT RETURNED: {student_name} -> {original_status}")
+                else:
+                    # FIX: Check if they're late (arriving after threshold)
+                    if session_start_time:
+                        current_time = datetime.now()
+                        time_difference = current_time - session_start_time
+                        time_diff_seconds = time_difference.total_seconds()
+                        
+                        if time_diff_seconds >= threshold_seconds:
+                            # This is a NEW detection after threshold - mark as late
+                            current_status = 'late'
+                            
+                            # Update attendance record if exists
+                            if attendance_record and attendance_record['status'] == 'present':
+                                cursor = conn.cursor(dictionary=True, buffered=True)
+                                cursor.execute("""
+                                    UPDATE attendance 
+                                    SET status = 'late', timestamp = NOW()
+                                    WHERE student_id = %s AND session_id = %s
+                                """, (student_id, session_id))
+                                cursor.close()
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  UPDATED REAL-TIME TO LATE: {student_name}")
+                            elif not attendance_record:
+                                # Create new record as late
+                                cursor = conn.cursor(dictionary=True, buffered=True)
+                                cursor.execute("""
+                                    INSERT INTO attendance (student_id, name, timestamp, person_type, status, session_id)
+                                    VALUES (%s, %s, NOW(), 'student', 'late', %s)
+                                """, (student_id, student_name, session_id))
+                                cursor.close()
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  CREATED REAL-TIME AS LATE: {student_name}")
                 
                 if DEBUG_MODE: 
-                    logger.debug(f"   CURRENTLY PRESENT: {student_name}")
+                    logger.debug(f"   CURRENTLY PRESENT: {student_name} -> {current_status}")
             
             # Priority 3: Currently missing in database
             elif student_id in safe_missing_ids:
@@ -15484,7 +16576,7 @@ def get_student_status():
                         time_difference = arrival_time - session_start_time
                         time_diff_seconds = time_difference.total_seconds()
                         
-                        if time_diff_seconds > threshold_seconds:
+                        if time_diff_seconds >= threshold_seconds:
                             current_status = 'late'
                             
                             cursor = conn.cursor(dictionary=True, buffered=True)
@@ -15541,7 +16633,7 @@ def get_student_status():
                 time_difference = arrival_time - session_start_time
                 time_diff_seconds = time_difference.total_seconds()
                 
-                if time_diff_seconds > threshold_seconds:
+                if time_diff_seconds >= threshold_seconds:
                     current_status = 'late'
                     
                     cursor = conn.cursor(dictionary=True, buffered=True)
@@ -20546,7 +21638,7 @@ IP.2 = {current_ip}
             print("\n⚠️  Network error, starting on localhost only...")
             app.run(host="127.0.0.1", port=5000, debug=False, threaded=True, ssl_context=None)
         else:
-            raise e
+            raise 
     
     except KeyboardInterrupt:
         if DEBUG_MODE: 

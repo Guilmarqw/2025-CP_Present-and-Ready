@@ -102,37 +102,9 @@
             </div>
             
             <div class="student-list" id="studentList">
-                <div class="student-row">
-                    <div class="student-info">
-                        <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="Student" class="avatar">
-                        <div>
-                            <div class="student-name">Alex Chen</div>
-                            <div class="student-id">ID: S2023001</div>
-                        </div>
-                    </div>
-                    <span class="status present">Present</span>
-                </div>
-                <div class="student-row">
-                    <div class="student-info">
-                        <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="Student" class="avatar">
-                        <div>
-                            <div class="student-name">Alex Chen</div>
-                            <div class="student-id">ID: S2023001</div>
-                        </div>
-                    </div>
-                    <span class="status present">Present</span>
-                </div>
-                <div class="student-row">
-                    <div class="student-info">
-                        <img src="https://randomuser.me/api/portraits/men/45.jpg" alt="Student" class="avatar">
-                        <div>
-                            <div class="student-name">James Wilson</div>
-                            <div class="student-id">ID: S2023003</div>
-                        </div>
-                    </div>
-                    <span class="status late">Late</span>
-                </div>
-            </div>
+    <!-- Loading animation shows here initially -->
+</div>
+
             
             <div class="actions">
                 <button class="action-toggle" onclick="toggleActionMenu()">
@@ -978,6 +950,23 @@ window.addEventListener('load', () => {
         updateTimer();
     });
 });
+
+
+    // This function shows loading animation
+    function showLoading() {
+        const studentList = document.getElementById('studentList');
+        
+        // Show loading animation
+        studentList.innerHTML = `
+            <div class="loading-container">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">Loading students...</div>
+            </div>
+        `;
+    }
+    
+    // Show loading when page loads
+    document.addEventListener('DOMContentLoaded', showLoading);
 
 //   ADD THIS FUNCTION - Complete session resumption
 async function resumeSession() {

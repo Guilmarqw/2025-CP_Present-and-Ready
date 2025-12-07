@@ -257,9 +257,13 @@
 <script>
 const container = document.querySelector(".container");
 
+
+// Add these global variables at the top with your other globals:
+let isCapturingAngle = false; // Add this near other globals like encodingProgress
 let encodingProgress = 0;
 let uploadedFaceEncoding = null;
 let scannedFaceEncoding = null;
+let multiAngleEncodings = [];
 let encodingInterval = null;
 let isEncodingComplete = false;
 let qualityCheckCount = 0;
@@ -1245,12 +1249,57 @@ function startFaceScan() {
     encodingProgress = 0;
     isEncodingComplete = false;
     qualityCheckCount = 0;
+    multiAngleEncodings = []; // Reset angle encodings
     
-    // Reset UI
     updateProgressUI(0, "Position your face in the center...");
-    
-    // Start the encoding process - SLOWER interval
-    encodingInterval = setInterval(processFaceEncoding, 1000); // Check every 1 second
+    encodingInterval = setInterval(processFaceEncoding, 1000);
+}
+
+async function captureFaceAtAngle(angleName) {
+    try {
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        if (!video || !canvas) {
+            console.error("Video/canvas not found for angle capture");
+            return null;
+        }
+        
+        const ctx = canvas.getContext("2d");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        // Capture the frame (mirrored for consistency)
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+        ctx.restore();
+        
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+        
+        // Send to backend with angle info
+        const formData = new FormData();
+        formData.append('image', blob, `face_${angleName}.jpg`);
+        formData.append('multi_angle', 'true');
+        formData.append('angle', angleName);
+        
+        const response = await fetch('/api/encode_face', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.encoding) {
+            console.log(`✅ ${angleName} angle encoded successfully`);
+            return data.encoding;
+        } else {
+            console.warn(`⚠ Failed to encode ${angleName} angle:`, data.message);
+            return null;
+        }
+    } catch (error) {
+        console.error(`Error capturing ${angleName} angle:`, error);
+        return null;
+    }
 }
 
 
@@ -1262,9 +1311,9 @@ async function processFaceEncoding() {
     
     scanAttempts++;
     
-    // AUTO-TRIGGER after 30 seconds if decent progress
+    // AUTO-TRIGGER after 35 seconds if decent progress
     if (scanAttempts >= 35 && encodingProgress >= 80 && !isEncodingComplete) {
-        console.log("Auto-triggering after 28 seconds...");
+        console.log("Auto-triggering after 35 seconds...");
         completeFaceEncoding();
         return;
     }
@@ -1273,7 +1322,7 @@ async function processFaceEncoding() {
     const result = await checkFaceQuality();
     
     if (result && result.detected) {
-        // Calculate new progress - FASTER and SMARTER
+        // Calculate new progress
         calculateSmartEncodingProgress(result);
         
         // Update feedback
@@ -1282,8 +1331,122 @@ async function processFaceEncoding() {
         // Update tips
         updateTipsBasedOnQuality(result);
         
-        // Update progress UI
-        updateProgressUI(encodingProgress, getSmartProgressMessage(encodingProgress, result));
+        // Update progress UI with angle guidance
+        let progressMessage = getSmartProgressMessage(encodingProgress, result);
+        
+        // Add angle capture guidance based on progress
+        if (encodingProgress >= 25 && encodingProgress < 50 && multiAngleEncodings.length === 0) {
+            progressMessage = "✓ Front captured! Hold still...";
+        } else if (encodingProgress >= 50 && encodingProgress < 75) {
+            if (multiAngleEncodings.length === 1) {
+                progressMessage = "Slowly turn head LEFT (15-30°)...";
+            } else if (multiAngleEncodings.length === 2) {
+                progressMessage = "✓ Left angle captured! Now turn RIGHT...";
+            }
+        } else if (encodingProgress >= 75 && encodingProgress < 90) {
+            if (multiAngleEncodings.length === 2) {
+                progressMessage = "Slowly turn head RIGHT (15-30°)...";
+            } else if (multiAngleEncodings.length >= 3) {
+                progressMessage = "✓ All angles captured! Finalizing...";
+            }
+        }
+        
+        updateProgressUI(encodingProgress, progressMessage);
+        
+        // SMART ANGLE CAPTURE SYSTEM
+        // Capture front angle at 25% progress
+        if (encodingProgress >= 25 && multiAngleEncodings.length === 0 && !isCapturingAngle) {
+            isCapturingAngle = true;
+            console.log("Capturing FRONT angle...");
+            
+            // Capture front face after short delay
+            setTimeout(async () => {
+                const frontEncoding = await captureFaceAtAngle('front');
+                if (frontEncoding) {
+                    multiAngleEncodings.push(frontEncoding);
+                    console.log(`✅ Front angle captured (${multiAngleEncodings.length}/3)`);
+                    
+                    // Give feedback
+                    updateProgressUI(encodingProgress, "✓ Front captured! Preparing for left angle...");
+                    
+                    // Trigger comparison early to validate
+                    if (uploadedFaceEncoding && uploadedFaceEncoding.length > 0) {
+                        const similarity = await compareFaces(uploadedFaceEncoding, frontEncoding);
+                        console.log(`Front angle similarity: ${(similarity * 100).toFixed(1)}%`);
+                        
+                        if (similarity < 0.3) {
+                            console.warn("⚠ Front angle has low similarity with uploaded photo");
+                            updateProgressUI(encodingProgress, "⚠ Front doesn't match upload. Ensure it's the same person.");
+                        }
+                    }
+                }
+                isCapturingAngle = false;
+            }, 800);
+        }
+        
+        // Capture left angle at 50% progress (after front is captured)
+        if (encodingProgress >= 50 && multiAngleEncodings.length === 1 && !isCapturingAngle) {
+            isCapturingAngle = true;
+            console.log("Capturing LEFT angle...");
+            
+            // Give user time to turn head
+            updateProgressUI(encodingProgress, "Turn head slowly LEFT (15-30°)...");
+            
+            setTimeout(async () => {
+                const leftEncoding = await captureFaceAtAngle('left');
+                if (leftEncoding) {
+                    multiAngleEncodings.push(leftEncoding);
+                    console.log(`✅ Left angle captured (${multiAngleEncodings.length}/3)`);
+                    
+                    // Check if left angle is significantly different from front
+                    if (multiAngleEncodings.length >= 2) {
+                        const similarity = await compareFaces(multiAngleEncodings[0], leftEncoding);
+                        console.log(`Front vs Left similarity: ${(similarity * 100).toFixed(1)}%`);
+                        
+                        if (similarity > 0.85) {
+                            console.log("⚠ Left angle too similar to front - turn more");
+                            updateProgressUI(encodingProgress, "Turn head a bit more LEFT...");
+                        }
+                    }
+                }
+                isCapturingAngle = false;
+            }, 1500);
+        }
+        
+        // Capture right angle at 75% progress
+        if (encodingProgress >= 75 && multiAngleEncodings.length === 2 && !isCapturingAngle) {
+            isCapturingAngle = true;
+            console.log("Capturing RIGHT angle...");
+            
+            // Give user time to turn head
+            updateProgressUI(encodingProgress, "Now turn head slowly RIGHT (15-30°)...");
+            
+            setTimeout(async () => {
+                const rightEncoding = await captureFaceAtAngle('right');
+                if (rightEncoding) {
+                    multiAngleEncodings.push(rightEncoding);
+                    console.log(`✅ Right angle captured (${multiAngleEncodings.length}/3)`);
+                    
+                    // Final angle captured - show success
+                    updateProgressUI(encodingProgress, "✓ All angles captured! Finalizing...");
+                    
+                    // Boost progress for completing all angles
+                    encodingProgress = Math.min(95, encodingProgress + 10);
+                    qualityCheckCount = Math.max(qualityCheckCount, REQUIRED_QUALITY_CHECKS - 1);
+                    
+                    // Auto-complete if conditions are good
+                    if (result.quality >= 0.7 && result.is_centered) {
+                        setTimeout(() => {
+                            if (!isEncodingComplete) {
+                                console.log("✅ All angles captured - auto-completing...");
+                                completeFaceEncoding();
+                            }
+                        }, 2000);
+                    }
+                }
+                isCapturingAngle = false;
+            }, 1500);
+        }
         
         // Check if quality is consistently good
         if (result.quality >= 0.7 && result.is_centered && result.is_optimal_size && result.has_good_lighting) {
@@ -1296,7 +1459,12 @@ async function processFaceEncoding() {
         // Trigger final encoding when conditions are met
         if (encodingProgress >= 95 && !isEncodingComplete) {
             if (qualityCheckCount >= REQUIRED_QUALITY_CHECKS) {
-                console.log(`✅ All conditions met! Triggering final encoding...`);
+                // Check if we have at least 2 angles for better recognition
+                if (multiAngleEncodings.length >= 2) {
+                    console.log(`✅ All conditions met with ${multiAngleEncodings.length} angles! Triggering final...`);
+                } else {
+                    console.log(`✅ Conditions met with ${multiAngleEncodings.length} angle(s).`);
+                }
                 completeFaceEncoding();
             } else {
                 // Tell user what's missing
@@ -1319,8 +1487,15 @@ async function processFaceEncoding() {
         updateProgressUI(encodingProgress, result?.message || "No face detected");
         updateFaceFeedback({ detected: false });
         resetTipsUI();
+        
+        // Reset angle capture if face is lost
+        if (multiAngleEncodings.length > 0 && encodingProgress < 30) {
+            console.log("Face lost - resetting angle capture");
+            multiAngleEncodings = [];
+        }
     }
 }
+
 
 
 async function checkFaceQuality() {
@@ -1577,7 +1752,7 @@ async function completeFaceEncoding() {
     // Wait 2 seconds to ensure stable face position
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Capture final face encoding
+    // CAPTURE FINAL FRONTAL FACE ENCODING
     try {
         const video = document.getElementById("video");
         const canvas = document.getElementById("canvas");
@@ -1586,19 +1761,18 @@ async function completeFaceEncoding() {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         
-        // IMPORTANT: Mirror the canvas to match how the image is saved
-        // The video appears mirrored to the user, but we need to capture it mirrored too
+        // Mirror the canvas to match uploaded photo orientation
         ctx.save();
         ctx.scale(-1, 1);
         ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
         ctx.restore();
         
-        // Wait another second
+        // Wait another second for stability
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
         
-        // Send the blob for encoding (it's already in the correct orientation)
+        // Send for final encoding
         const formData = new FormData();
         formData.append('image', blob, 'final_face.jpg');
         formData.append('is_upload_photo', 'true');
@@ -1610,19 +1784,30 @@ async function completeFaceEncoding() {
         
         const data = await response.json();
         
-        console.log("=== SCAN ENCODING DEBUG ===");
-        console.log("Scan encoding response:", data);
+        console.log("=== FINAL FACE ENCODING DEBUG ===");
+        console.log("Final encoding response:", data);
         
         if (data.success && data.encoding) {
+            // Store the final frontal encoding
             scannedFaceEncoding = Array.from(data.encoding);
             
-            console.log("=== FACE COMPARISON DEBUG ===");
-            console.log("1. uploadedFaceEncoding exists:", !!uploadedFaceEncoding);
-            console.log("2. uploadedFaceEncoding length:", uploadedFaceEncoding?.length);
-            console.log("3. scannedFaceEncoding length:", scannedFaceEncoding?.length);
-            console.log("4. Are both arrays?", Array.isArray(uploadedFaceEncoding) && Array.isArray(scannedFaceEncoding));
+            // Store all collected multi-angle encodings
+            window.multiAngleEncodings = multiAngleEncodings;
             
-            // Check if encodings are valid
+            console.log("=== FACE COMPARISON PREPARATION ===");
+            console.log("1. Uploaded encoding exists:", !!uploadedFaceEncoding);
+            console.log("2. Uploaded encoding length:", uploadedFaceEncoding?.length);
+            console.log("3. Scanned encoding length:", scannedFaceEncoding?.length);
+            console.log("4. Multi-angle encodings:", multiAngleEncodings?.length || 0);
+            
+            if (multiAngleEncodings.length > 0) {
+                console.log("5. Multi-angle details:");
+                multiAngleEncodings.forEach((enc, idx) => {
+                    console.log(`   Angle ${idx + 1}: length=${enc.length}, first 3=${enc.slice(0, 3)}`);
+                });
+            }
+            
+            // Validate encodings
             if (!uploadedFaceEncoding || !Array.isArray(uploadedFaceEncoding) || uploadedFaceEncoding.length === 0) {
                 console.error("ERROR: uploadedFaceEncoding is invalid!");
                 showModal("Error", "Uploaded photo encoding is invalid. Please re-upload your photo.");
@@ -1640,24 +1825,59 @@ async function completeFaceEncoding() {
                     qualityCheckCount = 0;
                     isEncodingComplete = false;
                     scannedFaceEncoding = null;
+                    multiAngleEncodings = [];
                     startFaceScan();
                 }, 2000);
                 return;
             }
             
-            console.log("5. First 3 values comparison:");
+            console.log("6. First 3 values comparison:");
             console.log("   Uploaded:", uploadedFaceEncoding.slice(0, 3));
-            console.log("   Scanned:", scannedFaceEncoding.slice(0, 3));
-            console.log("=== END DEBUG ===");
+            console.log("   Scanned (final):", scannedFaceEncoding.slice(0, 3));
             
-            // COMPARE FACES
-            const similarity = await compareFaces(uploadedFaceEncoding, scannedFaceEncoding);
+            if (multiAngleEncodings.length > 0) {
+                console.log("   Multi-angle 1:", multiAngleEncodings[0].slice(0, 3));
+            }
             
-            console.log(`Face similarity result: ${similarity.toFixed(4)} (${(similarity * 100).toFixed(1)}%)`);
+            console.log("=== COMPARISON START ===");
             
-            // Lower threshold to 55% for better match rate
-            if (similarity >= 0.55) {
-                console.log(`✅ Faces match! Similarity: ${similarity.toFixed(2)}`);
+            // COMPARE FACES WITH MULTI-ANGLE SUPPORT
+            let similarity = 0;
+            
+            // Strategy 1: Try with multi-angle if available
+            if (multiAngleEncodings.length >= 2) {
+                console.log("Using multi-angle comparison strategy...");
+                
+                // Collect all scanned encodings (final + angles)
+                const allScannedEncodings = [scannedFaceEncoding, ...multiAngleEncodings];
+                
+                // Try comparison with multi-angle support
+                similarity = await compareFaces(
+                    uploadedFaceEncoding, 
+                    scannedFaceEncoding,
+                    [], // No multi-angle for uploaded (it's just one photo)
+                    allScannedEncodings.slice(1) // Send angles as multi_encodings2
+                );
+                
+                console.log(`Multi-angle comparison similarity: ${similarity.toFixed(4)} (${(similarity * 100).toFixed(1)}%)`);
+                
+            } else {
+                // Strategy 2: Standard comparison
+                console.log("Using standard comparison (no multi-angle)...");
+                similarity = await compareFaces(uploadedFaceEncoding, scannedFaceEncoding);
+                console.log(`Standard comparison similarity: ${similarity.toFixed(4)} (${(similarity * 100).toFixed(1)}%)`);
+            }
+            
+            // DYNAMIC THRESHOLD BASED ON ANGLE COUNT
+            let threshold = 0.55; // Default
+            
+            if (multiAngleEncodings.length >= 2) {
+                threshold = 0.45; // Lower threshold when we have multiple angles
+                console.log(`Using lower threshold (${threshold}) due to ${multiAngleEncodings.length} angles`);
+            }
+            
+            if (similarity >= threshold) {
+                console.log(`✅ Faces match! Similarity: ${similarity.toFixed(2)} (Threshold: ${threshold})`);
                 
                 // Play success sound
                 const bellSound = document.getElementById('bellSound');
@@ -1666,7 +1886,8 @@ async function completeFaceEncoding() {
                     bellSound.play().catch(e => console.log('Audio play failed:', e));
                 }
                 
-                updateProgressUI(100, "Face verification successful!");
+                // Show detailed success message
+                updateProgressUI(100, `Face verification successful! Similarity: ${(similarity * 100).toFixed(1)}%`);
                 
                 // Store for registration
                 window.faceEncoding = scannedFaceEncoding;
@@ -1677,8 +1898,17 @@ async function completeFaceEncoding() {
                     videoStream = null;
                 }
                 
-                // Show success message
-                showModal("Success", `Face verification successful! Similarity: ${(similarity * 100).toFixed(1)}%`);
+                // Show success modal with angle info
+                let angleInfo = "";
+                if (multiAngleEncodings.length > 0) {
+                    angleInfo = `\n\n✅ Captured ${multiAngleEncodings.length} additional face angles for better recognition.`;
+                }
+                
+                showModal("Success", 
+                    `Face verification successful!\n\n` +
+                    `Similarity: ${(similarity * 100).toFixed(1)}%\n` +
+                    `Threshold: ${(threshold * 100).toFixed(0)}%\n` +
+                    angleInfo);
                 
                 // Move to next step after delay
                 setTimeout(() => {
@@ -1686,41 +1916,63 @@ async function completeFaceEncoding() {
                 }, 2000);
                 
             } else {
-                console.log(`❌ Faces don't match. Similarity: ${similarity.toFixed(2)}`);
-                showModal("Face Mismatch", 
-                    `Uploaded photo and scanned face do not match (similarity: ${(similarity * 100).toFixed(1)}%). ` +
-                    `Minimum required: 55%. ` +
-                    `\n\nPlease ensure:\n\n` +
-                    `1. You are the same person in both photos\n` +
-                    `2. Both photos show your full face clearly\n` +
-                    `3. You are looking straight at the camera\n` +
-                    `4. Good lighting in both photos\n` +
-                    `5. No hats, sunglasses, or face coverings`);
+                console.log(`❌ Faces don't match. Similarity: ${similarity.toFixed(2)} (Threshold: ${threshold})`);
                 
-                // Go back to step 3 to re-upload photo
-                setTimeout(() => {
-                    // Reset everything
-                    uploadedPhoto = null;
-                    uploadedFaceEncoding = null;
-                    scannedFaceEncoding = null;
-                    encodingProgress = 0;
-                    qualityCheckCount = 0;
-                    isEncodingComplete = false;
-                    hasSeenGuidelines = true;
-                    
-                    // Clear photo preview
-                    const uploadPreview = document.getElementById("uploadPreview");
-                    if (uploadPreview) {
-                        uploadPreview.innerHTML = '<span>Click to Upload</span>';
-                    }
-
-                    const uploadInput = document.getElementById("photo")
-                    if (uploadInput) {
-                        uploadInput.value = '';
-                    }    
-                    
-                    nextStep(3);
-                }, 3000);
+                // Provide detailed feedback
+                let feedback = `Uploaded photo and scanned face do not match.\n\n`;
+                feedback += `Similarity: ${(similarity * 100).toFixed(1)}%\n`;
+                feedback += `Required: ${(threshold * 100).toFixed(0)}%\n\n`;
+                feedback += `Possible reasons:\n\n`;
+                
+                if (similarity < 0.3) {
+                    feedback += `• You are not the same person in both photos\n`;
+                    feedback += `• Photos show completely different people\n`;
+                } else if (similarity < 0.45) {
+                    feedback += `• Different facial expressions\n`;
+                    feedback += `• Different lighting conditions\n`;
+                    feedback += `• Different head angles\n`;
+                } else {
+                    feedback += `• Slight differences in angle or expression\n`;
+                    feedback += `• Minor lighting variations\n`;
+                }
+                
+                feedback += `\nPlease ensure:\n`;
+                feedback += `1. You are the same person in both photos\n`;
+                feedback += `2. Both photos show your full face clearly\n`;
+                feedback += `3. You are looking straight at the camera\n`;
+                feedback += `4. Good, even lighting in both photos\n`;
+                feedback += `5. No hats, sunglasses, or face coverings\n`;
+                
+                if (multiAngleEncodings.length < 2) {
+                    feedback += `\n⚠ Note: Only captured ${multiAngleEncodings.length} angle(s). `;
+                    feedback += `For better recognition, try capturing all 3 angles (front, left, right).`;
+                }
+                
+                showModal("Face Mismatch", feedback);
+                
+                // Provide options to user
+                const shouldRetry = confirm(
+                    "Would you like to try scanning again?\n\n" +
+                    "YES: Try face scanning again\n" +
+                    "NO: Go back and re-upload photo"
+                );
+                
+                if (shouldRetry) {
+                    // Restart face scan
+                    setTimeout(() => {
+                        encodingProgress = 0;
+                        qualityCheckCount = 0;
+                        isEncodingComplete = false;
+                        scannedFaceEncoding = null;
+                        multiAngleEncodings = [];
+                        startFaceScan();
+                    }, 1000);
+                } else {
+                    // Go back to step 3 to re-upload photo
+                    setTimeout(() => {
+                        resetToPhotoUpload();
+                    }, 1000);
+                }
             }
             
         } else {
@@ -1732,6 +1984,7 @@ async function completeFaceEncoding() {
                 qualityCheckCount = 0;
                 isEncodingComplete = false;
                 scannedFaceEncoding = null;
+                multiAngleEncodings = [];
                 startFaceScan();
             }, 3000);
         }
@@ -1744,37 +1997,134 @@ async function completeFaceEncoding() {
             qualityCheckCount = 0;
             isEncodingComplete = false;
             scannedFaceEncoding = null;
+            multiAngleEncodings = [];
             startFaceScan();
         }, 3000);
     }
 }
 
+// Helper function to reset to photo upload step
+function resetToPhotoUpload() {
+    uploadedPhoto = null;
+    uploadedFaceEncoding = null;
+    scannedFaceEncoding = null;
+    multiAngleEncodings = [];
+    encodingProgress = 0;
+    qualityCheckCount = 0;
+    isEncodingComplete = false;
+    
+    // Clear photo preview
+    const uploadPreview = document.getElementById("uploadPreview");
+    if (uploadPreview) {
+        uploadPreview.innerHTML = '<span>Click to Upload</span>';
+    }
+    
+    const uploadInput = document.getElementById("photo");
+    if (uploadInput) {
+        uploadInput.value = '';
+    }
+    
+    // Stop camera if running
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+    }
+    
+    // Go back to step 3
+    nextStep(3);
+}
 
-async function compareFaces(encoding1, encoding2) {
+
+async function compareFaces(encoding1, encoding2, multiEncodings1 = [], multiEncodings2 = []) {
     try {
         console.log("=== COMPARE FACES START ===");
-        console.log("Encoding1 length:", encoding1?.length);
-        console.log("Encoding2 length:", encoding2?.length);
+        console.log("Encoding1 (primary) length:", encoding1?.length || 0);
+        console.log("Encoding2 (primary) length:", encoding2?.length || 0);
+        console.log("MultiEncodings1 count:", multiEncodings1?.length || 0);
+        console.log("MultiEncodings2 count:", multiEncodings2?.length || 0);
         
         // Show comparison status
         const comparisonStatus = document.getElementById("faceComparisonStatus");
+        const similarityScore = document.getElementById("similarityScore");
+        
         if (comparisonStatus) {
             comparisonStatus.classList.remove("hidden");
+            if (multiEncodings1.length > 0 || multiEncodings2.length > 0) {
+                comparisonStatus.textContent = "Comparing multiple face angles...";
+            } else {
+                comparisonStatus.textContent = "Comparing faces...";
+            }
         }
         
+        // Prepare payload with profile information
+        const payload = {
+            encoding1: encoding1,
+            encoding2: encoding2
+        };
+        
+        // Add multi-angle encodings if available
+        if (multiEncodings1.length > 0) {
+            payload.multi_encodings1 = multiEncodings1;
+            console.log(`Added ${multiEncodings1.length} multi-angle encodings for encoding1`);
+        }
+        
+        if (multiEncodings2.length > 0) {
+            payload.multi_encodings2 = multiEncodings2;
+            console.log(`Added ${multiEncodings2.length} multi-angle encodings for encoding2`);
+        }
+        
+        // Add profile type information for better comparison
+        // Assuming encoding1 is from uploaded photo (frontal)
+        // and encoding2 is from final scan (frontal)
+        payload.encoding1_profile_type = 'front';
+        payload.encoding2_profile_type = 'front';
+        
+        // For multi-angle encodings, mark them as profiles
+        if (multiEncodings1.length > 0) {
+            payload.multi_encodings1_profile_types = [];
+            for (let i = 0; i < multiEncodings1.length; i++) {
+                // First multi-angle is usually left profile, second is right
+                const profileType = i === 0 ? 'left' : i === 1 ? 'right' : 'front';
+                payload.multi_encodings1_profile_types.push(profileType);
+            }
+        }
+        
+        if (multiEncodings2.length > 0) {
+            payload.multi_encodings2_profile_types = [];
+            for (let i = 0; i < multiEncodings2.length; i++) {
+                const profileType = i === 0 ? 'left' : i === 1 ? 'right' : 'front';
+                payload.multi_encodings2_profile_types.push(profileType);
+            }
+        }
+        
+        console.log("Sending comparison payload:", {
+            hasEncoding1: !!encoding1,
+            hasEncoding2: !!encoding2,
+            multi1Count: multiEncodings1.length,
+            multi2Count: multiEncodings2.length,
+            payloadSize: JSON.stringify(payload).length
+        });
+        
+        // Send to backend
+        const startTime = Date.now();
         const response = await fetch('/api/compare_faces', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                encoding1: encoding1,
-                encoding2: encoding2
-            })
+            body: JSON.stringify(payload)
         });
+        
+        const responseTime = Date.now() - startTime;
+        console.log(`Comparison API response time: ${responseTime}ms`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         
         const data = await response.json();
         
+        // Hide comparison status
         if (comparisonStatus) {
             comparisonStatus.classList.add("hidden");
         }
@@ -1783,35 +2133,166 @@ async function compareFaces(encoding1, encoding2) {
         console.log("=== COMPARE FACES END ===");
         
         if (data.success) {
-            const similarityScore = document.getElementById("similarityScore");
+            // Update similarity score display
             if (similarityScore) {
-                similarityScore.textContent = `${data.percentage.toFixed(1)}%`;
-                // Color code based on similarity
-                if (data.percentage >= 60) {
-                    similarityScore.style.color = "#00aa00";
-                    similarityScore.style.backgroundColor = "#e8f5e8";
-                } else if (data.percentage >= 40) {
-                    similarityScore.style.color = "#ffaa00";
-                    similarityScore.style.backgroundColor = "#fff8e8";
+                const percentage = data.percentage || (data.similarity * 100);
+                similarityScore.textContent = `${percentage.toFixed(1)}%`;
+                
+                // Color code based on similarity and comparison type
+                let color, bgColor;
+                
+                if (data.is_profile_comparison) {
+                    // Profile comparison colors
+                    if (percentage >= 55) {
+                        color = "#00aa00";
+                        bgColor = "#e8f5e8";
+                    } else if (percentage >= 40) {
+                        color = "#ffaa00";
+                        bgColor = "#fff8e8";
+                    } else {
+                        color = "#ff4444";
+                        bgColor = "#ffe8e8";
+                    }
                 } else {
-                    similarityScore.style.color = "#ff4444";
-                    similarityScore.style.backgroundColor = "#ffe8e8";
+                    // Frontal comparison colors
+                    if (percentage >= 60) {
+                        color = "#00aa00";
+                        bgColor = "#e8f5e8";
+                    } else if (percentage >= 45) {
+                        color = "#ffaa00";
+                        bgColor = "#fff8e8";
+                    } else {
+                        color = "#ff4444";
+                        bgColor = "#ffe8e8";
+                    }
+                }
+                
+                similarityScore.style.color = color;
+                similarityScore.style.backgroundColor = bgColor;
+                
+                // Add tooltip with detailed info
+                similarityScore.title = 
+                    `Similarity: ${percentage.toFixed(1)}%\n` +
+                    `Threshold: ${(data.threshold_used * 100).toFixed(0)}%\n` +
+                    `Comparison type: ${data.comparison_type || 'unknown'}\n` +
+                    `Confidence: ${data.confidence_score || 'N/A'}%\n` +
+                    `Angles compared: ${data.num_comparisons || 'N/A'}`;
+            }
+            
+            // Log detailed results
+            if (data.debug) {
+                console.log("Comparison debug info:", data.debug);
+                
+                if (data.debug.top_3_similarities && data.debug.top_3_similarities.length > 0) {
+                    console.log("Top 3 similarities:");
+                    data.debug.top_3_similarities.forEach((sim, idx) => {
+                        console.log(`  ${idx + 1}. ${(sim * 100).toFixed(1)}%`);
+                    });
                 }
             }
             
+            // Return the similarity value
             return data.similarity;
+            
         } else {
             console.error("Face comparison failed:", data.message);
-            showModal("Comparison Error", data.message || "Failed to compare faces.");
+            
+            // Show detailed error message
+            let errorMsg = data.message || "Failed to compare faces.";
+            
+            if (data.message && data.message.includes("length")) {
+                errorMsg += "\n\nPlease ensure both photos show clear, full faces.";
+            } else if (data.message && data.message.includes("encoding")) {
+                errorMsg += "\n\nFace encoding failed. Please try again with better lighting.";
+            }
+            
+            showModal("Comparison Error", errorMsg);
+            
+            // Return 0 for failed comparison
             return 0;
         }
+        
     } catch (error) {
         console.error("Error comparing faces:", error);
-        showModal("Error", "Failed to compare faces. Please try again.");
+        
+        // Hide comparison status if visible
+        const comparisonStatus = document.getElementById("faceComparisonStatus");
+        if (comparisonStatus) {
+            comparisonStatus.classList.add("hidden");
+        }
+        
+        // Determine error type and show appropriate message
+        let errorMessage = "Failed to compare faces. ";
+        
+        if (error.name === "TypeError" && error.message.includes("fetch")) {
+            errorMessage += "Network error. Please check your internet connection.";
+        } else if (error.message.includes("HTTP")) {
+            errorMessage += `Server error: ${error.message}`;
+        } else if (error.message.includes("JSON")) {
+            errorMessage += "Invalid response from server.";
+        } else {
+            errorMessage += "Please try again.";
+        }
+        
+        showModal("Error", errorMessage);
+        
         return 0;
     }
 }
 
+// Function to update comparison status in UI
+function updateComparisonStatus(status, isVisible = true) {
+    const statusEl = document.getElementById("faceComparisonStatus");
+    if (!statusEl) return;
+    
+    if (isVisible) {
+        statusEl.textContent = status;
+        statusEl.classList.remove("hidden");
+    } else {
+        statusEl.classList.add("hidden");
+    }
+}
+
+// Function to validate encoding before comparison
+function validateEncoding(encoding, encodingName = "encoding") {
+    if (!encoding) {
+        console.error(`${encodingName} is null or undefined`);
+        return false;
+    }
+    
+    if (!Array.isArray(encoding)) {
+        console.error(`${encodingName} is not an array`);
+        return false;
+    }
+    
+    if (encoding.length !== 512) {
+        console.error(`${encodingName} length is ${encoding.length}, expected 512`);
+        return false;
+    }
+    
+    // Check for NaN or Infinity values
+    for (let i = 0; i < Math.min(10, encoding.length); i++) {
+        if (!Number.isFinite(encoding[i])) {
+            console.error(`${encodingName} contains invalid value at index ${i}: ${encoding[i]}`);
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// Function to get comparison type description
+function getComparisonTypeDescription(encoding1Profile, encoding2Profile, multi1Count, multi2Count) {
+    if (multi1Count > 0 || multi2Count > 0) {
+        return `Multi-angle comparison (${multi1Count + multi2Count} angles)`;
+    }
+    
+    if (encoding1Profile !== 'front' || encoding2Profile !== 'front') {
+        return `${encoding1Profile}-to-${encoding2Profile} comparison`;
+    }
+    
+    return "Frontal face comparison";
+}
 
 async function previewUploadedImage(event) {
     console.log("=== PREVIEW UPLOADED IMAGE START ===");
@@ -2047,6 +2528,11 @@ function registerStudent() {
     const inviteToken = urlParams.get('token');
     if (inviteToken) {
         formData.append('invite_token', inviteToken);
+    }
+
+    if (window.multiAngleEncodings && window.multiAngleEncodings.length > 0) {
+        formData.append('multi_angle_encodings', JSON.stringify(window.multiAngleEncodings));
+        console.log(`Sending ${window.multiAngleEncodings.length} multi-angle encodings`);
     }
 
     const registerBtn = document.querySelector("#step5 button");
