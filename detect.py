@@ -9987,7 +9987,7 @@ def register_student():
 def register_faculty():
     try:
         data = request.form
-        email = data.get('email', '').strip()
+        email = data.get('email', '').strip().lower()
         faculty_id = data.get('faculty_id', '').strip()
         invite_token = data.get('invite_token', '').strip()
         first_name = data.get('first_name', '').strip()
@@ -9998,6 +9998,10 @@ def register_faculty():
         password = data.get('password', '').strip()
         role = data.get('role', 'moderator').strip()
         
+        # Get multi-angle encodings if provided (SAME as student)
+        multi_angle_encodings_data = data.get('multi_angle_encodings', '')
+        
+        # Validation (SAME structure as student)
         if not all([email, faculty_id, first_name, last_name, department, designation, password]):
             logger.warning("Missing required fields in register_faculty request")
             return jsonify({'success': False, 'message': 'All fields are required'})
@@ -10013,23 +10017,30 @@ def register_faculty():
         if role not in ['super_admin', 'admin', 'moderator']:
             role = 'moderator'
         
-        # Hash password
         password_hash = hash_password(password)
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT faculty_id FROM faculty WHERE faculty_id = %s OR email = %s", 
-                      (faculty_id, email))
         
-        if cursor.fetchone():
+        # Check if faculty already exists (SAME as student)
+        cursor.execute("SELECT faculty_id, email FROM faculty WHERE faculty_id = %s OR email = %s", 
+                      (faculty_id, email))
+        existing = cursor.fetchone()
+        
+        if existing:
             cursor.close()
             conn.close()
-            logger.warning(f"Faculty ID {faculty_id} or email {email} already exists")
-            return jsonify({'success': False, 'message': 'Faculty ID or email already exists'})
+            if existing[0] == faculty_id:
+                logger.warning(f"Faculty ID {faculty_id} already exists")
+                return jsonify({'success': False, 'message': 'Faculty ID already exists'})
+            else:
+                logger.warning(f"Email {email} already registered")
+                return jsonify({'success': False, 'message': 'Email already registered'})
         
-        # Get face encoding from single scan (not pose-based anymore)
+        # PROCESS PRIMARY FACE ENCODING (SAME as student)
         face_encoding_data = data.get('face_encoding', '')
         encoding_str = None
+        primary_embedding = None
         
         try:
             if face_encoding_data:
@@ -10040,12 +10051,12 @@ def register_faculty():
                     if norm > 0:
                         encoding_array = encoding_array / norm
                         encoding_str = "[" + ",".join(str(x) for x in encoding_array) + "]"
-                        if DEBUG_MODE:
-                            logger.debug(f"Normalized single face embedding: norm={np.linalg.norm(encoding_array):.6f}")
+                        primary_embedding = encoding_array
+                        logger.debug(f"Primary embedding saved for faculty {faculty_id}")
                     else:
                         raise ValueError("Zero norm encoding")
                 else:
-                    raise ValueError("Invalid face encoding length")
+                    raise ValueError(f"Invalid face encoding length: {len(face_encoding)}")
             else:
                 raise ValueError("No face encoding provided")
         except Exception as e:
@@ -10054,99 +10065,141 @@ def register_faculty():
             logger.error(f"Invalid face encoding format: {e}")
             return jsonify({'success': False, 'message': 'Invalid face encoding. Please complete face scanning.'})
         
-        # FIX 2: If still no encoding, return error
-        if not encoding_str or encoding_str == "[]":
-            cursor.close()
-            conn.close()
-            logger.error("No valid face encoding created")
-            return jsonify({'success': False, 'message': 'No valid face encoding created. Please complete face scanning.'})
+        # PROCESS MULTI-ANGLE ENCODINGS (SAME as student)
+        multi_angle_json = '[]'
+        multi_angle_embeddings = []
         
+        if multi_angle_encodings_data:
+            try:
+                multi_angle_data = json.loads(multi_angle_encodings_data)
+                if isinstance(multi_angle_data, list):
+                    valid_angles = []
+                    
+                    for i, angle_encoding in enumerate(multi_angle_data):
+                        if isinstance(angle_encoding, list) and len(angle_encoding) == 512:
+                            enc_array = np.array(angle_encoding, dtype=np.float32)
+                            norm = np.linalg.norm(enc_array)
+                            
+                            if norm > 0:
+                                # Normalize
+                                enc_array = enc_array / norm
+                                
+                                # Store for memory addition
+                                multi_angle_embeddings.append(enc_array)
+                                
+                                # Convert to string for JSON storage
+                                angle_str = "[" + ",".join(str(x) for x in enc_array) + "]"
+                                valid_angles.append(angle_str)
+                                
+                                logger.debug(f"Multi-angle {i+1} saved for faculty {faculty_id}")
+                            else:
+                                logger.warning(f"Zero norm in multi-angle encoding {i+1}")
+                        else:
+                            logger.warning(f"Invalid multi-angle encoding format at index {i}")
+                    
+                    if valid_angles:
+                        multi_angle_json = json.dumps(valid_angles)
+                        logger.info(f"Saved {len(valid_angles)} multi-angle encodings for faculty {faculty_id}")
+                    else:
+                        logger.warning("No valid multi-angle encodings found")
+                        
+            except Exception as e:
+                logger.warning(f"Failed to parse multi-angle encodings: {e}")
+        
+        # Save photo (SAME as student)
         photo_path = None
         if 'photo' in request.files:
             photo = request.files['photo']
-            filename = secure_filename(photo.filename)
-            if filename and filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                photo_path = f"static/images/faculty_photos/{faculty_id}.jpg"
-                
-                try:
-                    photo.save(photo_path)
-                    if DEBUG_MODE: 
-                        logger.debug(f"Saved photo for faculty {faculty_id} at {photo_path}")
+            if photo and photo.filename:
+                filename = secure_filename(photo.filename)
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    os.makedirs('static/images/faculty_photos', exist_ok=True)
+                    photo_path = f"static/images/faculty_photos/{faculty_id}.jpg"
                     
-                    # Verify photo matches face scan
-                    img = cv2.imread(photo_path)
-                    if img is not None:
-                        faces = face_analysis.get(img)
-                        if faces:
-                            photo_embedding = faces[0].embedding
-                            # Parse the stored encoding for comparison
-                            try:
-                                stored_encoding = json.loads(encoding_str)
-                                scan_embedding = np.array(stored_encoding, dtype=np.float32)
-                                
-                                # Normalize both embeddings
-                                photo_norm = np.linalg.norm(photo_embedding)
-                                scan_norm = np.linalg.norm(scan_embedding)
-                                if photo_norm > 0 and scan_norm > 0:
-                                    photo_embedding = photo_embedding / photo_norm
-                                    scan_embedding = scan_embedding / scan_norm
-                                    
-                                    # Calculate similarity
-                                    dot_product = np.dot(photo_embedding, scan_embedding)
-                                    similarity = dot_product  # Both are normalized, so no division needed
-                                    distance = 1 - similarity
-                                    
-                                    if distance > TOLERANCE:
-                                        os.remove(photo_path)
-                                        cursor.close()
-                                        conn.close()
-                                        return jsonify({'success': False, 'message': f'Uploaded photo does not match the face scan. Similarity: {similarity:.3f}'})
-                                    else:
-                                        if DEBUG_MODE: 
-                                            logger.debug(f"Photo matches scan with similarity: {similarity:.3f}")
-                                else:
-                                    if DEBUG_MODE: 
-                                        logger.warning("Zero norm in embeddings during photo verification")
-                            except Exception as e:
-                                logger.error(f"Error parsing encoding for verification: {e}")
-                                # Don't fail registration if verification fails
+                    try:
+                        # Optimize and save photo
+                        img_array = np.frombuffer(photo.read(), np.uint8)
+                        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                        
+                        if img is not None:
+                            height, width = img.shape[:2]
+                            max_dimension = 1024
+                            
+                            if height > max_dimension or width > max_dimension:
+                                scale = max_dimension / max(height, width)
+                                new_width = int(width * scale)
+                                new_height = int(height * scale)
+                                img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                            
+                            cv2.imwrite(photo_path, img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            
+                            logger.debug(f"Saved optimized photo for faculty {faculty_id} at {photo_path}")
                         else:
-                            os.remove(photo_path)
-                            cursor.close()
-                            conn.close()
-                            return jsonify({'success': False, 'message': 'No face detected in uploaded photo.'})
-                except Exception as e:
-                    logger.error(f"Failed to save or verify photo: {e}")
-                    photo_path = None
+                            photo.seek(0)
+                            photo.save(photo_path)
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to optimize/save photo: {e}")
+                        try:
+                            photo.seek(0)
+                            photo.save(photo_path)
+                        except Exception as e2:
+                            logger.error(f"Failed to save photo at all: {e2}")
+                            photo_path = None
         
-        # Get current timestamp
-        current_time = datetime.now()
-        
-        # Insert faculty with ALL required fields including status and timestamps
+        # INSERT FACULTY (similar to student but different table/columns)
         cursor.execute(
             """INSERT INTO faculty 
             (faculty_id, first_name, last_name, middle_name, department, designation, email, 
-             face_encoding, photo_path, password_hash, role, status, created_at, updated_at) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+             face_encoding, multi_angle_encodings, photo_path, password_hash, role, 
+             created_at, updated_at, status) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 'active')""",
             (faculty_id, first_name, last_name, middle_name or None, department, designation, email, 
-             encoding_str, photo_path, password_hash, role, 'active', current_time, current_time)
+             encoding_str, multi_angle_json, photo_path, password_hash, role)
         )
-        conn.commit()  # COMMIT THE FACULTY INSERT FIRST
-        cursor.close()
-        conn.close()
-
+        
+        # ADD TO IN-MEMORY FACE RECOGNITION SYSTEM (SAME as student)
+        try:
+            if primary_embedding is not None:
+                # Add primary embedding to memory
+                known_face_ids.append(faculty_id)
+                known_face_names.append(f"{first_name} {last_name}")
+                known_face_encodings.append(primary_embedding)
+                
+                # Also add multi-angle embeddings for better recognition
+                for i, angle_embedding in enumerate(multi_angle_embeddings):
+                    angle_id = f"{faculty_id}_angle{i+1}"
+                    angle_name = f"{first_name} {last_name} [Angle{i+1}]"
+                    
+                    known_face_ids.append(angle_id)
+                    known_face_names.append(angle_name)
+                    known_face_encodings.append(angle_embedding)
+                    
+                    logger.debug(f"Added multi-angle {i+1} to memory for faculty {faculty_id}")
+                
+                logger.info(f"✅ Added faculty {faculty_id} to memory with {len(multi_angle_embeddings)} additional angles")
+                
+                # Verify storage
+                if faculty_id in known_face_ids:
+                    idx = known_face_ids.index(faculty_id)
+                    logger.debug(f"✅ VERIFIED: Faculty {faculty_id} is at index {idx} in known_face_ids")
+                else:
+                    logger.error(f"❌ CRITICAL: Faculty {faculty_id} NOT found in known_face_ids after registration!")
+                    
+        except Exception as e:
+            logger.error(f"Failed to add faculty {faculty_id} to memory: {e}")
+        
+        # Handle invite token (SAME as student)
         if invite_token:
             try:
                 conn_invite = get_db_connection()
                 cursor_invite = conn_invite.cursor()
 
-                # Increment current_uses
                 cursor_invite.execute(
                     "UPDATE invites SET current_uses = current_uses + 1 WHERE token = %s",
                     (invite_token,)
                 )
 
-                # Check if max uses reached and mark as used
                 cursor_invite.execute(
                     "SELECT current_uses, max_uses FROM invites WHERE token = %s",
                     (invite_token,)
@@ -10158,54 +10211,53 @@ def register_faculty():
                         "UPDATE invites SET used = 1 WHERE token = %s",
                         (invite_token,)
                     )
-                    if DEBUG_MODE: 
-                        logger.debug(f"Invite token {invite_token} has reached max uses and marked as used")
+                    logger.debug(f"Invite token {invite_token} has reached max uses")
 
                 conn_invite.commit()
                 cursor_invite.close()
                 conn_invite.close()
 
-                if DEBUG_MODE: 
-                    logger.debug(f"Incremented uses for invite token: {invite_token}")
+                logger.debug(f"Incremented uses for invite token: {invite_token}")
             except Exception as e:
                 logger.error(f"Failed to update invite uses: {e}")
         
-        # FIX 3: Add to memory with VALID encoding string
-        try:
-            if encoding_str and encoding_str != "[]":
-                add_face_to_memory(
-                    id=faculty_id,
-                    first_name=first_name,
-                    last_name=last_name,
-                    face_encoding=encoding_str,  # This is the actual encoding string
-                    person_type='faculty'
-                )
-                if DEBUG_MODE: 
-                    logger.debug(f"Successfully added faculty {faculty_id} to memory")
-            else:
-                logger.warning(f"No valid encoding to add to memory for faculty {faculty_id}")
-        except Exception as e:
-            logger.error(f"Failed to add faculty {faculty_id} to memory: {e}")
+        # Commit database changes
+        conn.commit()
+        cursor.close()
+        conn.close()
         
-        # Clear pose_embeddings if it exists (for backward compatibility)
-        if 'pose_embeddings' in globals():
-            pose_embeddings.clear()
+        # LOG SUCCESS WITH DETAILS
+        logger.info(f"✅ Faculty registered successfully: {faculty_id} ({first_name} {last_name})")
+        logger.info(f"   - Department: {department}")
+        logger.info(f"   - Designation: {designation}")
+        logger.info(f"   - Multi-angle encodings: {len(multi_angle_embeddings)}")
+        logger.info(f"   - Photo saved: {'Yes' if photo_path else 'No'}")
         
-        # FIX 4: Verify the face was added properly
-        if faculty_id in known_face_ids:
-            idx = known_face_ids.index(faculty_id)
-            if DEBUG_MODE: 
-                logger.debug(f"✅ VERIFIED: Faculty {faculty_id} is at index {idx} in known_face_ids")
-        else:
-            logger.error(f"❌ WARNING: Faculty {faculty_id} NOT found in known_face_ids after registration!")
-        
-        if DEBUG_MODE: 
-            logger.debug(f"Faculty registered: {faculty_id} ({first_name} {last_name}) with role {role}")
-        return jsonify({'success': True, 'message': 'Faculty registered successfully'})
-        
+        # Return success with additional info
+        return jsonify({
+            'success': True, 
+            'message': 'Faculty registered successfully',
+            'faculty_id': faculty_id,
+            'multi_angle_count': len(multi_angle_embeddings),
+            'photo_saved': bool(photo_path)
+        })
+
     except Exception as e:
-        logger.error(f"Faculty registration error: {str(e)}")
-        return jsonify({'success': False, 'message': f'Registration error: {str(e)}'})
+        logger.error(f"Registration error: {str(e)}", exc_info=True)
+        
+        # Clean up any created files if registration failed
+        try:
+            if 'faculty_id' in locals() and 'photo_path' in locals() and photo_path:
+                if os.path.exists(photo_path):
+                    os.remove(photo_path)
+                    logger.debug(f"Cleaned up photo file: {photo_path}")
+        except:
+            pass
+            
+        return jsonify({
+            'success': False, 
+            'message': f'Registration failed: {str(e)}'
+        })
 
 # Modified health check to not fail on camera issues
 @app.route('/api/health', methods=['GET'])

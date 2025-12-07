@@ -115,49 +115,49 @@
     </div>
 
     <!-- Step 3 -->
-    <div id="step3" class="hidden">
-    <div class="header">FILL-UP FACULTY MEMBER INFORMATION</div>
-    <div class="content">
-      <h2>Upload Photo & Info</h2>
-      <div class="upload-container">
-        <div class="upload-preview" id="uploadPreview">
-          <span>Click to Upload</span>
-        </div>
-        <input type="file" id="photo" class="upload-input" accept="image/*" style="display: none;">
+   <div id="step3" class="hidden">
+  <div class="header">FILL-UP FACULTY MEMBER INFORMATION</div>
+  <div class="content">
+    <h2>Upload Photo & Info</h2>
+    <div class="upload-container">
+      <div class="upload-preview" id="uploadPreview">
+        <span>Click to Upload</span>
       </div>
-        <div class="name-fields">
-          <input type="text" placeholder="Last Name" id="lastName">
-          <input type="text" placeholder="First Name" id="firstName">
-          <input type="text" placeholder="Middle Name" id="middleName">
-        </div>
-        <input type="text" placeholder="Faculty Member ID (numbers and hyphens only)" id="facultyId" oninput="validateFacultyId(this)">
-        <select id="department">
-          <option value="">Select Department</option>
-          <option value="BSIT">BS Information Technology</option>
-          <option value="BSCS">BS Computer Science</option>
-          <option value="ACT">Associate in Computer Technology</option>
-        </select>
-        <select id="designation">
-          <option value="">Select Designation</option>
-          <option value="Instructor">Instructor</option>
-          <option value="Professor">Professor</option>
-          <option value="Department Head">Department Head</option>
-          <option value="Program Coordinator">Program Coordinator</option>
-          <option value="Lecturer">Lecturer</option>
-        </select>
-        <label class="password-label">Create Password</label>
-        <input type="password" id="password" placeholder="Enter password" oninput="validatePassword()">
-        <div id="passwordStrength" class="password-strength">
-          <div class="strength-bar">
-            <div id="strengthFill" class="strength-fill"></div>
-          </div>
-          <span id="strengthText">Password strength</span>
-        </div>
-        <input type="password" id="confirmPassword" placeholder="Confirm password" oninput="validateConfirmPassword()">
-        <div id="passwordMatch" class="password-match"></div>
-<button onclick="validateStep3()">Next</button>
+      <input type="file" id="photo" class="upload-input" accept="image/*" style="display: none;">
     </div>
+    <div class="name-fields">
+      <input type="text" placeholder="Last Name" id="lastName">
+      <input type="text" placeholder="First Name" id="firstName">
+      <input type="text" placeholder="Middle Name" id="middleName">
+    </div>
+    <input type="text" placeholder="Faculty Member ID (numbers and hyphens only)" id="facultyId" oninput="validateFacultyId(this)">
+    <select id="department">
+      <option value="">Select Department</option>
+      <option value="BSIT">BS Information Technology</option>
+      <option value="BSCS">BS Computer Science</option>
+      <option value="ACT">Associate in Computer Technology</option>
+    </select>
+    <select id="designation">
+      <option value="">Select Designation</option>
+      <option value="Instructor">Instructor</option>
+      <option value="Professor">Professor</option>
+      <option value="Department Head">Department Head</option>
+      <option value="Program Coordinator">Program Coordinator</option>
+      <option value="Lecturer">Lecturer</option>
+    </select>
+    <label class="password-label">Create Password</label>
+    <input type="password" id="password" placeholder="Enter password" oninput="validatePassword()">
+    <div id="passwordStrength" class="password-strength">
+      <div class="strength-bar">
+        <div id="strengthFill" class="strength-fill"></div>
+      </div>
+      <span id="strengthText">Password strength</span>
+    </div>
+    <input type="password" id="confirmPassword" placeholder="Confirm password" oninput="validateConfirmPassword()">
+    <div id="passwordMatch" class="password-match"></div>
+    <button onclick="validateStep3()">Next</button>
   </div>
+</div>
 
 <!-- Step 4 -->
 <div id="step4" class="hidden">
@@ -244,6 +244,22 @@
   <audio id="bellSound" src="static/Hotel bell ringing - Sounds effect.mp3" preload="auto"></audio>
 
   <script>
+let isCapturingAngle = false;
+let encodingProgress = 0;
+let uploadedFaceEncoding = null;
+let scannedFaceEncoding = null;
+let multiAngleEncodings = [];
+let encodingInterval = null;
+let isEncodingComplete = false;
+let qualityCheckCount = 0;
+const REQUIRED_QUALITY_CHECKS = 3;
+let faceEncoding = null;
+let uploadedPhoto = null;
+let videoStream = null;
+let userEmail = "";
+let scanAttempts = 0;
+const MAX_SCAN_ATTEMPTS = 40;
+
 const photoGuidelinesModal = document.getElementById('photoGuidelinesModal');
 const closePhotoGuidelinesBtn = document.getElementById('closePhotoGuidelines');
 const uploadPreview = document.getElementById('uploadPreview');
@@ -323,37 +339,6 @@ photoInput.addEventListener('change', previewUploadedImage);
       alert("You must accept the Terms & Conditions to proceed.");
     };
   });
-  
-let currentPose = 'frontal';
-let faceEncoding = null;
-let faceEncodings = [];
-let uploadedPhoto = null;
-let videoStream = null;
-let scanState = 0;
-let scanInterval = null;
-let userEmail = "";
-let faceScanState = {
-    frontal: { captured: false, encoding: null, quality: 0 },
-    left: { captured: false, encoding: null, quality: 0 },
-    right: { captured: false, encoding: null, quality: 0 },
-    up: { captured: false, encoding: null, quality: 0 },
-    down: { captured: false, encoding: null, quality: 0 },
-    mouth_open: { captured: false, encoding: null, quality: 0 },
-    eyes_closed: { captured: false, encoding: null, quality: 0 }
-};
-
-let scanAttempts = 0;
-const MAX_SCAN_ATTEMPTS = 10;
-
-const POSE_STATES = [
-    { id: 'frontal', name: 'Front View', instruction: 'Please look straight at the camera' },
-    { id: 'left', name: 'Left Side', instruction: 'Please slowly turn your head to the left' },
-    { id: 'right', name: 'Right Side', instruction: 'Please slowly turn your head to the right' },
-    { id: 'up', name: 'Looking Up', instruction: 'Please slowly tilt your head up' },
-    { id: 'down', name: 'Looking Down', instruction: 'Please slowly tilt your head down' },
-    { id: 'mouth_open', name: 'Mouth Open', instruction: 'Please open your mouth slightly' },
-    { id: 'eyes_closed', name: 'Eyes Closed', instruction: 'Please close your eyes gently' }
-];
 
 
 function proceedToRegistration() {
@@ -386,33 +371,124 @@ setInterval(captureAndSendImage, 500);
         document.getElementById("modal").style.display = "none";
     }
 
-    function nextStep(step) {
-        for (let i = 1; i <= 6; i++) {
-            document.getElementById("step" + i).classList.add("hidden");
-        }
-        document.getElementById("step" + step).classList.remove("hidden");
-
-        if (step === 4) {
-            startCamera();
-            startFaceScan();
-        }
-        
-        if (step === 5) {
-            const firstName = document.getElementById("firstName").value;
-            const lastName = document.getElementById("lastName").value;
-            const middleName = document.getElementById("middleName").value;
-            
-            document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`;
-            document.getElementById("previewFacultyId").textContent = document.getElementById("facultyId").value;
-            document.getElementById("previewDepartment").textContent = document.getElementById("department").options[document.getElementById("department").selectedIndex].text;
-            document.getElementById("previewDesignation").textContent = document.getElementById("designation").options[document.getElementById("designation").selectedIndex].text;
-            
-            // Use the uploaded photo in the ID preview
-            if (uploadedPhoto) {
-                document.getElementById("idPhoto").innerHTML = `<img src="${uploadedPhoto}">`;
-            }
-        }
+  function nextStep(step) {
+    // Hide all steps
+    for (let i = 1; i <= 6; i++) {
+        const stepEl = document.getElementById("step" + i);
+        if (stepEl) stepEl.classList.add("hidden");
     }
+    
+    // Show the target step
+    const targetStep = document.getElementById("step" + step);
+    if (targetStep) targetStep.classList.remove("hidden");
+
+    // If moving to Step 4 (face scan), start the camera
+    if (step === 4) {
+        startCamera();
+        setTimeout(startFaceScan, 1000);
+    }
+    
+    // If moving to Step 5 (preview), populate the preview
+    if (step === 5) {
+        updatePreview();
+    }
+}
+
+// Function to update preview in Step 5
+function updatePreview() {
+    // Get values from Step 3 form
+    const firstName = document.getElementById("firstName")?.value || "";
+    const lastName = document.getElementById("lastName")?.value || "";
+    const middleName = document.getElementById("middleName")?.value || "";
+    const facultyId = document.getElementById("facultyId")?.value || "";
+    
+    // Get department and designation text (not just values)
+    const departmentSelect = document.getElementById("department");
+    const designationSelect = document.getElementById("designation");
+    const departmentText = departmentSelect ? departmentSelect.options[departmentSelect.selectedIndex]?.text : "";
+    const designationText = designationSelect ? designationSelect.options[designationSelect.selectedIndex]?.text : "";
+    
+    // Update the preview elements
+    if (document.getElementById("previewName")) {
+        document.getElementById("previewName").textContent = `${firstName} ${middleName} ${lastName}`.trim();
+    }
+    if (document.getElementById("previewFacultyId")) {
+        document.getElementById("previewFacultyId").textContent = facultyId;
+    }
+    if (document.getElementById("previewDepartment")) {
+        document.getElementById("previewDepartment").textContent = departmentText;
+    }
+    if (document.getElementById("previewDesignation")) {
+        document.getElementById("previewDesignation").textContent = designationText;
+    }
+    
+    // Display the uploaded photo if available
+    if (uploadedPhoto && document.getElementById("idPhoto")) {
+        document.getElementById("idPhoto").innerHTML = `<img src="${uploadedPhoto}" alt="Faculty Photo" style="width: 100%; height: 100%; object-fit: cover;">`;
+    }
+}
+
+// Step 3 Validation
+function validateStep3() {
+    const lastName = document.getElementById("lastName")?.value.trim() || "";
+    const firstName = document.getElementById("firstName")?.value.trim() || "";
+    const facultyId = document.getElementById("facultyId")?.value.trim() || "";
+    const department = document.getElementById("department")?.value || "";
+    const designation = document.getElementById("designation")?.value || "";
+    const password = document.getElementById("password").value;
+    const confirmPassword = document.getElementById("confirmPassword").value;
+
+    // Validate all required fields
+    if (!lastName) {
+        showModal("Warning", "Please enter your last name.");
+        return;
+    }
+    
+    if (!firstName) {
+        showModal("Warning", "Please enter your first name.");
+        return;
+    }
+    
+    if (!facultyId) {
+        showModal("Warning", "Please enter your faculty ID.");
+        return;
+    }
+    
+    if (!department) {
+        showModal("Warning", "Please select your department.");
+        return;
+    }
+    
+    if (!designation) {
+        showModal("Warning", "Please select your designation.");
+        return;
+    }
+    
+    if (!password || password.length < 8) {
+        showModal("Warning", "Password must be at least 8 characters long.");
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        showModal("Warning", "Passwords do not match.");
+        return;
+    }
+    
+    if (!uploadedPhoto) {
+        showModal("Warning", "Please upload a photo.");
+        return;
+    }
+    
+    if (!uploadedFaceEncoding || uploadedFaceEncoding.length === 0) {
+        showModal("Warning", "Unable to process uploaded photo. Please upload a clear photo of your face.");
+        return;
+    }
+    
+    console.log("Step 3 validation passed, moving to face scan");
+    
+    // Move to next step
+    nextStep(4);
+}
 
 function validateStep1() {
     const emailInput = document.getElementById("email");
@@ -701,47 +777,7 @@ function resendOTP() {
         }
     }
 
-    function validateStep3() {
-    const lastName = document.getElementById("lastName")?.value.trim() || "";
-    const firstName = document.getElementById("firstName")?.value.trim() || "";
-    const studentId = document.getElementById("studentId")?.value.trim() || "";
-    const program = document.getElementById("program")?.value || "";  
-    const yearLevel = document.getElementById("year_level")?.value || "";  
-    const sectionId = document.getElementById("section_id")?.value || "";  
-    const password = document.getElementById("password").value;
-    const confirmPassword = document.getElementById("confirmPassword").value;
-
-    if (!lastName || !firstName || !studentId || !program || !yearLevel || !sectionId) {
-        showModal("Warning", "Please fill out all required fields.");
-        return;
-    }
     
-    if (!password || password.length < 8) {
-        showModal("Warning", "Password must be at least 8 characters long.");
-        return;
-    }
-    
-    if (password !== confirmPassword) {
-        showModal("Warning", "Passwords do not match.");
-        return;
-    }
-    
-    if (!uploadedPhoto) {
-        showModal("Warning", "Please upload a photo.");
-        return;
-    }
-    
-    if (!uploadedFaceEncoding || uploadedFaceEncoding.length === 0) {
-        showModal("Warning", "Unable to process uploaded photo. Please upload a clear photo of your face.");
-        return;
-    }
-    
-    console.log("Step 3 validation passed, moving to face scan");
-    console.log("Uploaded face encoding available:", !!uploadedFaceEncoding);
-    
-    nextStep(4);
-}
-
 function startCamera() {
     console.log('Starting camera...');
     const video = document.getElementById("video");
@@ -1583,10 +1619,10 @@ async function completeFaceEncoding() {
             }
             
             // DYNAMIC THRESHOLD BASED ON ANGLE COUNT
-            let threshold = 0.55; // Default
+            let threshold = 0.85; // Default
             
             if (multiAngleEncodings.length >= 2) {
-                threshold = 0.45; // Lower threshold when we have multiple angles
+                threshold = 0.85; // Lower threshold when we have multiple angles
                 console.log(`Using lower threshold (${threshold}) due to ${multiAngleEncodings.length} angles`);
             }
             
@@ -1641,7 +1677,7 @@ async function completeFaceEncoding() {
                 if (similarity < 0.3) {
                     feedback += `• You are not the same person in both photos\n`;
                     feedback += `• Photos show completely different people\n`;
-                } else if (similarity < 0.45) {
+                } else if (similarity < 0.85) {
                     feedback += `• Different facial expressions\n`;
                     feedback += `• Different lighting conditions\n`;
                     feedback += `• Different head angles\n`;
@@ -1872,7 +1908,7 @@ async function compareFaces(encoding1, encoding2, multiEncodings1 = [], multiEnc
                     if (percentage >= 60) {
                         color = "#00aa00";
                         bgColor = "#e8f5e8";
-                    } else if (percentage >= 45) {
+                    } else if (percentage >= 85) {
                         color = "#ffaa00";
                         bgColor = "#fff8e8";
                     } else {
@@ -2197,7 +2233,7 @@ async function encodeImageFile(file) {
 function registerFaculty() {
     const formData = new FormData();
     
-    // Get all form elements
+    // Get all form data (similar to student but different field names)
     const email = userEmail || "";
     const facultyId = document.getElementById("facultyId")?.value?.trim() || "";
     const firstName = document.getElementById("firstName")?.value?.trim() || "";
@@ -2206,55 +2242,16 @@ function registerFaculty() {
     const department = document.getElementById("department")?.value || "";
     const designation = document.getElementById("designation")?.value || "";
     const password = document.getElementById("password")?.value || "";
-    const confirmPassword = document.getElementById("confirmPassword")?.value || "";
     const photoInput = document.getElementById("photo");
     
-    // Debug logging to see what we have
-    console.log("Faculty Member registration data:", {
-        email, facultyId, firstName, lastName, middleName, department, designation,
-        passwordLength: password.length, confirmPasswordLength: confirmPassword.length,
-        faceEncodingLength: window.faceEncoding ? window.faceEncoding.length : 0,
-        hasPhoto: photoInput?.files?.length > 0
-    });
-    
-    // Validate required fields
-    if (!email) {
-        showModal("Warning", "Email is required.");
-        return;
-    }
-    
-    if (!facultyId) {
-        showModal("Warning", "Faculty Member ID is required.");
-        return;
-    }
-    
-    if (!firstName) {
-        showModal("Warning", "First name is required.");
-        return;
-    }
-    
-    if (!lastName) {
-        showModal("Warning", "Last name is required.");
-        return;
-    }
-    
-    if (!department) {
-        showModal("Warning", "Department selection is required.");
-        return;
-    }
-    
-    if (!designation) {
-        showModal("Warning", "Designation selection is required.");
+    // SAME validation logic as student
+    if (!email || !facultyId || !firstName || !lastName || !department || !designation) {
+        showModal("Warning", "Please fill out all required fields.");
         return;
     }
     
     if (!password || password.length < 8) {
         showModal("Warning", "Password must be at least 8 characters long.");
-        return;
-    }
-    
-    if (password !== confirmPassword) {
-        showModal("Warning", "Passwords do not match.");
         return;
     }
     
@@ -2268,7 +2265,7 @@ function registerFaculty() {
         return;
     }
     
-    // All validations passed, build FormData
+    // Build FormData (similar structure to student)
     formData.append('email', email);
     formData.append('faculty_id', facultyId);
     formData.append('first_name', firstName);
@@ -2276,24 +2273,31 @@ function registerFaculty() {
     formData.append('middle_name', middleName);
     formData.append('department', department);
     formData.append('designation', designation);
-    formData.append('password', password);  // Changed from 'pin' to 'password'
+    formData.append('password', password);  // Using password instead of pin
     formData.append('face_encoding', JSON.stringify(window.faceEncoding));
     formData.append('photo', photoInput.files[0]);
-
+    
+    // Add multi-angle encodings if available (SAME as student)
+    if (window.multiAngleEncodings && window.multiAngleEncodings.length > 0) {
+        formData.append('multi_angle_encodings', JSON.stringify(window.multiAngleEncodings));
+        console.log(`Sending ${window.multiAngleEncodings.length} multi-angle encodings`);
+    }
+    
+    // Handle invite token (SAME as student)
     const urlParams = new URLSearchParams(window.location.search);
     const inviteToken = urlParams.get('token');
     if (inviteToken) {
         formData.append('invite_token', inviteToken);
     }
     
-    // Show loading state
+    // SAME loading state as student
     const registerBtn = document.querySelector("#step5 button");
     if (registerBtn) {
         registerBtn.disabled = true;
         registerBtn.textContent = "Registering...";
     }
     
-    // Send registration request
+    // Send to faculty endpoint instead of student endpoint
     fetch('/api/register_faculty', {
         method: 'POST',
         body: formData
@@ -2301,7 +2305,7 @@ function registerFaculty() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            nextStep(6);
+            nextStep(6); // Move to success step
         } else {
             showModal("Error", data.message || "Registration failed.");
             if (registerBtn) {
