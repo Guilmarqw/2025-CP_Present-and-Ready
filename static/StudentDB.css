@@ -138,7 +138,7 @@
 
         .action-buttons {
             display: flex;
-            gap: 10px;
+            gap: 12px;
         }
 
         .action-btn {
@@ -867,3 +867,62 @@
 .attendance-table-wrapper::-webkit-scrollbar-thumb:hover {
     background: #555;
 }
+.pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        margin-top: 25px;
+        flex-wrap: wrap;
+    }
+
+    .pagination .page-btn {
+        min-width: 40px;
+        height: 40px;
+        padding: 0 12px;
+        border: 1px solid #ddd;
+        background: white;
+        color: #333;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .pagination .page-btn:hover {
+        background: #f0f0f0;
+        border-color: #007bff;
+        transform: translateY(-1px);
+    }
+
+    .pagination .page-btn.active {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+        font-weight: bold;
+    }
+
+    .pagination .page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .pagination .page-btn i {
+        font-size: 16px;
+    }
+
+    @media (max-width: 768px) {
+        .pagination {
+            gap: 6px;
+        }
+        .pagination .page-btn {
+            min-width: 36px;
+            height: 36px;
+            font-size: 13px;
+        }
+    }

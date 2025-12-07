@@ -21420,15 +21420,14 @@ if __name__ == "__main__":
             hostname = socket.gethostname()
             
             try:
-                # Clean up old files
+                # Clean up old files first
                 for f in [cert_file, key_file, 'ssl_config.cnf', 'csr_config.cnf', 'server.csr']:
                     if os.path.exists(f):
                         os.remove(f)
                 
-                # Create certificate with current IP and hostname
                 print("Creating certificate with current network settings...")
                 
-                # Create config that includes current IP
+                # FIXED: Added digitalSignature + nonRepudiation (solves ERR_SSL_KEY_USAGE_INCOMPATIBLE)
                 config_content = f"""[req]
 distinguished_name = req_distinguished_name
 x509_extensions = v3_req
@@ -21442,7 +21441,7 @@ O = Organization
 CN = {hostname}.local
 
 [v3_req]
-keyUsage = keyEncipherment, dataEncipherment
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment, dataEncipherment
 extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
@@ -21452,11 +21451,10 @@ DNS.2 = {hostname}.local
 IP.1 = 127.0.0.1
 IP.2 = {current_ip}
 """
-                
+
                 with open('ssl_config.cnf', 'w') as f:
                     f.write(config_content)
                 
-                # Generate certificate
                 cmd = [
                     'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
                     '-keyout', key_file, '-out', cert_file,
@@ -21466,22 +21464,26 @@ IP.2 = {current_ip}
                 
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 
-                # Clean up temp files
-                for temp_file in ['ssl_config.cnf']:
+                # Clean up config file
+                for temp_file in ['ssl_config.cnf', 'csr_config.cnf', 'server.csr']:
                     if os.path.exists(temp_file):
-                        os.remove(temp_file)
+                        try:
+                            os.remove(temp_file)
+                        except:
+                            pass
                 
                 if result.returncode == 0:
-                    print(f"✅ SSL certificates created successfully!")
-                    print(f"✅ Valid for IP: {current_ip}")
-                    print(f"✅ Valid for: {hostname}.local")
+                    print(f"SSL certificates created successfully!")
+                    print(f"Valid for IP: {current_ip}")
+                    print(f"Valid for: {hostname}.local")
                     return True
                 else:
-                    print(f"❌ Certificate creation failed: {result.stderr}")
+                    print(f"Certificate creation failed:")
+                    print(result.stderr)
                     return False
                     
             except Exception as e:
-                print(f"❌ Error generating certificates: {e}")
+                print(f"Error generating certificates: {e}")
                 return False
         
         def create_ssl_certificate_auto():

@@ -4,26 +4,31 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
   <link rel="stylesheet" href="../static/settings.css">
-  
-
+  <link rel="stylesheet" href="../static/sidebar.css">
 </head>
 <body>
+
+  <!-- Include Sidebar with explicit context -->
+  {% include 'sidebar.html' %}
 
   <div class="main-content" id="account-settings">
     <div class="card">
       <div class="card-header">
         <h2>Personal Information</h2>
         <div class="buttons">
-          <a href="/AdminDB"><button class="goback-btn">Go Back to Dashboard</button></a>
           <button class="edit-btn" id="editBtn">Edit</button>
           <button class="logout-btn">Logout</button>
         </div>
       </div>
 
       <div class="profile-section">
-        <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="Profile">
+        <div class="avatar" style="width: 100px; height: 100px; border-radius: 50%; background-color: #1a2530; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px; font-size: 28px; color: white;">
+          <i class="fas fa-user"></i>
+        </div>
         <div class="fullname">Guilmar Acabo Quimba</div>
       </div>
 
@@ -577,6 +582,47 @@ async function populateEditForm(profile) {
             document.getElementById("account-settings").scrollIntoView({ behavior: "smooth" });
         }
   }
+
+    // Load user profile photo in settings page
+    function loadProfilePhoto() {
+        const avatarElement = document.querySelector('.profile-section .avatar');
+        if (!avatarElement) return;
+        
+        const iconElement = avatarElement.querySelector('i');
+        const userType = '{{ user_type }}';
+        const userId = '{{ user_id }}';
+        
+        if (!userId || userId === 'None') {
+            console.log('No user ID found');
+            return;
+        }
+        
+        let photoPath;
+        if (userType === 'faculty') {
+            photoPath = `/static/images/faculty_photos/${userId}.jpg`;
+        } else if (userType === 'admin') {
+            photoPath = `/static/images/admin_photos/${userId}.jpg`;
+        } else {
+            return;
+        }
+        
+        const img = new Image();
+        img.src = photoPath;
+        
+        img.onload = function() {
+            avatarElement.style.backgroundImage = `url('${photoPath}')`;
+            avatarElement.style.backgroundSize = 'cover';
+            avatarElement.style.backgroundPosition = 'center';
+            if (iconElement) iconElement.style.display = 'none';
+        };
+        
+        img.onerror = function() {
+            if (iconElement) iconElement.style.display = 'block';
+        };
+    }
+    
+    // Load photo when page loads
+    document.addEventListener('DOMContentLoaded', loadProfilePhoto);
   </script>
 
 </body>

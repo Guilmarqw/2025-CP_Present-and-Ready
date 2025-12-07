@@ -72,13 +72,14 @@
                         <th>Name</th>
                         <th>ID Number</th>
                         <th>Course & Section</th>
-                        <th>Actions</th>
+                        <th style="width: 120px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     <!-- Rows will be filled by JavaScript -->
                 </tbody>
             </table>
+
         </div>
         <!-- End of .student-content -->
     </main>
@@ -386,7 +387,7 @@
 
     <script>
         let currentPage = 1;
-        let studentsPerPage = 20;
+        let studentsPerPage = 5;  // Changed from 6 to 5
         let allStudents = [];
         let totalStudents = 0;
 
@@ -637,14 +638,18 @@ document.addEventListener('DOMContentLoaded', function() {
             students.forEach(student => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td><img src="${student.photo}" class="student-photo" alt="Student Photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random'"></td>
-                    <td>${student.name}</td>
-                    <td>${student.idNumber}</td>
-                    <td>${student.course} ${student.yearSection}</td>
-                    <td class="action-buttons">
-                        <button class="action-btn edit-btn" data-id="${student.id}"><i class="fas fa-edit"></i></button>
-                        <button class="action-btn view-btn" data-id="${student.id}"><i class="fas fa-eye"></i></button>
-                        <button class="action-btn delete-btn" data-id="${student.id}"><i class="fas fa-trash"></i></button>
+                    <td style="width: 60px;">
+                        <img src="${student.photo}" class="student-photo" alt="Student Photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random'">
+                    </td>
+                    <td style="width: 180px;">${student.name}</td>
+                    <td style="width: 110px;">${student.idNumber}</td>
+                    <td style="width: 180px;">${student.course} ${student.yearSection}</td>
+                    <td style="width: 120px; text-align: center;">
+                        <div style="display: flex; gap: 40px; justify-content: left; align-items: center;">
+                            <button class="action-btn edit-btn" data-id="${student.id}"><i class="fas fa-edit"></i></button>
+                            <button class="action-btn view-btn" data-id="${student.id}"><i class="fas fa-eye"></i></button>
+                            <button class="action-btn delete-btn" data-id="${student.id}"><i class="fas fa-trash"></i></button>
+                        </div>
                     </td>`;
                 tbody.appendChild(row);
                 addEventListenersToRow(row);
@@ -655,12 +660,25 @@ document.addEventListener('DOMContentLoaded', function() {
             const container = document.getElementById('studentPagination') || createPaginationContainer();
             if (pagination.pages <= 1) { container.style.display = 'none'; return; }
             container.style.display = 'flex';
-            let html = '';
+            container.style.justifyContent = 'space-between';
+            container.style.alignItems = 'center';
+            
+            const start = (pagination.page - 1) * studentsPerPage + 1;
+            const end = Math.min(pagination.page * studentsPerPage, pagination.total);
+            const total = pagination.total;
+            
+            let html = `<div class="pagination-info" style="font-size: 14px; color: #666;">${start} out of ${total} students</div>`;
+            html += '<div class="pagination-buttons" style="display: flex; gap: 5px;">';
+            
             if (pagination.page > 1) html += `<button class="page-btn" onclick="changePage(${pagination.page-1})"><i class="fas fa-chevron-left"></i></button>`;
-            const start = Math.max(1, pagination.page-2);
-            const end = Math.min(pagination.pages, pagination.page+2);
-            for (let i = start; i <= end; i++) html += `<button class="page-btn ${i===pagination.page?'active':''}" onclick="changePage(${i})">${i}</button>`;
+            
+            const pageStart = Math.max(1, pagination.page-2);
+            const pageEnd = Math.min(pagination.pages, pagination.page+2);
+            for (let i = pageStart; i <= pageEnd; i++) html += `<button class="page-btn ${i===pagination.page?'active':''}" onclick="changePage(${i})">${i}</button>`;
+            
             if (pagination.page < pagination.pages) html += `<button class="page-btn" onclick="changePage(${pagination.page+1})"><i class="fas fa-chevron-right"></i></button>`;
+            
+            html += '</div>';
             container.innerHTML = html;
         }
 
@@ -668,12 +686,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const div = document.createElement('div');
             div.id = 'studentPagination';
             div.className = 'pagination-container';
-            div.style.cssText = 'display:flex;justify-content:center;gap:5px;margin-top:20px;align-items:center;';
+            div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding:15px 0;border-top:1px solid #eee;';
             const style = document.createElement('style');
             style.textContent = `
+                .pagination-container{display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding:15px 0;border-top:1px solid #eee;}
+                .pagination-buttons{display:flex;gap:5px;}
                 .pagination-container .page-btn{padding:8px 12px;border:1px solid #ddd;background:white;cursor:pointer;border-radius:4px;font-size:14px;transition:all .2s;}
                 .pagination-container .page-btn:hover{background:#f8f9fa;border-color:#007bff;}
                 .pagination-container .page-btn.active{background:#007bff;color:white;border-color:#007bff;}
+                .pagination-info{font-size:14px;color:#666;min-width:200px;}
             `;
             if (!document.querySelector('#pagination-styles')) { style.id='pagination-styles'; document.head.appendChild(style); }
             document.querySelector('.student-content').appendChild(div);

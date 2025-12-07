@@ -44,12 +44,12 @@
             <table class="faculty-table">
                 <thead>
                     <tr>
-                        <th>Photo</th>
-                        <th>Name</th>
-                        <th>ID Number</th>
-                        <th>Department</th>
-                        <th>Designation</th>
-                        <th>Actions</th>
+                        <th style="width: 60px;">Photo</th>
+                        <th style="width: 150px;">Name</th>
+                        <th style="width: 110px;">ID Number</th>
+                        <th style="width: 140px;">Department</th>
+                        <th style="width: 140px;">Designation</th>
+                        <th style="width: 100px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="facultyTableBody">
@@ -315,7 +315,7 @@
     <script>
         // Global variables for data management
         let currentPage = 1;
-        let facultyPerPage = 20;
+        let facultyPerPage = 5;  // Changed back from 2 to 5
         let allFaculty = [];
         let totalFaculty = 0;
 
@@ -377,35 +377,36 @@
     faculty.forEach(facultyMember => {
         const row = document.createElement('tr');
         
-        // FIXED: Use idNumber as the ID since backend returns idNumber as the identifier
-        const facultyId = facultyMember.idNumber; // This is the faculty_id from database
+        const facultyId = facultyMember.idNumber;
         
-        // UPDATED: Better photo URL handling
         const photoUrl = facultyMember.photo || 
                         `/static/images/faculty/${facultyId}.jpg` ||
                         `https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random`;
         
         row.innerHTML = `
-            <td>
+            <td style="width: 60px; text-align: center;">
                 <img src="${photoUrl}" 
                      class="faculty-photo" 
                      alt="${facultyMember.name}" 
-                     onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random';">
+                     onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(facultyMember.name)}&background=random';"
+                     style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
             </td>
-            <td>${facultyMember.name}</td>
-            <td>${facultyMember.idNumber}</td>
-            <td>${facultyMember.department}</td>
-            <td>${facultyMember.designation}</td>
-            <td class="action-buttons">
-                <button class="action-btn edit-btn" data-id="${facultyId}" title="Edit">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="action-btn view-btn" data-id="${facultyId}" title="View">
-                    <i class="fas fa-eye"></i>
-                </button>
-                <button class="action-btn delete-btn" data-id="${facultyId}" title="Delete">
-                    <i class="fas fa-trash"></i>
-                </button>
+            <td style="width: 150px;">${facultyMember.name}</td>
+            <td style="width: 110px;">${facultyMember.idNumber}</td>
+            <td style="width: 140px;">${facultyMember.department}</td>
+            <td style="width: 140px;">${facultyMember.designation}</td>
+            <td style="width: 100px; text-align: center;">
+                <div style="display: flex; gap: 1px; justify-content: center;">
+                    <button class="action-btn edit-btn" data-id="${facultyId}" title="Edit">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="action-btn view-btn" data-id="${facultyId}" title="View">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="action-btn delete-btn" data-id="${facultyId}" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </td>
         `;
         tbody.appendChild(row);
@@ -414,25 +415,41 @@
 }
 
         function updatePagination(pagination) {
-            const paginationContainer = document.getElementById('facultyPagination') || createPaginationContainer();
+            const container = document.getElementById('facultyPagination') || createPaginationContainer();
+            
+            console.log('=== PAGINATION DEBUG ===');
+            console.log('Pages:', pagination.pages);
+            console.log('Total:', pagination.total);
+            console.log('Current page:', pagination.page);
+            console.log('Per page limit:', facultyPerPage);
             
             if (pagination.pages <= 1) {
-                paginationContainer.style.display = 'none';
+                console.log('Only 1 page or less - hiding pagination');
+                container.style.display = 'none';
                 return;
             }
             
-            paginationContainer.style.display = 'flex';
+            console.log('Multiple pages found - showing pagination');
+            container.style.display = 'flex';
+            container.style.justifyContent = 'space-between';
+            container.style.alignItems = 'center';
             
-            let paginationHTML = '';
+            const start = (pagination.page - 1) * facultyPerPage + 1;
+            const end = Math.min(pagination.page * facultyPerPage, pagination.total);
+            const total = pagination.total;
+            
+            console.log(`Showing ${start} to ${end} of ${total}`);
+            
+            let paginationHTML = `<div class="pagination-info" style="font-size: 14px; color: #666;">${start} out of ${total} faculty members</div>`;
+            paginationHTML += '<div class="pagination-buttons" style="display: flex; gap: 5px;">';
             
             if (pagination.page > 1) {
                 paginationHTML += `<button class="page-btn" onclick="changePage(${pagination.page - 1})"><i class="fas fa-chevron-left"></i></button>`;
             }
             
-            const startPage = Math.max(1, pagination.page - 2);
-            const endPage = Math.min(pagination.pages, pagination.page + 2);
-            
-            for (let i = startPage; i <= endPage; i++) {
+            const pageStart = Math.max(1, pagination.page - 2);
+            const pageEnd = Math.min(pagination.pages, pagination.page + 2);
+            for (let i = pageStart; i <= pageEnd; i++) {
                 paginationHTML += `<button class="page-btn ${i === pagination.page ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
             }
             
@@ -440,7 +457,10 @@
                 paginationHTML += `<button class="page-btn" onclick="changePage(${pagination.page + 1})"><i class="fas fa-chevron-right"></i></button>`;
             }
             
-            paginationContainer.innerHTML = paginationHTML;
+            paginationHTML += '</div>';
+            container.innerHTML = paginationHTML;
+            console.log('Pagination HTML updated');
+            console.log('=== END DEBUG ===');
         }
 
         function createPaginationContainer() {
@@ -449,14 +469,27 @@
             container.className = 'pagination-container';
             container.style.cssText = `
                 display: flex;
-                justify-content: center;
-                gap: 5px;
-                margin-top: 20px;
+                justify-content: space-between;
                 align-items: center;
+                margin-top: 20px;
+                padding: 15px 0;
+                border-top: 1px solid #eee;
             `;
             
             const style = document.createElement('style');
             style.textContent = `
+                .pagination-container {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-top: 20px;
+                    padding: 15px 0;
+                    border-top: 1px solid #eee;
+                }
+                .pagination-buttons {
+                    display: flex;
+                    gap: 5px;
+                }
                 .pagination-container .page-btn {
                     padding: 8px 12px;
                     border: 1px solid #ddd;
@@ -474,6 +507,11 @@
                     background: #007bff;
                     color: white;
                     border-color: #007bff;
+                }
+                .pagination-info {
+                    font-size: 14px;
+                    color: #666;
+                    min-width: 200px;
                 }
             `;
             if (!document.querySelector('#pagination-styles')) {
@@ -682,6 +720,7 @@ function populateEditForm(faculty) {
                 closeModal(event.target);
             }
         });
+
 
 // Edit faculty member functionality - FIXED VERSION
 if (submitEditFacultyMember) {

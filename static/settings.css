@@ -1,4 +1,4 @@
-    * {
+* {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
@@ -7,6 +7,23 @@
 
     body {
       background: #ffffff;
+      display: flex;
+    }
+
+    /* Sidebar spacing */
+    .sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      height: 100vh;
+      z-index: 1000;
+    }
+
+    .main-content {
+      margin-left: 260px;
+      padding: 20px;
+      flex: 1;
+      min-height: 100vh;
     }
 
     .header {
@@ -16,6 +33,7 @@
       align-items: center;
       justify-content: space-between;
       box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      margin-bottom: 30px;
     }
 
     .header-left {
@@ -89,10 +107,6 @@
 
     .dropdown a:hover {
       background: #f4f4f4;
-    }
-
-    .main-content {
-      padding: 20px;
     }
 
     .card {

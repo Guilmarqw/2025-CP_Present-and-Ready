@@ -37,9 +37,55 @@
     </div>
   </div>
 </div>
+<div id="photoGuidelinesModal" class="modal" style="display: none;">
+  <div class="modal-content photo-guidelines">
+    <h3>Photo Guidelines</h3>
+
+    <div class="guidelines-body">
+      <div class="guidelines-grid">
+        <!-- GOOD EXAMPLE -->
+        <div class="example good">
+          <img src="../static/images/Gemini_Generated_Image_kxaa76kxaa76kxaa.png" alt="Good example: person facing camera directly with even lighting, plain background, head and shoulders only">
+          <p class="caption"><strong>DO</strong></p>
+          <ul>
+            <li>Look straight at the camera</li>
+            <li>Even, bright lighting (no shadows on face)</li>
+            <li>Plain background, no other people</li>
+            <li>Head & shoulders only</li>
+          </ul>
+        </div>
+
+        <!-- BAD EXAMPLE -->
+        <div class="example bad">
+          <img src="../static/images/Gemini_Generated_Image_65noal65noal65no.png" alt="Bad example: side profile, harsh shadows, busy background, other people visible">
+          <p class="caption"><strong>DON'T</strong></p>
+          <ul>
+            <li>Side view / tilted head</li>
+            <li>Dark or harsh shadows</li>
+            <li>Other people in frame</li>
+            <li>Busy / patterned background</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="guidelines-text">
+        <p><strong>Additional Tips:</strong></p>
+        <ul>
+          <li>Use a neutral expression (no smile with teeth showing)</li>
+          <li>Remove hats, sunglasses, or anything covering the face</li>
+          <li>Take the photo in portrait orientation</li>
+          <li>File size ≤ 5 MB (JPG/PNG)</li>
+        </ul>
+      </div>
+    </div>
+
+    <button id="closePhotoGuidelines" class="modal-btn">Got it!</button>
+  </div>
+</div>
+
 <input type="hidden" name="invite_token" id="invite_token">
 
-  <div class="container">
+<div class="container">
     <!-- Step 1 -->
     <div id="step1">
       <div class="header">VERIFY USING YOUR WMSU GMAIL ACCOUNT</div>
@@ -70,15 +116,15 @@
 
     <!-- Step 3 -->
     <div id="step3" class="hidden">
-      <div class="header">FILL-UP FACULTY MEMBER INFORMATION</div>
-      <div class="content">
-        <h2>Upload Photo & Info</h2>
-        <div class="upload-container">
-          <div class="upload-preview" id="uploadPreview">
-            <span>Click to Upload</span>
-          </div>
-          <input type="file" id="photo" class="upload-input" accept="image/*" onchange="previewUploadedImage(event)">
+    <div class="header">FILL-UP FACULTY MEMBER INFORMATION</div>
+    <div class="content">
+      <h2>Upload Photo & Info</h2>
+      <div class="upload-container">
+        <div class="upload-preview" id="uploadPreview">
+          <span>Click to Upload</span>
         </div>
+        <input type="file" id="photo" class="upload-input" accept="image/*" style="display: none;">
+      </div>
         <div class="name-fields">
           <input type="text" placeholder="Last Name" id="lastName">
           <input type="text" placeholder="First Name" id="firstName">
@@ -109,9 +155,9 @@
         </div>
         <input type="password" id="confirmPassword" placeholder="Confirm password" oninput="validateConfirmPassword()">
         <div id="passwordMatch" class="password-match"></div>
-        <button onclick="validateStep3()">Next</button>
-      </div>
+<button onclick="validateStep3()">Next</button>
     </div>
+  </div>
 
 <!-- Step 4 -->
 <div id="step4" class="hidden">
@@ -186,17 +232,71 @@
     </div>
   </div>
 
-  <!-- Modal -->
-  <div class="modal" id="modal">
-    <div class="modal-content">
-      <h3 id="modalTitle">⚠ Warning</h3>
-    </div>
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <h3 id="modalTitle">Warning</h3>
+    <p id="modalMessage"></p>
+    <button onclick="closeModal()">OK</button>
   </div>
+</div>
 
   <!-- Audio for bell sound -->
   <audio id="bellSound" src="static/Hotel bell ringing - Sounds effect.mp3" preload="auto"></audio>
 
   <script>
+const photoGuidelinesModal = document.getElementById('photoGuidelinesModal');
+const closePhotoGuidelinesBtn = document.getElementById('closePhotoGuidelines');
+const uploadPreview = document.getElementById('uploadPreview');
+const photoInput = document.getElementById('photo');
+let hasSeenGuidelines = false;   // Remember if user already saw the modal
+
+function openPhotoGuidelines() {
+  photoGuidelinesModal.style.display = 'flex';
+  document.body.classList.add('modal-open');
+}
+
+function closeAndOpenFilePicker() {
+  photoGuidelinesModal.style.display = 'none';
+  document.body.classList.remove('modal-open');
+  hasSeenGuidelines = true;
+  setTimeout(() => photoInput.click(), 150);
+}
+
+// First click → show guidelines
+uploadPreview.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (!hasSeenGuidelines) {
+    openPhotoGuidelines();
+  } else {
+    photoInput.click();
+  }
+});
+
+// "Got it!" button → close modal + open file picker
+closePhotoGuidelinesBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  closeAndOpenFilePicker();
+});
+
+// If user presses Escape or clicks outside the modal content
+photoGuidelinesModal.addEventListener('click', (e) => {
+  if (e.target === photoGuidelinesModal) {
+    photoGuidelinesModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && photoGuidelinesModal.style.display === 'flex') {
+    photoGuidelinesModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+  }
+});
+
+// When a file is actually selected → preview it (your existing function)
+photoInput.addEventListener('change', previewUploadedImage);
+
     const container = document.querySelector(".container");
 
     
