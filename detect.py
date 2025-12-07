@@ -10383,296 +10383,280 @@ def student_login_required(f):
 @app.route('/api/student/attendance-data')
 def student_attendance_data():
     """Get attendance data for the logged-in student - FIXED: Using correct schema"""
-    student_id = get_current_student_id()
-    
-    if not student_id:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    connection = None
-    cursor = None
-    
     try:
-        connection = get_db_connection()
-        if not connection:
-            return jsonify({'error': 'Database connection failed'}), 500
+        # Get student ID from session
+        student_id = session.get('user_id')
+        user_type = session.get('user_type')
+        
+        if not student_id or user_type != 'student':
+            return jsonify({'error': 'Not authenticated as student'}), 401
+        
+        connection = None
+        cursor = None
+        
+        try:
+            connection = get_db_connection()
+            cursor = connection.cursor(dictionary=True)
             
-        cursor = connection.cursor(dictionary=True)
-        
-        print(f"Fetching data for student: {student_id}")
-        
-        # 1. Get student's basic info with proper joins
-        cursor.execute("""
-            SELECT 
-                s.student_id, 
-                s.first_name, 
-                s.last_name,
-                p.program_name,
-                ys.year_level, 
-                ys.section_name,
-                s.section_id
-            FROM students s
-            JOIN year_sections ys ON s.section_id = ys.section_id
-            JOIN programs p ON ys.program_id = p.program_id
-            WHERE s.student_id = %s AND s.status = 'active'
-        """, (student_id,))
-        
-        student_data = cursor.fetchone()
-        if not student_data:
-            return jsonify({'error': 'Student not found'}), 404
-        
-        print(f"Found student: {student_data}")
-        
-        # Extract student's section info for queries
-        student_section_id = student_data['section_id']
-        student_program = student_data['program_name']
-        student_year_level = student_data['year_level']
-        student_section_name = student_data['section_name']
-        
-        # 2. Get today's classes (based on schedule, not attendance)
-        today = date.today()
-        today_day = today.strftime('%A')  # Get today's day name (Monday, Tuesday, etc.)
-        
-        cursor.execute("""
-            SELECT DISTINCT 
-                s.subject_code, 
-                s.subject_name,
-                cs.class_type,
-                cs.start_time, 
-                cs.end_time, 
-                cs.room,
-                cs.day_of_week
-            FROM subjects s
-            JOIN class_schedules cs ON s.subject_id = cs.subject_id
-            WHERE s.section_id = %s
-            AND cs.day_of_week = %s
-            AND s.status = 'active'
-            AND cs.status = 'active'
-            ORDER BY cs.start_time
-        """, (student_section_id, today_day))
-        
-        today_schedule = cursor.fetchall()
-        print(f"Today's schedule ({today_day}): {len(today_schedule)} classes")
-        
-        # 3. Get today's attendance to match with schedule
-        cursor.execute("""
-            SELECT 
-                a.session_id, 
-                a.status, 
-                a.timestamp,
-                ases.class_name,
-                ases.started_at, 
-                ases.ended_at
-            FROM attendance a
-            LEFT JOIN attendance_sessions ases ON a.session_id = ases.session_id
-            WHERE a.student_id = %s AND DATE(a.timestamp) = %s
-            ORDER BY a.timestamp DESC
-        """, (student_id, today))
-        
-        today_attendance = cursor.fetchall()
-        
-        # 4. Get attendance history (last 30 days) - UPDATED QUERY
-        cursor.execute("""
-            SELECT 
-                a.id,
-                a.session_id, 
-                a.status, 
-                a.timestamp,
-                a.subject_code,  --    GET FROM ATTENDANCE TABLE
-                a.subject_name,  --    GET FROM ATTENDANCE TABLE
-                a.room,          --    GET FROM ATTENDANCE TABLE
-                ases.class_name,
-                ases.started_at, 
-                ases.ended_at,
-                cs.class_type
-            FROM attendance a
-            LEFT JOIN attendance_sessions ases ON a.session_id = ases.session_id
-            LEFT JOIN class_schedules cs ON (
-                cs.room = a.room 
-                AND TIME(ases.started_at) BETWEEN TIME(cs.start_time) AND TIME(cs.end_time)
-            )
-            WHERE a.student_id = %s 
-            AND a.timestamp >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-            ORDER BY a.timestamp DESC
-            LIMIT 50
-        """, (student_id,))
-        
-        attendance_history = cursor.fetchall()
-        print(f"Attendance history: {len(attendance_history)} records")
-        
-        # 5. Get all subjects for the student's section
-        cursor.execute("""
-            SELECT DISTINCT 
-                s.subject_code, 
-                s.subject_name, 
-                cs.day_of_week, 
-                TIME_FORMAT(cs.start_time, '%H:%i') as start_time,
-                TIME_FORMAT(cs.end_time, '%H:%i') as end_time,
-                cs.room,
-                cs.class_type,
-                ys.section_name,
-                ys.year_level,
-                p.program_name
-            FROM subjects s
-            JOIN class_schedules cs ON s.subject_id = cs.subject_id
-            JOIN year_sections ys ON s.section_id = ys.section_id
-            JOIN programs p ON ys.program_id = p.program_id
-            WHERE ys.section_id = %s
-            AND s.status = 'active'
-            AND cs.status = 'active'
-            ORDER BY 
-                CASE cs.day_of_week 
-                    WHEN 'Monday' THEN 1
-                    WHEN 'Tuesday' THEN 2
-                    WHEN 'Wednesday' THEN 3
-                    WHEN 'Thursday' THEN 4
-                    WHEN 'Friday' THEN 5
-                    WHEN 'Saturday' THEN 6
-                    ELSE 7
-                END,
-                cs.start_time
-        """, (student_section_id,))
-        
-        semester_classes = cursor.fetchall()
-        print(f"Semester classes found: {len(semester_classes)}")
-        
-        # 6. Calculate attendance statistics - FIXED: Count unique sessions
-        cursor.execute("""
-            SELECT 
-                COUNT(DISTINCT ases.session_id) as total_classes,
-                COUNT(DISTINCT CASE WHEN a.status IN ('present', 'late') THEN ases.session_id END) as attended_classes
-            FROM attendance_sessions ases
-            LEFT JOIN attendance a ON (
-                a.session_id = ases.session_id 
-                AND a.student_id = %s
-                AND a.status IN ('present', 'late')
-            )
-            WHERE ases.status = 'completed'
-            AND ases.section_id = %s
-        """, (student_id, student_section_id))
-        
-        stats = cursor.fetchone()
-        print(f"Stats: {stats}")
-        
-        total_classes = stats['total_classes'] or 0
-        attended_classes = stats['attended_classes'] or 0
-        attendance_rate = (attended_classes / total_classes * 100) if total_classes > 0 else 0
-        
-        # Format today's classes - combine schedule with attendance
-        today_classes = []
-        for schedule in today_schedule:
-            # Find matching attendance record
-            attendance_status = 'Not Recorded'
-            for attendance in today_attendance:
-                if (schedule['subject_code'] in attendance.get('class_name', '') or 
-                    schedule['subject_name'] in attendance.get('class_name', '')):
-                    attendance_status = attendance['status']
-                    break
+            print(f"Fetching data for student: {student_id}")
             
-            today_classes.append({
-                'course': f"{schedule['subject_code']} - {schedule['subject_name']}",
-                'time': f"{schedule['start_time']} - {schedule['end_time']}",
-                'type': schedule['class_type'].title(),
-                'status': attendance_status,
-                'room': schedule['room']
-            })
-        
-        # Format attendance history - IMPROVED WITH DIRECT SUBJECT INFO
-        formatted_history = []
-        for record in attendance_history:
-            # Format time
-            start_time = record['started_at'].strftime('%H:%M') if record['started_at'] else 'N/A'
-            end_time = record['ended_at'].strftime('%H:%M') if record['ended_at'] else 'N/A'
+            # 1. Get student's basic info
+            cursor.execute("""
+                SELECT 
+                    s.student_id, 
+                    s.first_name, 
+                    s.last_name,
+                    s.email,
+                    p.program_name,
+                    ys.year_level, 
+                    ys.section_name,
+                    ys.section_id
+                FROM students s
+                JOIN year_sections ys ON s.section_id = ys.section_id
+                JOIN programs p ON ys.program_id = p.program_id
+                WHERE s.student_id = %s AND s.status = 'active'
+            """, (student_id,))
             
-            # Get course name - PRIORITIZE SUBJECT INFO FROM ATTENDANCE TABLE
-            if record['subject_code'] and record['subject_name']:
-                course_name = f"{record['subject_code']} - {record['subject_name']}"
-            elif record['class_name']:
-                # Format class name to be more readable
-                class_name = record['class_name']
-                if "Information Technology" in class_name:
-                    class_name = class_name.replace("Information Technology", "BSIT")
-                elif "Computer Science" in class_name:
-                    class_name = class_name.replace("Computer Science", "BSCS")
-                elif "Associate in Computer Technology" in class_name:
-                    class_name = class_name.replace("Associate in Computer Technology", "ACT")
-                course_name = class_name
-            else:
-                course_name = 'Unknown Class'
+            student_data = cursor.fetchone()
+            if not student_data:
+                return jsonify({'error': 'Student not found'}), 404
             
-            formatted_history.append({
-                'date': record['timestamp'].strftime('%Y-%m-%d') if record['timestamp'] else 'N/A',
-                'course': course_name,
-                'time': f"{start_time} - {end_time}",
-                'room': record['room'] or 'N/A',
-                'status': record['status'] or 'absent',
-                'type': record['class_type'] or 'Class'
-            })
-        
-        # Format semester subjects
-        formatted_semester_classes = []
-        for subject in semester_classes:
+            print(f"Found student: {student_data['first_name']} {student_data['last_name']}")
+            
+            # 2. Get today's date and day
+            today = date.today()
+            today_day = today.strftime('%A')
+            student_section_id = student_data['section_id']
+            
+            # 3. Get today's classes from schedule
+            cursor.execute("""
+                SELECT DISTINCT 
+                    s.subject_code, 
+                    s.subject_name,
+                    cs.class_type,
+                    TIME_FORMAT(cs.start_time, '%H:%i') as start_time,
+                    TIME_FORMAT(cs.end_time, '%H:%i') as end_time,
+                    cs.room,
+                    cs.day_of_week
+                FROM subjects s
+                JOIN class_schedules cs ON s.subject_id = cs.subject_id
+                WHERE s.section_id = %s
+                AND cs.day_of_week = %s
+                AND s.status = 'active'
+                AND cs.status = 'active'
+                ORDER BY cs.start_time
+            """, (student_section_id, today_day))
+            
+            today_schedule = cursor.fetchall()
+            print(f"Today's schedule ({today_day}): {len(today_schedule)} classes")
+            
+            # 4. Get today's attendance
+            cursor.execute("""
+                SELECT 
+                    a.session_id, 
+                    a.status, 
+                    a.timestamp,
+                    a.subject_code,
+                    a.subject_name,
+                    a.room,
+                    ases.started_at, 
+                    ases.ended_at
+                FROM attendance a
+                LEFT JOIN attendance_sessions ases ON a.session_id = ases.session_id
+                WHERE a.student_id = %s AND DATE(a.timestamp) = %s
+                ORDER BY a.timestamp DESC
+            """, (student_id, today))
+            
+            today_attendance = cursor.fetchall()
+            
+            # 5. Get attendance history (last 30 days) - FIXED: Removed ases.class_type
+            cursor.execute("""
+                SELECT 
+                    a.id,
+                    a.session_id, 
+                    a.status, 
+                    a.timestamp,
+                    a.subject_code,
+                    a.subject_name,
+                    a.room,
+                    ases.started_at, 
+                    ases.ended_at
+                    -- Removed: ases.class_type (doesn't exist in table)
+                FROM attendance a
+                LEFT JOIN attendance_sessions ases ON a.session_id = ases.session_id
+                WHERE a.student_id = %s 
+                AND a.timestamp >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                ORDER BY a.timestamp DESC
+                LIMIT 50
+            """, (student_id,))
+            
+            attendance_history = cursor.fetchall()
+            print(f"Attendance history: {len(attendance_history)} records")
+            
+            # 6. Get all subjects for the semester
+            cursor.execute("""
+                SELECT DISTINCT 
+                    s.subject_code, 
+                    s.subject_name, 
+                    cs.day_of_week, 
+                    TIME_FORMAT(cs.start_time, '%H:%i') as start_time,
+                    TIME_FORMAT(cs.end_time, '%H:%i') as end_time,
+                    cs.room,
+                    cs.class_type,
+                    ys.section_name,
+                    ys.year_level,
+                    p.program_name
+                FROM subjects s
+                JOIN class_schedules cs ON s.subject_id = cs.subject_id
+                JOIN year_sections ys ON s.section_id = ys.section_id
+                JOIN programs p ON ys.program_id = p.program_id
+                WHERE ys.section_id = %s
+                AND s.status = 'active'
+                AND cs.status = 'active'
+                ORDER BY 
+                    CASE cs.day_of_week 
+                        WHEN 'Monday' THEN 1
+                        WHEN 'Tuesday' THEN 2
+                        WHEN 'Wednesday' THEN 3
+                        WHEN 'Thursday' THEN 4
+                        WHEN 'Friday' THEN 5
+                        WHEN 'Saturday' THEN 6
+                        ELSE 7
+                    END,
+                    cs.start_time
+            """, (student_section_id,))
+            
+            semester_classes = cursor.fetchall()
+            print(f"Semester classes: {len(semester_classes)} subjects")
+            
+            # 7. Calculate attendance statistics
+            cursor.execute("""
+                SELECT 
+                    COUNT(DISTINCT ases.session_id) as total_classes,
+                    COUNT(DISTINCT CASE WHEN a.status IN ('present', 'late') THEN ases.session_id END) as attended_classes
+                FROM attendance_sessions ases
+                LEFT JOIN attendance a ON (
+                    a.session_id = ases.session_id 
+                    AND a.student_id = %s
+                    AND a.status IN ('present', 'late')
+                )
+                WHERE ases.status = 'completed'
+                AND ases.section_id = %s
+            """, (student_id, student_section_id))
+            
+            stats = cursor.fetchone()
+            total_classes = stats['total_classes'] or 0
+            attended_classes = stats['attended_classes'] or 0
+            attendance_rate = (attended_classes / total_classes * 100) if total_classes > 0 else 0
+            
+            # Format today's classes
+            today_classes = []
+            for schedule in today_schedule:
+                attendance_status = 'Not Recorded'
+                
+                # Find matching attendance
+                for attendance in today_attendance:
+                    if (schedule['subject_code'] == attendance.get('subject_code') or
+                        schedule['subject_name'] == attendance.get('subject_name')):
+                        attendance_status = attendance['status']
+                        break
+                
+                today_classes.append({
+                    'course': f"{schedule['subject_code']} - {schedule['subject_name']}",
+                    'time': f"{schedule['start_time']} - {schedule['end_time']}",
+                    'type': schedule['class_type'].title() if schedule['class_type'] else 'Class',
+                    'status': attendance_status,
+                    'room': schedule['room'] or 'TBA'
+                })
+            
+            # Format attendance history - FIXED: Use 'Class' as default type
+            formatted_history = []
+            for record in attendance_history:
+                start_time = record['started_at'].strftime('%H:%M') if record['started_at'] else 'N/A'
+                end_time = record['ended_at'].strftime('%H:%M') if record['ended_at'] else 'N/A'
+                
+                course_name = f"{record['subject_code']} - {record['subject_name']}" if record['subject_code'] else 'Unknown Class'
+                
+                formatted_history.append({
+                    'date': record['timestamp'].strftime('%Y-%m-%d') if record['timestamp'] else 'N/A',
+                    'course': course_name,
+                    'time': f"{start_time} - {end_time}",
+                    'room': record['room'] or 'N/A',
+                    'status': record['status'] or 'absent',
+                    'type': 'Class'  # Default value since ases.class_type doesn't exist
+                })
+            
+            # Format semester classes
+            formatted_semester_classes = []
             days_map = {
-                'Monday': 'Mon',
-                'Tuesday': 'Tue', 
-                'Wednesday': 'Wed',
-                'Thursday': 'Thu',
-                'Friday': 'Fri',
-                'Saturday': 'Sat'
+                'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed',
+                'Thursday': 'Thu', 'Friday': 'Fri', 'Saturday': 'Sat'
             }
             
-            day_abbr = days_map.get(subject['day_of_week'], subject['day_of_week'])
+            for subject in semester_classes:
+                day_abbr = days_map.get(subject['day_of_week'], subject['day_of_week'])
+                
+                formatted_semester_classes.append({
+                    'course': f"{subject['subject_code']} - {subject['subject_name']}",
+                    'schedule': f"{day_abbr}, {subject['start_time']} - {subject['end_time']}",
+                    'room': subject['room'] or 'TBA',
+                    'type': subject['class_type'].title() if subject['class_type'] else 'Class',
+                    'program': subject['program_name'],
+                    'section': f"{subject['year_level']}{subject['section_name']}"
+                })
             
-            formatted_semester_classes.append({
-                'course': f"{subject['subject_code']} - {subject['subject_name']}",
-                'schedule': f"{day_abbr}, {subject['start_time']} - {subject['end_time']}",
-                'room': subject['room'],
-                'type': subject['class_type'].title(),
-                'program': subject['program_name'],
-                'section': f"{subject['year_level']}{subject['section_name']}"
-            })
-        
-        response_data = {
-            'student': {
-                'id': student_data['student_id'],
-                'name': f"{student_data['first_name']} {student_data['last_name']}",
-                'course': student_data['program_name'],  # Use program_name instead of course
-                'section': f"{student_data['year_level']}{student_data['section_name']}"  # Combine year_level and section_name
-            },
-            'stats': {
-                'attendance_rate': round(attendance_rate, 2),
-                'total_classes': total_classes,
-                'attended_classes': attended_classes
-            },
-            'today_classes': today_classes,
-            'attendance_history': formatted_history,
-            'semester_classes': formatted_semester_classes,
-            'today_date': today.strftime('%Y-%m-%d')
-        }
-        
-        print(f"Response data prepared successfully")
-        print(f"Today classes: {len(today_classes)}")
-        print(f"Attendance history: {len(formatted_history)}")
-        print(f"Semester classes: {len(formatted_semester_classes)}")
-        print(f"Attendance stats: {attended_classes}/{total_classes} = {attendance_rate}%")
-        return jsonify(response_data)
-        
+            # Prepare response
+            response_data = {
+                'student': {
+                    'id': student_data['student_id'],
+                    'name': f"{student_data['first_name']} {student_data['last_name']}",
+                    'email': student_data['email'],
+                    'course': student_data['program_name'],
+                    'section': f"{student_data['year_level']}{student_data['section_name']}"
+                },
+                'stats': {
+                    'attendance_rate': round(attendance_rate, 2),
+                    'total_classes': total_classes,
+                    'attended_classes': attended_classes
+                },
+                'today_classes': today_classes,
+                'attendance_history': formatted_history,
+                'semester_classes': formatted_semester_classes,
+                'today_date': today.strftime('%Y-%m-%d'),
+                'section_id': student_section_id
+            }
+            
+            print(f"Data fetched successfully for {student_data['first_name']}")
+            print(f"Today classes: {len(today_classes)}")
+            print(f"Attendance history: {len(formatted_history)}")
+            print(f"Attendance rate: {attendance_rate}% ({attended_classes}/{total_classes})")
+            
+            return jsonify(response_data)
+            
+        except Exception as e:
+            print(f"Database error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': f'Database error: {str(e)}'}), 500
+            
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+                
     except Exception as e:
-        print(f"Error fetching attendance data: {str(e)}")
+        print(f"General error in attendance-data endpoint: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': f'Failed to fetch attendance data: {str(e)}'}), 500
-        
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
 
 def get_current_student_id():
-    """Get current student ID from session or token"""
-    # For demo purposes, using a fixed student ID
-    # In production, get from session/token
-    return '2022-01376'
+    """Get the current logged-in student ID from session"""
+    if 'user_id' in session and session.get('user_type') == 'student':
+        return session['user_id']
+    return None
 
 @app.route('/api/get_section_filters', methods=['GET'])
 @login_required
@@ -10905,7 +10889,7 @@ def get_summary_data():
             # ✅ FIRST: Clean up any existing duplicates in this session
             cleanup_duplicate_attendance(session_id)
             
-            # Duration calculation (same as before)
+            # Duration calculation
             duration_time = session_data.get('duration_time', '00:00:00')
             duration_seconds = 0
             if duration_time and isinstance(duration_time, str):
@@ -11223,7 +11207,7 @@ def get_summary_data():
             'success': False,
             'message': f'Error loading summary data: {str(e)}'
         }), 500
-
+    
 @app.route('/api/update_attendance', methods=['POST'])
 @login_required
 def update_attendance():
@@ -11670,42 +11654,61 @@ def cleanup_duplicate_attendance(session_id):
     """Clean up duplicate attendance records for a session"""
     try:
         with get_db_cursor() as cursor:
-            # Delete duplicate records (keeping the latest for each student)
-            cursor.execute("""
-                DELETE FROM attendance 
-                WHERE id NOT IN (
-                    SELECT max_id FROM (
-                        SELECT MAX(id) as max_id
-                        FROM attendance
-                        WHERE session_id = %s
-                        AND person_type = 'student'
-                        GROUP BY student_id, session_id
-                    ) as latest_records
-                )
-                AND session_id = %s
-                AND person_type = 'student'
-            """, (session_id, session_id))
+            print(f"  🧹 Cleaning duplicates for session: {session_id}")
             
-            # Also clean up records with empty status that have 'missing' or other status
+            # Find duplicates
             cursor.execute("""
-                DELETE a1 FROM attendance a1
-                INNER JOIN attendance a2 ON 
-                    a1.session_id = a2.session_id AND 
-                    a1.student_id = a2.student_id AND 
-                    a1.person_type = a2.person_type AND 
-                    a1.id < a2.id
-                WHERE a1.session_id = %s
-                AND a1.status = ''
-                AND a2.status != ''
-                AND a1.person_type = 'student'
+                SELECT student_id, COUNT(*) as count
+                FROM attendance 
+                WHERE session_id = %s 
+                AND person_type = 'student'
+                AND student_id IS NOT NULL 
+                AND student_id != ''
+                GROUP BY student_id
+                HAVING COUNT(*) > 1
             """, (session_id,))
             
-            print(f"  DEBUG: Cleaned up duplicate attendance for session {session_id}")
-            return True
+            duplicates = cursor.fetchall()
+            
+            if duplicates:
+                print(f"  Found {len(duplicates)} students with duplicate records")
+                
+                for dup in duplicates:
+                    student_id = dup['student_id']
+                    count = dup['count']
+                    
+                    # Get all records for this student
+                    cursor.execute("""
+                        SELECT id, status, timestamp, remarks
+                        FROM attendance 
+                        WHERE session_id = %s 
+                        AND student_id = %s
+                        ORDER BY 
+                            CASE 
+                                WHEN status NOT IN ('', NULL) THEN 1
+                                ELSE 2
+                            END,
+                            timestamp DESC
+                    """, (session_id, student_id))
+                    
+                    records = cursor.fetchall()
+                    
+                    if len(records) > 1:
+                        # Keep the first valid record, delete the rest
+                        first_record = records[0]
+                        records_to_delete = records[1:]
+                        
+                        for record in records_to_delete:
+                            cursor.execute("DELETE FROM attendance WHERE id = %s", (record['id'],))
+                        
+                        print(f"    Student {student_id}: Kept record {first_record['id']} ({first_record['status']}), deleted {len(records_to_delete)} duplicates")
+                    
+                # Commit changes
+                cursor.connection.commit()
+                print(f"  ✅ Duplicate cleanup complete")
             
     except Exception as e:
-        print(f"  ERROR cleaning duplicates: {e}")
-        return False
+        print(f"  Error in cleanup_duplicate_attendance: {e}")
 
 @app.route('/schedule')
 @login_required
@@ -15384,8 +15387,31 @@ def initialize_session():
                             logger.debug(f"  Using section_id from schedule: {section_id}")
                 else:
                     logger.warning(f"  No schedule found with schedule_id={schedule_id}")
+                    
+                    # CRITICAL FIX: Check if the URL passed subject information in the 'subjects' parameter
+                    subjects_data = data.get('subjects', '[]')
+                    
+                    try:
+                        # Try to parse the subjects JSON array
+                        import json
+                        subjects_list = json.loads(subjects_data)
+                        
+                        if subjects_list and isinstance(subjects_list, list) and len(subjects_list) > 0:
+                            # Get the first subject from the list
+                            first_subject = subjects_list[0]
+                            
+                            subject_code = first_subject.get('subject_code', 'Unknown Subject')
+                            subject_name = first_subject.get('subject_name', 'Unknown Subject')
+                            class_type = first_subject.get('class_type', 'lecture')
+                            
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Using subject from URL parameters: {subject_code} - {subject_name}")
+                    except Exception as json_error:
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Could not parse subjects JSON: {json_error}")
+                    
                     # IMPORTANT FIX: Check if schedule_id might actually be a subject_id
-                    # Example: schedule_id=43 doesn't exist in class_schedules but subject_id=43 exists in subjects
+                    # Example: schedule_id=44 doesn't exist in class_schedules but subject_id=44 exists in subjects
                     if schedule_id and str(schedule_id).isdigit():
                         if DEBUG_MODE: 
                             logger.debug(f"  schedule_id {schedule_id} not found in class_schedules, checking if it's a valid subject_id...")
@@ -15403,15 +15429,47 @@ def initialize_session():
                             if DEBUG_MODE: 
                                 logger.debug(f"  ✓ Found that schedule_id={schedule_id} is actually subject_id={subject_check['subject_id']}")
                             # This is actually a subject_id, not a schedule_id
-                            subject_id = schedule_id  # Set subject_id parameter
-                            schedule_id = None  # Clear schedule_id since it doesn't exist
-                            schedule_found = False
+                            db_subject_id = subject_check['subject_id']
+                            subject_code = subject_check.get('subject_code', 'Unknown Subject')
+                            subject_name = subject_check.get('subject_name', 'Unknown Subject')
+                            class_type = subject_check.get('class_type', 'lecture')
+                            
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Using subject information: {subject_code} - {subject_name}")
+                            
+                            # Try to find ANY schedule for this subject
+                            cursor.execute("""
+                                SELECT cs.schedule_id, cs.room, cs.day_of_week, cs.section_id,
+                                       cs.start_time, cs.end_time, cs.status, cs.class_type
+                                FROM class_schedules cs
+                                WHERE cs.subject_id = %s
+                                ORDER BY 
+                                    CASE WHEN cs.status = 'active' THEN 0 ELSE 1 END,
+                                    cs.schedule_id DESC 
+                                LIMIT 1
+                            """, (db_subject_id,))
+                            
+                            actual_schedule = cursor.fetchone()
+                            if actual_schedule:
+                                actual_schedule_id = actual_schedule['schedule_id']
+                                room = actual_schedule.get('room', 'TBA')
+                                day_of_week = actual_schedule.get('day_of_week', 'Unknown Day')
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  Found schedule for subject: schedule_id={actual_schedule_id}, room={room}")
+                            else:
+                                # No schedule exists, use subject info with TBA room
+                                room = 'TBA'
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  No schedule exists for subject_id={db_subject_id}, using room='TBA'")
+                            
+                            # Set subject_id parameter for consistency
+                            subject_id = schedule_id
+                            schedule_id = None  # Clear since we found it's actually a subject_id
                         else:
                             if DEBUG_MODE: 
                                 logger.debug(f"  schedule_id {schedule_id} is not a valid subject_id either")
             
             # SECOND: Process subject_id (either from parameter or discovered above)
-            # Prioritize: use subject_id parameter if provided, otherwise check if schedule_id was actually a subject_id
             subject_id_to_check = None
             
             # Determine which ID to check
@@ -15426,8 +15484,8 @@ def initialize_session():
                     subject_id_to_check = schedule_id
                     if DEBUG_MODE: 
                         logger.debug(f"  Using schedule_id as subject_id: {subject_id_to_check}")
-            
-            if subject_id_to_check:
+
+            if subject_id_to_check and not schedule_found:
                 if DEBUG_MODE: 
                     logger.debug(f"  Looking up subject information for subject_id: {subject_id_to_check}")
                 
@@ -15456,21 +15514,44 @@ def initialize_session():
                         if DEBUG_MODE: 
                             logger.debug(f"  Using section_id from subject table: {section_id}")
                     
-                    # Try to find the most recent active schedule for this subject
-                    cursor.execute("""
-                        SELECT cs.schedule_id, cs.room, cs.day_of_week, cs.section_id,
-                               cs.start_time, cs.end_time
-                        FROM class_schedules cs
-                        WHERE cs.subject_id = %s AND cs.status = 'active'
-                        ORDER BY cs.schedule_id DESC 
-                        LIMIT 1
-                    """, (db_subject_id,))
+                    # Try to find ANY schedule for this subject (prioritize active ones)
+                    try:
+                        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                        current_day_name = day_names[dt.datetime.now().weekday()]
+                        cursor.execute("""
+                            SELECT cs.schedule_id, cs.room, cs.day_of_week, cs.section_id,
+                                   cs.start_time, cs.end_time, cs.status, cs.class_type
+                            FROM class_schedules cs
+                            WHERE cs.subject_id = %s
+                            ORDER BY 
+                                CASE WHEN cs.status = 'active' THEN 0 ELSE 1 END,
+                                CASE WHEN cs.day_of_week = %s THEN 0 ELSE 1 END,
+                                cs.schedule_id DESC 
+                            LIMIT 1
+                        """, (db_subject_id, current_day_name))
+                    except:
+                        cursor.execute("""
+                            SELECT cs.schedule_id, cs.room, cs.day_of_week, cs.section_id,
+                                   cs.start_time, cs.end_time, cs.status, cs.class_type
+                            FROM class_schedules cs
+                            WHERE cs.subject_id = %s
+                            ORDER BY 
+                                CASE WHEN cs.status = 'active' THEN 0 ELSE 1 END,
+                                cs.schedule_id DESC 
+                            LIMIT 1
+                        """, (db_subject_id,))
                     
                     schedule_info = cursor.fetchone()
                     if schedule_info:
                         actual_schedule_id = schedule_info['schedule_id']
                         room = schedule_info.get('room', 'Unknown Room')
                         day_of_week = schedule_info.get('day_of_week', 'Unknown Day')
+                        
+                        # If room is still empty or 'Unknown Room', provide a default
+                        if not room or room.strip() == '' or room == 'Unknown Room':
+                            room = 'TBA'  # To Be Announced
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Room field was empty, using 'TBA'")
                         
                         # Use this schedule's section_id if not already found
                         if schedule_info.get('section_id') and section_id is None:
@@ -15481,57 +15562,58 @@ def initialize_session():
                         if DEBUG_MODE: 
                             logger.debug(f"  Found schedule for subject: Room={room}, Day={day_of_week}, Schedule ID={actual_schedule_id}")
                     else:
-                        logger.warning(f"  No active schedule found for subject_id={db_subject_id}")
+                        logger.warning(f"  No schedule found for subject_id={db_subject_id}")
                         
-                        # Try to find ANY schedule for this subject (even inactive)
-                        cursor.execute("""
-                            SELECT room, day_of_week, section_id, schedule_id
-                            FROM class_schedules 
-                            WHERE subject_id = %s
-                            ORDER BY schedule_id DESC 
-                            LIMIT 1
-                        """, (db_subject_id,))
+                        # CRITICAL FIX: Since subject exists but has no schedule, use default room
+                        room = 'TBA'  # Default room for subjects without schedules
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Subject exists but has no schedule. Using default room: {room}")
                         
-                        any_schedule = cursor.fetchone()
-                        if any_schedule:
-                            actual_schedule_id = any_schedule.get('schedule_id')
-                            room = any_schedule.get('room', 'Unknown Room')
-                            day_of_week = any_schedule.get('day_of_week', 'Unknown Day')
+                        # Try to get current day for display
+                        try:
+                            day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                            current_day_index = dt.datetime.now().weekday()
+                            day_of_week = day_names[current_day_index]
                             if DEBUG_MODE: 
-                                logger.debug(f"  Using last known schedule: Room={room}, Schedule ID={actual_schedule_id}")
+                                logger.debug(f"  Using current system day: {day_of_week}")
+                        except Exception as day_error:
+                            logger.warning(f"  Could not determine day of week: {day_error}")
                 else:
                     logger.warning(f"  No subject found with ID={subject_id_to_check}")
             
-            # THIRD: If still no subject info, check if we have subject name from URL
-            if subject_code == 'Unknown Subject' and data.get('subject'):
-                subject_name_from_url = data.get('subject', '')
-                if subject_name_from_url:
-                    # Try to find subject by name or code
-                    cursor.execute("""
-                        SELECT subject_id, subject_code, subject_name, class_type, section_id
-                        FROM subjects 
-                        WHERE subject_name LIKE %s OR subject_code LIKE %s
-                        LIMIT 1
-                    """, (f"%{subject_name_from_url}%", f"%{subject_name_from_url}%"))
+            # THIRD: If still no subject info, check if we have subject data from URL parameters
+            if subject_code == 'Unknown Subject' and data.get('subjects'):
+                try:
+                    import json
+                    subjects_data = json.loads(data.get('subjects', '[]'))
                     
-                    subject_by_name = cursor.fetchone()
-                    if subject_by_name:
-                        db_subject_id = subject_by_name['subject_id']
-                        subject_code = subject_by_name.get('subject_code', subject_name_from_url)
-                        subject_name = subject_by_name.get('subject_name', subject_name_from_url)
-                        class_type = subject_by_name.get('class_type', 'lecture')
+                    if subjects_data and isinstance(subjects_data, list) and len(subjects_data) > 0:
+                        # Get the first subject from the list
+                        first_subject = subjects_data[0]
                         
-                        # Use subject's section_id if not already found
-                        if subject_by_name.get('section_id') and section_id is None:
-                            section_id = subject_by_name['section_id']
+                        subject_code = first_subject.get('subject_code', 'Unknown Subject')
+                        subject_name = first_subject.get('subject_name', 'Unknown Subject')
+                        class_type = first_subject.get('class_type', 'lecture')
                         
                         if DEBUG_MODE: 
-                            logger.debug(f"  Found subject by name: {subject_code} - {subject_name}")
-                    else:
-                        subject_code = subject_name_from_url
-                        subject_name = subject_name_from_url
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Using URL parameter for subject: {subject_code}")
+                            logger.debug(f"  Using subject from URL parameters: {subject_code} - {subject_name}")
+                        
+                        # Try to find the subject in database by code
+                        if subject_code != 'Unknown Subject':
+                            cursor.execute("""
+                                SELECT subject_id FROM subjects 
+                                WHERE subject_code = %s OR subject_name = %s
+                                LIMIT 1
+                            """, (subject_code, subject_name))
+                            
+                            subject_in_db = cursor.fetchone()
+                            if subject_in_db:
+                                db_subject_id = subject_in_db['subject_id']
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  Found subject in database: subject_id={db_subject_id}")
+                except Exception as json_error:
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Could not parse subjects from URL: {json_error}")
             
             # FOURTH: Get current day if still unknown
             if day_of_week == 'Unknown Day':
@@ -15543,12 +15625,19 @@ def initialize_session():
                         logger.debug(f"  Using current system day: {day_of_week}")
                 except Exception as day_error:
                     logger.warning(f"  Could not determine day of week: {day_error}")
+            
+            # FINAL: Ensure room is not 'Unknown Room'
+            if room == 'Unknown Room':
+                room = 'TBA'  # Default room
+                if DEBUG_MODE: 
+                    logger.debug(f"  Final check: Setting default room to: {room}")
                     
         except Exception as e:
             logger.error(f"  Error fetching subject/schedule info: {e}", exc_info=True)
             # Fallback to URL parameters
             subject_code = data.get('subject', 'Unknown Subject')
             subject_name = data.get('subject', 'Unknown Subject')
+            room = 'TBA'  # Default room
         
         #    GET FACULTY INFO
         faculty_name = data.get('instructor', 'Unknown Instructor')
@@ -15770,8 +15859,8 @@ def initialize_session():
         #    FORMAT HEADER DISPLAY TEXT
         def format_header_display(subject_code, room):
             """Format header display: Subject Code - Room (Day)"""
-            # If room is still 'Unknown Room', use a more generic display
-            if room == 'Unknown Room':
+            # If room is 'TBA', use a more generic display
+            if room == 'TBA' or room == 'Unknown Room':
                 return f"{subject_code}"
             return f"{subject_code} - {room}"
         
