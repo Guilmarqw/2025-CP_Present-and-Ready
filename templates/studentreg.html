@@ -1872,7 +1872,7 @@ async function completeFaceEncoding() {
             let threshold = 0.55; // Default
             
             if (multiAngleEncodings.length >= 2) {
-                threshold = 0.45; // Lower threshold when we have multiple angles
+                threshold = 0.85; // Lower threshold when we have multiple angles
                 console.log(`Using lower threshold (${threshold}) due to ${multiAngleEncodings.length} angles`);
             }
             
@@ -1927,7 +1927,7 @@ async function completeFaceEncoding() {
                 if (similarity < 0.3) {
                     feedback += `• You are not the same person in both photos\n`;
                     feedback += `• Photos show completely different people\n`;
-                } else if (similarity < 0.45) {
+                } else if (similarity < 0.85) {
                     feedback += `• Different facial expressions\n`;
                     feedback += `• Different lighting conditions\n`;
                     feedback += `• Different head angles\n`;
@@ -2158,7 +2158,7 @@ async function compareFaces(encoding1, encoding2, multiEncodings1 = [], multiEnc
                     if (percentage >= 60) {
                         color = "#00aa00";
                         bgColor = "#e8f5e8";
-                    } else if (percentage >= 45) {
+                    } else if (percentage >= 85) {
                         color = "#ffaa00";
                         bgColor = "#fff8e8";
                     } else {

@@ -3177,13 +3177,9 @@ def refresh_with_detections(frame, rgb, frame_idx):
             load_known_faces_from_db()
             rebuild_known_faces_array()
             
-        # If still no faces, skip recognition but continue tracking
-        if KNOWN_FACE_ENCODINGS_ARRAY is None or KNOWN_FACE_ENCODINGS_ARRAY.size == 0:
-            # Skip face recognition but continue with body tracking
-            faces = []
-            body_detections = detect_bodies(frame, frame_idx)
-            # Skip to body tracking only
-            return
+        # If still no faces, CONTINUE ANYWAY but with limited recognition
+        logger.warning("⚠️ Continuing with EMPTY face database - will detect but not recognize faces")
+        # Don't return - continue with face detection and show "Unknown" labels
     
     if detectionStopped:
         return
@@ -4095,176 +4091,210 @@ def refresh_with_detections(frame, rgb, frame_idx):
         face_embedding = None
         best_similarity = 0
 
-        if conf >= 0.20 and KNOWN_FACE_ENCODINGS_ARRAY is not None and KNOWN_FACE_ENCODINGS_ARRAY.size > 0:
+        # 🟢 FIX: ALWAYS PROCESS FACES, EVEN WITH EMPTY DATABASE
+        if conf >= 0.20:
             try:
-                face_embedding = face_obj.embedding
-        
-                # Normalize the live face embedding
-                face_norm = np.linalg.norm(face_embedding)
-                if face_norm > 0:
-                    face_embedding = face_embedding / face_norm
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Normalized live face: norm={face_norm:.4f}")
-                else:
-                    if DEBUG_MODE: 
-                        logger.debug("  Zero norm face embedding")
-                    name = "Unknown"
-                    face_embedding = None
-        
+                # Try to get face embedding even if we don't have database
+                if hasattr(face_obj, 'embedding'):
+                    face_embedding = face_obj.embedding
+            
+                    # Normalize the live face embedding
+                    face_norm = np.linalg.norm(face_embedding)
+                    if face_norm > 0:
+                        face_embedding = face_embedding / face_norm
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Normalized live face: norm={face_norm:.4f}")
+                    else:
+                        if DEBUG_MODE: 
+                            logger.debug("  Zero norm face embedding")
+                        name = "Unknown"
+                        face_embedding = None
+                
                 if face_embedding is None:
                     # Skip if normalization failed
                     continue
-            
-                if len(known_face_names) == 0 or len(KNOWN_FACE_ENCODINGS_ARRAY) == 0:
-                    logger.warning("No known faces loaded for recognition")
-                    name = "Unknown"
-                else:
-                    current_section_students = get_current_section_student_ids()
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Current section has {len(current_section_students)} students")
-            
-                    # Check face quality
-                    face_width = x2 - x1
-                    face_height = y2 - y1
-                    face_area = face_width * face_height
-            
-                    # 🎯 Skip very small faces
-                    if face_width < 45 or face_height < 45:
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Face too small: {face_width}x{face_height}")
-                        name = "Unknown - Face too small"
-                        continue
-                    
-                    # Calculate pixel distance from center
-                    face_center_x = (x1 + x2) // 2
-                    face_center_y = (y1 + y2) // 2
-                    pixel_distance_from_center = np.sqrt((face_center_x - w//2)**2 + (face_center_y - h//2)**2)
-                    
-                    # 🎯 NEW: Detect face orientation (for side face recognition)
-                    face_orientation = "front"  # Default
-                    if hasattr(face_obj, 'kps') and face_obj.kps is not None and len(face_obj.kps) >= 5:
-                        kps = face_obj.kps
-                        left_eye = kps[0]
-                        right_eye = kps[1]
-                        nose = kps[2]
-                        
-                        # Calculate yaw (horizontal rotation)
-                        eye_distance = abs(right_eye[0] - left_eye[0])
-                        if eye_distance > 0 and face_width > 0:
-                            eye_ratio = eye_distance / face_width
-                            
-                            if eye_ratio < 0.4:  # Profile face
-                                # Determine left or right profile
-                                eye_midpoint = (left_eye[0] + right_eye[0]) / 2
-                                if nose[0] < eye_midpoint - (face_width * 0.1):
-                                    face_orientation = "right"  # Right profile
-                                elif nose[0] > eye_midpoint + (face_width * 0.1):
-                                    face_orientation = "left"   # Left profile
-                    
-                    if DEBUG_MODE and face_orientation != "front":
-                        logger.debug(f"  Face orientation: {face_orientation} (eye_ratio: {eye_ratio:.2f})")
-                    
-                    # 🎯 ADAPTIVE RECOGNITION THRESHOLDS based on orientation
-                    if face_orientation == "front":
-                        # Frontal face - normal thresholds
-                        if pixel_distance_from_center > 400:  # Very far
-                            recognition_threshold = 0.61
-                            min_face_size = 50
-                        elif pixel_distance_from_center > 300:  # Far
-                            recognition_threshold = 0.63
-                            min_face_size = 45
-                        elif pixel_distance_from_center > 200:  # Medium
-                            recognition_threshold = 0.66
-                            min_face_size = 40
-                        else:  # Close
-                            recognition_threshold = 0.68
-                            min_face_size = 35
-                    else:
-                        # Side/profile face - LOWER THRESHOLDS
-                        if pixel_distance_from_center > 400:  # Very far
-                            recognition_threshold = 0.58  # Lower for side faces
-                            min_face_size = 50
-                        elif pixel_distance_from_center > 300:  # Far
-                            recognition_threshold = 0.60  # Lower for side faces
-                            min_face_size = 45
-                        elif pixel_distance_from_center > 200:  # Medium
-                            recognition_threshold = 0.63  # Lower for side faces
-                            min_face_size = 40
-                        else:  # Close
-                            recognition_threshold = 0.65  # Lower for side faces
-                            min_face_size = 35
-                        
-                        logger.debug(f"  Side face detection - using lower threshold: {recognition_threshold:.3f}")
-                    
-                    # Check minimum face size for reliable recognition
-                    if face_width < min_face_size or face_height < min_face_size:
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Face too small for distance: {face_width}x{face_height} at {pixel_distance_from_center:.0f}px")
-                        name = "Unknown - Too small for distance"
-                        continue
-                    
-                    # ENSURE embeddings are normalized
-                    if not KNOWN_FACE_ENCODINGS_NORMALIZED:
-                        # Normalize on the fly
-                        norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
-                        norms[norms == 0] = 1
-                        KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
-                        KNOWN_FACE_ENCODINGS_NORMALIZED = True
-                        if DEBUG_MODE: 
-                            logger.debug("  Normalized known embeddings on the fly")
                 
-                    # 🎯 ENHANCED: MULTI-ANGLE FACE RECOGNITION
-                    # Load multi-angle encodings for better side face recognition
-                    multi_angle_encodings = load_multi_angle_encodings()
+                # 🟢 FIX: CHECK IF WE HAVE DATABASE FOR RECOGNITION
+                has_database = (KNOWN_FACE_ENCODINGS_ARRAY is not None and 
+                               KNOWN_FACE_ENCODINGS_ARRAY.size > 0 and 
+                               len(known_face_names) > 0)
+                
+                if not has_database:
+                    # NO DATABASE - show "Unknown - Not in Database"
+                    name = "Unknown - Not in Database"
+                    if DEBUG_MODE: 
+                        logger.debug(f"  No face database - labeling as '{name}'")
                     
-                    if face_orientation != "front" and multi_angle_encodings:
-                        # For side faces, try matching with profile encodings
-                        profile_encodings = []
-                        profile_ids = []
-                        profile_names = []
+                    # Still try to capture the face for future enrollment
+                    try:
+                        face_crop = frame[y1:y2, x1:x2]
+                        if face_crop.size > 0 and face_crop.shape[0] >= 30 and face_crop.shape[1] >= 30:
+                            session_id = get_current_session_id()
+                            if session_id:
+                                success = add_unknown_face(face_crop, face_embedding, track_id=f"track-{frame_idx}-{x1}")
+                                if success:
+                                    if DEBUG_MODE: 
+                                        logger.debug(f"📸 CAPTURED UNKNOWN FACE - Database empty, saved for enrollment")
+                    except Exception as e:
+                        logger.error(f"  Error capturing unknown face: {e}")
+                    
+                else:
+                    # WE HAVE DATABASE - proceed with normal recognition
+                    if len(known_face_names) == 0 or len(KNOWN_FACE_ENCODINGS_ARRAY) == 0:
+                        logger.warning("No known faces loaded for recognition")
+                        name = "Unknown"
+                    else:
+                        current_section_students = get_current_section_student_ids()
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Current section has {len(current_section_students)} students")
+                    
+                        # Check face quality
+                        face_width = x2 - x1
+                        face_height = y2 - y1
+                        face_area = face_width * face_height
+                    
+                        # 🎯 Skip very small faces
+                        if face_width < 40 or face_height < 40:
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Face too small: {face_width}x{face_height}")
+                            name = "Unknown - Face too small"
+                            continue
                         
-                        for student_id, encodings in multi_angle_encodings.items():
-                            if isinstance(encodings, list):
-                                # Add primary frontal encoding
-                                primary_idx = known_face_ids.index(student_id) if student_id in known_face_ids else -1
-                                if primary_idx != -1:
-                                    profile_encodings.append(KNOWN_FACE_ENCODINGS_ARRAY[primary_idx])
-                                    profile_ids.append(student_id)
-                                    profile_names.append(known_face_names[primary_idx])
-                                
-                                # Add multi-angle encodings
-                                for i, enc in enumerate(encodings):
-                                    if isinstance(enc, list) and len(enc) == 512:
-                                        enc_array = np.array(enc, dtype=np.float32)
-                                        norm = np.linalg.norm(enc_array)
-                                        if norm > 0:
-                                            enc_array = enc_array / norm
-                                            profile_encodings.append(enc_array)
-                                            profile_ids.append(f"{student_id}_angle{i}")
-                                            profile_names.append(f"{known_face_names[primary_idx]}_angle{i}")
+                        # Calculate pixel distance from center
+                        face_center_x = (x1 + x2) // 2
+                        face_center_y = (y1 + y2) // 2
+                        pixel_distance_from_center = np.sqrt((face_center_x - w//2)**2 + (face_center_y - h//2)**2)
                         
-                        if profile_encodings:
-                            # Create array from all encodings (frontal + multi-angle)
-                            all_encodings_array = np.array(profile_encodings)
+                        # 🎯 NEW: Detect face orientation (for side face recognition)
+                        face_orientation = "front"  # Default
+                        if hasattr(face_obj, 'kps') and face_obj.kps is not None and len(face_obj.kps) >= 5:
+                            kps = face_obj.kps
+                            left_eye = kps[0]
+                            right_eye = kps[1]
+                            nose = kps[2]
                             
-                            # Calculate similarity with all encodings
-                            all_similarities = np.dot(all_encodings_array, face_embedding)
+                            # Calculate yaw (horizontal rotation)
+                            eye_distance = abs(right_eye[0] - left_eye[0])
+                            if eye_distance > 0 and face_width > 0:
+                                eye_ratio = eye_distance / face_width
+                                
+                                if eye_ratio < 0.4:  # Profile face
+                                    # Determine left or right profile
+                                    eye_midpoint = (left_eye[0] + right_eye[0]) / 2
+                                    if nose[0] < eye_midpoint - (face_width * 0.1):
+                                        face_orientation = "right"  # Right profile
+                                    elif nose[0] > eye_midpoint + (face_width * 0.1):
+                                        face_orientation = "left"   # Left profile
+                        
+                        if DEBUG_MODE and face_orientation != "front":
+                            logger.debug(f"  Face orientation: {face_orientation} (eye_ratio: {eye_ratio:.2f})")
+                        
+                        # 🎯 ADAPTIVE RECOGNITION THRESHOLDS based on orientation
+                        if face_orientation == "front":
+                            # Frontal face - normal thresholds
+                            if pixel_distance_from_center > 400:  # Very far
+                                recognition_threshold = 0.57
+                                min_face_size = 50
+                            elif pixel_distance_from_center > 300:  # Far
+                                recognition_threshold = 0.59
+                                min_face_size = 45
+                            elif pixel_distance_from_center > 200:  # Medium
+                                recognition_threshold = 0.61
+                                min_face_size = 40
+                            else:  # Close
+                                recognition_threshold = 0.63
+                                min_face_size = 35
+                        else:
+                            # Side/profile face - LOWER THRESHOLDS
+                            if pixel_distance_from_center > 400:  # Very far
+                                recognition_threshold = 0.56  # Lower for side faces
+                                min_face_size = 50
+                            elif pixel_distance_from_center > 300:  # Far
+                                recognition_threshold = 0.58  # Lower for side faces
+                                min_face_size = 45
+                            elif pixel_distance_from_center > 200:  # Medium
+                                recognition_threshold = 0.60  # Lower for side faces
+                                min_face_size = 40
+                            else:  # Close
+                                recognition_threshold = 0.62  # Lower for side faces
+                                min_face_size = 35
                             
-                            if all_similarities.size > 0:
-                                best_match_index = int(np.argmax(all_similarities))
-                                best_similarity = float(all_similarities[best_match_index])
-                                
-                                # Get the original student ID (strip "_angleX" suffix)
-                                matched_profile_id = profile_ids[best_match_index]
-                                original_student_id = matched_profile_id.split('_')[0] if '_' in matched_profile_id else matched_profile_id
-                                
-                                if best_similarity >= recognition_threshold:
-                                    matched_id = original_student_id
-                                    matched_name = known_face_names[known_face_ids.index(matched_id)] if matched_id in known_face_ids else "Unknown"
+                            logger.debug(f"  Side face detection - using lower threshold: {recognition_threshold:.3f}")
+                        
+                        # Check minimum face size for reliable recognition
+                        if face_width < min_face_size or face_height < min_face_size:
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Face too small for distance: {face_width}x{face_height} at {pixel_distance_from_center:.0f}px")
+                            name = "Unknown - Too small for distance"
+                            continue
+                        
+                        # ENSURE embeddings are normalized
+                        if not KNOWN_FACE_ENCODINGS_NORMALIZED:
+                            # Normalize on the fly
+                            norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
+                            norms[norms == 0] = 1
+                            KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
+                            KNOWN_FACE_ENCODINGS_NORMALIZED = True
+                            if DEBUG_MODE: 
+                                logger.debug("  Normalized known embeddings on the fly")
+                    
+                        # 🎯 ENHANCED: MULTI-ANGLE FACE RECOGNITION
+                        # Load multi-angle encodings for better side face recognition
+                        multi_angle_encodings = load_multi_angle_encodings()
+                        
+                        if face_orientation != "front" and multi_angle_encodings:
+                            # For side faces, try matching with profile encodings
+                            profile_encodings = []
+                            profile_ids = []
+                            profile_names = []
+                            
+                            for student_id, encodings in multi_angle_encodings.items():
+                                if isinstance(encodings, list):
+                                    # Add primary frontal encoding
+                                    primary_idx = known_face_ids.index(student_id) if student_id in known_face_ids else -1
+                                    if primary_idx != -1:
+                                        profile_encodings.append(KNOWN_FACE_ENCODINGS_ARRAY[primary_idx])
+                                        profile_ids.append(student_id)
+                                        profile_names.append(known_face_names[primary_idx])
                                     
-                                    logger.info(f"🎯 SIDE FACE MATCH: {matched_name} ({face_orientation} profile) - Similarity: {best_similarity:.3f}")
+                                    # Add multi-angle encodings
+                                    for i, enc in enumerate(encodings):
+                                        if isinstance(enc, list) and len(enc) == 512:
+                                            enc_array = np.array(enc, dtype=np.float32)
+                                            norm = np.linalg.norm(enc_array)
+                                            if norm > 0:
+                                                enc_array = enc_array / norm
+                                                profile_encodings.append(enc_array)
+                                                profile_ids.append(f"{student_id}_angle{i}")
+                                                profile_names.append(f"{known_face_names[primary_idx]}_angle{i}")
+                            
+                            if profile_encodings:
+                                # Create array from all encodings (frontal + multi-angle)
+                                all_encodings_array = np.array(profile_encodings)
+                                
+                                # Calculate similarity with all encodings
+                                all_similarities = np.dot(all_encodings_array, face_embedding)
+                                
+                                if all_similarities.size > 0:
+                                    best_match_index = int(np.argmax(all_similarities))
+                                    best_similarity = float(all_similarities[best_match_index])
+                                    
+                                    # Get the original student ID (strip "_angleX" suffix)
+                                    matched_profile_id = profile_ids[best_match_index]
+                                    original_student_id = matched_profile_id.split('_')[0] if '_' in matched_profile_id else matched_profile_id
+                                    
+                                    if best_similarity >= recognition_threshold:
+                                        matched_id = original_student_id
+                                        matched_name = known_face_names[known_face_ids.index(matched_id)] if matched_id in known_face_ids else "Unknown"
+                                        
+                                        logger.info(f"🎯 SIDE FACE MATCH: {matched_name} ({face_orientation} profile) - Similarity: {best_similarity:.3f}")
+                                    else:
+                                        # Fall back to regular recognition
+                                        similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
+                                        best_match_index = int(np.argmax(similarities))
+                                        best_similarity = float(similarities[best_match_index])
                                 else:
-                                    # Fall back to regular recognition
+                                    # Regular recognition
                                     similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
                                     best_match_index = int(np.argmax(similarities))
                                     best_similarity = float(similarities[best_match_index])
@@ -4274,125 +4304,120 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 best_match_index = int(np.argmax(similarities))
                                 best_similarity = float(similarities[best_match_index])
                         else:
-                            # Regular recognition
+                            # Regular frontal face recognition
                             similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
                             best_match_index = int(np.argmax(similarities))
                             best_similarity = float(similarities[best_match_index])
-                    else:
-                        # Regular frontal face recognition
-                        similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
-                        best_match_index = int(np.argmax(similarities))
-                        best_similarity = float(similarities[best_match_index])
-                
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Similarities: min={similarities.min():.3f}, max={similarities.max():.3f}")
-
-                    if similarities.size > 0:
-                        # Already got best_similarity above
-                        
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Best match: {known_face_names[best_match_index]} - Similarity: {best_similarity:.3f}, Threshold: {recognition_threshold:.3f}")
                     
-                        # 🎯 TOP-2 CHECK for better accuracy
-                        if similarities.size > 1:
-                            sorted_indices = np.argsort(similarities)[::-1]
-                            best_sim = similarities[sorted_indices[0]]
-                            second_best_sim = similarities[sorted_indices[1]]
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Similarities: min={similarities.min():.3f}, max={similarities.max():.3f}")
+
+                        if similarities.size > 0:
+                            # Already got best_similarity above
                             
-                            similarity_gap = best_sim - second_best_sim
-                            if similarity_gap < 0.12:  # Too close, might be ambiguous
-                                if DEBUG_MODE:
-                                    logger.debug(f"  AMBIGUOUS: Best match gap too small ({similarity_gap:.3f})")
-                                name = "Unknown - Ambiguous match"
-                                continue
+                            if DEBUG_MODE: 
+                                logger.debug(f"  Best match: {known_face_names[best_match_index]} - Similarity: {best_similarity:.3f}, Threshold: {recognition_threshold:.3f}")
                         
-                        # 🎯 CONFIDENCE-BASED RECOGNITION DECISION
-                        if best_similarity >= recognition_threshold:
-                            # HIGH/MEDIUM CONFIDENCE MATCH
-                            matched_id = known_face_ids[best_match_index]
-                            matched_type = known_face_types[best_match_index]
-                            matched_name = known_face_names[best_match_index]
-                            
-                            # ============================================
-                            # 🚨 CRITICAL FIX: SECTION VALIDATION
-                            # ============================================
-                            if matched_type == 'student':
-                                # Get current section students
-                                current_section_students = get_current_section_student_ids()
+                            # 🎯 TOP-2 CHECK for better accuracy
+                            if similarities.size > 1:
+                                sorted_indices = np.argsort(similarities)[::-1]
+                                best_sim = similarities[sorted_indices[0]]
+                                second_best_sim = similarities[sorted_indices[1]]
                                 
-                                if matched_id not in current_section_students:
-                                    # This student is NOT in current section
-                                    name = "Unknown - Wrong Section"
-                                    logger.warning(f"⚠️ Student {matched_name} ({matched_id}) recognized but NOT in current section!")
-                                    
-                                    # Don't mark attendance or lock this track
-                                    # Just show as "Unknown - Wrong Section"
-                                    person_id = None
-                                    ptype = None
-                                    confidence = best_similarity
-                                    continue  # Skip further processing for this face
-                            
-                            # Additional verification for medium confidence
-                            if best_similarity < 0.75:  # Medium confidence range
-                                # Check if person was recently tracked
-                                person_recently_tracked = False
-                                for tr in tracks:
-                                    if tr.get('id') == matched_id:
-                                        frames_since_seen = frame_idx - tr.get('last_seen', 0)
-                                        if frames_since_seen <= 30:  # Seen within 30 frames (~1 second)
-                                            person_recently_tracked = True
-                                            break
-                                
-                                if not person_recently_tracked:
-                                    # Not recently tracked - be more conservative
+                                similarity_gap = best_sim - second_best_sim
+                                if similarity_gap < 0.12:  # Too close, might be ambiguous
                                     if DEBUG_MODE:
-                                        logger.debug(f"  MEDIUM CONFIDENCE REJECTED: {matched_name} not recently tracked")
-                                    name = "Unknown - Medium confidence, not recently tracked"
+                                        logger.debug(f"  AMBIGUOUS: Best match gap too small ({similarity_gap:.3f})")
+                                    name = "Unknown - Ambiguous match"
                                     continue
                             
-                            # ============================================
-                            # 🚨 CRITICAL FIX: FALSE POSITIVE PREVENTION
-                            # ============================================
-                            # Additional verification to prevent false positives
-                            if best_similarity < 0.78:  # Medium-high confidence
-                                # Check if this face has valid facial features
-                                if hasattr(face_obj, 'kps'):
-                                    kps = face_obj.kps
-                                    if len(kps) >= 5:
-                                        # Check if facial landmarks are reasonable
-                                        left_eye = kps[0]
-                                        right_eye = kps[1]
-                                        nose = kps[2]
+                            # 🎯 CONFIDENCE-BASED RECOGNITION DECISION
+                            if best_similarity >= recognition_threshold:
+                                # HIGH/MEDIUM CONFIDENCE MATCH
+                                matched_id = known_face_ids[best_match_index]
+                                matched_type = known_face_types[best_match_index]
+                                matched_name = known_face_names[best_match_index]
+                                
+                                # ============================================
+                                # 🚨 CRITICAL FIX: SECTION VALIDATION
+                                # ============================================
+                                if matched_type == 'student':
+                                    # Get current section students
+                                    current_section_students = get_current_section_student_ids()
+                                    
+                                    if matched_id not in current_section_students:
+                                        # This student is NOT in current section
+                                        name = "Unknown - Wrong Section"
+                                        logger.warning(f"⚠️ Student {matched_name} ({matched_id}) recognized but NOT in current section!")
                                         
-                                        # Calculate eye distance relative to face width
-                                        eye_distance = abs(right_eye[0] - left_eye[0])
-                                        if eye_distance > 0:
-                                            eye_face_ratio = eye_distance / face_width
-                                            if eye_face_ratio < 0.2 or eye_face_ratio > 0.8:
-                                                # Unreasonable eye positioning
-                                                name = "Unknown - Invalid facial features"
-                                                if DEBUG_MODE:
-                                                    logger.debug(f"  Rejecting: eye-face ratio {eye_face_ratio:.2f} is unreasonable")
-                                                continue
+                                        # Don't mark attendance or lock this track
+                                        # Just show as "Unknown - Wrong Section"
+                                        person_id = None
+                                        ptype = None
+                                        confidence = best_similarity
+                                        continue  # Skip further processing for this face
+                                
+                                # Additional verification for medium confidence
+                                if best_similarity < 0.65:  # Medium confidence range
+                                    # Check if person was recently tracked
+                                    person_recently_tracked = False
+                                    for tr in tracks:
+                                        if tr.get('id') == matched_id:
+                                            frames_since_seen = frame_idx - tr.get('last_seen', 0)
+                                            if frames_since_seen <= 30:  # Seen within 30 frames (~1 second)
+                                                person_recently_tracked = True
+                                                break
+                                    
+                                    if not person_recently_tracked:
+                                        # Not recently tracked - be more conservative
+                                        if DEBUG_MODE:
+                                            logger.debug(f"  MEDIUM CONFIDENCE REJECTED: {matched_name} not recently tracked")
+                                        name = "Unknown - Medium confidence, not recently tracked"
+                                        continue
+                                
+                                # ============================================
+                                # 🚨 CRITICAL FIX: FALSE POSITIVE PREVENTION
+                                # ============================================
+                                # Additional verification to prevent false positives
+                                if best_similarity < 0.78:  # Medium-high confidence
+                                    # Check if this face has valid facial features
+                                    if hasattr(face_obj, 'kps'):
+                                        kps = face_obj.kps
+                                        if len(kps) >= 5:
+                                            # Check if facial landmarks are reasonable
+                                            left_eye = kps[0]
+                                            right_eye = kps[1]
+                                            nose = kps[2]
+                                            
+                                            # Calculate eye distance relative to face width
+                                            eye_distance = abs(right_eye[0] - left_eye[0])
+                                            if eye_distance > 0:
+                                                eye_face_ratio = eye_distance / face_width
+                                                if eye_face_ratio < 0.2 or eye_face_ratio > 0.8:
+                                                    # Unreasonable eye positioning
+                                                    name = "Unknown - Invalid facial features"
+                                                    if DEBUG_MODE:
+                                                        logger.debug(f"  Rejecting: eye-face ratio {eye_face_ratio:.2f} is unreasonable")
+                                                    continue
+                                
+                                # 🎯 ACCEPTED RECOGNITION
+                                if matched_type == 'faculty':
+                                    name = f"Faculty: {matched_name}"
+                                    person_id = matched_id
+                                    ptype = 'faculty'
+                                    confidence = best_similarity
                             
-                            # 🎯 ACCEPTED RECOGNITION
-                            if matched_type == 'faculty':
-                                name = f"Faculty: {matched_name}"
-                                person_id = matched_id
-                                ptype = 'faculty'
-                                confidence = best_similarity
-                        
-                            elif matched_type == 'student':
-                                # 🟢 FIX: Already validated section membership above
-                                name = matched_name
-                                person_id = matched_id
-                                ptype = 'student'
-                                confidence = best_similarity
-                        else:
-                            # BELOW THRESHOLD
-                            if DEBUG_MODE: 
-                                logger.debug(f"  ❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
-                            name = "Unknown"
+                                elif matched_type == 'student':
+                                    # 🟢 FIX: Already validated section membership above
+                                    name = matched_name
+                                    person_id = matched_id
+                                    ptype = 'student'
+                                    confidence = best_similarity
+                            else:
+                                # BELOW THRESHOLD
+                                if DEBUG_MODE: 
+                                    logger.debug(f"  ❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
+                                name = "Unknown"
             except Exception as e:
                 logger.error(f"  Error in recognition: {e}")
                 import traceback
@@ -4651,7 +4676,6 @@ def refresh_with_detections(frame, rgb, frame_idx):
             del locked_track_predictions[key]
         if key in locked_track_signatures:
             del locked_track_signatures[key]
-
 def load_multi_angle_encodings():
     """Load multi-angle face encodings from database"""
     try:
@@ -9484,12 +9508,12 @@ def compare_faces():
         # Dynamic threshold based on comparison type
         if is_profile_comparison:
             # Lower threshold for profile comparisons
-            match_threshold = 0.45  # 45% for profile-to-profile or profile-to-frontal
-            logger.debug(f"Using profile comparison threshold: {match_threshold}")
+            match_threshold = 0.85  # 45% for profile-to-profile or profile-to-frontal
+            logger.debug(f"Using profile comparison threshold: {match_threshold*100}")
         else:
             # Standard threshold for frontal-to-frontal
-            match_threshold = 0.55  # 55% for frontal-to-frontal
-            logger.debug(f"Using frontal comparison threshold: {match_threshold}")
+            match_threshold = 0.85  # 55% for frontal-to-frontal
+            logger.debug(f"Using frontal comparison threshold: {match_threshold*100}")
         
         # Final match decision
         is_match = final_similarity >= match_threshold
