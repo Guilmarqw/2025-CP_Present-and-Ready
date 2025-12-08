@@ -1,0 +1,183 @@
+        .profile-container { max-width: 2000px; }
+        .profile-card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }
+        .profile-header {
+            background: #4a6fa9; color: white; padding: 40px 30px; text-align: center; position: relative;
+        }
+        .profile-avatar {
+            position: relative; width: 150px; height: 150px; border-radius: 50%; overflow: hidden;
+            background: #f0f2f5; border: 5px solid #ffffff; box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+            cursor: pointer; transition: all 0.3s ease; margin: 0 auto 20px;
+        }
+        .profile-avatar:hover { transform: scale(1.06); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+        .profile-avatar i { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 70px; color: #495057; transition: opacity 0.3s; }
+        .profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: none; }
+        .profile-avatar::before {
+            content: "Click to Change Photo"; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 16px; font-weight: 500;
+            display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s;
+            border-radius: 50%; pointer-events: none; z-index: 2;
+        }
+        .profile-avatar:hover::before { opacity: 1; }
+        .profile-name { font-size: 2rem; font-weight: 600; margin: 0 0 8px 0; }
+        .profile-role { font-size: 1.2rem; opacity: 0.95; font-weight: 400; }
+        .profile-body { padding: 40px; }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 30px;
+        }@media (max-width: 400px) {
+        .profile-name { font-size: 1.35rem; }
+        .profile-role { font-size: 1rem; }
+    }
+        @media (max-width: 992px) { .info-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 600px) { .info-grid { grid-template-columns: 1fr; } }
+@media (max-width: 768px) {
+    .action-buttons {
+        flex-direction: column;     /* stack buttons on mobile */
+        align-items: center;        /* perfect centering */
+        gap: 12px;
+    }
+
+    .btn {
+        width: 100%;                /* both buttons full width */
+        max-width: 280px;           /* same maximum width */
+        padding: 14px 20px !important;  /* same height & padding */
+        font-size: 1rem;
+        justify-content: center;
+    }
+
+    /* Optional: make them a bit bigger/tappable on phones */
+    .btn-edit,
+    .btn-password {
+        min-height: 52px;           /* better touch target */
+    }
+}@media (max-width: 480px) {
+    .info-value {
+        font-size: 0.7rem !important;
+    }
+
+
+}
+        .info-label {
+            font-weight: 600; color: #4a6fa9; font-size: 0.85rem;
+            text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;
+        }
+        .info-value {
+            color: #222; font-size: 0.8rem; font-weight: 500;
+        }
+
+        .action-buttons {
+            display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;
+            padding-top: 20px; border-top: 1px solid #eee;
+        }
+        .btn {
+            padding: 14px 32px; border-radius: 10px; font-size: 1.05rem; font-weight: 600;
+            cursor: pointer; transition: all 0.3s ease; display: inline-flex;
+            align-items: center; gap: 10px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .btn-edit { background: #4a6fa9; color: white; }
+        .btn-edit:hover { background: #5a7fe8; transform: translateY(-3px); }
+        .btn-password { background: #28a745; color: white; }
+        .btn-password:hover { background: #218838; transform: translateY(-3px); }
+
+        .success-message {
+            background: #d4edda; color: #155724; padding: 15px 25px; border-radius: 10px;
+            margin: 20px 40px; border: 1px solid #c3e6cb; text-align: center; font-weight: 500;
+            display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.6);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .modal.show { display: flex !important; }
+
+        .modal-content {
+            background-color: #fefefe;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 560px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-shrink: 0;
+        }
+        .modal-header h2 { margin: 0; color: #333; }
+        .close { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover { color: #000; }
+
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #444;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border 0.3s;
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #4a6fa9;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+        }
+        /* Disabled input styling - matches Student ID */
+        .form-group input:disabled {
+            background-color: #f8f9fa;
+            color: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.9;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+            flex-shrink: 0;
+        }
+        .btn-save {
+            background: #4a6fa9;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;}

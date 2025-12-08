@@ -1,111 +1,242 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Student Settings</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
-  <link rel="stylesheet" href="../static/settings.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings – Student Portal</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">    <link rel="stylesheet" href="../static/AdminDB.css">
+    <link rel="stylesheet" href="../static/StudentLP.css">
+    <link rel="stylesheet" href="../static/StudSettings.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='StudentLP.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='StudSettings.css') }}">
+
+
 </head>
+
 <body>
-  <div class="header">
-    <div class="header-left">
-      <img src="../static/images/logo.png" alt="University Logo" class="logo">
-      <div class="title">Student Side</div>
+
+    <!-- Overlay & Sidebar (unchanged) -->
+    <div class="overlay" onclick="toggleMenu()"></div>
+    <aside class="sidebar">
+        <div class="logo"><h1>Student Portal</h1></div>
+        <div class="user-info">
+            <div class="avatar"><i class="fas fa-user"></i></div>
+            <div class="name">Loading...</div>
+            <div class="role">Loading...</div>
+        </div>
+        <ul class="nav-items">
+            <li><a href="../templates/StudentLP.html"><i class="fas fa-chart-bar"></i><span>Dashboard</span></a></li>
+            <li><a href="../templates/StudSettings.html" class="active"><i class="fas fa-cog"></i><span>Settings</span></a></li>
+            <li><a href="../templates/login.html"><i class="fas fa-sign-out-alt"></i><span>Sign out</span></a></li>
+        </ul>
+    </aside>
+
+    <!-- Main Content -->
+    <section class="main-content">
+        <header class="header">
+            <button class="menu-toggle" onclick="toggleMenu()">
+                <i class="fas fa-bars"></i>
+            </button>
+            <h2>Settings</h2>
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Search settings…">
+            </div>
+        </header>
+
+        <div class="profile-container">
+            <div class="success-message" id="success-message">
+                Profile updated successfully!
+            </div>
+
+            <div class="profile-card">
+                <div class="profile-header">
+                    <div class="profile-avatar" id="avatarContainer">
+                        <i class="fas fa-user" id="defaultIcon"></i>
+                        <img id="profileImage" src="" alt="Profile Picture">
+                        <input type="file" id="uploadInput" accept="image/*" style="display:none;">
+                    </div>
+                    <h1 class="profile-name" id="displayFullName">Juan M. Dela Cruz</h1>
+                    <p class="profile-role">Student</p>
+                </div>
+
+                <div class="profile-body">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-label">First Name</div>
+                            <div class="info-value" id="firstName">Juan</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Middle Name</div>
+                            <div class="info-value" id="middleName">Manalo</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Last Name</div>
+                            <div class="info-value" id="lastName">Dela Cruz</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Student ID</div>
+                            <div class="info-value">2025-0001</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Course</div>
+                            <div class="info-value" id="course">BS Information Technology</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Year Level</div>
+                            <div class="info-value" id="yearLevel">3rd Year</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Section</div>
+                            <div class="info-value" id="section">A</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Email Address</div>
+                            <div class="info-value">juan.delacruz@student.university.edu.ph</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Phone Number</div>
+                            <div class="info-value">+63 912 345 6789</div>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button class="btn btn-edit" onclick="openEditModal()">Edit Profile</button>
+                        <button class="btn btn-password" onclick="openPasswordModal()">Change Password</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Edit Profile Modal - Course is now disabled (like Student ID) -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Profile</h2>
+            </div>
+            <form id="editForm">
+                <div class="form-group"><label>First Name</label><input type="text" id="editFirstName" value="Juan" required></div>
+                <div class="form-group"><label>Middle Name</label><input type="text" id="editMiddleName" value="Manalo"></div>
+                <div class="form-group"><label>Last Name</label><input type="text" id="editLastName" value="Dela Cruz" required></div>
+
+                <div class="form-group">
+                    <label>Student ID</label>
+                    <input type="text" value="2025-0001" disabled>
+                </div>
+
+                <!-- COURSE IS VISIBLE BUT DISABLED - Exactly like Student ID -->
+                <div class="form-group">
+                    <label>Course</label>
+                    <input type="text" value="BS Information Technology" disabled>
+                </div>
+
+                <div class="form-group">
+                    <label>Year Level</label>
+                    <select id="editYearLevel" required>
+                        <option value="1st Year">1st Year</option>
+                        <option value="2nd Year">2nd Year</option>
+                        <option value="3rd Year" selected>3rd Year</option>
+                        <option value="4th Year">4th Year</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Section</label><input type="text" id="editSection" value="A" required></div>
+                <div class="form-group"><label>Email Address</label><input type="email" value="juan.delacruz@student.university.edu.ph" required></div>
+                <div class="form-group"><label>Phone Number</label><input type="tel" value="+63 912 345 6789"></div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" class="btn-save">Save Changes</button>
+                </div>
+            </form>
+        </div>
     </div>
-    <div class="header-right">
-      <div class="user-info">
-        <div class="name">Guilmar Acabo Quimba</div>
-        <div class="role">Student</div>
-      </div>
-      <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="User" class="profile-pic" onclick="toggleDropdown()">
-      <div class="dropdown" id="dropdown">
-        <a href="#" onclick="showAccountSettings()">Account Settings</a>
-        <a href="#">Go back to Session</a>
-        <a href="#">Logout</a>
-      </div>
-    </div>
-  </div>
 
-  <div class="main-content" id="account-settings">
-    <div class="card">
-      <div class="card-header">
-        <h2>Personal Information</h2>
-        <div class="buttons">
-          <button class="edit-btn">Edit</button>
-          <button class="logout-btn">Logout</button>
+    <!-- Change Password Modal (unchanged) -->
+    <div id="passwordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Change Password</h2>
+            </div>
+            <form id="passwordForm">
+                <div class="form-group"><label>Current Password</label><input type="password" required></div>
+                <div class="form-group"><label>New Password</label><input type="password" required></div>
+                <div class="form-group"><label>Confirm New Password</label><input type="password" required></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" onclick="closePasswordModal()">Cancel</button>
+                    <button type="submit" class="btn-save">Update Password</button>
+                </div>
+            </form>
         </div>
-      </div>
-
-      <div class="profile-section">
-        <img src="https://randomuser.me/api/portraits/men/75.jpg" alt="Profile">
-        <div class="fullname">Guilmar Acabo Quimba</div>
-      </div>
-
-      <div class="info-grid">
-        <div class="info-item">
-          <label>FIRST NAME</label>
-          <div>Guilmar</div>
-        </div>
-        <div class="info-item">
-          <label>MIDDLE NAME</label>
-          <div>Acabo</div>
-        </div>
-        <div class="info-item">
-          <label>LAST NAME</label>
-          <div>Quimba</div>
-        </div>
-                 <div class="info-item">
-          <label>COURSE</label>
-          <div>BS Computer Science</div>
-        </div>
-                         <div class="info-item">
-          <label>YEAR AND SECTION</label>
-          <div>BSCS 1A</div>
-        </div>
-        <div class="info-item">
-          <label>STUDENT ID</label>
-          <div>2022-00954</div>
-        </div>
-        <div class="info-item">
-          <label>EMAIL</label>
-          <div><a href="mailto:guilmar12@example.com">guilmar12@example.com</a></div>
-        </div>
-
-      </div>
     </div>
 
-    <div class="security-card">
-      <h3>Account Security</h3>
-      <div class="security-item">
-        <div>
-          <label>Password</label>
-          <div>*******</div>
-        </div>
-        <button class="change-btn">Change Password</button>
-      </div>
-    </div>
-  </div>
+    <script>
+        function toggleMenu() {
+            document.querySelector('.sidebar').classList.toggle('active');
+            document.querySelector('.overlay').classList.toggle('active');
+        }
 
-  <script>
-        const dropdown = document.getElementById("dropdown");
-    const profilePic = document.querySelector(".profile-pic");
+        // Avatar upload
+        document.getElementById('avatarContainer').addEventListener('click', () => {
+            document.getElementById('uploadInput').click();
+        });
+        document.getElementById('uploadInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const img = document.getElementById('profileImage');
+                    img.src = ev.target.result;
+                    img.style.display = 'block';
+                    document.getElementById('defaultIcon').style.opacity = '0';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
 
-    function toggleDropdown() {
-      dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
-    }
+        // Modal controls
+        function openEditModal() { document.getElementById('editModal').classList.add('show'); }
+        function closeEditModal() { document.getElementById('editModal').classList.remove('show'); }
+        function openPasswordModal() { document.getElementById('passwordModal').classList.add('show'); }
+        function closePasswordModal() { document.getElementById('passwordModal').classList.remove('show'); }
 
-    window.addEventListener("click", function(e) {
-      if (!profilePic.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.style.display = "none";
-      }
-    });
+        window.onclick = function(event) {
+            const editModal = document.getElementById('editModal');
+            const pwModal = document.getElementById('passwordModal');
+            if (event.target === editModal) closeEditModal();
+            if (event.target === pwModal) closePasswordModal();
+        };
 
-    function showAccountSettings() {
-      dropdown.style.display = "none";
-      document.getElementById("account-settings").scrollIntoView({ behavior: "smooth" });
-    }
-  </script>
+        // Edit Profile Form Submission
+        document.getElementById('editForm').addEventListener('submit', function(e) {
+            e.preventDefault();
 
+            const first = document.getElementById('editFirstName').value.trim();
+            const middle = document.getElementById('editMiddleName').value.trim();
+            const last = document.getElementById('editLastName').value.trim();
+            const yearLevel = document.getElementById('editYearLevel').value;
+            const section = document.getElementById('editSection').value.trim().toUpperCase();
+
+            document.getElementById('firstName').textContent = first;
+            document.getElementById('middleName').textContent = middle || '—';
+            document.getElementById('lastName').textContent = last;
+            document.getElementById('yearLevel').textContent = yearLevel;
+            document.getElementById('section').textContent = section;
+
+            const middleInitial = middle ? middle.charAt(0).toUpperCase() + '. ' : '';
+            document.getElementById('displayFullName').textContent = `${first} ${middleInitial}${last}`;
+
+            document.getElementById('success-message').style.display = 'block';
+            closeEditModal();
+            setTimeout(() => document.getElementById('success-message').style.display = 'none', 4000);
+        });
+
+        // Password form
+        document.getElementById('passwordForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            alert('Password changed successfully!');
+            closePasswordModal();
+        });
+    </script>
 </body>
 </html>

@@ -6,40 +6,47 @@
     <title>Attendance – Student Portal</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/StudentLP.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='StudentLP.css') }}"> 
+    <link rel="stylesheet" href="{{ url_for('static', filename='StudentLP.css') }}">
 </head>
 <body>
+
+    <!-- Overlay -->
+    <div class="overlay" onclick="toggleMenu()"></div>
 
     <!-- Sidebar -->
     <aside class="sidebar">
         <div class="logo"><h1>Student Portal</h1></div>
-<div class="user-info">
-    <div class="avatar">
-        <i class="fas fa-user"></i>
-    </div>
-    <div>
-        <div class="name">Loading...</div>
-        <div class="role">Loading...</div>
-    </div>
-</div>
+        <div class="user-info">
+            <div class="avatar"><i class="fas fa-user"></i></div>
+            <div class="name">Loading...</div>
+            <div class="role">Loading...</div>
+        </div>
         <ul class="nav-items">
-            <li><a href="/attendance" class="active"><i class="fas fa-chart-bar"></i><span>Dashboard</span></a></li>
-            <li><a href="/settings"><i class="fas fa-cog"></i><span>Settings</span></a></li>
-            <li><a href="/logout"><i class="fas fa-sign-out-alt"></i><span>Sign out</span></a></li>
+            <li><a href="../templates/StudentLP.html" class="active"><i class="fas fa-chart-bar"></i><span>Dashboard</span></a></li>
+            <li><a href="../templates/StudSettings.html"><i class="fas fa-cog"></i><span>Settings</span></a></li>
+            <li><a href="../templates/login.html"><i class="fas fa-sign-out-alt"></i><span>Sign out</span></a></li>
         </ul>
     </aside>
 
     <!-- Main Content -->
     <section class="main-content">
         <header class="header">
+            <!-- Hamburger on the far left -->
+            <button class="menu-toggle" onclick="toggleMenu()">
+                <i class="fas fa-bars"></i>
+            </button>
+
+            <!-- Title in the middle (flex:1) -->
             <h2>Attendance</h2>
+
+            <!-- Search box on the right -->
             <div class="search-box">
                 <i class="fas fa-search"></i>
                 <input type="text" placeholder="Search courses…">
             </div>
         </header>
 
-        <!-- PREMIUM STAT CARDS -->
+        <!-- Stats Cards -->
         <div class="stats-grid">
             <div class="stat-card rate">
                 <h4>Attendance Rate</h4>
@@ -55,7 +62,7 @@
             </div>
         </div>
 
-        <!-- TODAY'S CLASSES TABLE -->
+        <!-- Tables -->
         <div class="courses-table">
             <h3>Today's Classes <span id="today-date"></span></h3>
             <table>
@@ -67,13 +74,10 @@
                         <th>Status</th>
                     </tr>
                 </thead>
-                <tbody id="today-classes-body">
-                    <!-- Dynamic content will be loaded here -->
-                </tbody>
+                <tbody id="today-classes-body"></tbody>
             </table>
         </div>
 
-        <!-- ATTENDANCE HISTORY TABLE -->
         <div class="courses-table">
             <h3>Attendance History</h3>
             <table>
@@ -86,13 +90,10 @@
                         <th>Status</th>
                     </tr>
                 </thead>
-                <tbody id="attendance-history-body">
-                    <!-- Dynamic content will be loaded here -->
-                </tbody>
+                <tbody id="attendance-history-body"></tbody>
             </table>
         </div>
 
-        <!-- ALL CLASSES THIS SEMESTER TABLE -->
         <div class="courses-table">
             <h3>All Classes This Semester</h3>
             <table>
@@ -102,428 +103,207 @@
                         <th>Schedule</th>
                     </tr>
                 </thead>
-                <tbody id="semester-classes-body">
-                    <!-- Dynamic content will be loaded here -->
-                </tbody>
+                <tbody id="semester-classes-body"></tbody>
             </table>
         </div>
     </section>
-<script>
-let userProfileData = null;
 
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Page loaded, fetching attendance data...');
-    fetchAttendanceData();
-    updateUserInfo();
-});
+    <script>
+        function toggleMenu() {
+            document.querySelector('.sidebar').classList.toggle('active');
+            document.querySelector('.overlay').classList.toggle('active');
+        }
 
-async function fetchAttendanceData() {
-    try {
-        console.log('Starting to fetch attendance data...');
-        
-        document.body.classList.add('loading');
-        
-        const response = await fetch('/api/student/attendance-data', {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'same-origin'
+        let userProfileData = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded, fetching attendance data...');
+            fetchAttendanceData();
+            updateUserInfo();
         });
-        
-        console.log('Response status:', response.status);
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log('Full data received:', data);
-        
-        updateStatistics(data.stats);
-        updateTodayClasses(data.today_classes, data.today_date);
-        updateAttendanceHistory(data.attendance_history);
-        updateSemesterClasses(data.semester_classes);
-        updateUserInfoInSidebar(data.student);
-        
-    } catch (error) {
-        console.error('Error fetching attendance data:', error);
-        showError(`Failed to load attendance data: ${error.message}`);
-        showFallbackData();
-    } finally {
-        document.body.classList.remove('loading');
-    }
-}
 
-function updateStatistics(stats) {
-    console.log('Updating statistics:', stats);
-    
-    const rateElement = document.querySelector('.stat-card.rate .value');
-    const totalElement = document.querySelector('.stat-card.total-classes .value');
-    const attendedElement = document.querySelector('.stat-card.attended .value');
-    
-    if (rateElement) {
-        rateElement.textContent = `${stats.attendance_rate}%`;
-        if (stats.attendance_rate >= 90) {
-            rateElement.style.color = '#10b981';
-        } else if (stats.attendance_rate >= 75) {
-            rateElement.style.color = '#f59e0b';
-        } else {
-            rateElement.style.color = '#ef4444';
-        }
-    }
-    
-    if (totalElement) totalElement.textContent = stats.total_classes;
-    if (attendedElement) attendedElement.textContent = stats.attended_classes;
-}
+        async function fetchAttendanceData() {
+            try {
+                console.log('Starting to fetch attendance data...');
+                document.body.classList.add('loading');
 
-function updateTodayClasses(classes, todayDate) {
-    console.log('Updating today classes:', classes);
-    const tbody = document.getElementById('today-classes-body');
-    const dateElement = document.getElementById('today-date');
-    
-    if (!tbody) {
-        console.error('Today classes table body not found');
-        return;
-    }
-    
-    if (dateElement) {
-        dateElement.textContent = `(${todayDate})`;
-    }
-    
-    tbody.innerHTML = '';
-    
-    if (!classes || classes.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="4" style="text-align: center; color: #666; padding: 20px;">
-                    <i class="fas fa-calendar-day" style="font-size: 2em; margin-bottom: 10px; display: block; color: #9ca3af;"></i>
+                const response = await fetch('/api/student/attendance-data', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                updateStatistics(data.stats);
+                updateTodayClasses(data.today_classes, data.today_date);
+                updateAttendanceHistory(data.attendance_history);
+                updateSemesterClasses(data.semester_classes);
+                updateUserInfoInSidebar(data.student);
+
+            } catch (error) {
+                console.error('Error fetching attendance data:', error);
+                showError(`Failed to load attendance data: ${error.message}`);
+                showFallbackData();
+            } finally {
+                document.body.classList.remove('loading');
+            }
+        }
+
+        function updateStatistics(stats) {
+            const rate = document.querySelector('.stat-card.rate .value');
+            const total = document.querySelector('.stat-card.total-classes .value');
+            const attended = document.querySelector('.stat-card.attended .value');
+            if (rate) rate.textContent = `${stats.attendance_rate}%`;
+            if (total) total.textContent = stats.total_classes;
+            if (attended) attended.textContent = stats.attended_classes;
+        }
+
+        function updateTodayClasses(classes, todayDate) {
+            const tbody = document.getElementById('today-classes-body');
+            const dateEl = document.getElementById('today-date');
+            if (dateEl) dateEl.textContent = `(${todayDate})`;
+            tbody.innerHTML = '';
+
+            if (!classes || classes.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:30px;color:#666;">
+                    <i class="fas fa-calendar-day" style="font-size:2.5em;display:block;color:#9ca3af;margin-bottom:10px;"></i>
                     No classes scheduled for today
-                </td>
-            </tr>
-        `;
-        return;
-    }
-    
-    classes.forEach((cls, index) => {
-        const row = document.createElement('tr');
-        
-        const statusConfig = {
-            'present': { class: 'status-present', text: 'Present' },
-            'late': { class: 'status-late', text: 'Late' },
-            'excused': { class: 'status-excused', text: 'Excused' },
-            'missing': { class: 'status-missing', text: 'Missing' },
-            'absent': { class: 'status-absent', text: 'Absent' },
-            'not recorded': { class: 'status-not-recorded', text: 'Not Recorded' }
-        };
-        
-        const status = statusConfig[cls.status.toLowerCase()] || statusConfig['not recorded'];
-        
-        row.innerHTML = `
-            <td>
-                <div style="font-weight: 500;">${escapeHtml(cls.course)}</div>
-                ${cls.room ? `<small style="color: #6b7280; font-size: 0.8em;">Room: ${escapeHtml(cls.room)}</small>` : ''}
-            </td>
-            <td>${escapeHtml(cls.time)}</td>
-            <td><span class="class-type">${escapeHtml(cls.type)}</span></td>
-            <td><span class="status ${status.class}">${status.text}</span></td>
-        `;
-        
-        row.style.opacity = '0';
-        row.style.transform = 'translateY(10px)';
-        tbody.appendChild(row);
-        
-        setTimeout(() => {
-            row.style.transition = 'all 0.3s ease';
-            row.style.opacity = '1';
-            row.style.transform = 'translateY(0)';
-        }, index * 100);
-    });
-}
+                </td></tr>`;
+                return;
+            }
 
-function updateAttendanceHistory(history) {
-    console.log('Updating attendance history:', history);
-    const tbody = document.getElementById('attendance-history-body');
-    
-    if (!tbody) {
-        console.error('Attendance history table body not found');
-        return;
-    }
-    
-    tbody.innerHTML = '';
-    
-    if (!history || history.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" style="text-align: center; color: #666; padding: 20px;">
-                    <i class="fas fa-history" style="font-size: 2em; margin-bottom: 10px; display: block; color: #9ca3af;"></i>
+            classes.forEach(cls => {
+                const statusConfig = {
+                    'present': { cls: 'status-present', txt: 'Present' },
+                    'late': { cls: 'status-late', txt: 'Late' },
+                    'excused': { cls: 'status-excused', txt: 'Excused' },
+                    'missing': { cls: 'status-missing', txt: 'Missing' },
+                    'absent': { cls: 'status-absent', txt: 'Absent' },
+                    'not recorded': { cls: 'status-not-recorded', txt: 'Not Recorded' }
+                };
+                const s = statusConfig[cls.status.toLowerCase()] || statusConfig['not recorded'];
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><div style="font-weight:500;">${escapeHtml(cls.course)}</div>${cls.room ? `<small style="color:#6b7280;font-size:0.8em;">Room: ${escapeHtml(cls.room)}</small>` : ''}</td>
+                    <td>${escapeHtml(cls.time)}</td>
+                    <td><span class="class-type">${escapeHtml(cls.type)}</span></td>
+                    <td><span class="status ${s.cls}">${s.txt}</span></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateAttendanceHistory(history) {
+            const tbody = document.getElementById('attendance-history-body');
+            tbody.innerHTML = '';
+            if (!history || history.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:30px;color:#666;">
+                    <i class="fas fa-history" style="font-size:2.5em;display:block;color:#9ca3af;margin-bottom:10px;"></i>
                     No attendance history found
-                </td>
-            </tr>
-        `;
-        return;
-    }
-    
-    history.forEach((record, index) => {
-        const row = document.createElement('tr');
-        
-        const statusConfig = {
-            'present': { class: 'status-present', text: 'Present' },
-            'late': { class: 'status-late', text: 'Late' },
-            'excused': { class: 'status-excused', text: 'Excused' },
-            'missing': { class: 'status-missing', text: 'Missing' },
-            'absent': { class: 'status-absent', text: 'Absent' }
-        };
-        
-        const status = statusConfig[record.status.toLowerCase()] || statusConfig['absent'];
-        
-        row.innerHTML = `
-            <td style="font-weight: 500;">${escapeHtml(record.date)}</td>
-            <td>
-                <div style="font-weight: 500;">${escapeHtml(record.course)}</div>
-                <small style="color: #6b7280; font-size: 0.8em;">${escapeHtml(record.type)}</small>
-            </td>
-            <td>${escapeHtml(record.time)}</td>
-            <td>${escapeHtml(record.room)}</td>
-            <td><span class="status ${status.class}">${status.text}</span></td>
-        `;
-        
-        row.style.opacity = '0';
-        row.style.transform = 'translateY(10px)';
-        tbody.appendChild(row);
-        
-        setTimeout(() => {
-            row.style.transition = 'all 0.3s ease';
-            row.style.opacity = '1';
-            row.style.transform = 'translateY(0)';
-        }, index * 50);
-    });
-}
+                </td></tr>`;
+                return;
+            }
+            history.forEach(r => {
+                const s = { 'present': 'status-present', 'late': 'status-late', 'excused': 'status-excused', 'missing': 'status-missing', 'absent': 'status-absent' }[r.status.toLowerCase()] || 'status-absent';
+                const txt = r.status.charAt(0).toUpperCase() + r.status.slice(1).toLowerCase();
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td style="font-weight:500;">${escapeHtml(r.date)}</td>
+                    <td><div style="font-weight:500;">${escapeHtml(r.course)}</div><small style="color:#6b7280;font-size:0.8em;">${escapeHtml(r.type)}</small></td>
+                    <td>${escapeHtml(r.time)}</td>
+                    <td>${escapeHtml(r.room)}</td>
+                    <td><span class="status ${s}">${txt}</span></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
 
-function updateSemesterClasses(classes) {
-    console.log('Updating semester classes with:', classes);
-    const tbody = document.getElementById('semester-classes-body');
-    
-    if (!tbody) {
-        console.error('Semester classes table body not found');
-        return;
-    }
-    
-    tbody.innerHTML = '';
-    
-    if (!classes || classes.length === 0) {
-        console.warn('No semester classes found');
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="2" style="text-align: center; color: #666; padding: 20px;">
-                    <i class="fas fa-book" style="font-size: 2em; margin-bottom: 10px; display: block; color: #9ca3af;"></i>
+        function updateSemesterClasses(classes) {
+            const tbody = document.getElementById('semester-classes-body');
+            tbody.innerHTML = '';
+            if (!classes || classes.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="2" style="text-align:center;padding:30px;color:#666;">
+                    <i class="fas fa-book" style="font-size:2.5em;display:block;color:#9ca3af;margin-bottom:10px;"></i>
                     No classes found for this semester
-                </td>
-            </tr>
-        `;
-        return;
-    }
-    
-    console.log(`Rendering ${classes.length} semester classes`);
-    
-    classes.forEach((cls, index) => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td style="font-weight: 500;">
-                <div>${escapeHtml(cls.course)}</div>
-                <small style="color: #6b7280; font-size: 0.8em;">
-                    ${escapeHtml(cls.program || '')} ${escapeHtml(cls.section || '')} • ${escapeHtml(cls.type)}
-                </small>
-            </td>
-            <td>
-                <div>${escapeHtml(cls.schedule)}</div>
-                ${cls.room ? `<small style="color: #6b7280; font-size: 0.8em;">Room: ${escapeHtml(cls.room)}</small>` : ''}
-            </td>
-        `;
-        
-        row.style.opacity = '0';
-        row.style.transform = 'translateY(10px)';
-        tbody.appendChild(row);
-        
-        setTimeout(() => {
-            row.style.transition = 'all 0.3s ease';
-            row.style.opacity = '1';
-            row.style.transform = 'translateY(0)';
-        }, index * 50);
-    });
-}
-
-function updateUserInfoInSidebar(student) {
-    console.log('Updating user info:', student);
-    const nameElement = document.querySelector('.user-info .name');
-    const roleElement = document.querySelector('.user-info .role');
-    const avatarElement = document.querySelector('.user-info .avatar');
-    
-    if (nameElement && student) {
-        nameElement.textContent = student.name;
-    }
-    
-    if (roleElement && student) {
-        roleElement.textContent = `${student.course} • ${student.section}`;
-    }
-    
-    // Update avatar with student photo using correct path
-    if (avatarElement && student && student.id) {
-        const icon = avatarElement.querySelector('i');
-        const photoPath = `/static/images/student_photos/${student.id}.jpg`;
-        
-        // Try to load the student photo
-        const img = new Image();
-        img.src = photoPath;
-        
-        img.onload = function() {
-            // Photo exists, use it
-            avatarElement.style.backgroundImage = `url('${photoPath}')`;
-            avatarElement.style.backgroundSize = 'cover';
-            avatarElement.style.backgroundPosition = 'center';
-            if (icon) icon.style.display = 'none';
-        };
-        
-        img.onerror = function() {
-            // Photo doesn't exist, use default
-            console.log('Student photo not found, using default');
-            avatarElement.style.backgroundImage = `url('/static/images/default-avatar.jpg')`;
-            avatarElement.style.backgroundSize = 'cover';
-            avatarElement.style.backgroundPosition = 'center';
-            if (icon) icon.style.display = 'none';
-        };
-    }
-}
-
-function updateUserInfo() {
-    console.log('User info update requested');
-}
-
-function showError(message) {
-    console.error('Showing error:', message);
-    
-    const existingError = document.querySelector('.error-notification');
-    if (existingError) {
-        existingError.remove();
-    }
-    
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-notification';
-    errorDiv.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #ef4444;
-        color: white;
-        padding: 16px 20px;
-        border-radius: 8px;
-        z-index: 10000;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        max-width: 400px;
-        border-left: 4px solid #dc2626;
-        animation: slideInRight 0.3s ease;
-    `;
-    
-    errorDiv.innerHTML = `
-        <div style="display: flex; align-items: flex-start; gap: 10px;">
-            <i class="fas fa-exclamation-triangle" style="margin-top: 2px;"></i>
-            <div>
-                <div style="font-weight: 600; margin-bottom: 4px;">Error</div>
-                <div style="font-size: 0.9em; opacity: 0.9;">${escapeHtml(message)}</div>
-            </div>
-            <button onclick="this.parentElement.parentElement.remove()" 
-                    style="background: none; border: none; color: white; cursor: pointer; margin-left: auto;">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-    `;
-    
-    document.body.appendChild(errorDiv);
-    
-    setTimeout(() => {
-        if (errorDiv.parentElement) {
-            errorDiv.remove();
+                </td></tr>`;
+                return;
+            }
+            classes.forEach(cls => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td style="font-weight:500;">
+                        <div>${escapeHtml(cls.course)}</div>
+                        <small style="color:#6b7280;font-size:0.8em;">
+                            ${escapeHtml(cls.program || '')} ${escapeHtml(cls.section || '')} • ${escapeHtml(cls.type)}
+                        </small>
+                    </td>
+                    <td>
+                        <div>${escapeHtml(cls.schedule)}</div>
+                        ${cls.room ? `<small style="color:#6b7280;font-size:0.8em;">Room: ${escapeHtml(cls.room)}</small>` : ''}
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
         }
-    }, 8000);
-}
 
-function showFallbackData() {
-    console.log('Showing fallback data');
-}
+        function updateUserInfoInSidebar(student) {
+            if (!student) return;
+            document.querySelector('.user-info .name').textContent = student.name || 'Student';
+            document.querySelector('.user-info .role').textContent = `${student.course || ''} • ${student.section || ''}`;
 
-function escapeHtml(unsafe) {
-    if (unsafe === null || unsafe === undefined) return '';
-    return unsafe.toString()
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-// Add CSS for animations and new status
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideInRight {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
+            const avatar = document.querySelector('.avatar');
+            const icon = avatar.querySelector('i');
+            const photoPath = `/static/images/student_photos/${student.id}.jpg`;
+            const img = new Image();
+            img.onload = () => {
+                avatar.style.backgroundImage = `url('${photoPath}')`;
+                avatar.style.backgroundSize = 'cover';
+                avatar.style.backgroundPosition = 'center';
+                if (icon) icon.remove();
+            };
+            img.onerror = () => {
+                avatar.style.backgroundImage = `url('/static/images/default-avatar.jpg')`;
+                avatar.style.backgroundSize = 'cover';
+                if (icon) icon.remove();
+            };
+            img.src = photoPath;
         }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-    
-    .loading {
-        opacity: 0.7;
-        pointer-events: none;
-    }
-    
-    .loading::after {
-        content: '';
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 40px;
-        height: 40px;
-        border: 3px solid #f3f3f3;
-        border-top: 3px solid #4f46e5;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        z-index: 1000;
-    }
-    
-    @keyframes spin {
-        0% { transform: translate(-50%, -50%) rotate(0deg); }
-        100% { transform: translate(-50%, -50%) rotate(360deg); }
-    }
-    
-    .status-not-recorded {
-        background: #f3f4f6;
-        color: #6b7280;
-        border: 1px solid #d1d5db;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.85em;
-        font-weight: 600;
-    }
-    
-    .class-type {
-        background: #e0e7ff;
-        color: #3730a3;
-        padding: 4px 8px;
-        border-radius: 6px;
-        font-size: 0.8em;
-        font-weight: 500;
-    }
-`;
-document.head.appendChild(style);
 
-// Auto-refresh every 2 minutes
-setInterval(fetchAttendanceData, 2 * 60 * 1000);
-</script>
+        function updateUserInfo() {}
+        function showFallbackData() {}
+
+        function showError(message) {
+            const div = document.createElement('div');
+            div.style.cssText = 'position:fixed;top:20px;right:20px;background:#ef4444;color:white;padding:16px 20px;border-radius:8px;z-index:10000;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-width:400px;border-left:4px solid #dc2626;';
+            div.innerHTML = `<div style="display:flex;gap:10px;align-items:start;">
+                <i class="fas fa-exclamation-triangle" style="margin-top:2px;"></i>
+                <div><strong>Error</strong><br><small>${escapeHtml(message)}</small></div>
+                <button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;color:white;cursor:pointer;margin-left:auto;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>`;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 8000);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.toString()
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        setInterval(fetchAttendanceData, 2 * 60 * 1000);
+    </script>
 </body>
 </html>

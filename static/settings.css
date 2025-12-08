@@ -1,406 +1,129 @@
-* {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: 'Segoe UI', sans-serif;
-    }
+        .profile-container { max-width: 2000px;   }
+        .profile-card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }
+        .profile-header {
+            background: #4a6fa9;
+            color: white; padding: 40px 30px; text-align: center; position: relative;
+        }
+        .profile-avatar {
+            width: 130px; height: 130px; border-radius: 50%; background: rgba(255,255,255,0.25);
+            backdrop-filter: blur(10px); margin: 0 auto 20px; display: flex; align-items: center;
+            justify-content: center; font-size: 4rem; border: 5px solid white; box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        .profile-name { font-size: 2rem; font-weight: 600; margin: 0 0 8px 0; }
+        .profile-role { font-size: 1.2rem; opacity: 0.95; font-weight: 400; }
+        .profile-body { padding: 40px; }
 
-    body {
-      background: #ffffff;
-      display: flex;
-    }
+        /* Updated Grid: Exactly 3 items per row on large screens */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);   /* 3 columns */
+            gap: 24px;
+            margin-bottom: 30px;
+        }
 
-    /* Sidebar spacing */
-    .sidebar {
-      position: fixed;
-      left: 0;
-      top: 0;
-      height: 100vh;
-      z-index: 1000;
-    }
+        /* Responsive behavior */
+        @media (max-width: 992px) {
+            .info-grid {
+                grid-template-columns: repeat(2, 1fr);  /* 2 columns on tablets */
+            }
+        }
 
-    .main-content {
-      margin-left: 260px;
-      padding: 20px;
-      flex: 1;
-      min-height: 100vh;
-    }
+        @media (max-width: 600px) {
+            .info-grid {
+                grid-template-columns: 1fr;             /* 1 column on mobile */
+            }
+        }
 
-    .header {
-      background: #f0f0f0;
-      padding: 10px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-      margin-bottom: 30px;
-    }
 
-    .header-left {
-      display: flex;
-      align-items: center;
-    }
 
-    .logo {
-      width: 60px;
-      height: 60px;
-      margin-right: 20px;
-    }
+        .info-label {
+            font-weight: 600; color: #4a6fa9; font-size: 0.9rem;
+            text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;
+        }
+        .info-value {
+            color: #222; font-size: 0.8rem; font-weight: 500;
+        }
 
-    .title {
-      font-size: 24px;
-      font-weight: bold;
-      color: green;
-    }
+        /* Rest of your styles remain the same */
+        .action-buttons { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;
+            padding-top: 20px; border-top: 1px solid #eee; }
+        .btn { padding: 14px 32px; border-radius: 10px; font-size: 1.05rem; font-weight: 600;
+            cursor: pointer; transition: all 0.3s ease; display: inline-flex;
+            align-items: center; gap: 10px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .btn-edit { background: #4a6fa9; color: white; }
+        .btn-edit:hover { background: #5a6fd8; transform: translateY(-3px); }
+        .btn-password { background: #28a745; color: white; }
+        .btn-password:hover { background: #218838; transform: translateY(-3px); }
 
-    .header-right {
-      display: flex;
-      align-items: center;
-      position: relative;
-    }
+        .success-message {
+            background: #d4edda; color: #155724; padding: 15px 25px; border-radius: 10px;
+            margin: 20px 40px; border: 1px solid #c3e6cb; text-align: center; font-weight: 500;
+            display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
 
-    .user-info {
-      text-align: right;
-      margin-right: 10px;
-    }
+        /* Modal styles (no transition/animation) */
+        .modal { 
+            display: none; 
+            position: fixed; 
+            z-index: 1000; 
+            left: 0; 
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            overflow: auto; 
+            background-color: rgba(0,0,0,0.6);
+            align-items: center; 
+            justify-content: center; 
+            opacity: 0;                    /* Start hidden */
+            visibility: hidden;            /* Ensures it's not focusable when closed */
+            transition: none !important;   /* Disable any possible transition */
+        }
+        .modal.show { 
+            display: flex !important; 
+            opacity: 1; 
+            visibility: visible; 
+        }
+        .modal-content {
+            background-color: #fefefe; 
+            margin: auto; 
+            padding: 30px; 
+            border-radius: 12px;
+            width: 90%; 
+            max-width: 500px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transform: scale(1);           /* Force full size immediately */
+            opacity: 1;
+            animation: none !important;    /* Completely disable the fade/scale animation */
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-header h2 { margin: 0; color: #333; }
+        .close { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover { color: #000; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: #444; }
+        .form-group input {
+            width: 100%; padding: 12px 15px; border: 1px solid #ddd; border-radius: 8px;
+            font-size: 1rem; transition: border 0.3s;
+        }
+        .form-group input:focus { outline: none; border-color: #4a6fa9; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .btn-save { background: #4a6fa9; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-cancel { background: #6c757d; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
 
-    .user-info .name {
-      font-size: 14px;
-      color: #1e4d2b;
-    }
+        .profile-avatar { position: relative; width: 150px; height: 150px; border-radius: 50%; overflow: hidden; background: #f0f2f5; border: 5px solid #ffffff; box-shadow: 0 6px 20px rgba(0,0,0,0.15); cursor: pointer; transition: all 0.3s ease; margin: 0 auto 20px; }
+        .profile-avatar:hover { transform: scale(1.06); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+        .profile-avatar i { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 70px; color: #495057; transition: opacity 0.3s; }
+        .profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: none; }
+        .profile-avatar::before { content: "Click to Change Photo"; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 16px; font-weight: 500; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s; border-radius: 50%; pointer-events: none; z-index: 2; }
+        .profile-avatar:hover::before { opacity: 1; }
+        .success-message { display: none; background: #d4edda; color: #155724; padding: 12px 20px; border-radius: 6px; margin-bottom: 20px; text-align: center; font-weight: 500; }
 
-    .user-info .role {
-      font-size: 12px;
-      color: gray;
-    }
-
-    .profile-pic {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      cursor: pointer;
-    }
-
-    .dropdown {
-      display: none;
-      position: absolute;
-      top: 60px;
-      right: 0;
-      background: white;
-      border: 1px solid #ccc;
-      width: 200px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      z-index: 100;
-    }
-
-    .dropdown a {
-      display: block;
-      padding: 10px 15px;
-      text-decoration: none;
-      color: #222;
-      border-bottom: 1px solid #ddd;
-    }
-
-    .dropdown a:last-child {
-      border-bottom: none;
-    }
-
-    .dropdown a:hover {
-      background: #f4f4f4;
-    }
-
-    .card {
-      background: #fff;
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.05);
-    }
-
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-
-    .card-header h2 {
-      color: green;
-      font-size: 20px;
-    }
-
-    .card-header .buttons {
-      display: flex;
-      gap: 10px;
-    }
-
-    .card-header .buttons button {
-      padding: 8px 16px;
-      border: none;
-      border-radius: 5px;
-      color: white;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    .goback-btn {
-      background: #1f4c66;
-    }
-    .edit-btn {
-      background: #8a75e8;
-    }
-
-    .logout-btn {
-      background: #e74c3c;
-    }
-    .goback-btn:hover, .edit-btn:hover, .logout-btn:hover, .change-btn:hover {
-     opacity: 0.9;
-    }
-    .profile-section {
-      text-align: center;
-      margin-bottom: 30px;
-    }
-
-    .profile-section img {
-      width: 100px;
-      height: 100px;
-      border-radius: 50%;
-      border: 3px solid #ccc;
-      margin-bottom: 10px;
-    }
-
-    .profile-section .fullname {
-      font-size: 18px;
-      font-weight: 600;
-      color: green;
-    }
-
-    .info-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 40px;
-      justify-content: left;
-      padding: 20px;
-    }
-
-    .info-item {
-      width: 200px;
-    }
-
-    .info-item label {
-      font-size: 12px;
-      color: #666;
-      margin-bottom: 5px;
-      display: block;
-    }
-
-    .info-item div {
-      font-weight: 500;
-    }
-
-    .security-card {
-      background: #fff;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.05);
-    }
-
-    .security-card h3 {
-      font-size: 18px;
-      color: green;
-      margin-bottom: 15px;
-    }
-
-    .security-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .change-btn {
-      padding: 8px 16px;
-      background: #8a75e8;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-        /* Responsive Form Rows */
-.form-row {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 18px;
-}
-
-.form-group.half {
-  flex: 1;
-  min-width: 0;
-}
-
-.form-group select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 1rem;
-  background-color: white;
-}
-
-.form-group select:focus {
-  outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
-}
-
-/* Responsive for small screens */
-@media (max-width: 600px) {
-  .form-row {
-    flex-direction: column;
-  }
-  .form-group.half {
-    width: 100%;
-  }
-}
-    /* Modal Styles */
-.modal {
-  display: none;
-  position: fixed;
-  z-index: 1000;
-  left: 0; top: 0;
-  width: 100%; height: 100%;
-  background-color: rgba(0,0,0,0.5);
-  animation: fadeIn 0.3s ease;
-  overflow: auto; /* Allows scrolling if content overflows */
-}
-
-.modal-content {
-  background-color: white;
-  padding: 30px;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 500px;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-  animation: slideDown 0.4s ease forwards;
-}
-
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid #eee;
-    }
-
-    .modal-header h2 {
-      margin: 0;
-      font-size: 1.5rem;
-      color: #333;
-    }
-
-    .close {
-      font-size: 28px;
-      font-weight: bold;
-      color: #aaa;
-      cursor: pointer;
-      transition: color 0.2s;
-    }
-
-    .close:hover {
-      color: #d9534f;
-    }
-
-    .form-group {
-      margin-bottom: 18px;
-    }
-
-    .form-group label {
-      display: block;
-      margin-bottom: 6px;
-      font-weight: 600;
-      color: #444;
-    }
-
-    .form-group input {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: 1rem;
-      transition: border 0.2s;
-    }
-
-    .form-group input:focus {
-      outline: none;
-      border-color: #007bff;
-      box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
-    }
-
-    .modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-      margin-top: 20px;
-      padding-top: 15px;
-      border-top: 1px solid #eee;
-    }
-
-    .btn {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 6px;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .btn-cancel {
-      background-color: #f8f9fa;
-      color: #6c757d;
-      border: 1px solid #ddd;
-    }
-
-    .btn-cancel:hover {
-      background-color: #e9ecef;
-    }
-
-    .btn-save {
-      background-color: #007bff;
-      color: white;
-    }
-
-    .btn-save:hover {
-      background-color: #3b5b8d;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -60%); /* Start slightly above center */
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%); /* End exactly at center */
-  }
-}
-
-/* Add this to your settings.css file */
-
-#alertModal {
-  z-index: 1060; 
-}
-
-/* Make sure other modals are lower */
-.modal {
-  z-index: 1050; 
-}
+        /* Style the select dropdown to match your input fields */
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 16px;
+            background-color: white;
+        }
