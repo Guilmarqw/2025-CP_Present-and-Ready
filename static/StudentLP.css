@@ -354,3 +354,17 @@
             0% { transform: translate(-50%, -50%) rotate(0deg); }
             100% { transform: translate(-50%, -50%) rotate(360deg); }
         }
+.sidebar .nav-items i {
+    font-size: 1.4em;   /* adjust as needed */
+    min-width: 30px;
+}
+
+/* Make the nav text bigger */
+.sidebar .nav-items span {
+    font-size: 1.15em;
+}
+
+/* Make the entire nav item taller */
+.sidebar .nav-items a {
+    padding: 14px 20px;    /* increases click area */
+}
