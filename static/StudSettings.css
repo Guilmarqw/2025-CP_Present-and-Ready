@@ -181,3 +181,17 @@
             border: none;
             border-radius: 8px;
             cursor: pointer;}
+.sidebar .nav-items i {
+    font-size: 1.4em;   /* adjust as needed */
+    min-width: 30px;
+}
+
+/* Make the nav text bigger */
+.sidebar .nav-items span {
+    font-size: 1.15em;
+}
+
+/* Make the entire nav item taller */
+.sidebar .nav-items a {
+    padding: 14px 20px;    /* increases click area */
+}
