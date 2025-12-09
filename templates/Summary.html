@@ -247,15 +247,15 @@ function showAlert(type, message) {
 
 /// Format duration function - ENHANCED
 function formatDuration(seconds) {
-    console.log('🔧 formatDuration called with:', seconds);
+    console.log('  formatDuration called with:', seconds);
     
     if (seconds === undefined || seconds === null) {
-        console.log('🔧 formatDuration: No seconds provided, returning default');
+        console.log('  formatDuration: No seconds provided, returning default');
         return '00h:00m:00s';
     }
     
     if (isNaN(seconds)) {
-        console.log('🔧 formatDuration: Invalid seconds (NaN), returning default');
+        console.log('  formatDuration: Invalid seconds (NaN), returning default');
         return '00h:00m:00s';
     }
     
@@ -265,7 +265,7 @@ function formatDuration(seconds) {
     
     const formatted = `${hours.toString().padStart(2, '0')}h:${minutes.toString().padStart(2, '0')}m:${secs.toString().padStart(2, '0')}s`;
     
-    console.log('🔧 formatDuration result:', {
+    console.log('  formatDuration result:', {
         input_seconds: seconds,
         hours: hours,
         minutes: minutes,
@@ -278,10 +278,10 @@ function formatDuration(seconds) {
 
 // Format threshold function
 function formatTimeThreshold(minutes) {
-    console.log('🔧 formatTimeThreshold called with:', minutes);
+    console.log('  formatTimeThreshold called with:', minutes);
     
     if (!minutes) {
-        console.log('🔧 formatTimeThreshold: No minutes provided');
+        console.log('  formatTimeThreshold: No minutes provided');
         return '00h:10m:00s';
     }
     
@@ -289,16 +289,16 @@ function formatTimeThreshold(minutes) {
     const mins = minutes % 60;
     const formatted = `${hours.toString().padStart(2, '0')}h:${mins.toString().padStart(2, '0')}m:00s`;
     
-    console.log('🔧 formatTimeThreshold result:', formatted);
+    console.log('  formatTimeThreshold result:', formatted);
     return formatted;
 }
 
 // Enhanced formatTimeFromDateTime function
 function formatTimeFromDateTime(datetimeString) {
-    console.log('🔧 formatTimeFromDateTime called with:', datetimeString);
+    console.log('  formatTimeFromDateTime called with:', datetimeString);
     
     if (!datetimeString) {
-        console.log('🔧 formatTimeFromDateTime: No datetime provided');
+        console.log('  formatTimeFromDateTime: No datetime provided');
         return 'N/A';
     }
     
@@ -312,17 +312,17 @@ function formatTimeFromDateTime(datetimeString) {
                 if (datePart && timePart) {
                     // Convert to proper time format (lowercase)
                     const time = timePart.toLowerCase();
-                    console.log('🔧 formatTimeFromDateTime result:', time);
+                    console.log('  formatTimeFromDateTime result:', time);
                     return time;
                 }
             } else if (datetimeString.includes(':')) {
                 // Already a time string? Return as is
-                console.log('🔧 formatTimeFromDateTime: Already time format');
+                console.log('  formatTimeFromDateTime: Already time format');
                 return datetimeString;
             }
         }
         
-        console.log('🔧 formatTimeFromDateTime: Could not parse format');
+        console.log('  formatTimeFromDateTime: Could not parse format');
         return 'N/A';
     } catch (e) {
         console.error('  Error formatting time:', e, datetimeString);
@@ -332,10 +332,10 @@ function formatTimeFromDateTime(datetimeString) {
 
 // Format course name - UPDATED WITH ACT
 function formatCourseName(courseName) {
-    console.log('🔧 formatCourseName called with:', courseName);
+    console.log('  formatCourseName called with:', courseName);
     
     if (!courseName) {
-        console.log('🔧 formatCourseName: No course name provided');
+        console.log('  formatCourseName: No course name provided');
         return 'BSIT 4C'; // Default for Associate courses
     }
     
@@ -352,7 +352,7 @@ function formatCourseName(courseName) {
         .replace(/\s+/g, ' ')
         .trim();
     
-    console.log('🔧 formatCourseName result:', formatted);
+    console.log('  formatCourseName result:', formatted);
     return formatted;
 }
 

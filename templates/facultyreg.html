@@ -1666,7 +1666,7 @@ async function completeFaceEncoding() {
                 }, 2000);
                 
             } else {
-                console.log(`❌ Faces don't match. Similarity: ${similarity.toFixed(2)} (Threshold: ${threshold})`);
+                console.log(` Faces don't match. Similarity: ${similarity.toFixed(2)} (Threshold: ${threshold})`);
                 
                 // Provide detailed feedback
                 let feedback = `Uploaded photo and scanned face do not match.\n\n`;
@@ -2135,7 +2135,7 @@ async function previewUploadedImage(event) {
         reader.readAsDataURL(file);
         
     } else {
-        console.log("❌ No file selected or user cancelled");
+        console.log(" No file selected or user cancelled");
         uploadedPhoto = null;
         uploadedFaceEncoding = null;
     }
@@ -2175,7 +2175,7 @@ async function encodeImageBlob(blob, shouldFlip = false) {
                 console.log("First 3 values:", data.encoding.slice(0, 3));
                 resolve(data.encoding);
             } else {
-                console.error("❌ Face encoding failed:", data.message);
+                console.error(" Face encoding failed:", data.message);
                 reject(new Error(data.message || 'Failed to process face.'));
             }
         })
@@ -2218,7 +2218,7 @@ async function encodeImageFile(file) {
                 console.log("First 3 values:", data.encoding.slice(0, 3));
                 resolve(data.encoding);
             } else {
-                console.error("❌ Upload photo encoding failed:", data.message);
+                console.error(" Upload photo encoding failed:", data.message);
                 reject(new Error(data.message || 'Failed to process uploaded photo.'));
             }
         })

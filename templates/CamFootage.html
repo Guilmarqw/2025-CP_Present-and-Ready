@@ -689,7 +689,7 @@ window.addEventListener('load', () => {
     //    Reset detection flags for new session
     isSessionEnding = false;
     isDetectionStopped = false;
-    console.log('🟢 Detection flags RESET for new session');
+    console.log(' Detection flags RESET for new session');
     
     initializeMinimizedView();
     initializeSearch();
@@ -698,7 +698,7 @@ window.addEventListener('load', () => {
     // Extract URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     
-    //  FIX: Handle both schedule_id (singular) and schedule_ids (plural)
+    //   Handle both schedule_id (singular) and schedule_ids (plural)
     let scheduleId = urlParams.get('schedule_id'); // Try singular first
     
     // If schedule_id not found, check for schedule_ids (plural)
@@ -874,7 +874,7 @@ window.addEventListener('load', () => {
             isSessionEnding = false;
             isDetectionStopped = false;
             resumePythonDetection();
-            console.log('🟢 Detection EXPLICITLY ENABLED for new session');
+            console.log(' Detection EXPLICITLY ENABLED for new session');
             
             //  LOAD STUDENTS
             setTimeout(() => {
@@ -1762,7 +1762,7 @@ async function resumePythonDetection() {
         isDetectionStopped = false;
         isSessionEnding = false;
         
-        console.log('🟢 Resuming Python detection...');
+        console.log(' Resuming Python detection...');
         
         //  Add a small delay to let backend clear buffers
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -2405,7 +2405,7 @@ function addTemporaryStudentToFrontend(studentData) {
     studentItem.setAttribute('data-type', 'temporary');
     studentItem.style.display = 'flex';
     
-    //  FIX: Remove program info from display name
+    //   Remove program info from display name
     studentItem.innerHTML = `
         <div class="student-info">
             <img src="/static/images/default-avatar.jpg" alt="${studentData.name}" 
@@ -2858,7 +2858,7 @@ async function manageStudent(action, student_data) {
         if (data.success) {
             showModal(data.title || 'Success', data.message, 'success');
             
-            //    FIX: Handle temporary student addition specifically
+            //     Handle temporary student addition specifically
             if (action === 'add_temporary' && data.student_data) {
                 // Add the temporary student to the frontend list immediately
                 addTemporaryStudentToFrontend(data.student_data);
@@ -2939,7 +2939,7 @@ function showStatusContextMenu(x, y, studentRow) {
                 🚶 Mark as Missing
             </div>
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'excused')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
-                📝 Mark as Excused
+                 Mark as Excused
             </div>
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'absent')" style="padding: 8px 12px; cursor: pointer; color: #dc3545; font-size: 14px;">
                   Mark as Absent

@@ -3,54 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Super Admin Profile</title>
+    <title>{{ role_display|default('Profile') }} - Settings</title>
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}">
-   
 </head>
 <body>
     <div id="sidebar-container"></div>
     <main class="main-content">
         <div class="header">
-            <h2>Super Admin Profile</h2>
+            <h2>{{ role_display|default('User') }} Profile</h2>
         </div>
         <div class="profile-container">
-            <div class="success-message" id="success-message">Profile updated successfully!</div>
+            <div class="success-message" id="success-message" style="display: none;"></div>
+            
             <div class="profile-card">
                 <div class="profile-header">
                     <div class="profile-avatar" id="avatarContainer">
-                        <i class="fas fa-user-shield" id="defaultIcon"></i>
-                        <img id="profileImage" src="" alt="Profile Picture">
+                        {% if user_type == 'super_admin' %}
+                            <i class="fas fa-user-shield" id="defaultIcon"></i>
+                        {% elif user_type == 'admin' %}
+                            <i class="fas fa-user-cog" id="defaultIcon"></i>
+                        {% elif user_type == 'faculty' %}
+                            <i class="fas fa-chalkboard-teacher" id="defaultIcon"></i>
+                        {% else %}
+                            <i class="fas fa-user" id="defaultIcon"></i>
+                        {% endif %}
+                        <img id="profileImage" src="" alt="Profile Picture" style="display: none;">
                         <input type="file" id="uploadInput" accept="image/*" style="display:none;">
                     </div>
-                    <h1 class="profile-name">Juan M. Dela Cruz</h1>
-                    <p class="profile-role">Super Administrator</p>
+                    <h1 class="profile-name" id="displayName">{{ first_name|default('') }} {{ middle_name|default('') }} {{ last_name|default('') }}</h1>
+                    <p class="profile-role" id="displayRole">{{ role_display|default('User') }}</p>
                 </div>
+                
                 <div class="profile-body">
                     <div class="info-grid">
                         <div class="info-item">
-                            <div><div class="info-label">First Name</div><div class="info-value">Juan</div></div>
+                            <div><div class="info-label">First Name</div><div class="info-value" id="firstName">{{ first_name|default('') }}</div></div>
                         </div>
                         <div class="info-item">
-                            <div><div class="info-label">Middle Name</div><div class="info-value">Manalo</div></div>
+                            <div><div class="info-label">Middle Name</div><div class="info-value" id="middleName">{{ middle_name|default('N/A') }}</div></div>
                         </div>
                         <div class="info-item">
-                            <div><div class="info-label">Last Name</div><div class="info-value">Dela Cruz</div></div>
+                            <div><div class="info-label">Last Name</div><div class="info-value" id="lastName">{{ last_name|default('') }}</div></div>
+                        </div>
+                        
+                        <!-- Department/Designation based on user type -->
+                        {% if user_type in ['admin', 'super_admin'] %}
+                        <div class="info-item">
+                            <div><div class="info-label">Department</div><div class="info-value" id="department">Office of the University Registrar</div></div>
+                        </div>
+                        {% elif user_type == 'faculty' %}
+                        <div class="info-item">
+                            <div><div class="info-label">Department</div><div class="info-value" id="department">{{ department|default('N/A') }}</div></div>
                         </div>
                         <div class="info-item">
-                            <div><div class="info-label">Department</div><div class="info-value">Office of the University Registrar</div></div>
+                            <div><div class="info-label">Designation</div><div class="info-value" id="designation">{{ designation|default('N/A') }}</div></div>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="info-item">
+                            <div><div class="info-label">Role</div><div class="info-value" id="role">{{ role_display|default('N/A') }}</div></div>
                         </div>
                         <div class="info-item">
-                            <div><div class="info-label">Role</div><div class="info-value">Super Administrator</div></div>
+                            <div><div class="info-label">User ID</div><div class="info-value" id="userId">{{ user_id_display|default('N/A') }}</div></div>
                         </div>
                         <div class="info-item">
-                            <div><div class="info-label">User ID</div><div class="info-value">SA-2025-0001</div></div>
-                        </div>
-                        <div class="info-item">
-                            <div><div class="info-label">Email Address</div><div class="info-value">juan.delacruz@university.edu.ph</div></div>
+                            <div><div class="info-label">Email Address</div><div class="info-value" id="email">{{ email|default('N/A') }}</div></div>
                         </div>
                     </div>
+                    
                     <div class="action-buttons">
                         <button class="btn btn-edit" onclick="openEditModal()">Edit Profile</button>
                         <button class="btn btn-password" onclick="openPasswordModal()">Change Password</button>
@@ -69,37 +91,56 @@
             <form id="editForm">
                 <div class="form-group">
                     <label>First Name</label>
-                    <input type="text" value="Juan" required>
+                    <input type="text" id="editFirstName" value="{{ first_name|default('') }}" required>
                 </div>
                 <div class="form-group">
                     <label>Middle Name</label>
-                    <input type="text" value="Manalo">
+                    <input type="text" id="editMiddleName" value="{{ middle_name|default('') }}">
                 </div>
                 <div class="form-group">
                     <label>Last Name</label>
-                    <input type="text" value="Dela Cruz" required>
+                    <input type="text" id="editLastName" value="{{ last_name|default('') }}" required>
                 </div>
 
-                <!-- DEPARTMENT DROPDOWN -->
+                <!-- Department Field (Conditional) -->
+                {% if user_type == 'faculty' %}
                 <div class="form-group">
                     <label>Department</label>
-                    <select required>
-                        <option value="Department of Information Technology" selected>
+                    <select id="editDepartment" required>
+                        <option value="Department of Information Technology" 
+                                {% if department == 'Department of Information Technology' %}selected{% endif %}>
                             Department of Information Technology
                         </option>
-                        <option value="Department of Computer Science">
+                        <option value="Department of Computer Science"
+                                {% if department == 'Department of Computer Science' %}selected{% endif %}>
                             Department of Computer Science
                         </option>
-                        <option value="Department of Associate in Computer Technology">
+                        <option value="Department of Associate in Computer Technology"
+                                {% if department == 'Department of Associate in Computer Technology' %}selected{% endif %}>
                             Department of Associate in Computer Technology
+                        </option>
+                        <option value="College of Computer Studies"
+                                {% if department == 'College of Computer Studies' %}selected{% endif %}>
+                            College of Computer Studies
+                        </option>
+                        <option value="Office of the University Registrar"
+                                {% if department == 'Office of the University Registrar' %}selected{% endif %}>
+                            Office of the University Registrar
                         </option>
                     </select>
                 </div>
+                {% else %}
+                <div class="form-group">
+                    <label>Department</label>
+                    <input type="text" value="Office of the University Registrar" disabled>
+                </div>
+                {% endif %}
 
                 <div class="form-group">
                     <label>Email Address</label>
-                    <input type="email" value="juan.delacruz@university.edu.ph" required>
+                    <input type="email" id="editEmail" value="{{ email|default('') }}" required>
                 </div>
+                
                 <div class="modal-footer">
                     <button type="button" class="btn-cancel" onclick="closeEditModal()">Cancel</button>
                     <button type="submit" class="btn-save">Save Changes</button>
@@ -108,7 +149,7 @@
         </div>
     </div>
 
-    <!-- Change Password Modal (unchanged) -->
+    <!-- Change Password Modal -->
     <div id="passwordModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -117,15 +158,15 @@
             <form id="passwordForm">
                 <div class="form-group">
                     <label>Current Password</label>
-                    <input type="password" required>
+                    <input type="password" id="currentPassword" required>
                 </div>
                 <div class="form-group">
                     <label>New Password</label>
-                    <input type="password" required>
+                    <input type="password" id="newPassword" required>
                 </div>
                 <div class="form-group">
                     <label>Confirm New Password</label>
-                    <input type="password" required>
+                    <input type="password" id="confirmPassword" required>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn-cancel" onclick="closePasswordModal()">Cancel</button>
@@ -136,77 +177,448 @@
     </div>
 
     <script>
-        /* Your existing JavaScript remains 100% unchanged */
-        const avatarContainer = document.getElementById('avatarContainer');
-        const uploadInput = document.getElementById('uploadInput');
-        const profileImage = document.getElementById('profileImage');
-        const defaultIcon = document.getElementById('defaultIcon');
+        // Template data from Flask
+        const templateData = {
+            user_id: "{{ user_id|default('') }}",
+            first_name: "{{ first_name|default('') }}",
+            last_name: "{{ last_name|default('') }}",
+            middle_name: "{{ middle_name|default('') }}",
+            email: "{{ email|default('') }}",
+            photo_path: "{{ photo_path|default('') }}",
+            role_display: "{{ role_display|default('') }}",
+            department: "{{ department|default('') }}",
+            designation: "{{ designation|default('') }}",
+            user_id_display: "{{ user_id_display|default('') }}",
+            user_type: "{{ user_type|default('') }}"
+        };
 
-        avatarContainer.addEventListener('click', () => uploadInput.click());
-        uploadInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                profileImage.src = ev.target.result;
-                profileImage.style.display = 'block';
-                defaultIcon.style.display = 'none';
-            };
-            reader.readAsDataURL(file);
+        // Global variable for current data
+        let currentUserData = {};
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Settings page initialized for:', templateData.user_type);
+            
+            // Initialize with template data
+            initializeWithTemplateData();
+            
+            // Load fresh data from API
+            loadUserProfile();
+            
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Load sidebar
+            loadSidebar();
         });
 
-        fetch('/sidebar')
-            .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.text(); })
-            .then(html => {
-                document.getElementById('sidebar-container').innerHTML = html;
-                document.querySelectorAll(".dropdown-btn").forEach(btn => {
-                    btn.onclick = function(e) {
-                        e.preventDefault(); e.stopPropagation();
-                        document.querySelectorAll('.dropdown-content').forEach(c => {
-                            if (c !== this.nextElementSibling) c.style.display = 'none';
-                        });
-                        const content = this.nextElementSibling;
-                        if (content) content.style.display = content.style.display === 'block' ? 'none' : 'block';
-                    };
-                });
-                document.addEventListener('click', e => {
-                    if (!e.target.closest('.dropdown')) {
-                        document.querySelectorAll('.dropdown-content').forEach(c => c.style.display = 'none');
-                    }
-                });
-            })
-            .catch(err => console.error('Sidebar load error:', err));
-
-        function openEditModal() { document.getElementById("editModal").classList.add("show"); }
-        function closeEditModal() { document.getElementById("editModal").classList.remove("show"); }
-        function openPasswordModal() { document.getElementById("passwordModal").classList.add("show"); }
-        function closePasswordModal() { document.getElementById("passwordModal").classList.remove("show"); }
-
-        window.onclick = function(e) {
-            if (e.target.classList.contains('modal')) {
-                e.target.classList.remove("show");
+        function initializeWithTemplateData() {
+            // Update display name
+            const middleInitial = templateData.middle_name ? 
+                templateData.middle_name.charAt(0).toUpperCase() + '. ' : '';
+            document.getElementById('displayName').textContent = 
+                `${templateData.first_name} ${middleInitial}${templateData.last_name}`;
+            
+            // Update profile photo if exists
+            if (templateData.photo_path) {
+                const img = document.getElementById('profileImage');
+                let photoPath = templateData.photo_path;
+                
+                if (photoPath && !photoPath.startsWith('http') && !photoPath.startsWith('/')) {
+                    photoPath = '/' + photoPath;
+                }
+                
+                img.src = photoPath;
+                img.onload = function() {
+                    img.style.display = 'block';
+                    document.getElementById('defaultIcon').style.display = 'none';
+                };
+                img.onerror = function() {
+                    console.warn('Failed to load profile photo:', photoPath);
+                };
             }
         }
 
-        document.getElementById("editForm").onsubmit = function(e) {
-            e.preventDefault();
-            closeEditModal();
-            const msg = document.getElementById("success-message");
-            msg.style.display = "block";
-            setTimeout(() => msg.style.display = "none", 4000);
-        };
+        async function loadUserProfile() {
+            try {
+                console.log('Loading user profile from API...');
+                
+                const response = await fetch('/api/admin-faculty/profile', {
+                    credentials: 'same-origin',
+                    headers: {
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                
+                if (response.status === 401) {
+                    showErrorMessage('Session expired. Redirecting to login...');
+                    setTimeout(() => window.location.href = '/login', 2000);
+                    return;
+                }
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                currentUserData = data;
+                updateDisplayWithAPIData(data);
+                populateEditForm(data);
+                
+                console.log('User profile loaded successfully:', data.user_type);
+                
+            } catch (error) {
+                console.error('Error loading profile:', error);
+                if (!templateData.first_name) {
+                    showErrorMessage('Failed to load profile data.');
+                }
+            }
+        }
 
-        document.getElementById("passwordForm").onsubmit = function(e) {
-            e.preventDefault();
-            const newPw = this[1].value;
-            const confirmPw = this[2].value;
-            if (newPw !== confirmPw) {
-                alert("New passwords do not match!");
+        function updateDisplayWithAPIData(data) {
+            // Update name
+            const middleInitial = data.middle_name ? 
+                data.middle_name.charAt(0).toUpperCase() + '. ' : '';
+            document.getElementById('displayName').textContent = 
+                `${data.first_name} ${middleInitial}${data.last_name}`;
+            
+            // Update info grid
+            document.getElementById('firstName').textContent = data.first_name;
+            document.getElementById('middleName').textContent = data.middle_name || 'N/A';
+            document.getElementById('lastName').textContent = data.last_name;
+            document.getElementById('role').textContent = data.role;
+            document.getElementById('userId').textContent = data.user_id;
+            document.getElementById('email').textContent = data.email;
+            
+            if (data.department) {
+                document.getElementById('department').textContent = data.department;
+            }
+            
+            if (data.designation) {
+                const designationEl = document.getElementById('designation');
+                if (designationEl) {
+                    designationEl.textContent = data.designation;
+                }
+            }
+            
+            // Update profile photo
+            if (data.photo_path && data.photo_path !== templateData.photo_path) {
+                const img = document.getElementById('profileImage');
+                let photoPath = data.photo_path;
+                
+                if (photoPath && !photoPath.startsWith('http') && !photoPath.startsWith('/')) {
+                    photoPath = '/' + photoPath;
+                }
+                
+                img.src = photoPath;
+                img.onload = function() {
+                    img.style.display = 'block';
+                    document.getElementById('defaultIcon').style.display = 'none';
+                };
+            }
+        }
+
+        function populateEditForm(data) {
+            document.getElementById('editFirstName').value = data.first_name;
+            document.getElementById('editMiddleName').value = data.middle_name || '';
+            document.getElementById('editLastName').value = data.last_name;
+            document.getElementById('editEmail').value = data.email;
+            
+            if (data.department && document.getElementById('editDepartment')) {
+                document.getElementById('editDepartment').value = data.department;
+            }
+        }
+
+        function setupEventListeners() {
+            // Avatar upload
+            document.getElementById('avatarContainer').addEventListener('click', () => {
+                document.getElementById('uploadInput').click();
+            });
+            
+            document.getElementById('uploadInput').addEventListener('change', handleAvatarUpload);
+            
+            // Edit form submission
+            document.getElementById('editForm').addEventListener('submit', handleEditProfile);
+            
+            // Password form submission
+            document.getElementById('passwordForm').addEventListener('submit', handlePasswordChange);
+            
+            // Close modals
+            window.addEventListener('click', function(e) {
+                if (e.target.classList.contains('modal')) {
+                    e.target.classList.remove('show');
+                }
+            });
+        }
+
+        function loadSidebar() {
+            fetch('/sidebar')
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return response.text();
+                })
+                .then(html => {
+                    document.getElementById('sidebar-container').innerHTML = html;
+                    initializeSidebarDropdowns();
+                })
+                .catch(err => console.error('Sidebar load error:', err));
+        }
+
+        function initializeSidebarDropdowns() {
+            document.querySelectorAll(".dropdown-btn").forEach(btn => {
+                btn.onclick = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    document.querySelectorAll('.dropdown-content').forEach(c => {
+                        if (c !== this.nextElementSibling) c.style.display = 'none';
+                    });
+                    
+                    const content = this.nextElementSibling;
+                    if (content) {
+                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                    }
+                };
+            });
+            
+            document.addEventListener('click', e => {
+                if (!e.target.closest('.dropdown')) {
+                    document.querySelectorAll('.dropdown-content').forEach(c => c.style.display = 'none');
+                }
+            });
+        }
+
+        async function handleAvatarUpload(e) {
+            const file = e.target.files[0];
+            
+            if (!file) return;
+            
+            // Validate file type
+            const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/jpg'];
+            if (!validTypes.includes(file.type)) {
+                showErrorMessage('Invalid file type. Please upload JPG, PNG or GIF.');
                 return;
             }
-            closePasswordModal();
-            alert("Password changed successfully!");
-        };
+            
+            // Validate file size (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                showErrorMessage('File is too large. Maximum size is 5MB.');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('photo', file);
+            
+            // Show loading
+            const avatarContainer = document.getElementById('avatarContainer');
+            avatarContainer.classList.add('loading');
+            
+            try {
+                const response = await fetch('/api/admin-faculty/upload-photo', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Upload failed');
+                }
+                
+                // Update image preview
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const img = document.getElementById('profileImage');
+                    img.src = ev.target.result;
+                    img.style.display = 'block';
+                    document.getElementById('defaultIcon').style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+                
+                showSuccessMessage('Profile photo updated successfully!');
+                
+                // Reload profile data
+                setTimeout(() => loadUserProfile(), 1000);
+                
+            } catch (error) {
+                console.error('Upload error:', error);
+                showErrorMessage(error.message || 'Failed to upload photo.');
+            } finally {
+                avatarContainer.classList.remove('loading');
+                e.target.value = '';
+            }
+        }
+
+        async function handleEditProfile(e) {
+            e.preventDefault();
+            
+            const formData = {
+                first_name: document.getElementById('editFirstName').value.trim(),
+                last_name: document.getElementById('editLastName').value.trim(),
+                middle_name: document.getElementById('editMiddleName').value.trim(),
+                email: document.getElementById('editEmail').value.trim()
+            };
+            
+            // Add department for faculty
+            if (templateData.user_type === 'faculty') {
+                formData.department = document.getElementById('editDepartment').value;
+            }
+            
+            // Validation
+            if (!formData.first_name || !formData.last_name) {
+                showErrorMessage('First name and last name are required');
+                return;
+            }
+            
+            if (!formData.email) {
+                showErrorMessage('Email is required');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin-faculty/profile/update', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData),
+                    credentials: 'same-origin'
+                });
+                
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error || 'Update failed');
+                }
+                
+                // Update display
+                const middleInitial = formData.middle_name ? 
+                    formData.middle_name.charAt(0).toUpperCase() + '. ' : '';
+                document.getElementById('displayName').textContent = 
+                    `${formData.first_name} ${middleInitial}${formData.last_name}`;
+                
+                document.getElementById('firstName').textContent = formData.first_name;
+                document.getElementById('middleName').textContent = formData.middle_name || 'N/A';
+                document.getElementById('lastName').textContent = formData.last_name;
+                document.getElementById('email').textContent = formData.email;
+                
+                if (formData.department) {
+                    document.getElementById('department').textContent = formData.department;
+                }
+                
+                showSuccessMessage('Profile updated successfully!');
+                closeEditModal();
+                
+                // Reload page to update template variables
+                setTimeout(() => window.location.reload(), 1500);
+                
+            } catch (error) {
+                console.error('Update error:', error);
+                showErrorMessage(error.message || 'Failed to update profile.');
+            }
+        }
+
+        async function handlePasswordChange(e) {
+            e.preventDefault();
+            
+            const formData = {
+                current_password: document.getElementById('currentPassword').value,
+                new_password: document.getElementById('newPassword').value,
+                confirm_password: document.getElementById('confirmPassword').value
+            };
+            
+            // Validation
+            if (!formData.current_password || !formData.new_password || !formData.confirm_password) {
+                showErrorMessage('All password fields are required');
+                return;
+            }
+            
+            if (formData.new_password !== formData.confirm_password) {
+                showErrorMessage('New passwords do not match');
+                return;
+            }
+            
+            if (formData.new_password.length < 8) {
+                showErrorMessage('New password must be at least 8 characters');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin-faculty/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData),
+                    credentials: 'same-origin'
+                });
+                
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error || 'Password change failed');
+                }
+                
+                showSuccessMessage('Password changed successfully!');
+                
+                // Clear form and close modal
+                document.getElementById('currentPassword').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('confirmPassword').value = '';
+                closePasswordModal();
+                
+            } catch (error) {
+                console.error('Password change error:', error);
+                showErrorMessage(error.message || 'Failed to change password.');
+            }
+        }
+
+        // Modal controls
+        function openEditModal() {
+            document.getElementById('editModal').classList.add('show');
+        }
+        
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('show');
+        }
+        
+        function openPasswordModal() {
+            document.getElementById('passwordModal').classList.add('show');
+        }
+        
+        function closePasswordModal() {
+            document.getElementById('passwordModal').classList.remove('show');
+            document.getElementById('passwordForm').reset();
+        }
+
+        // Message functions
+        function showSuccessMessage(message) {
+            const msg = document.getElementById('success-message');
+            msg.textContent = message;
+            msg.style.display = 'block';
+            msg.style.backgroundColor = '#4CAF50';
+            
+            setTimeout(() => {
+                msg.style.display = 'none';
+            }, 4000);
+        }
+
+        function showErrorMessage(message) {
+            const msg = document.getElementById('success-message');
+            msg.textContent = message;
+            msg.style.display = 'block';
+            msg.style.backgroundColor = '#f44336';
+            
+            setTimeout(() => {
+                msg.style.display = 'none';
+            }, 4000);
+        }
     </script>
 </body>
 </html>

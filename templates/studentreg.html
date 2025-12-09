@@ -134,7 +134,10 @@ By clicking "Accept", you give your full and informed consent to the collection,
           <input type="text" placeholder="First Name" id="firstName">
           <input type="text" placeholder="Middle Name" id="middleName">
         </div>
-        <input type="text" placeholder="Student ID (numbers and hyphens only)" id="studentId" oninput="validateStudentId(this)">
+        <input type="text" placeholder="Student ID" id="studentId" oninput="validateStudentId(this)">
+        <div id="studentIdHint" class="student-id-hint" style="font-size: 12px; color: #666; margin-top: 5px;">
+    Format: [prefix][year]-[number] (e.g., sl2011-01795)
+</div>
         <select id="program" required>
   <option value="" disabled selected>Select your Course</option>
   </select>
@@ -269,6 +272,7 @@ const container = document.querySelector(".container");
 
 
 // Add these global variables at the top with your other globals:
+let emailPrefix = "";
 let isCapturingAngle = false; // Add this near other globals like encodingProgress
 let encodingProgress = 0;
 let uploadedFaceEncoding = null;
@@ -619,6 +623,11 @@ function nextStep(step) {
     const targetStep = document.getElementById("step" + step);
     if (targetStep) targetStep.classList.remove("hidden");
 
+    // Add auto-fill for Step 3
+    if (step === 3) {
+        setTimeout(autoFillStudentId, 100); // Small delay to ensure DOM is ready
+    }
+    
     if (step === 4) {
         startCamera();
         setTimeout(startFaceScan, 1000);
@@ -679,6 +688,22 @@ function validateStep1() {
     if (userEmail === "" || !userEmail.includes("@wmsu.edu.ph")) {
         showModal("Warning", "Please enter a valid WMSU email address.");
         return;
+    }
+    
+    // Extract numeric student ID from email (e.g., "201101795" from "sl201101795@wmsu.edu.ph")
+    const emailUsername = userEmail.split('@')[0];
+    
+    // Remove all non-numeric characters to get the student ID
+    const numericIdFromEmail = emailUsername.replace(/[^0-9]/g, '');
+    
+    // Store the formatted student ID globally
+    if (numericIdFromEmail.length === 9) {
+        // Format as 2011-01795 (YYYY-NNNNN)
+        window.formattedStudentId = numericIdFromEmail.substring(0, 4) + '-' + numericIdFromEmail.substring(4);
+        console.log("Extracted student ID from email:", window.formattedStudentId);
+    } else {
+        window.formattedStudentId = null;
+        console.log("Could not extract valid student ID from email");
     }
     
     // Disable button and show loading state
@@ -743,6 +768,83 @@ function validateStep1() {
         nextButton.style.opacity = "1";
         nextButton.style.cursor = "pointer";
     });
+}
+
+function autoFillStudentId() {
+    const studentIdInput = document.getElementById("studentId");
+    
+    if (studentIdInput && window.formattedStudentId) {
+        // Auto-fill the student ID
+        studentIdInput.value = window.formattedStudentId;
+        
+        // Trigger validation
+        validateStudentId(studentIdInput);
+        
+        console.log("Auto-filled student ID:", window.formattedStudentId);
+        
+        // Make field read-only or disabled since it's auto-filled
+        studentIdInput.readOnly = true;
+        studentIdInput.style.backgroundColor = "#f5f5f5";
+        studentIdInput.style.cursor = "not-allowed";
+        
+        // Add a tooltip or hint
+        studentIdInput.title = "Student ID auto-filled from your email";
+        
+        // Add a small info icon
+        const infoText = document.createElement("div");
+        infoText.className = "student-id-info";
+        infoText.innerHTML = '<small style="color: #666; margin-top: 5px;">✓ Auto-filled from your email</small>';
+        infoText.style.fontSize = "12px";
+        
+        // Insert after the input
+        studentIdInput.parentNode.insertBefore(infoText, studentIdInput.nextSibling);
+    }
+}
+
+function formatStudentIdWithPrefix(input) {
+    let value = input.value;
+    
+    // Remove all non-numeric characters except hyphens
+    value = value.replace(/[^0-9-]/g, '');
+    
+    // If user starts typing numbers, add the prefix automatically
+    if (emailPrefix && value.length > 0) {
+        // Check if prefix is already added
+        if (!value.toLowerCase().startsWith(emailPrefix)) {
+            // Add prefix if not already present
+            input.value = emailPrefix + value;
+        } else {
+            // Prefix already exists, just ensure proper formatting
+            input.value = value;
+        }
+    } else {
+        input.value = value;
+    }
+    
+    // Auto-add hyphen after 4 digits of the numeric part
+    const numericPart = value.replace(/[^0-9]/g, '');
+    const prefixLength = emailPrefix ? emailPrefix.length : 0;
+    
+    if (numericPart.length > 4 && !value.includes('-')) {
+        const formatted = emailPrefix + 
+                         numericPart.substring(0, 4) + '-' + 
+                         numericPart.substring(4);
+        input.value = formatted;
+    }
+    
+    // Extract curriculum year for section fetching
+    const curriculumYear = extractCurriculumYear(input.value);
+    if (curriculumYear) {
+        console.log('Detected curriculum year:', curriculumYear);
+        window.currentCurriculumYear = curriculumYear;
+        
+        // Trigger section refresh if program and year level are already selected
+        const programId = document.getElementById("program")?.value;
+        const yearLevel = document.getElementById("year_level")?.value;
+        if (programId && yearLevel) {
+            setTimeout(fetchSections, 500);
+        }
+    }
 }
 
 function moveToNext(current, event) {
@@ -901,27 +1003,32 @@ document.getElementById('studentId').addEventListener('input', function(e) {
 });
 
 function validateStudentId(input) {
-    // Remove all non-numeric characters except hyphens
-    let value = input.value.replace(/[^0-9-]/g, '');
+    let value = input.value;
     
+    // Remove all non-numeric characters except hyphens
+    value = value.replace(/[^0-9-]/g, '');
+    
+    // Auto-format with hyphen after 4 digits (if not already formatted)
     if (value.length > 4 && !value.includes('-')) {
         input.value = value.substring(0, 4) + '-' + value.substring(4);
     } else {
         input.value = value;
     }
     
-    // Auto-detect curriculum year when ID is complete enough
-    if (value.length >= 4) {
-        extractCurriculumYear(value);
-        // Trigger section refresh if year level is already selected
+    // Extract curriculum year for section fetching
+    const curriculumYear = extractCurriculumYear(input.value);
+    if (curriculumYear) {
+        console.log('Detected curriculum year:', curriculumYear);
+        window.currentCurriculumYear = curriculumYear;
+        
+        // Trigger section refresh if program and year level are already selected
+        const programId = document.getElementById("program")?.value;
         const yearLevel = document.getElementById("year_level")?.value;
-        if (yearLevel) {
+        if (programId && yearLevel) {
             setTimeout(fetchSections, 500);
         }
     }
 }
-
-
 
 function validatePassword() {
     const password = document.getElementById("password").value;
@@ -1005,6 +1112,17 @@ function validateStep3() {
     const password = document.getElementById("password").value;
     const confirmPassword = document.getElementById("confirmPassword").value;
 
+    if (emailPrefix && !studentId.toLowerCase().startsWith(emailPrefix)) {
+        showModal("Warning", `Student ID must start with "${emailPrefix}" (from your email)`);
+        return;
+    }
+    
+    const studentIdRegex = /^\d{4}-\d{5}$/; 
+    if (!studentIdRegex.test(studentId)) {
+        showModal("Warning", "Student ID format must be: [4 digits]-[5 digits]\nExample: 2011-01795");
+        return;
+
+    }
     if (!lastName || !firstName || !studentId || !program || !yearLevel || !sectionId) {
         showModal("Warning", "Please fill out all required fields.");
         return;
@@ -1025,18 +1143,65 @@ function validateStep3() {
         return;
     }
     
+    // MODIFIED: Check if we have ANY encoding (even dummy)
     if (!uploadedFaceEncoding || uploadedFaceEncoding.length === 0) {
-        showModal("Warning", "Unable to process uploaded photo. Please upload a clear photo of your face.");
+        showModal("Warning", "Photo processing failed. Please try uploading again or contact support.");
         return;
     }
     
+    // Check if it's likely a dummy encoding (all zeros or very small values)
+    const isDummyEncoding = uploadedFaceEncoding && 
+                           uploadedFaceEncoding.length > 0 &&
+                           uploadedFaceEncoding.every(val => Math.abs(val) < 0.001);
+    
+    if (isDummyEncoding) {
+        console.warn("Using dummy encoding - face scan will handle verification");
+        // Show a warning but allow to proceed
+        const proceed = confirm(
+            "Note: Face features couldn't be fully extracted from the uploaded photo.\n\n" +
+            "You can still proceed to face scanning for live verification.\n\n" +
+            "Click OK to continue to face scan, or Cancel to upload a different photo."
+        );
+        
+        if (!proceed) {
+            // User wants to upload different photo
+            resetPhotoUpload();
+            return;
+        }
+        
+        // Clear the dummy encoding to avoid confusion in face comparison
+        uploadedFaceEncoding = null;
+        console.log("Proceeding with null encoding - face scan will capture fresh encoding");
+    }
+    
     console.log("Step 3 validation passed, moving to face scan");
-    console.log("Uploaded face encoding available:", !!uploadedFaceEncoding);
+    console.log("Uploaded face encoding status:", 
+        uploadedFaceEncoding ? 
+        (isDummyEncoding ? "Dummy encoding" : "Real encoding") : 
+        "No encoding"
+    );
     
     nextStep(4);
 }
 
-
+// Add this helper function to reset photo upload
+function resetPhotoUpload() {
+    uploadedPhoto = null;
+    uploadedFaceEncoding = null;
+    
+    const uploadPreview = document.getElementById("uploadPreview");
+    const uploadInput = document.getElementById("photo");
+    
+    if (uploadPreview) {
+        uploadPreview.innerHTML = '<span>Click to Upload</span>';
+    }
+    
+    if (uploadInput) {
+        uploadInput.value = '';
+    }
+    
+    showModal("Info", "Please upload a new photo.");
+}
 
 function startCamera() {
     console.log('Starting camera...');
@@ -1926,7 +2091,7 @@ async function completeFaceEncoding() {
                 }, 2000);
                 
             } else {
-                console.log(`❌ Faces don't match. Similarity: ${similarity.toFixed(2)} (Threshold: ${threshold})`);
+                console.log(` Faces don't match. Similarity: ${similarity.toFixed(2)} (Threshold: ${threshold})`);
                 
                 // Provide detailed feedback
                 let feedback = `Uploaded photo and scanned face do not match.\n\n`;
@@ -2324,7 +2489,7 @@ async function previewUploadedImage(event) {
         }
         
         // Validate file size (5MB max)
-        if (file.size > 5 * 1024 * 1024) {
+        if (file.size > 50 * 1024 * 1024) {
             showModal('Warning', 'Image must be less than or equal to 5 MB.');
             event.target.value = '';
             return;
@@ -2395,7 +2560,7 @@ async function previewUploadedImage(event) {
         reader.readAsDataURL(file);
         
     } else {
-        console.log("❌ No file selected or user cancelled");
+        console.log(" No file selected or user cancelled");
         uploadedPhoto = null;
         uploadedFaceEncoding = null;
     }
@@ -2435,7 +2600,7 @@ async function encodeImageBlob(blob, shouldFlip = false) {
                 console.log("First 3 values:", data.encoding.slice(0, 3));
                 resolve(data.encoding);
             } else {
-                console.error("❌ Face encoding failed:", data.message);
+                console.error(" Face encoding failed:", data.message);
                 reject(new Error(data.message || 'Failed to process face.'));
             }
         })
@@ -2478,7 +2643,7 @@ async function encodeImageFile(file) {
                 console.log("First 3 values:", data.encoding.slice(0, 3));
                 resolve(data.encoding);
             } else {
-                console.error("❌ Upload photo encoding failed:", data.message);
+                console.error(" Upload photo encoding failed:", data.message);
                 reject(new Error(data.message || 'Failed to process uploaded photo.'));
             }
         })
@@ -2494,22 +2659,56 @@ function registerStudent() {
     const formData = new FormData();
     
     const email = userEmail || "";
-    const programId = document.getElementById("program")?.value || "";
-    const studentId = document.getElementById("studentId")?.value?.trim() || "";
+    const numericStudentId = document.getElementById("studentId")?.value?.trim() || ""; // This is 2011-01795
+    
+    // Send ONLY the numeric part (2011-01795), NOT with prefix
+    // Backend will extract 2011 as curriculum year
+    const studentIdForBackend = numericStudentId; // Just use 2011-01795
+    
+    console.log("Sending to backend - Student ID:", studentIdForBackend);
+    
     const firstName = document.getElementById("firstName")?.value?.trim() || "";
     const lastName = document.getElementById("lastName")?.value?.trim() || "";
     const middleName = document.getElementById("middleName")?.value?.trim() || "";
+    const programId = document.getElementById("program")?.value || "";
+    const yearLevel = document.getElementById("year_level")?.value || "";
     const sectionId = document.getElementById("section_id")?.value || "";
     const password = document.getElementById("password")?.value || "";
     const photoInput = document.getElementById("photo");
     
-    if (!email || !studentId || !firstName || !lastName || !sectionId || !password) {
-        showModal("Warning", "Please fill out all required fields.");
+    // Validate student ID format (numeric only: 2011-01795)
+    if (!studentIdForBackend) {
+        showModal("Error", "Student ID is required.");
         return;
     }
     
-    if (!password || password.length < 8) {
-        showModal("Warning", "Password must be at least 8 characters long.");
+    const studentIdRegex = /^\d{4}-\d{5}$/;
+    if (!studentIdRegex.test(studentIdForBackend)) {
+        showModal("Error", "Student ID must be in format: 2011-01795\n(4 digits hyphen 5 digits)");
+        return;
+    }
+    
+    // Extract curriculum year for logging
+    const curriculumYear = extractCurriculumYear(studentIdForBackend);
+    console.log("Curriculum year from ID:", curriculumYear);
+    
+    // Also send curriculum year separately to help backend
+    formData.append('curriculum_year', curriculumYear);
+    
+    // Validate all required fields
+    const missingFields = [];
+    if (!email) missingFields.push("Email");
+    if (!studentIdForBackend) missingFields.push("Student ID");
+    if (!firstName) missingFields.push("First Name");
+    if (!lastName) missingFields.push("Last Name");
+    if (!programId) missingFields.push("Course");
+    if (!yearLevel) missingFields.push("Year Level");
+    if (!sectionId) missingFields.push("Section");
+    if (!password) missingFields.push("Password");
+    if (!photoInput?.files?.length) missingFields.push("Photo");
+    
+    if (missingFields.length > 0) {
+        showModal("Missing Information", "Please fill out:\n" + missingFields.join("\n"));
         return;
     }
     
@@ -2518,61 +2717,83 @@ function registerStudent() {
         return;
     }
     
-    if (!photoInput?.files?.length) {
-        showModal("Warning", "Photo upload is required.");
-        return;
-    }
-    
+    // Add all data to form
     formData.append('email', email);
-    formData.append('student_id', studentId);
+    formData.append('student_id', studentIdForBackend); // Send 2011-01795 only
     formData.append('program_id', programId);
     formData.append('first_name', firstName);
     formData.append('last_name', lastName);
-    formData.append('middle_name', middleName);
-    formData.append('section_id', sectionId); 
-    formData.append('password', password);  
+    formData.append('middle_name', middleName || '');
+    formData.append('year_level', yearLevel);
+    formData.append('section_id', sectionId);
+    formData.append('password', password);
     formData.append('face_encoding', JSON.stringify(window.faceEncoding));
     formData.append('photo', photoInput.files[0]);
     
-    const urlParams = new URLSearchParams(window.location.search);
-    const inviteToken = urlParams.get('token');
-    if (inviteToken) {
-        formData.append('invite_token', inviteToken);
-    }
-
+    // Add multi-angle encodings if available
     if (window.multiAngleEncodings && window.multiAngleEncodings.length > 0) {
         formData.append('multi_angle_encodings', JSON.stringify(window.multiAngleEncodings));
-        console.log(`Sending ${window.multiAngleEncodings.length} multi-angle encodings`);
     }
-
+    
+    // Get the button
     const registerBtn = document.querySelector("#step5 button");
+    const originalText = registerBtn ? registerBtn.textContent : "Finish Registration";
+    
     if (registerBtn) {
         registerBtn.disabled = true;
         registerBtn.textContent = "Registering...";
+        registerBtn.style.opacity = "0.6";
+        registerBtn.style.cursor = "not-allowed";
     }
     
+    // Log what we're sending
+    console.log("Registration data being sent:", {
+        email: email,
+        student_id: studentIdForBackend,
+        curriculum_year: curriculumYear,
+        program_id: programId,
+        year_level: yearLevel,
+        section_id: sectionId,
+        has_face_encoding: !!window.faceEncoding,
+        has_photo: !!photoInput.files[0]
+    });
+    
+    // Send to backend
     fetch('/api/register_student', {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log("Registration response status:", response.status);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
+        console.log("Backend registration response:", data);
+        
         if (data.success) {
             nextStep(6);
         } else {
-            showModal("Error", data.message || "Registration failed.");
+            showModal("Registration Failed", data.message || "Registration failed.");
             if (registerBtn) {
                 registerBtn.disabled = false;
-                registerBtn.textContent = "Finish Registration";
+                registerBtn.textContent = originalText;
+                registerBtn.style.opacity = "1";
+                registerBtn.style.cursor = "pointer";
             }
         }
     })
     .catch(error => {
-        showModal("Error", "Registration failed. Please try again.");
         console.error("Registration error:", error);
+        showModal("Error", "Registration failed: " + error.message);
+        
         if (registerBtn) {
             registerBtn.disabled = false;
-            registerBtn.textContent = "Finish Registration";
+            registerBtn.textContent = originalText;
+            registerBtn.style.opacity = "1";
+            registerBtn.style.cursor = "pointer";
         }
     });
 }
@@ -2647,6 +2868,29 @@ document.addEventListener("DOMContentLoaded", function () {
     const yearDropdown = document.getElementById('year_level');
     const studentIdInput = document.getElementById('studentId');
 
+    if (studentIdInput) {
+        studentIdInput.addEventListener('input', function(e) {
+            if (!window.formattedStudentId || this.value !== window.formattedStudentId) {
+                validateStudentId(this);
+            }
+        });
+    
+    // Add focus event to show prefix hint
+        studentIdInput.addEventListener('focus', function() {
+            if (emailPrefix && !this.value) {
+                this.value = emailPrefix;
+            }
+        });
+    
+    // Add blur event to ensure prefix is present
+        studentIdInput.addEventListener('blur', function() {
+            if (emailPrefix && this.value && !this.value.toLowerCase().startsWith(emailPrefix)) {
+                // Add prefix if missing
+                this.value = emailPrefix + this.value.replace(/[^0-9-]/g, '');
+            }
+        });
+    }
+
     // Set up event listeners - SIMPLIFIED
     if (programDropdown) {
         programDropdown.addEventListener('change', function() {
@@ -2700,6 +2944,26 @@ const uploadPreview = document.getElementById('uploadPreview');
 const uploadInput = document.getElementById('photo');
 
 let hasSeenGuidelines = false; // Track if user has seen guidelines
+
+function getFullStudentId() {
+    let studentId = document.getElementById("studentId")?.value.trim() || "";
+    
+    // If student ID is just the numeric part (2011-01795), 
+    // we need to add the prefix from the email
+    if (userEmail) {
+        const emailUsername = userEmail.split('@')[0];
+        const prefixMatch = emailUsername.match(/^([a-zA-Z]+)/);
+        
+        if (prefixMatch && prefixMatch[1]) {
+            const prefix = prefixMatch[1].toLowerCase();
+            // Combine prefix + student ID (remove hyphen, add it back after prefix)
+            const numericOnly = studentId.replace(/-/g, '');
+            return prefix + numericOnly.substring(0, 4) + '-' + numericOnly.substring(4);
+        }
+    }
+    
+    return studentId;
+}
 
 // Function to open photo guidelines modal
 function openPhotoGuidelines(e) {

@@ -195,3 +195,149 @@
 .sidebar .nav-items a {
     padding: 14px 20px;    /* increases click area */
 }
+
+/* Success and error messages */
+.success-message {
+    background-color: #4CAF50;
+    color: white;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    text-align: center;
+    font-weight: 500;
+    display: none;
+    animation: slideIn 0.3s ease;
+}
+
+/* Loading animation for avatar */
+.profile-avatar.loading {
+    position: relative;
+    opacity: 0.7;
+}
+
+.profile-avatar.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top: 3px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    z-index: 10;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Highlight search results */
+.info-item.highlight {
+    background-color: rgba(52, 152, 219, 0.1);
+    border-left: 3px solid #3498db;
+    padding-left: 10px;
+}
+
+/* Smooth transitions */
+.profile-avatar, .info-item, .modal-content {
+    transition: all 0.3s ease;
+}
+
+/* Better modal backdrop */
+.modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Avatar hover effect */
+.profile-avatar:hover {
+    cursor: pointer;
+    transform: scale(1.02);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Modal animations */
+.modal-content {
+    animation: modalFadeIn 0.3s;
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.success-message.error {
+    background-color: #f44336;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Modal styling improvements */
+.modal.show {
+    display: flex;
+}
+
+/* Form validation */
+.form-group input:invalid,
+.form-group select:invalid {
+    border-color: #f44336;
+}
+
+.form-group input:focus:invalid,
+.form-group select:focus:invalid {
+    box-shadow: 0 0 5px rgba(244, 67, 54, 0.5);
+}
+
+/* Loading state */
+.loading {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+/* Avatar upload hover effect */
+.profile-avatar:hover {
+    cursor: pointer;
+    transform: scale(1.05);
+    transition: transform 0.3s ease;
+}
+
+.profile-avatar:hover::after {
+    content: 'Change Photo';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 5px;
+    font-size: 12px;
+    text-align: center;
+    border-radius: 0 0 50% 50%;
+}

@@ -781,3 +781,15 @@ video {
         border-radius: 50%;
         transition: all 0.3s ease;
     }
+
+    /* Add to studentreg.css */
+.student-id-hint {
+    font-size: 12px;
+    color: #666;
+    margin-top: 5px;
+    display: none;
+}
+
+#studentId:focus ~ .student-id-hint {
+    display: block;
+}

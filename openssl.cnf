@@ -54,7 +54,7 @@ def open_stream(rtsp_url=None):
             # CRITICAL: Use CAP_FFMPEG for direct RTSP
             cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
             
-            # CRITICAL FIX: Minimal buffering for direct connection
+            #  Minimal buffering for direct connection
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Changed from 2 to 1
             cap.set(cv2.CAP_PROP_FPS, 30)
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -88,7 +88,7 @@ def open_stream(rtsp_url=None):
         return False
 
 def grabber():
-    """CRITICAL FIX: Always grab LATEST frame, skip old buffered frames"""
+    """ Always grab LATEST frame, skip old buffered frames"""
     global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url, last_frame_time
     empty_count = 0
     consecutive_failures = 0
@@ -106,7 +106,7 @@ def grabber():
                 time.sleep(0.01)
                 continue
             
-            # *** CRITICAL FIX: Flush old frames ***
+            # ***  Flush old frames ***
             # This is why VLC is smooth but your app was delayed
             for _ in range(2):  # Skip 2 old buffered frames
                 cap.grab()
@@ -245,7 +245,7 @@ def mark_attendance(name, id, type, session_id=None):
             subject_name = session_result.get('subject_name')
             room = session_result.get('room')
             if DEBUG_MODE: 
-                logger.debug(f"🔗 Found session info - Section: {section_id}, Subject: {subject_code}")
+                logger.debug(f"Found session info - Section: {section_id}, Subject: {subject_code}")
         cursor.close()
         conn.close()
     except Exception as e:
@@ -538,7 +538,7 @@ def mark_attendance(name, id, type, session_id=None):
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (id, name, time_str, 'student', status, session_id, subject_code, subject_name, room, missing_duration))
                 if DEBUG_MODE:     
-                    logger.debug(f"📝 Created NEW attendance record: {name} - {status}")
+                    logger.debug(f" Created NEW attendance record: {name} - {status}")
         else:  # faculty
             # Faculty logic remains the same
             cursor.execute("""
@@ -1835,10 +1835,10 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                     else:
                                         name = "Unknown - Wrong Section"
                                         if DEBUG_MODE: 
-                                            logger.debug(f"  ❌ Student {matched_name} not in current section")
+                                            logger.debug(f"   Student {matched_name} not in current section")
                             else:
                                 if DEBUG_MODE: 
-                                    logger.debug(f"  ❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
+                                    logger.debug(f"   NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
                                 name = "Unknown"
             except Exception as e:
                 logger.error(f"  Error in recognition: {e}")

@@ -83,7 +83,7 @@ try:
             print(f"✅ TurboJPEG test passed! Encoded {len(encoded):,} bytes")
             
         except Exception as e:
-            print(f"❌ Error loading TurboJPEG: {e}")
+            print(f" Error loading TurboJPEG: {e}")
             print("Trying auto-detect as fallback...")
             
             try:
@@ -91,15 +91,15 @@ try:
                 USE_TURBOJPEG = True
                 print("✅ TurboJPEG auto-detected successfully!")
             except Exception as e2:
-                print(f"❌ Auto-detect also failed: {e2}")
+                print(f" Auto-detect also failed: {e2}")
     else:
-        print(f"❌ DLL not found at: {dll_path}")
+        print(f" DLL not found at: {dll_path}")
         
 except ImportError as e:
-    print(f"❌ PyTurboJPEG not installed: {e}")
+    print(f" PyTurboJPEG not installed: {e}")
     print("Install with: pip install PyTurboJPEG")
 except Exception as e:
-    print(f"❌ Unexpected error: {e}")
+    print(f" Unexpected error: {e}")
 
 print(f"\nTurboJPEG status: {'ENABLED ✅' if USE_TURBOJPEG else 'DISABLED ⚠️ (using OpenCV)'}")
 
@@ -1254,7 +1254,7 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
             logger.error(f"Invalid encoding for {id}: encoding={encoding}, size={encoding.size if encoding is not None else 'None'}")
             return False
         
-        # 🟢 CRITICAL FIX: Check if face already exists
+        #   Check if face already exists
         if id in known_face_ids:
             # Update existing face
             idx = known_face_ids.index(id)
@@ -1263,7 +1263,7 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
             known_face_types[idx] = person_type
             logger.info(f"✅ Updated existing {person_type} {first_name} {last_name} ({id}) in memory")
         else:
-            # 🟢 NEW FIX: Add new face at the BEGINNING for better recognition priority
+            #  NEW  Add new face at the BEGINNING for better recognition priority
             # This ensures newly registered faces are checked first
             known_face_encodings.insert(0, encoding)
             full_name = f"{first_name} {last_name}"
@@ -1275,19 +1275,19 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
         # Rebuild the array
         rebuild_known_faces_array()
         
-        # 🟢 NEW: Immediate verification
+        #  NEW: Immediate verification
         if id in known_face_ids:
             idx = known_face_ids.index(id)
             logger.info(f"📋 Verification: {person_type} {full_name} is at index {idx} in memory")
             
-            # 🟢 NEW: Also check if properly normalized
+            #  NEW: Also check if properly normalized
             if KNOWN_FACE_ENCODINGS_ARRAY is not None and idx < len(KNOWN_FACE_ENCODINGS_ARRAY):
                 encoding_norm = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY[idx])
                 logger.info(f"📋 Encoding norm after rebuild: {encoding_norm:.4f}")
         else:
-            logger.error(f"❌ CRITICAL ERROR: {person_type} {full_name} NOT found in memory after add!")
+            logger.error(f" {person_type} {full_name} NOT found in memory after add!")
         
-        # 🟢 NEW: Force normalization check
+        #  NEW: Force normalization check
         if KNOWN_FACE_ENCODINGS_ARRAY is not None:
             norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1)
             min_norm, max_norm, mean_norm = norms.min(), norms.max(), norms.mean()
@@ -1308,7 +1308,7 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
         return True
         
     except Exception as e:
-        logger.error(f"❌ Failed to add {person_type} {id} to memory: {e}")
+        logger.error(f" Failed to add {person_type} {id} to memory: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return False
@@ -1408,7 +1408,7 @@ def rebuild_known_faces_array():
             # Stack all encodings
             KNOWN_FACE_ENCODINGS_ARRAY = np.vstack(known_face_encodings)
             
-            # 🟢 CRITICAL FIX: Ensure each embedding is normalized
+            #   Ensure each embedding is normalized
             # Calculate norms for each row (face)
             norms = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY, axis=1, keepdims=True)
             
@@ -1435,7 +1435,7 @@ def rebuild_known_faces_array():
             logger.info(f"✅ Built face encodings array: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
             
         except Exception as e:
-            logger.error(f"❌ Failed to build face encodings array: {e}")
+            logger.error(f" Failed to build face encodings array: {e}")
             KNOWN_FACE_ENCODINGS_ARRAY = np.array([])
             KNOWN_FACE_ENCODINGS_NORMALIZED = False
     else:
@@ -1458,7 +1458,7 @@ def debug_embedding_quality():
         # Check if any embeddings are zero
         zero_count = np.sum(norms == 0)
         if zero_count > 0:
-            logger.error(f"❌ Found {zero_count} zero-norm embeddings!")
+            logger.error(f" Found {zero_count} zero-norm embeddings!")
         
         # Check if normalized
         if np.allclose(norms, 1.0, atol=0.01):
@@ -1497,10 +1497,10 @@ def load_known_faces_from_db():
         total_loaded = 0
         errors = 0
         
-        # 🟢 FIX 1: Check if tables exist first
+        #  FIX 1: Check if tables exist first
         cursor.execute("SHOW TABLES LIKE 'students'")
         if not cursor.fetchone():
-            logger.error("❌ 'students' table doesn't exist!")
+            logger.error(" 'students' table doesn't exist!")
             cursor.close()
             conn.close()
             return False
@@ -1509,7 +1509,7 @@ def load_known_faces_from_db():
         if not cursor.fetchone():
             logger.warning("⚠️ 'faculty' table doesn't exist, skipping faculty faces")
         
-        # 🟢 FIX 2: Load STUDENTS with better error handling
+        #  FIX 2: Load STUDENTS with better error handling
         try:
             # Check what columns exist in students table
             cursor.execute("DESCRIBE students")
@@ -1528,7 +1528,7 @@ def load_known_faces_from_db():
                 select_columns.append('face_encoding')
             
             if len(select_columns) < 4:
-                logger.error(f"❌ Missing required columns in students table")
+                logger.error(f" Missing required columns in students table")
                 cursor.close()
                 conn.close()
                 return False
@@ -1574,9 +1574,9 @@ def load_known_faces_from_db():
             logger.info(f"  Loaded {student_count} students")
             
         except Exception as e:
-            logger.error(f"❌ Error loading students: {e}")
+            logger.error(f" Error loading students: {e}")
         
-        # 🟢 FIX 3: Load FACULTY (if table exists)
+        #  FIX 3: Load FACULTY (if table exists)
         try:
             cursor.execute("SHOW TABLES LIKE 'faculty'")
             if cursor.fetchone():
@@ -1637,12 +1637,12 @@ def load_known_faces_from_db():
                 logger.info("  Faculty table doesn't exist, skipping")
                 
         except Exception as e:
-            logger.error(f"❌ Error loading faculty: {e}")
+            logger.error(f" Error loading faculty: {e}")
         
         cursor.close()
         conn.close()
         
-        # 🟢 FIX 4: Rebuild array if we loaded anything
+        #  FIX 4: Rebuild array if we loaded anything
         if total_loaded > 0:
             rebuild_known_faces_array()
             
@@ -1660,7 +1660,7 @@ def load_known_faces_from_db():
             
             return True
         else:
-            logger.error("❌ No faces loaded from database!")
+            logger.error(" No faces loaded from database!")
             logger.info("   Possible reasons:")
             logger.info("   1. Database tables don't exist")
             logger.info("   2. No face encodings in database")
@@ -1669,7 +1669,7 @@ def load_known_faces_from_db():
             return False
         
     except Exception as e:
-        logger.error(f"❌ CRITICAL: Failed to load faces from database: {e}")
+        logger.error(f" CRITICAL: Failed to load faces from database: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return False
@@ -1704,7 +1704,7 @@ for retry in range(MAX_RETRIES):
                 time.sleep(2)  # Wait 2 seconds before retry
                 
     except Exception as e:
-        logger.error(f"❌ Attempt {retry+1} failed with error: {e}")
+        logger.error(f" Attempt {retry+1} failed with error: {e}")
         if retry < MAX_RETRIES - 1:
             time.sleep(2)
 
@@ -2033,7 +2033,7 @@ def initialize_faces_for_session():
             logger.info(f"  Loaded {faculty_count} faculty members")
                 
         except Exception as e:
-            logger.error(f"❌ Error loading faculty: {e}")
+            logger.error(f" Error loading faculty: {e}")
         
         cursor.close()
         conn.close()
@@ -2046,7 +2046,7 @@ def initialize_faces_for_session():
         logger.info(f"   - Faculty: {len([t for t in known_face_types if t == 'faculty'])}")
         
     except Exception as e:
-        logger.error(f"❌ Failed to initialize faces for session: {e}")
+        logger.error(f" Failed to initialize faces for session: {e}")
         # Fallback to loading all faces
         load_known_faces_from_db()
         rebuild_known_faces_array()
@@ -2123,7 +2123,7 @@ def open_stream(rtsp_url=None):
                             cap.release()
                             cap = None
                 except Exception as e:
-                    logger.info(f"  ❌ Attempt {i+1} failed: {e}")
+                    logger.info(f"   Attempt {i+1} failed: {e}")
                     if cap:
                         cap.release()
                         cap = None
@@ -2200,7 +2200,7 @@ def grabber():
     error_count = 0
     last_success_time = time.time()
     
-    # 🎯 CRITICAL FIX: MINIMAL BUFFER FOR LOW LATENCY
+    #     MINIMAL BUFFER FOR LOW LATENCY
     max_queue_size = 2  # MAX 2 FRAMES IN QUEUE!
     
     logger.info("🎥 Grabber started (ULTRA-LOW LATENCY)")
@@ -2210,7 +2210,7 @@ def grabber():
             ret = False
             frame = None
             
-            # 🎯 MINIMAL LOCK TIME - only during frame read
+            #    MINIMAL LOCK TIME - only during frame read
             with cap_lock:
                 if cap and cap.isOpened():
                     ret, frame = cap.read()
@@ -2220,25 +2220,25 @@ def grabber():
                 frame_counter += 1
                 last_success_time = time.time()
                 
-                # 🎯 UPDATE LATEST FRAME FIRST (for immediate access)
+                #    UPDATE LATEST FRAME FIRST (for immediate access)
                 latest_frame = frame
                 last_frame_time = time.time()
                 
                 # Get frame size
                 h, w = frame.shape[:2]
                 
-                # 🎯 ULTRA-LOW LATENCY QUEUE MANAGEMENT
+                #    ULTRA-LOW LATENCY QUEUE MANAGEMENT
                 current_queue_size = frame_queue.qsize()
                 
                 if current_queue_size >= max_queue_size:
-                    # 🎯 CRITICAL: QUEUE TOO FULL - DROP OLDEST FRAME
+                    #    CRITICAL: QUEUE TOO FULL - DROP OLDEST FRAME
                     try:
                         frame_queue.get_nowait()  # Drop oldest frame
                         logger.debug("Dropped old frame to reduce latency")
                     except:
                         pass
                 
-                # 🎯 PUT FRAME WITH TIMEOUT (don't block)
+                #    PUT FRAME WITH TIMEOUT (don't block)
                 try:
                     frame_queue.put_nowait(frame.copy())
                 except queue.Full:
@@ -2274,7 +2274,7 @@ def grabber():
             logger.error(f"Grabber error: {e}")
             time.sleep(0.005)  # Even shorter recovery sleep
     
-    logger.info("🛑 Grabber stopped")
+    logger.info(" Grabber stopped")
     
 def start_grabber_thread():
     """Start or restart the grabber thread"""
@@ -2397,7 +2397,7 @@ def mark_attendance(name, id, type, session_id=None):
             subject_name = session_result.get('subject_name')
             room = session_result.get('room')
             if DEBUG_MODE: 
-                logger.debug(f"🔗 Found session info - Section: {section_id}, Subject: {subject_code}")
+                logger.debug(f"Found session info - Section: {section_id}, Subject: {subject_code}")
         cursor.close()
         conn.close()
     except Exception as e:
@@ -2692,7 +2692,7 @@ def mark_attendance(name, id, type, session_id=None):
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (id, name, time_str, 'student', status, session_id, subject_code, subject_name, room, missing_duration))
                 if DEBUG_MODE:     
-                    logger.debug(f"📝 Created NEW attendance record: {name} - {status}")
+                    logger.debug(f" Created NEW attendance record: {name} - {status}")
         else:  # faculty
             # Faculty logic remains the same
             cursor.execute("""
@@ -2856,7 +2856,7 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.35, is_lo
     global KNOWN_FACE_ENCODINGS_ARRAY
     
     try:
-        # 🎯 ENHANCED: Estimate PHYSICAL distance using face box
+        #    ENHANCED: Estimate PHYSICAL distance using face box
         # Create face_box from face_image dimensions
         face_height = face_image.shape[0]
         face_box = (0, 0, face_width_pixels, face_height)
@@ -2875,7 +2875,7 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.35, is_lo
                 logger.debug(f"Using pixel-based distance estimation")
             distance = estimate_distance(face_width_pixels, method="original")
         
-        # 🎯 ADAPTIVE RECOGNITION BASED ON PHYSICAL DISTANCE
+        #    ADAPTIVE RECOGNITION BASED ON PHYSICAL DISTANCE
         # The tolerance is the BASE recognition threshold
         recognition_threshold = tolerance  # Base threshold from parameter
         
@@ -2982,7 +2982,7 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.35, is_lo
 
 def estimate_distance(face_width_pixels, face_box=None, method="adaptive"):
     """
-    🎯 ENHANCED: Estimate physical distance from camera based on face size
+       ENHANCED: Estimate physical distance from camera based on face size
     
     Parameters:
     - face_width_pixels: Width of face in pixels
@@ -3101,9 +3101,9 @@ def check_face_recognition_status():
     }
     
     if status['faces_in_memory'] == 0:
-        logger.error("❌ FACE RECOGNITION STATUS: NO FACES LOADED")
+        logger.error(" FACE RECOGNITION STATUS: NO FACES LOADED")
     elif status['encodings_array_exists'] == False:
-        logger.error("❌ FACE RECOGNITION STATUS: ENCODINGS ARRAY NOT BUILT")
+        logger.error(" FACE RECOGNITION STATUS: ENCODINGS ARRAY NOT BUILT")
     else:
         logger.info(f"✅ FACE RECOGNITION STATUS: {status['faces_in_memory']} faces ready")
     
@@ -3114,7 +3114,7 @@ check_face_recognition_status()
 
 def refresh_with_detections(frame, rgb, frame_idx):
     """
-    🎯 IMPROVED FOLLOWING: Allows green bounding boxes to follow people even when far away or partially visible
+       IMPROVED FOLLOWING: Allows green bounding boxes to follow people even when far away or partially visible
       RELAXED: Less strict protection zones for better tracking
       ENHANCED: Better far-away tracking with adaptive thresholds
       FIXED: Allows tracking through obstacles and partial occlusion
@@ -3125,12 +3125,12 @@ def refresh_with_detections(frame, rgb, frame_idx):
     2. Fixed false recognition - stricter thresholds and additional verification
     3. Fixed recognition when no face is present - better face validation
     """
-    # 🚨🚨🚨 CRITICAL FIX: ADD THIS AT THE VERY BEGINNING 🚨🚨🚨
+    # 🚨🚨🚨  ADD THIS AT THE VERY BEGINNING 🚨🚨🚨
     global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
     global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
     global KNOWN_FACE_ENCODINGS_NORMALIZED, known_face_names, known_face_encodings, known_face_ids, known_face_types
     
-    # 🟢 EMERGENCY FACE LOADING: If faces aren't loaded, FORCE RELOAD NOW!
+    #  EMERGENCY FACE LOADING: If faces aren't loaded, FORCE RELOAD NOW!
     if frame_idx == 1 or (KNOWN_FACE_ENCODINGS_ARRAY is None or KNOWN_FACE_ENCODINGS_ARRAY.size == 0 or len(known_face_names) == 0):
         logger.warning(f"🚨 Frame {frame_idx}: Face encodings missing! Emergency reload...")
         
@@ -3140,7 +3140,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if success and len(known_face_names) > 0 and KNOWN_FACE_ENCODINGS_ARRAY is not None:
             logger.info(f"✅ Emergency reload successful: {len(known_face_names)} faces loaded")
         else:
-            logger.error(f"❌ Emergency reload FAILED! No faces available for recognition.")
+            logger.error(f" Emergency reload FAILED! No faces available for recognition.")
             # Still continue but recognition won't work
     
     if DEBUG_MODE: 
@@ -3165,7 +3165,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
     
     # Check if we have faces loaded (AGAIN after emergency reload)
     if KNOWN_FACE_ENCODINGS_ARRAY is None or KNOWN_FACE_ENCODINGS_ARRAY.size == 0:
-        logger.error("❌❌❌ CRITICAL: Face encodings STILL not loaded! Recognition impossible.")
+        logger.error(" CRITICAL: Face encodings STILL not loaded! Recognition impossible.")
         # Try one more aggressive reload
         if frame_idx % 50 == 0:  # Try more frequently
             logger.warning("🔄 Attempting aggressive face reload...")
@@ -3208,13 +3208,13 @@ def refresh_with_detections(frame, rgb, frame_idx):
         faces = face_analysis.get(rgb)
         
         # ============================================
-        # 🚨 CRITICAL FIX: Validate face detections
+        #  Validate face detections
         # ============================================
         validated_faces = []
         for face in faces:
             try:
                 x1, y1, x2, y2 = face.bbox.astype(int)
-                # 🚨 Fix: Check if this is a valid face detection (not noise)
+                # Check if this is a valid face detection (not noise)
                 if (x2 - x1) > 0 and (y2 - y1) > 0:  # Valid dimensions
                     # Additional validation: face should have reasonable aspect ratio
                     aspect_ratio = (y2 - y1) / (x2 - x1) if (x2 - x1) > 0 else 0
@@ -3391,7 +3391,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         logger.debug(f"  Fallback: {len(body_tracks)} body tracks")
     
     # ============================================
-    # 🎯 FLEXIBLE ANTI-SWAPPING WITH BETTER FOLLOWING
+    #    FLEXIBLE ANTI-SWAPPING WITH BETTER FOLLOWING
     # ============================================
     
     # 1. UPDATE MOVEMENT HISTORY AND PREDICTIONS for locked tracks
@@ -3414,7 +3414,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             if len(locked_track_history[person_id]) > 20:
                 locked_track_history[person_id].pop(0)
             
-            # 🎯 IMPROVED PREDICTION for far-away and obstacle tracking
+            #    IMPROVED PREDICTION for far-away and obstacle tracking
             if len(locked_track_history[person_id]) >= 2:  # Reduced from 3 to 2 for quicker adaptation
                 last_positions = locked_track_history[person_id][-2:]  # Just last 2 positions
                 
@@ -3425,7 +3425,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     dx = curr['center_x'] - prev['center_x']
                     dy = curr['center_y'] - prev['center_y']
                     
-                    # 🎯 ADAPTIVE MOMENTUM for far-away tracking
+                    #    ADAPTIVE MOMENTUM for far-away tracking
                     current_center_x = (current_body_box[0] + current_body_box[2]) // 2
                     current_center_y = (current_body_box[1] + current_body_box[3]) // 2
                     
@@ -3437,7 +3437,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         (current_center_y - frame_center_y)**2
                     )
                     
-                    # 🎯 MORE AGGRESSIVE PREDICTION for far-away people
+                    #    MORE AGGRESSIVE PREDICTION for far-away people
                     if distance_from_center > 400:  # Very far
                         momentum_factor = 1.8
                         prediction_distance = 120  # pixels to search
@@ -3458,7 +3458,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     box_width = current_body_box[2] - current_body_box[0]
                     box_height = current_body_box[3] - current_body_box[1]
                     
-                    # 🎯 ALLOW HALF-BODY DETECTION: Reduce minimum size requirements
+                    #    ALLOW HALF-BODY DETECTION: Reduce minimum size requirements
                     min_width = max(25, int(box_width * 0.4))  # Allow 40% of original width
                     min_height = max(50, int(box_height * 0.4))  # Allow 40% of original height
                     
@@ -3551,7 +3551,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             # Calculate distance from center for adaptive thresholds
             distance_from_center = np.sqrt((body_center_x - w//2)**2 + (body_center_y - h//2)**2)
             
-            # 🎯 ADAPTIVE MARGINS based on distance
+            #    ADAPTIVE MARGINS based on distance
             if distance_from_center > 400:
                 # Very far - use larger margins for better tracking
                 inner_margin_multiplier = 0.3  # Reduced from 0.4
@@ -3618,7 +3618,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         body_box = lock_info.get('body_box')
         if body_box:
             bx1, by1, bx2, by2 = body_box
-            # 🎯 INCREASED EXPANSION for better matching when far away
+            #    INCREASED EXPANSION for better matching when far away
             distance_from_center = np.sqrt(((bx1+bx2)//2 - w//2)**2 + ((by1+by2)//2 - h//2)**2)
             
             if distance_from_center > 300:
@@ -3683,7 +3683,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         face_center_y = (y1 + y2) // 2
                         face_box = (x1, y1, x2, y2)
                         
-                        # 🎯 RELAXED: Check if this face violates any protection zones
+                        #    RELAXED: Check if this face violates any protection zones
                         should_reject_face = False
                         rejection_reason = ""
                         
@@ -3694,7 +3694,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             locked_body_box = zone_info['body_box']
                             adaptive_iou_threshold = zone_info.get('iou_threshold', 0.4)
                             
-                            # 🎯 1. Check INNER ZONE (more lenient)
+                            #    1. Check INNER ZONE (more lenient)
                             iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
                             if (iz_x1 <= face_center_x <= iz_x2 and iz_y1 <= face_center_y <= iz_y2):
                                 face_iou = iou(face_box, locked_body_box)
@@ -3715,7 +3715,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                         rejection_reason = f"inner zone violation (IoU: {face_iou:.2f}, threshold: {adaptive_iou_threshold})"
                                         break
                             
-                            # 🎯 2. Check OUTER ZONE (more lenient)
+                            #    2. Check OUTER ZONE (more lenient)
                             if not should_reject_face:
                                 oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
                                 if (oz_x1 <= face_center_x <= oz_x2 and oz_y1 <= face_center_y <= oz_y2):
@@ -3733,7 +3733,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                             rejection_reason = f"close to locked person but no overlap ({int(distance_to_center)}px)"
                                             break
                             
-                            # 🎯 3. Check PREDICTION ZONE (allow faces in prediction path)
+                            #    3. Check PREDICTION ZONE (allow faces in prediction path)
                             if not should_reject_face and prediction_zone:
                                 pz_x1, pz_y1, pz_x2, pz_y2 = prediction_zone
                                 if (pz_x1 <= face_center_x <= pz_x2 and pz_y1 <= face_center_y <= pz_y2):
@@ -3759,7 +3759,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 face_area = box_width * box_height
                                 body_area = body_width * body_height
                             
-                                # 🎯 MORE LENIENT thresholds for far-away/half-body
+                                #    MORE LENIENT thresholds for far-away/half-body
                                 if distance_from_center > 300:
                                     height_threshold = 0.6  # Increased from 0.5
                                     width_min = 0.05  # Reduced from 0.1
@@ -3801,7 +3801,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
     used_detections = set()
     used_body_tracks = set()
     
-    # 🎯 IMPROVED: More flexible ReID matching for better following
+    #    IMPROVED: More flexible ReID matching for better following
     for person_id, lock_info in locked_tracks.items():
         last_reid_features = lock_info.get('reid_features')
         last_body_box = lock_info.get('body_box')
@@ -3822,12 +3822,12 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 if current_reid_features is None:
                     continue
             
-                # 🎯 STAGE 1: Calculate ReID distance (more lenient)
+                #    STAGE 1: Calculate ReID distance (more lenient)
                 reid_dist = calculate_reid_distance(last_reid_features, current_reid_features)
                 if reid_dist >= best_reid_distance:
                     continue
             
-                # 🎯 STAGE 2: FLEXIBLE SPATIAL CONSTRAINT
+                #    STAGE 2: FLEXIBLE SPATIAL CONSTRAINT
                 if last_body_box:
                     movement = calculate_box_distance(last_body_box, body_track['body_box'])
                     
@@ -3835,7 +3835,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     last_center_y = (last_body_box[1] + last_body_box[3]) // 2
                     distance_from_center = np.sqrt((last_center_x - w//2)**2 + (last_center_y - h//2)**2)
                     
-                    # 🎯 ALLOW MORE MOVEMENT for far-away people
+                    #    ALLOW MORE MOVEMENT for far-away people
                     if distance_from_center > 300:
                         max_movement = 120  # Increased from 80
                     elif distance_from_center > 200:
@@ -3854,7 +3854,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         if pred_distance > max_pred_distance:
                             continue
             
-                # 🎯 STAGE 3: FLEXIBLE BODY SIGNATURE VERIFICATION
+                #    STAGE 3: FLEXIBLE BODY SIGNATURE VERIFICATION
                 if body_signature and 'signature' in body_track:
                     current_sig = body_track['signature']
 
@@ -3871,7 +3871,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     # Check if min_width/max_width exist before using them
                     if ('min_width' in body_signature and 'max_width' in body_signature and 
                         body_signature['min_width'] > 0 and body_signature['max_width'] > 0):
-                        # 🎯 ALLOW MORE SIZE VARIATION
+                        #    ALLOW MORE SIZE VARIATION
                         width_ratio = current_sig['width'] / body_signature['avg_width'] if body_signature['avg_width'] > 0 else 1.0
                         if width_ratio < 0.4 or width_ratio > 1.8:  # More flexible than 0.7-1.3
                             if DEBUG_MODE: 
@@ -3881,14 +3881,14 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     # Check if min_height/max_height exist
                     if ('min_height' in body_signature and 'max_height' in body_signature and
                         body_signature['min_height'] > 0 and body_signature['max_height'] > 0):
-                        # 🎯 ALLOW MORE SIZE VARIATION
+                        #    ALLOW MORE SIZE VARIATION
                         height_ratio = current_sig['height'] / body_signature['avg_height'] if body_signature['avg_height'] > 0 else 1.0
                         if height_ratio < 0.4 or height_ratio > 1.8:  # More flexible
                             if DEBUG_MODE: 
                                 logger.debug(f"  Warning: height ratio {height_ratio:.2f} out of range, but allowing for tracking")
                             # Don't reject immediately
                 
-                # 🎯 STAGE 4: TEMPORAL CONSISTENCY (more lenient)
+                #    STAGE 4: TEMPORAL CONSISTENCY (more lenient)
                 if last_body_box and person_id in locked_track_history:
                     hist_positions = locked_track_history[person_id]
                     if len(hist_positions) >= 2:
@@ -3913,7 +3913,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             actual_movement_x = current_center_x - last_center_x
                             actual_movement_y = current_center_y - last_center_y
                             
-                            # 🎯 ALLOW MORE ABRUPT MOVEMENT for far-away
+                            #    ALLOW MORE ABRUPT MOVEMENT for far-away
                             movement_factor = 3.0 if distance_from_center > 300 else 2.0  # Increased
                             if (abs(actual_movement_x) > abs(avg_movement_x) * movement_factor or 
                                 abs(actual_movement_y) > abs(avg_movement_y) * movement_factor):
@@ -3921,7 +3921,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                     logger.debug(f"  Warning: movement abrupt but allowing for tracking")
                                 # Don't reject - might be sudden movement
                 
-                # 🎯 STAGE 5: OVERLAP VALIDATION (more lenient)
+                #    STAGE 5: OVERLAP VALIDATION (more lenient)
                 if last_body_box:
                     overlap = iou(tuple(body_track['body_box']), last_body_box)
                     distance_from_center = np.sqrt(
@@ -3929,7 +3929,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         ((last_body_box[1] + last_body_box[3])//2 - h//2)**2
                     )
                     
-                    # 🎯 LOWER OVERLAP REQUIREMENTS for far-away
+                    #    LOWER OVERLAP REQUIREMENTS for far-away
                     if distance_from_center > 300:
                         min_overlap = 0.1  # Reduced from 0.15
                     elif distance_from_center > 200:
@@ -3964,7 +3964,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         ((matched_body['body_box'][1] + matched_body['body_box'][3])//2 - h//2)**2
                     )
                     
-                    # 🎯 SLOWER ADAPTATION for far-away tracking
+                    #    SLOWER ADAPTATION for far-away tracking
                     if distance_from_center > 300:
                         alpha = 0.95  # Very slow adaptation
                     elif distance_from_center > 200:
@@ -4052,7 +4052,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         if overlaps_existing:
             continue
         
-        # 🎯 RELAXED: Check if this face is in any protected zone
+        #    RELAXED: Check if this face is in any protected zone
         face_center_x = (x1 + x2) // 2
         face_center_y = (y1 + y2) // 2
         face_too_close_to_locked = False
@@ -4064,7 +4064,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
             iz_x1, iz_y1, iz_x2, iz_y2 = inner_zone
             oz_x1, oz_y1, oz_x2, oz_y2 = outer_zone
             
-            # 🎯 Only reject if clearly in inner zone with no overlap
+            #    Only reject if clearly in inner zone with no overlap
             if (iz_x1 <= face_center_x <= iz_x2 and iz_y1 <= face_center_y <= iz_y2):
                 locked_body_box = zone_info['body_box']
                 face_box = (x1, y1, x2, y2)
@@ -4091,7 +4091,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         face_embedding = None
         best_similarity = 0
 
-        # 🟢 FIX: ALWAYS PROCESS FACES, EVEN WITH EMPTY DATABASE
+        #   ALWAYS PROCESS FACES, EVEN WITH EMPTY DATABASE
         if conf >= 0.20:
             try:
                 # Try to get face embedding even if we don't have database
@@ -4114,7 +4114,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                     # Skip if normalization failed
                     continue
                 
-                # 🟢 FIX: CHECK IF WE HAVE DATABASE FOR RECOGNITION
+                #   CHECK IF WE HAVE DATABASE FOR RECOGNITION
                 has_database = (KNOWN_FACE_ENCODINGS_ARRAY is not None and 
                                KNOWN_FACE_ENCODINGS_ARRAY.size > 0 and 
                                len(known_face_names) > 0)
@@ -4153,7 +4153,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         face_height = y2 - y1
                         face_area = face_width * face_height
                     
-                        # 🎯 Skip very small faces
+                        #    Skip very small faces
                         if face_width < 40 or face_height < 40:
                             if DEBUG_MODE: 
                                 logger.debug(f"  Face too small: {face_width}x{face_height}")
@@ -4165,7 +4165,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         face_center_y = (y1 + y2) // 2
                         pixel_distance_from_center = np.sqrt((face_center_x - w//2)**2 + (face_center_y - h//2)**2)
                         
-                        # 🎯 NEW: Detect face orientation (for side face recognition)
+                        #    NEW: Detect face orientation (for side face recognition)
                         face_orientation = "front"  # Default
                         if hasattr(face_obj, 'kps') and face_obj.kps is not None and len(face_obj.kps) >= 5:
                             kps = face_obj.kps
@@ -4189,7 +4189,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                         if DEBUG_MODE and face_orientation != "front":
                             logger.debug(f"  Face orientation: {face_orientation} (eye_ratio: {eye_ratio:.2f})")
                         
-                        # 🎯 ADAPTIVE RECOGNITION THRESHOLDS based on orientation
+                        # ADAPTIVE RECOGNITION THRESHOLDS based on orientation
                         if face_orientation == "front":
                             # Frontal face - normal thresholds
                             if pixel_distance_from_center > 400:  # Very far
@@ -4238,7 +4238,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             if DEBUG_MODE: 
                                 logger.debug("  Normalized known embeddings on the fly")
                     
-                        # 🎯 ENHANCED: MULTI-ANGLE FACE RECOGNITION
+                        #    ENHANCED: MULTI-ANGLE FACE RECOGNITION
                         # Load multi-angle encodings for better side face recognition
                         multi_angle_encodings = load_multi_angle_encodings()
                         
@@ -4287,7 +4287,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                         matched_id = original_student_id
                                         matched_name = known_face_names[known_face_ids.index(matched_id)] if matched_id in known_face_ids else "Unknown"
                                         
-                                        logger.info(f"🎯 SIDE FACE MATCH: {matched_name} ({face_orientation} profile) - Similarity: {best_similarity:.3f}")
+                                        logger.info(f"   SIDE FACE MATCH: {matched_name} ({face_orientation} profile) - Similarity: {best_similarity:.3f}")
                                     else:
                                         # Fall back to regular recognition
                                         similarities = np.dot(KNOWN_FACE_ENCODINGS_ARRAY, face_embedding)
@@ -4318,20 +4318,20 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             if DEBUG_MODE: 
                                 logger.debug(f"  Best match: {known_face_names[best_match_index]} - Similarity: {best_similarity:.3f}, Threshold: {recognition_threshold:.3f}")
                         
-                            # 🎯 TOP-2 CHECK for better accuracy
+                            # CHECK for better accuracy
                             if similarities.size > 1:
                                 sorted_indices = np.argsort(similarities)[::-1]
                                 best_sim = similarities[sorted_indices[0]]
                                 second_best_sim = similarities[sorted_indices[1]]
                                 
                                 similarity_gap = best_sim - second_best_sim
-                                if similarity_gap < 0.12:  # Too close, might be ambiguous
+                                if similarity_gap < 0.12: 
                                     if DEBUG_MODE:
                                         logger.debug(f"  AMBIGUOUS: Best match gap too small ({similarity_gap:.3f})")
                                     name = "Unknown - Ambiguous match"
                                     continue
                             
-                            # 🎯 CONFIDENCE-BASED RECOGNITION DECISION
+                            #    CONFIDENCE-BASED RECOGNITION DECISION
                             if best_similarity >= recognition_threshold:
                                 # HIGH/MEDIUM CONFIDENCE MATCH
                                 matched_id = known_face_ids[best_match_index]
@@ -4339,7 +4339,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 matched_name = known_face_names[best_match_index]
                                 
                                 # ============================================
-                                # 🚨 CRITICAL FIX: SECTION VALIDATION
+                                # 🚨  SECTION VALIDATION
                                 # ============================================
                                 if matched_type == 'student':
                                     # Get current section students
@@ -4376,7 +4376,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                         continue
                                 
                                 # ============================================
-                                # 🚨 CRITICAL FIX: FALSE POSITIVE PREVENTION
+                                # 🚨  FALSE POSITIVE PREVENTION
                                 # ============================================
                                 # Additional verification to prevent false positives
                                 if best_similarity < 0.78:  # Medium-high confidence
@@ -4400,7 +4400,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                                         logger.debug(f"  Rejecting: eye-face ratio {eye_face_ratio:.2f} is unreasonable")
                                                     continue
                                 
-                                # 🎯 ACCEPTED RECOGNITION
+                                #    ACCEPTED RECOGNITION
                                 if matched_type == 'faculty':
                                     name = f"Faculty: {matched_name}"
                                     person_id = matched_id
@@ -4408,7 +4408,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                     confidence = best_similarity
                             
                                 elif matched_type == 'student':
-                                    # 🟢 FIX: Already validated section membership above
+                                    #   Already validated section membership above
                                     name = matched_name
                                     person_id = matched_id
                                     ptype = 'student'
@@ -4416,7 +4416,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             else:
                                 # BELOW THRESHOLD
                                 if DEBUG_MODE: 
-                                    logger.debug(f"  ❌ NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
+                                    logger.debug(f"   NO MATCH: Best similarity {best_similarity:.3f} < threshold {recognition_threshold:.3f}")
                                 name = "Unknown"
             except Exception as e:
                 logger.error(f"  Error in recognition: {e}")
@@ -4464,7 +4464,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                 body_area = (bx2 - bx1) * (by2 - by1)
                 face_body_ratio = face_area / body_area if body_area > 0 else 0
                 
-                # 🎯 MORE LENIENT RATIOS for far-away/half-body
+                #    MORE LENIENT RATIOS for far-away/half-body
                 if pixel_distance_from_center > 300:
                     min_ratio = 0.008  # Reduced from 0.01
                     max_ratio = 0.3    # Increased from 0.25
@@ -4485,7 +4485,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                             locked_body_box = zone_info['body_box']
                             overlap_iou = iou(tuple(body_box), locked_body_box)
                             
-                            # 🎯 MORE LENIENT for far-away
+                            #    MORE LENIENT for far-away
                             if pixel_distance_from_center > 300:
                                 min_iou = 0.3  # Reduced from 0.4
                             else:
@@ -4506,7 +4506,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         
         # If still unknown after recognition attempt
         if person_id is None:
-            # 🚨 FIX: Use section info in unknown label
+            # 🚨  Use section info in unknown label
             unique_id = f"U-{frame_idx}-{x1}"
             
             # Check if this might be a student from wrong section
@@ -5979,8 +5979,8 @@ def update_trackers_with_body(rgb, frame, frame_idx):
 
 def detect_bodies(frame, frame_idx):
     """
-    🎯 IMPROVED WHOLE-BODY DETECTION with individual tracking for each person
-    🎯 FIXED: Image size divisible by model stride (32)
+       IMPROVED WHOLE-BODY DETECTION with individual tracking for each person
+       FIXED: Image size divisible by model stride (32)
     """
     global tracking_history, last_detection_time, frame_history
     
@@ -6000,7 +6000,7 @@ def detect_bodies(frame, frame_idx):
         # Calculate time since last detection
         time_since_last = current_time - last_detection_time
         
-        # 🎯 TEMPORAL SMOOTHING for better detection
+        #    TEMPORAL SMOOTHING for better detection
         if len(frame_history) >= 3 and time_since_last > 0.1:
             alpha = 0.7
             current_for_detection = cv2.addWeighted(frame, alpha, frame_history[-2], 1-alpha, 0)
@@ -6010,7 +6010,7 @@ def detect_bodies(frame, frame_idx):
         # Get frame dimensions
         h, w = frame.shape[:2]
         
-        # 🎯 ADAPTIVE DETECTION BASED ON FPS
+        # ADAPTIVE DETECTION BASED ON FPS
         if time_since_last > 0.2:
             # Use faster, less accurate detection
             base_size = 320
@@ -6022,7 +6022,7 @@ def detect_bodies(frame, frame_idx):
             base_size = 640
             detection_conf = 0.25
         
-        # 🎯 FIX: Make image size divisible by 32
+        # Make image size divisible by 32
         detection_scale = base_size / max(h, w)
         new_w, new_h = int(w * detection_scale), int(h * detection_scale)
         
@@ -6045,7 +6045,7 @@ def detect_bodies(frame, frame_idx):
         # Resize for detection
         resized = cv2.resize(current_for_detection, (new_w, new_h), interpolation=cv2.INTER_AREA)
         
-        # 🎯 DETECTION PARAMETERS optimized for individual detection
+        #    DETECTION PARAMETERS optimized for individual detection
         det_params = {
             'classes': [0],
             'verbose': False,
@@ -6056,7 +6056,7 @@ def detect_bodies(frame, frame_idx):
         }
         
         if DEVICE == "cuda":
-            # 🎯 FIX: Ensure imgsz is divisible by 32 and within reasonable bounds
+            #     Ensure imgsz is divisible by 32 and within reasonable bounds
             imgsz_value = max(320, min(new_w, new_h))
             imgsz_value = make_divisible_by_32(imgsz_value)
             
@@ -6087,7 +6087,7 @@ def detect_bodies(frame, frame_idx):
                 box_area = box_width * box_height
                 frame_area = w * h
                 
-                # 🎯 INDIVIDUAL PERSON FILTERING
+                #    INDIVIDUAL PERSON FILTERING
                 # Minimum size for individual person
                 min_width = max(20, int(w * 0.015))
                 min_height = max(40, int(h * 0.03))  # Increased for full bodies
@@ -6103,7 +6103,7 @@ def detect_bodies(frame, frame_idx):
                     # and split later if needed
                     pass
                 
-                # 🎯 ASPECT RATIO for individual people
+                #    ASPECT RATIO for individual people
                 if box_height > 0 and box_width > 0:
                     aspect_ratio = box_height / box_width
                     
@@ -6116,7 +6116,7 @@ def detect_bodies(frame, frame_idx):
                     if aspect_ratio > 6.0:  # Too tall
                         continue
                 
-                # 🎯 AREA CHECK - individual person shouldn't be too large
+                #    AREA CHECK - individual person shouldn't be too large
                 area_ratio = box_area / frame_area
                 if area_ratio > 0.4:  # If taking more than 40% of frame
                     # Might be multiple people or too close
@@ -6128,7 +6128,7 @@ def detect_bodies(frame, frame_idx):
                 if center_y < h * 0.05 and conf < 0.4:
                     continue
                 
-                # 🎯 SMART EXPANSION (but limited to prevent merging)
+                #    SMART EXPANSION (but limited to prevent merging)
                 expand_margin = min(8, int(box_width * 0.04))  # Reduced expansion
                 clamped_x1 = max(0, min(x1, w - 1)) - expand_margin
                 clamped_y1 = max(0, min(y1, h - 1)) - expand_margin
@@ -6145,7 +6145,7 @@ def detect_bodies(frame, frame_idx):
                 # Calculate final aspect ratio
                 final_aspect = final_height / final_width if final_width > 0 else 0
                 
-                # 🎯 CHECK FOR POTENTIAL MULTIPLE PEOPLE IN ONE BOX
+                #    CHECK FOR POTENTIAL MULTIPLE PEOPLE IN ONE BOX
                 is_potential_multiple = False
                 if final_width > w * 0.35 and final_aspect < 1.2:
                     is_potential_multiple = True
@@ -6162,7 +6162,7 @@ def detect_bodies(frame, frame_idx):
                     'is_potential_multiple': is_potential_multiple
                 })
         
-        # 🎯 SPLIT WIDE BOXES THAT MAY CONTAIN MULTIPLE PEOPLE
+        #    SPLIT WIDE BOXES THAT MAY CONTAIN MULTIPLE PEOPLE
         split_detections = []
         for det in detections:
             if det['is_potential_multiple'] and det['confidence'] > 0.3:
@@ -6223,7 +6223,7 @@ def detect_bodies(frame, frame_idx):
         
         detections = split_detections
         
-        # 🎯 NON-MAXIMUM SUPPRESSION (NMS) TO SEPARATE CLOSE DETECTIONS
+        #    NON-MAXIMUM SUPPRESSION (NMS) TO SEPARATE CLOSE DETECTIONS
         if len(detections) > 1:
             # Sort by confidence
             detections.sort(key=lambda x: x['confidence'], reverse=True)
@@ -6264,7 +6264,7 @@ def detect_bodies(frame, frame_idx):
                 
             detections = filtered_detections
         
-        # 🎯 TRACKING INTEGRATION - ONE TRACK PER PERSON
+        #    TRACKING INTEGRATION - ONE TRACK PER PERSON
         if detections:
             last_detection_time = current_time
             
@@ -6350,7 +6350,7 @@ def detect_bodies(frame, frame_idx):
                         det['track_id'] = new_track_id
                         updated_tracks[new_track_id] = True
             
-            # 🎯 REMOVE DUPLICATE TRACKS (same person with multiple tracks)
+            #    REMOVE DUPLICATE TRACKS (same person with multiple tracks)
             tracks_to_remove = []
             for track_id1, track_data1 in tracking_history.items():
                 for track_id2, track_data2 in tracking_history.items():
@@ -6378,7 +6378,7 @@ def detect_bodies(frame, frame_idx):
                 if track_id in tracking_history:
                     del tracking_history[track_id]
             
-            # 🎯 PREDICT MISSING TRACKS (temporarily)
+            #    PREDICT MISSING TRACKS (temporarily)
             for track_id, track_data in list(tracking_history.items()):
                 if track_id not in updated_tracks:
                     frames_missing = frame_idx - track_data['last_seen']
@@ -6417,7 +6417,7 @@ def detect_bodies(frame, frame_idx):
                     elif frames_missing > 30:  # Remove old tracks
                         del tracking_history[track_id]
         
-        # 🎯 SORT BY TRACK AGE AND CONFIDENCE
+        #    SORT BY TRACK AGE AND CONFIDENCE
         # Prioritize stable tracks
         def detection_score(det):
             base_score = det['confidence']
@@ -6428,7 +6428,7 @@ def detect_bodies(frame, frame_idx):
                 track_age = track_data.get('age', 0)
                 detection_count = track_data.get('detection_count', 0)
                 
-                # 🎯 ENHANCED SCORING FOR STABLE TRACKS
+                #    ENHANCED SCORING FOR STABLE TRACKS
                 # Boost for age (longer tracking) - up to 30%
                 age_boost = min(track_age * 0.015, 0.3)
                 
@@ -6442,14 +6442,14 @@ def detect_bodies(frame, frame_idx):
                 total_boost = age_boost + count_boost + stability_boost
                 base_score *= (1 + total_boost)
             
-            # 🎯 REDUCE PENALTY for predicted detections (they help maintain tracking)
+            #    REDUCE PENALTY for predicted detections (they help maintain tracking)
             if det.get('predicted', False):
                 base_score *= 0.7  # Reduced from 0.5 (less penalty)
             
             if det.get('temporary', False):
                 base_score *= 0.6  # Slight penalty for temporary
             
-            # 🎯 BONUS for good aspect ratios (more likely to be valid person)
+            #    BONUS for good aspect ratios (more likely to be valid person)
             if 'aspect_ratio' in det:
                 aspect = det['aspect_ratio']
                 if 1.2 <= aspect <= 3.5:  # Good human aspect ratio
@@ -6469,7 +6469,7 @@ def detect_bodies(frame, frame_idx):
             detections = detections[:max_detections]
         
         if DEBUG_MODE:
-            # 🎯 IMPROVED LOGGING FOR CLASSROOM
+            #    IMPROVED LOGGING FOR CLASSROOM
             unique_tracks = len(set(d.get('track_id', -1) for d in detections if 'track_id' in d))
             predicted_count = len([d for d in detections if d.get('predicted', False)])
             stable_tracks = len([t for t in tracking_history.values() if t.get('stable', False)])
@@ -6545,7 +6545,7 @@ def video_feed():
                 
                 h, w = frame.shape[:2]
                 
-                # 🟢 **FIX: Respect DETECT_EVERY setting**
+                #  ** Respect DETECT_EVERY setting**
                 should_detect = (frame_idx % DETECT_EVERY == 0)
                 
                 if should_detect:
@@ -6553,10 +6553,10 @@ def video_feed():
                         # Convert to RGB for face detection
                         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                         
-                        # 🟢 **RUN FACE DETECTION according to DETECT_EVERY**
+                        #  **RUN FACE DETECTION according to DETECT_EVERY**
                         refresh_with_detections(frame, rgb, frame_idx)
                         
-                        # 🟢 **UPDATE TRACKERS for better following**
+                        #  **UPDATE TRACKERS for better following**
                         update_trackers_with_body(rgb, frame, frame_idx)
                         
                     except Exception as e:
@@ -6609,18 +6609,18 @@ def video_feed():
                     pending_count = len(pending_confirmations)
                     track_count = len(tracks)
                     
-                    logger.info(f"📡 Continuous Detection | Frame: {frame_idx} | "
+                    logger.info(f" Continuous Detection | Frame: {frame_idx} | "
                                f"Queue: {queue_size} | Tracks: {track_count} | "
                                f"Locked: {locked_count} | Pending: {pending_count}")
                     last_log_time = current_time
                 
             except GeneratorExit:
                 if DEBUG_MODE:
-                    logger.info("📡 Stream: Client disconnected")
+                    logger.info(" Stream: Client disconnected")
                 break
             except Exception as e:
                 if DEBUG_MODE:
-                    logger.error(f"📡 Stream error: {e}")
+                    logger.error(f" Stream error: {e}")
                 time.sleep(0.01)
     
     return Response(
@@ -8935,7 +8935,7 @@ def encode_face():
             img = cv2.flip(img, 1)  # Horizontal flip
             logger.debug("Image flipped horizontally")
         
-        # ENHANCED FACE DETECTION FOR SIDE/PROFILE FACES
+        # FACE DETECTION FOR SIDE/PROFILE FACES
         faces = []
         detection_method = "insightface"
         
@@ -9647,13 +9647,14 @@ def register_student():
     try:
         data = request.form
         email = data.get('email', '').strip().lower()
-        student_id = data.get('student_id', '').strip()
+        student_id = data.get('student_id', '').strip()  # This is 2011-01795 (numeric only)
         invite_token = data.get('invite_token', '').strip()  
         first_name = data.get('first_name', '').strip()
         last_name = data.get('last_name', '').strip()
         middle_name = data.get('middle_name', '').strip()
         section_id = data.get('section_id', '').strip()
         program_id = data.get('program_id', '').strip()
+        year_level = data.get('year_level', '').strip()
         password = data.get('password', '').strip()
         
         # Get multi-angle encodings if provided
@@ -9670,15 +9671,26 @@ def register_student():
         if len(password) < 8:
             return jsonify({'success': False, 'message': 'Password must be at least 8 characters long'})
         
-        # Extract curriculum year from student ID (first 4 digits)
-        if len(student_id) >= 4:
-            curriculum_year = student_id[:4]
+        # Validate student_id format (should be 2011-01795 - numeric only)
+        if not re.match(r'^\d{4}-\d{5}$', student_id):
+            logger.warning(f"Invalid student ID format: {student_id}")
+            return jsonify({'success': False, 'message': 'Student ID must be in format: 2011-01795 (4 digits hyphen 5 digits)'})
+        
+        # Extract curriculum year from student ID (2011 from 2011-01795)
+        curriculum_year = student_id[:4]  # Get first 4 digits
+        
+        # Validate curriculum year
+        try:
             current_year = datetime.now().year
             if not (2000 <= int(curriculum_year) <= current_year + 1):
+                logger.warning(f"Curriculum year {curriculum_year} out of range, using current year")
                 curriculum_year = str(current_year)
-        else:
+        except ValueError:
             current_year = datetime.now().year
             curriculum_year = str(current_year)
+            logger.warning(f"Invalid curriculum year format, using {curriculum_year}")
+        
+        logger.info(f"Using curriculum year: {curriculum_year} for student {student_id}")
         
         password_hash = hash_password(password)
         
@@ -9700,11 +9712,41 @@ def register_student():
                 logger.warning(f"Email {email} already registered")
                 return jsonify({'success': False, 'message': 'Email already registered'})
         
+        # Verify the selected section exists in year_sections
+        cursor.execute("""
+            SELECT ys.section_id, ys.section_name, ys.program_id, ys.year_level, ys.curriculum_id,
+                   c.curriculum_year, c.curriculum_name
+            FROM year_sections ys
+            LEFT JOIN curricula c ON ys.curriculum_id = c.curriculum_id
+            WHERE ys.section_id = %s AND ys.status = 'active'
+        """, (section_id,))
+        
+        section_result = cursor.fetchone()
+        
+        if not section_result:
+            cursor.close()
+            conn.close()
+            logger.warning(f"Section {section_id} not found or inactive")
+            return jsonify({'success': False, 'message': 'Selected section not found or inactive'})
+        
+        section_info = {
+            'id': section_result[0],
+            'name': section_result[1],
+            'program_id': section_result[2],
+            'year_level': section_result[3],
+            'curriculum_id': section_result[4],
+            'curriculum_year': section_result[5],
+            'curriculum_name': section_result[6]
+        }
+        
+        logger.info(f"Section found: {section_info}")
+        
         # Find the appropriate curriculum
         current_academic_year = f"{datetime.now().year}-{datetime.now().year + 1}"
         
+        # First try exact match
         cursor.execute(
-            """SELECT curriculum_id FROM curricula 
+            """SELECT curriculum_id, curriculum_name FROM curricula 
             WHERE program_id = %s AND academic_year = %s AND curriculum_year = %s AND status = 'active'
             ORDER BY effective_date DESC LIMIT 1""",
             (program_id, current_academic_year, curriculum_year)
@@ -9712,23 +9754,40 @@ def register_student():
         
         curriculum_result = cursor.fetchone()
         curriculum_id = curriculum_result[0] if curriculum_result else None
+        curriculum_name = curriculum_result[1] if curriculum_result else "Default"
         
-        # If no exact match found, try to find the closest curriculum
+        # If no exact match found, try to find any active curriculum for this program
         if not curriculum_id:
             cursor.execute(
-                """SELECT curriculum_id FROM curricula 
+                """SELECT curriculum_id, curriculum_name FROM curricula 
                 WHERE program_id = %s AND academic_year = %s AND status = 'active'
                 ORDER BY ABS(CAST(curriculum_year AS SIGNED) - %s) LIMIT 1""",
                 (program_id, current_academic_year, int(curriculum_year))
             )
             curriculum_result = cursor.fetchone()
             curriculum_id = curriculum_result[0] if curriculum_result else None
+            curriculum_name = curriculum_result[1] if curriculum_result else "Default"
+        
+        # If still no curriculum, try any active curriculum for this program (any academic year)
+        if not curriculum_id:
+            cursor.execute(
+                """SELECT curriculum_id, curriculum_name FROM curricula 
+                WHERE program_id = %s AND status = 'active'
+                ORDER BY academic_year DESC, ABS(CAST(curriculum_year AS SIGNED) - %s) LIMIT 1""",
+                (program_id, int(curriculum_year))
+            )
+            curriculum_result = cursor.fetchone()
+            curriculum_id = curriculum_result[0] if curriculum_result else None
+            curriculum_name = curriculum_result[1] if curriculum_result else "Default"
         
         if curriculum_id:
-            if DEBUG_MODE: 
-                logger.debug(f"Assigned curriculum {curriculum_id} to student {student_id}")
+            logger.info(f"Assigned curriculum {curriculum_id} ({curriculum_name}) to student {student_id}")
         else:
-            logger.warning(f"No active curriculum found for student {student_id}")
+            logger.warning(f"No active curriculum found for student {student_id}, program {program_id}, year {curriculum_year}")
+            return jsonify({
+                'success': False, 
+                'message': f'No curriculum found for {curriculum_year} batch. Please contact administration.'
+            })
         
         # PROCESS PRIMARY FACE ENCODING
         face_encoding_data = data.get('face_encoding', '')
@@ -9867,17 +9926,6 @@ def register_student():
         try:
             # Add primary embedding to memory
             if primary_embedding is not None:
-                # Format: [id, first_name, last_name, encoding_array, person_type]
-                face_entry = [
-                    student_id,
-                    first_name,
-                    last_name,
-                    primary_embedding.tolist(),  # Convert to list
-                    'student'
-                ]
-                
-                
-                
                 known_face_ids.append(student_id)
                 known_face_names.append(f"{first_name} {last_name}")
                 known_face_encodings.append(primary_embedding)
@@ -9950,8 +9998,10 @@ def register_student():
         
         # LOG SUCCESS WITH DETAILS
         logger.info(f"✅ Student registered successfully: {student_id} ({first_name} {last_name})")
-        logger.info(f"   - Curriculum: {curriculum_id}")
-        logger.info(f"   - Section: {section_id}")
+        logger.info(f"   - Program: {program_id}")
+        logger.info(f"   - Section: {section_info['name']} (ID: {section_id})")
+        logger.info(f"   - Curriculum: {curriculum_id} ({curriculum_name})")
+        logger.info(f"   - Curriculum Year: {curriculum_year}")
         logger.info(f"   - Multi-angle encodings: {len(multi_angle_embeddings)}")
         logger.info(f"   - Photo saved: {'Yes' if photo_path else 'No'}")
         
@@ -9960,7 +10010,13 @@ def register_student():
             'success': True, 
             'message': 'Student registered successfully',
             'student_id': student_id,
+            'student_name': f"{first_name} {last_name}",
+            'program_id': program_id,
+            'section_id': section_id,
+            'section_name': section_info['name'],
             'curriculum_id': curriculum_id,
+            'curriculum_name': curriculum_name,
+            'curriculum_year': curriculum_year,
             'multi_angle_count': len(multi_angle_embeddings),
             'photo_saved': bool(photo_path)
         })
@@ -9981,6 +10037,70 @@ def register_student():
             'success': False, 
             'message': f'Registration failed: {str(e)}'
         })
+    
+@app.route('/api/check_curriculum', methods=['GET'])
+def check_curriculum():
+    try:
+        program_id = request.args.get('program_id')
+        curriculum_year = request.args.get('curriculum_year')
+        
+        if not program_id or not curriculum_year:
+            return jsonify({'success': False, 'message': 'Program ID and Curriculum Year required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        current_academic_year = f"{datetime.now().year}-{datetime.now().year + 1}"
+        
+        # Check for exact curriculum match
+        cursor.execute(
+            """SELECT curriculum_id, curriculum_name FROM curricula 
+            WHERE program_id = %s AND academic_year = %s AND curriculum_year = %s AND status = 'active'""",
+            (program_id, current_academic_year, curriculum_year)
+        )
+        exact_match = cursor.fetchone()
+        
+        if exact_match:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': True,
+                'has_curriculum': True,
+                'curriculum_id': exact_match[0],
+                'curriculum_name': exact_match[1],
+                'match_type': 'exact'
+            })
+        
+        # Check for any active curriculum
+        cursor.execute(
+            """SELECT curriculum_id, curriculum_name FROM curricula 
+            WHERE program_id = %s AND academic_year = %s AND status = 'active'
+            ORDER BY ABS(CAST(curriculum_year AS SIGNED) - %s) LIMIT 1""",
+            (program_id, current_academic_year, int(curriculum_year))
+        )
+        closest_match = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if closest_match:
+            return jsonify({
+                'success': True,
+                'has_curriculum': True,
+                'curriculum_id': closest_match[0],
+                'curriculum_name': closest_match[1],
+                'match_type': 'closest'
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'has_curriculum': False,
+                'message': f'No curriculum found for {curriculum_year} batch'
+            })
+            
+    except Exception as e:
+        logger.error(f"Error checking curriculum: {e}")
+        return jsonify({'success': False, 'message': str(e)})
     
 
 @app.route('/api/register_faculty', methods=['POST'])
@@ -10184,7 +10304,7 @@ def register_faculty():
                     idx = known_face_ids.index(faculty_id)
                     logger.debug(f"✅ VERIFIED: Faculty {faculty_id} is at index {idx} in known_face_ids")
                 else:
-                    logger.error(f"❌ CRITICAL: Faculty {faculty_id} NOT found in known_face_ids after registration!")
+                    logger.error(f" CRITICAL: Faculty {faculty_id} NOT found in known_face_ids after registration!")
                     
         except Exception as e:
             logger.error(f"Failed to add faculty {faculty_id} to memory: {e}")
@@ -11968,6 +12088,11 @@ def student_lp_page():
 @login_required
 def student_settings_page():
     user_data = get_template_user_data()
+    
+    # Ensure only students can access this page
+    if user_data.get('user_type') != 'student':
+        return redirect('/login')
+    
     return render_template('StudSettings.html', **user_data)
 
 @app.route('/StudAttendance')
@@ -12226,15 +12351,418 @@ def get_template_user_data():
     """Get user data for template rendering"""
     user = get_current_user()
     if user:
-        return {
+        data = {
             'user_id': user['user_id'],
             'first_name': user['first_name'],
             'last_name': user['last_name'],
-            'middle_name': '',  # You might need to fetch this from database
             'user_role': user['role'],
             'user_type': user['user_type']
         }
+        
+        connection = get_db_connection()
+        if connection:
+            try:
+                cursor = connection.cursor(dictionary=True)
+                
+                if user['user_type'] == 'admin':
+                    # Fetch admin data
+                    cursor.execute("""
+                        SELECT middle_name, email, photo_path, admin_id, role
+                        FROM admins 
+                        WHERE admin_id = %s AND status = 'active'
+                    """, (user['user_id'],))
+                    user_data = cursor.fetchone()
+                    
+                    if user_data:
+                        data.update({
+                            'middle_name': user_data['middle_name'] or '',
+                            'email': user_data['email'],
+                            'photo_path': user_data['photo_path'],
+                            'user_id_display': user_data['admin_id'],
+                            'role_display': user_data['role'].replace('_', ' ').title(),
+                            'department': 'Office of the University Registrar',  # Default for admin
+                            'designation': user_data['role'].replace('_', ' ').title()
+                        })
+                
+                elif user['user_type'] == 'faculty':
+                    # Fetch faculty data
+                    cursor.execute("""
+                        SELECT middle_name, email, photo_path, faculty_id, 
+                               department, designation, role
+                        FROM faculty 
+                        WHERE faculty_id = %s AND status = 'active'
+                    """, (user['user_id'],))
+                    user_data = cursor.fetchone()
+                    
+                    if user_data:
+                        data.update({
+                            'middle_name': user_data['middle_name'] or '',
+                            'email': user_data['email'],
+                            'photo_path': user_data['photo_path'],
+                            'user_id_display': user_data['faculty_id'],
+                            'role_display': user_data['role'].replace('_', ' ').title() if user_data['role'] else 'Faculty',
+                            'department': user_data['department'],
+                            'designation': user_data['designation']
+                        })
+                
+                # For super_admin (stored in admins table with role='super_admin')
+                elif user['user_type'] == 'super_admin':
+                    cursor.execute("""
+                        SELECT middle_name, email, photo_path, admin_id, role
+                        FROM admins 
+                        WHERE admin_id = %s AND role = 'super_admin' AND status = 'active'
+                    """, (user['user_id'],))
+                    user_data = cursor.fetchone()
+                    
+                    if user_data:
+                        data.update({
+                            'middle_name': user_data['middle_name'] or '',
+                            'email': user_data['email'],
+                            'photo_path': user_data['photo_path'],
+                            'user_id_display': user_data['admin_id'],
+                            'role_display': 'Super Administrator',
+                            'department': 'Office of the University Registrar',
+                            'designation': 'Super Administrator'
+                        })
+                        
+            except Error as e:
+                print(f"Error fetching user data: {e}")
+            finally:
+                if connection.is_connected():
+                    cursor.close()
+                    connection.close()
+        
+        return data
     return {}
+
+@app.route('/AdminSettings')
+@login_required
+def admin_settings_page():
+    user_data = get_template_user_data()
+    
+    # Ensure only admin/faculty/super_admin can access
+    if user_data.get('user_type') not in ['admin', 'faculty', 'super_admin']:
+        return redirect('/login')
+    
+    return render_template('settings.html', **user_data)
+
+@app.route('/api/admin-faculty/profile', methods=['GET'])
+@login_required
+def get_admin_faculty_profile():
+    """Get profile data for admin or faculty"""
+    user = get_current_user()
+    
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    user_type = user.get('user_type')
+    user_id = user['user_id']
+    
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        if user_type in ['admin', 'super_admin']:
+            cursor.execute("""
+                SELECT admin_id, first_name, last_name, middle_name, 
+                       email, photo_path, role
+                FROM admins 
+                WHERE admin_id = %s AND status = 'active'
+            """, (user_id,))
+            data = cursor.fetchone()
+            
+            if data:
+                # For super_admin, adjust role display
+                role_display = 'Super Administrator' if data['role'] == 'super_admin' else data['role'].replace('_', ' ').title()
+                
+                profile_data = {
+                    'user_id': data['admin_id'],
+                    'first_name': data['first_name'],
+                    'last_name': data['last_name'],
+                    'middle_name': data['middle_name'] or '',
+                    'email': data['email'],
+                    'photo_path': data['photo_path'] or '',
+                    'role': role_display,
+                    'department': 'Office of the University Registrar',
+                    'designation': role_display,
+                    'user_type': 'admin' if data['role'] != 'super_admin' else 'super_admin'
+                }
+                
+        elif user_type == 'faculty':
+            cursor.execute("""
+                SELECT faculty_id, first_name, last_name, middle_name, 
+                       email, photo_path, department, designation, role
+                FROM faculty 
+                WHERE faculty_id = %s AND status = 'active'
+            """, (user_id,))
+            data = cursor.fetchone()
+            
+            if data:
+                profile_data = {
+                    'user_id': data['faculty_id'],
+                    'first_name': data['first_name'],
+                    'last_name': data['last_name'],
+                    'middle_name': data['middle_name'] or '',
+                    'email': data['email'],
+                    'photo_path': data['photo_path'] or '',
+                    'role': data['role'].replace('_', ' ').title() if data['role'] else 'Faculty',
+                    'department': data['department'],
+                    'designation': data['designation'],
+                    'user_type': 'faculty'
+                }
+        else:
+            return jsonify({'error': 'Invalid user type'}), 403
+        
+        if not data:
+            return jsonify({'error': 'User not found'}), 404
+        
+        return jsonify(profile_data)
+        
+    except Error as e:
+        print(f"Database error: {e}")
+        return jsonify({'error': 'Database error'}), 500
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+@app.route('/api/admin-faculty/profile/update', methods=['POST'])
+@login_required
+def update_admin_faculty_profile():
+    """Update profile for admin or faculty"""
+    user = get_current_user()
+    
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    user_type = user.get('user_type')
+    user_id = user['user_id']
+    data = request.json
+    
+    # Extract data
+    first_name = data.get('first_name', '').strip()
+    last_name = data.get('last_name', '').strip()
+    middle_name = data.get('middle_name', '').strip()
+    department = data.get('department', '').strip()
+    email = data.get('email', '').strip()
+    
+    if not first_name or not last_name:
+        return jsonify({'error': 'First name and last name are required'}), 400
+    
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+    
+    try:
+        cursor = connection.cursor()
+        
+        if user_type in ['admin', 'super_admin']:
+            # For admin, department is fixed
+            update_query = """
+                UPDATE admins 
+                SET first_name = %s, last_name = %s, middle_name = %s, 
+                    email = %s, updated_at = NOW()
+                WHERE admin_id = %s
+            """
+            cursor.execute(update_query, (
+                first_name, last_name, 
+                middle_name if middle_name else None,
+                email, user_id
+            ))
+            
+        elif user_type == 'faculty':
+            if not department:
+                return jsonify({'error': 'Department is required for faculty'}), 400
+            
+            update_query = """
+                UPDATE faculty 
+                SET first_name = %s, last_name = %s, middle_name = %s,
+                    department = %s, email = %s, updated_at = NOW()
+                WHERE faculty_id = %s
+            """
+            cursor.execute(update_query, (
+                first_name, last_name, 
+                middle_name if middle_name else None,
+                department, email, user_id
+            ))
+        else:
+            return jsonify({'error': 'Invalid user type'}), 403
+        
+        # Update session data
+        session['first_name'] = first_name
+        session['last_name'] = last_name
+        
+        connection.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Profile updated successfully',
+            'data': {
+                'first_name': first_name,
+                'last_name': last_name,
+                'middle_name': middle_name,
+                'department': department,
+                'email': email
+            }
+        })
+        
+    except Error as e:
+        connection.rollback()
+        print(f"Database error: {e}")
+        return jsonify({'error': 'Failed to update profile'}), 500
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+@app.route('/api/admin-faculty/change-password', methods=['POST'])
+@login_required
+def change_admin_faculty_password():
+    """Change password for admin or faculty"""
+    user = get_current_user()
+    
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    user_type = user.get('user_type')
+    user_id = user['user_id']
+    data = request.json
+    
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    confirm_password = data.get('confirm_password')
+    
+    if not current_password or not new_password or not confirm_password:
+        return jsonify({'error': 'All password fields are required'}), 400
+    
+    if new_password != confirm_password:
+        return jsonify({'error': 'New passwords do not match'}), 400
+    
+    if len(new_password) < 8:
+        return jsonify({'error': 'New password must be at least 8 characters'}), 400
+    
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        # Determine table based on user type
+        table = 'admins' if user_type in ['admin', 'super_admin'] else 'faculty'
+        id_field = 'admin_id' if user_type in ['admin', 'super_admin'] else 'faculty_id'
+        
+        # Get current password hash
+        cursor.execute(f"SELECT password_hash FROM {table} WHERE {id_field} = %s", (user_id,))
+        user_data = cursor.fetchone()
+        
+        if not user_data:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Verify current password
+        if not bcrypt.check_password_hash(user_data['password_hash'], current_password):
+            return jsonify({'error': 'Current password is incorrect'}), 401
+        
+        # Hash new password
+        new_password_hash = bcrypt.generate_password_hash(new_password).decode('utf-8')
+        
+        # Update password
+        update_query = f"UPDATE {table} SET password_hash = %s, updated_at = NOW() WHERE {id_field} = %s"
+        cursor.execute(update_query, (new_password_hash, user_id))
+        
+        connection.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Password changed successfully'
+        })
+        
+    except Error as e:
+        connection.rollback()
+        print(f"Database error: {e}")
+        return jsonify({'error': 'Failed to change password'}), 500
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+@app.route('/api/admin-faculty/upload-photo', methods=['POST'])
+@login_required
+def upload_admin_faculty_photo():
+    """Upload profile photo for admin or faculty"""
+    user = get_current_user()
+    
+    if not user:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    user_type = user.get('user_type')
+    user_id = user['user_id']
+    
+    if 'photo' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['photo']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    # Check file extension
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
+    if not '.' in file.filename or file.filename.split('.')[-1].lower() not in allowed_extensions:
+        return jsonify({'error': 'Invalid file type. Allowed: PNG, JPG, JPEG, GIF'}), 400
+    
+    # Create upload directory
+    upload_dir = 'static/uploads/profile_photos'
+    if not os.path.exists(upload_dir):
+        os.makedirs(upload_dir)
+    
+    # Generate unique filename
+    filename = f"{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file.filename.split('.')[-1]}"
+    filepath = os.path.join(upload_dir, filename)
+    relative_path = f"uploads/profile_photos/{filename}"
+    
+    try:
+        # Save file
+        file.save(filepath)
+        
+        # Determine table and update database
+        connection = get_db_connection()
+        if not connection:
+            os.remove(filepath)
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = connection.cursor()
+        
+        if user_type in ['admin', 'super_admin']:
+            update_query = "UPDATE admins SET photo_path = %s, updated_at = NOW() WHERE admin_id = %s"
+        elif user_type == 'faculty':
+            update_query = "UPDATE faculty SET photo_path = %s, updated_at = NOW() WHERE faculty_id = %s"
+        else:
+            os.remove(filepath)
+            return jsonify({'error': 'Invalid user type'}), 403
+        
+        cursor.execute(update_query, (relative_path, user_id))
+        connection.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Profile photo updated successfully',
+            'photo_path': f"/static/{relative_path}"
+        })
+        
+    except Exception as e:
+        print(f"Upload error: {e}")
+        return jsonify({'error': 'Failed to upload photo'}), 500
+    finally:
+        if 'connection' in locals() and connection.is_connected():
+            cursor.close()
+            connection.close()
 
 @app.route('/api/get_semesters_for_curriculum', methods=['GET'])
 @login_required
@@ -14046,9 +14574,8 @@ def get_programs():
         
     except Exception as e:
         logger.error(f"Error fetching programs: {e}", exc_info=True)
-        # Return empty array instead of failing completely
         return jsonify({
-            'success': False,  # Changed to False on error
+            'success': False,
             'programs': [],
             'semesters': [],
             'message': f'Error loading programs: {str(e)}'
@@ -14859,13 +15386,13 @@ def get_active_period():
     
 @app.route('/api/get_sections_with_semester', methods=['GET'])
 def get_sections_with_semester():
-    """Get sections for student registration - FIXED CURRICULUM HANDLING"""
+    """Get sections for student registration - FIXED FOR UNREAD RESULTS"""
     try:
         program_id = request.args.get('program_id')
         year_level = request.args.get('year_level')
         academic_year = request.args.get('academic_year')
         semester = request.args.get('semester')
-        curriculum_year = request.args.get('curriculum_year')  # This is curriculum_year like "2023"
+        curriculum_year = request.args.get('curriculum_year')
         
         print(f"=== DEBUG: Fetching sections ===")
         print(f"Program: {program_id}, Year: {year_level}, Academic Year: {academic_year}")
@@ -14874,129 +15401,256 @@ def get_sections_with_semester():
         if not all([program_id, year_level, academic_year, semester]):
             return jsonify({'success': False, 'message': 'Missing required parameters'})
         
-        # AUTO CONVERT semester numbers to semester names
-        semester_map = {
-            '1': '1st Semester',
-            '2': '2nd Semester', 
-            '3': '3rd Semester',
-            'first': '1st Semester',
-            'second': '2nd Semester',
-            'third': '3rd Semester'
-        }
-        
-        semester_name = semester_map.get(semester.lower(), semester)
-        
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
         
-        # Get academic_year_id
-        cursor.execute(
-            "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
-            (program_id, academic_year)
-        )
-        academic_year_result = cursor.fetchone()
-        if not academic_year_result:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Academic year not found'})
+        # CREATE SEPARATE CURSORS FOR EACH QUERY TO AVOID UNREAD RESULTS
+        cursor1 = conn.cursor(dictionary=True)
+        cursor2 = conn.cursor(dictionary=True)
+        cursor3 = conn.cursor(dictionary=True)
+        cursor4 = conn.cursor(dictionary=True)
+        cursor5 = conn.cursor(dictionary=True)
         
-        academic_year_id = academic_year_result['academic_year_id']
-        
-        # FIXED: Properly handle curriculum_year parameter
-        curriculum_id = None
-        
-        # If curriculum_year is provided, find the corresponding curriculum_id
-        if curriculum_year and curriculum_year != 'null' and curriculum_year != 'undefined':
-            cursor.execute(
-                "SELECT curriculum_id FROM curricula WHERE program_id = %s AND curriculum_year = %s AND academic_year = %s AND status = 'active'",
-                (program_id, curriculum_year, academic_year)
+        try:
+            # 1. Verify program exists
+            cursor1.execute(
+                "SELECT program_id, program_name FROM programs WHERE program_id = %s",
+                (program_id,)
             )
-            curriculum_result = cursor.fetchone()
+            program_result = cursor1.fetchone()
+            cursor1.close()  # Close cursor after fetching
             
-            if curriculum_result:
-                curriculum_id = curriculum_result['curriculum_id']
-                print(f"Found curriculum_id: {curriculum_id} for curriculum_year: {curriculum_year}")
+            if not program_result:
+                cursor2.close()
+                cursor3.close()
+                cursor4.close()
+                cursor5.close()
+                conn.close()
+                return jsonify({
+                    'success': False, 
+                    'message': f'Program {program_id} not found'
+                })
+            
+            print(f"Program found: {program_result['program_name']}")
+            
+            # 2. Get academic_year_id
+            cursor2.execute(
+                "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
+                (program_id, academic_year)
+            )
+            academic_year_result = cursor2.fetchone()
+            cursor2.close()  # Close cursor after fetching
+            
+            if not academic_year_result:
+                cursor3.close()
+                cursor4.close()
+                cursor5.close()
+                conn.close()
+                return jsonify({
+                    'success': False, 
+                    'message': f'Academic year {academic_year} not found for program {program_result["program_name"]}'
+                })
+            
+            academic_year_id = academic_year_result['academic_year_id']
+            
+            # 3. Try to find curriculum_id based on curriculum_year
+            curriculum_id = None
+            curriculum_info = None
+            
+            if curriculum_year and curriculum_year != 'null' and curriculum_year != 'undefined':
+                # Try exact match first
+                cursor3.execute(
+                    """SELECT curriculum_id, curriculum_name, curriculum_year 
+                    FROM curricula 
+                    WHERE program_id = %s AND curriculum_year = %s AND status = 'active' 
+                    ORDER BY academic_year DESC LIMIT 1""",
+                    (program_id, curriculum_year)
+                )
+                curriculum_result = cursor3.fetchone()
+                cursor3.close()  # Close cursor after fetching
+                
+                if curriculum_result:
+                    curriculum_id = curriculum_result['curriculum_id']
+                    curriculum_info = {
+                        'id': curriculum_id,
+                        'name': curriculum_result['curriculum_name'],
+                        'year': curriculum_result['curriculum_year']
+                    }
+                    print(f"✓ Found curriculum: {curriculum_info}")
+                else:
+                    cursor3.close()  # Close cursor even if no results
+                    # Try closest match with new cursor
+                    cursor3b = conn.cursor(dictionary=True)
+                    try:
+                        cursor3b.execute(
+                            """SELECT curriculum_id, curriculum_name, curriculum_year 
+                            FROM curricula 
+                            WHERE program_id = %s AND status = 'active' 
+                            ORDER BY ABS(CAST(curriculum_year AS SIGNED) - %s), academic_year DESC LIMIT 1""",
+                            (program_id, int(curriculum_year))
+                        )
+                        closest_result = cursor3b.fetchone()
+                        
+                        if closest_result:
+                            curriculum_id = closest_result['curriculum_id']
+                            curriculum_info = {
+                                'id': curriculum_id,
+                                'name': closest_result['curriculum_name'],
+                                'year': closest_result['curriculum_year']
+                            }
+                            print(f"✓ Found closest curriculum: {curriculum_info}")
+                        else:
+                            print(f"✗ No curriculum found for year: {curriculum_year}")
+                    finally:
+                        cursor3b.close()
             else:
-                print(f"No curriculum found for year: {curriculum_year}")
-                # Don't return error here - just proceed without curriculum filter
-        
-        # Get semester_id - FIXED QUERY
-        if curriculum_id:
-            # Use the found curriculum_id
-            cursor.execute(
-                "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND curriculum_id = %s AND (semester_number = %s OR semester_number LIKE %s)",
-                (academic_year_id, curriculum_id, semester_name, f'%{semester}%')
-            )
-        else:
-            # Fallback: get any semester if no curriculum provided or not found
-            cursor.execute(
-                "SELECT semester_id FROM semesters WHERE academic_year_id = %s AND (semester_number = %s OR semester_number LIKE %s) LIMIT 1",
-                (academic_year_id, semester_name, f'%{semester}%')
-            )
-        
-        semester_result = cursor.fetchone()
-        if not semester_result:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': f'Semester not found. Tried: {semester_name}'})
-        
-        semester_id = semester_result['semester_id']
-        
-        # Get sections for this semester - FIXED QUERY
-        query = """
-            SELECT 
-                ys.section_id,
-                ys.section_name,
-                ys.year_level,
-                ys.curriculum_id,
-                c.curriculum_year,
-                c.curriculum_name,
-                COUNT(DISTINCT s.subject_id) as subject_count
-            FROM year_sections ys
-            LEFT JOIN curricula c ON ys.curriculum_id = c.curriculum_id
-            LEFT JOIN subjects s ON ys.section_id = s.section_id AND s.status = 'active'
-            WHERE ys.program_id = %s 
-            AND ys.year_level = %s
-            AND ys.semester_id = %s
-            AND ys.status = 'active'
-        """
-        
-        params = [program_id, year_level, semester_id]
-        
-        # Add curriculum filter if we found a curriculum_id
-        if curriculum_id:
-            query += " AND ys.curriculum_id = %s"
-            params.append(curriculum_id)
-        
-        query += " GROUP BY ys.section_id, ys.section_name, ys.year_level, ys.curriculum_id, c.curriculum_year, c.curriculum_name ORDER BY ys.section_name"
-        
-        cursor.execute(query, params)
-        sections = cursor.fetchall()
-        
-        print(f"DEBUG: Found {len(sections)} sections")
-        for section in sections:
-            print(f"Section: {section['section_name']}, Curriculum: {section.get('curriculum_year', 'N/A')}")
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True, 
-            'sections': sections,
-            'debug_info': {
-                'program': program_id,
-                'year_level': year_level,
-                'academic_year': academic_year,
-                'semester_requested': semester,
-                'semester_used': semester_name,
-                'curriculum_year_requested': curriculum_year,
-                'curriculum_id_used': curriculum_id,
-                'sections_found': len(sections)
+                cursor3.close()  # Close unused cursor
+            
+            # 4. Get semester_id - IMPORTANT: semesters table has curriculum_id column
+            semester_map = {
+                '1': '1st Semester',
+                '2': '2nd Semester', 
+                '3': '3rd Semester',
+                'first': '1st Semester',
+                'second': '2nd Semester',
+                'third': '3rd Semester'
             }
-        })
-        
+            
+            semester_name = semester_map.get(semester.lower(), semester)
+            
+            # Build semester query based on whether we have curriculum_id
+            if curriculum_id:
+                cursor4.execute(
+                    """SELECT semester_id FROM semesters 
+                    WHERE academic_year_id = %s 
+                    AND semester_number = %s
+                    AND curriculum_id = %s
+                    AND status = 'active'""",
+                    (academic_year_id, semester_name, curriculum_id)
+                )
+            else:
+                # If no curriculum_id, get any active semester
+                cursor4.execute(
+                    """SELECT semester_id FROM semesters 
+                    WHERE academic_year_id = %s 
+                    AND semester_number = %s
+                    AND status = 'active'
+                    LIMIT 1""",
+                    (academic_year_id, semester_name)
+                )
+            
+            semester_result = cursor4.fetchone()
+            cursor4.close()  # Close cursor after fetching
+            
+            if not semester_result:
+                cursor5.close()
+                conn.close()
+                return jsonify({
+                    'success': False, 
+                    'message': f'Semester {semester_name} not found for academic year {academic_year}'
+                })
+            
+            semester_id = semester_result['semester_id']
+            
+            # 5. Build query to get sections from year_sections table
+            query_params = []
+            query = """
+                SELECT 
+                    ys.section_id,
+                    ys.section_name,
+                    ys.year_level,
+                    ys.curriculum_id,
+                    c.curriculum_year,
+                    c.curriculum_name,
+                    COUNT(DISTINCT sub.subject_id) as subject_count
+                FROM year_sections ys
+                LEFT JOIN curricula c ON ys.curriculum_id = c.curriculum_id
+                LEFT JOIN subjects sub ON ys.section_id = sub.section_id AND sub.status = 'active'
+                WHERE ys.program_id = %s 
+                AND ys.year_level = %s
+                AND ys.academic_year_id = %s
+                AND ys.semester_id = %s
+                AND ys.status = 'active'
+            """
+            
+            query_params.extend([program_id, year_level, academic_year_id, semester_id])
+            
+            if curriculum_id:
+                query += " AND (ys.curriculum_id = %s OR ys.curriculum_id IS NULL)"
+                query_params.append(curriculum_id)
+            
+            query += " GROUP BY ys.section_id, ys.section_name, ys.year_level, ys.curriculum_id, c.curriculum_year, c.curriculum_name ORDER BY ys.section_name"
+            
+            cursor5.execute(query, query_params)
+            sections = cursor5.fetchall()
+            cursor5.close()  # Close cursor after fetching
+            
+            print(f"DEBUG: Found {len(sections)} sections")
+            for section in sections:
+                print(f"  - Section: {section['section_name']}, Curriculum: {section.get('curriculum_year', 'N/A')}")
+            
+            conn.close()
+            
+            if len(sections) == 0:
+                return jsonify({
+                    'success': True, 
+                    'sections': [],
+                    'message': f'No sections found for Year {year_level}, {academic_year} {semester_name}',
+                    'program_name': program_result['program_name'],
+                    'curriculum_info': curriculum_info,
+                    'debug_info': {
+                        'program': program_id,
+                        'year_level': year_level,
+                        'academic_year': academic_year,
+                        'semester': semester_name,
+                        'curriculum_year_requested': curriculum_year,
+                        'curriculum_id_used': curriculum_id,
+                        'sections_found': 0
+                    }
+                })
+            
+            return jsonify({
+                'success': True, 
+                'sections': sections,
+                'program_name': program_result['program_name'],
+                'curriculum_info': curriculum_info,
+                'debug_info': {
+                    'program': program_id,
+                    'year_level': year_level,
+                    'academic_year': academic_year,
+                    'semester': semester_name,
+                    'curriculum_year_requested': curriculum_year,
+                    'curriculum_id_used': curriculum_id,
+                    'sections_found': len(sections)
+                }
+            })
+            
+        except Exception as inner_error:
+            # Ensure all cursors are closed
+            try:
+                cursor1.close()
+            except:
+                pass
+            try:
+                cursor2.close()
+            except:
+                pass
+            try:
+                cursor3.close()
+            except:
+                pass
+            try:
+                cursor4.close()
+            except:
+                pass
+            try:
+                cursor5.close()
+            except:
+                pass
+            conn.close()
+            raise inner_error
+            
     except Exception as e:
-        logger.error(f"Error fetching sections for registration: {e}")
+        logger.error(f"Error fetching sections for registration: {e}", exc_info=True)
         return jsonify({'success': False, 'message': str(e)})
     
 @app.route('/api/set_rtsp_url', methods=['POST'])
@@ -15202,7 +15856,7 @@ def initialize_session():
     student_status = {}
     
     if DEBUG_MODE: 
-        logger.debug("🟢 Detection flag RESET to False for new session")
+        logger.debug(" Detection flag RESET to False for new session")
     if DEBUG_MODE: 
         logger.debug(f"🧹 Cleared: {len(tracks)} tracks, {len(locked_tracks)} locked tracks, {len(pending_confirmations)} pending")
     if DEBUG_MODE: 
@@ -15217,7 +15871,7 @@ def initialize_session():
         if DEBUG_MODE: 
             logger.debug(f"📦 Received data: {data}")
         
-        # IMPORTANT FIX: Handle both schedule_id and subject_id
+        # IMPORTANT  Handle both schedule_id and subject_id
         schedule_id = data.get('schedule_id')
         subject_id = data.get('subject_id')
         
@@ -15440,7 +16094,7 @@ def initialize_session():
                 else:
                     logger.warning(f"  No schedule found with schedule_id={schedule_id}")
                     
-                    # CRITICAL FIX: Check if the URL passed subject information in the 'subjects' parameter
+                    #  Check if the URL passed subject information in the 'subjects' parameter
                     subjects_data = data.get('subjects', '[]')
                     
                     try:
@@ -15462,7 +16116,7 @@ def initialize_session():
                         if DEBUG_MODE: 
                             logger.debug(f"  Could not parse subjects JSON: {json_error}")
                     
-                    # IMPORTANT FIX: Check if schedule_id might actually be a subject_id
+                    # IMPORTANT  Check if schedule_id might actually be a subject_id
                     # Example: schedule_id=44 doesn't exist in class_schedules but subject_id=44 exists in subjects
                     if schedule_id and str(schedule_id).isdigit():
                         if DEBUG_MODE: 
@@ -15616,7 +16270,7 @@ def initialize_session():
                     else:
                         logger.warning(f"  No schedule found for subject_id={db_subject_id}")
                         
-                        # CRITICAL FIX: Since subject exists but has no schedule, use default room
+                        #  Since subject exists but has no schedule, use default room
                         room = 'TBA'  # Default room for subjects without schedules
                         if DEBUG_MODE: 
                             logger.debug(f"  Subject exists but has no schedule. Using default room: {room}")
@@ -15860,7 +16514,7 @@ def initialize_session():
                     # Don't raise error, just log it - session can continue without DB entry
                     pass
         
-        # 🟢 CRITICAL FIX: Initialize faces AFTER session is saved to database
+        #   Initialize faces AFTER session is saved to database
         initialize_faces_for_session()
         
         if connection and connection.is_connected():
@@ -15996,7 +16650,7 @@ def initialize_session():
         }), 500
     
     finally:
-        #    FIX: Properly close cursor and connection
+        #     Properly close cursor and connection
         if cursor:
             try:
                 cursor.close()
@@ -16084,7 +16738,7 @@ def get_class_students():
         if not connection:
             return jsonify({'success': False, 'message': 'Failed to connect to database'}), 500
         
-        #  FIX: Use buffered cursor to prevent "Unread result found" error
+        #   Use buffered cursor to prevent "Unread result found" error
         cursor = connection.cursor(dictionary=True, buffered=True)
         
         # Get URL parameters
@@ -16135,7 +16789,7 @@ def get_class_students():
             logger.error(f"  No section found for {program_id_to_search} {year_level_num}{section_to_search}")
             return jsonify({'success': False, 'message': 'Section not found'}), 404
         
-        #  🔧 NEW: GET SESSION START TIME AND THRESHOLD
+        #    NEW: GET SESSION START TIME AND THRESHOLD
         session_start_time = None
         threshold_seconds = 900  # Default 15 minutes
         
@@ -16159,7 +16813,7 @@ def get_class_students():
                     logger.debug(f"  No session info found, using default threshold: {threshold_seconds}s")
         
         #  STEP 2: GET REGULAR STUDENTS USING SECTION_ID (NOT PROGRAM/YEAR/SECTION)
-        #  FIX: Ensure we fetch all results and close this query properly
+        #   Ensure we fetch all results and close this query properly
         cursor.execute("""
             SELECT 
                 s.student_id, 
@@ -16181,7 +16835,7 @@ def get_class_students():
         
         regular_students = cursor.fetchall()
         
-        #  FIX: Consume any remaining results before next query
+        #   Consume any remaining results before next query
         cursor.fetchall()
         
         if DEBUG_MODE: 
@@ -16251,9 +16905,9 @@ def get_class_students():
         for temp_student in temporary_students:
             formatted_students.append(temp_student)
         
-        #  🔧 STEP 5: UPDATE STATUSES FROM ATTENDANCE WITH LATE THRESHOLD CHECK
+        #    STEP 5: UPDATE STATUSES FROM ATTENDANCE WITH LATE THRESHOLD CHECK
         if session_id:
-            #  FIX: Clear any previous results before new query
+            #   Clear any previous results before new query
             cursor.fetchall()
             
             # Get attendance records with timestamps
@@ -16275,7 +16929,7 @@ def get_class_students():
                 if record['student_id'] not in status_map:
                     current_status = record['status']
                     
-                    # 🔧 CHECK LATE THRESHOLD - Only if status is 'present' and we have session start time
+                    #   CHECK LATE THRESHOLD - Only if status is 'present' and we have session start time
                     if current_status == 'present' and session_start_time:
                         arrival_time = record['timestamp']
                         
@@ -16288,7 +16942,7 @@ def get_class_students():
                         time_difference = arrival_time - session_start_time
                         time_diff_seconds = time_difference.total_seconds()
                         
-                        # 🔧 CRITICAL FIX: Use >= instead of >
+                        #    Use >= instead of >
                         if time_diff_seconds >= threshold_seconds:
                             current_status = 'late'
                             if DEBUG_MODE:
@@ -16334,7 +16988,7 @@ def get_class_students():
         return jsonify({'success': False, 'message': str(e)}), 500
     
     finally:
-        #  FIX: Proper cleanup
+        #   Proper cleanup
         if cursor:
             try:
                 cursor.close()
@@ -16510,7 +17164,7 @@ def get_student_status():
             conn.close()
             return jsonify({'success': False, 'message': 'Section not found'}), 404
         
-        # 🔧 FIXED QUERY: Correct JOIN through curricula
+        #   FIXED QUERY: Correct JOIN through curricula
         cursor.execute("""
             SELECT 
                 s.student_id, 
@@ -16649,7 +17303,7 @@ def get_student_status():
             
             # Priority 2: Currently detected (real-time tracking)
             if student_id in safe_present_ids:
-                # FIX: Check if they're late based on current time
+                #  Check if they're late based on current time
                 current_status = 'present'
                 
                 # Check if they were previously missing
@@ -16686,7 +17340,7 @@ def get_student_status():
                         if DEBUG_MODE: 
                             logger.debug(f"  STUDENT RETURNED: {student_name} -> {original_status}")
                 else:
-                    # FIX: Check if they're late (arriving after threshold)
+                    #  Check if they're late (arriving after threshold)
                     if session_start_time:
                         current_time = datetime.now()
                         time_difference = current_time - session_start_time
@@ -17276,7 +17930,7 @@ def manage_student():
                     student_status[student_id] = 'excused'
                     
                     if DEBUG_MODE: 
-                        logger.debug(f"📝 REGULAR STUDENT EXCUSED: {student_name} ({student_id}) - {action_type}")
+                        logger.debug(f" REGULAR STUDENT EXCUSED: {student_name} ({student_id}) - {action_type}")
                     return jsonify({
                         'success': True, 
                         'title': 'Student Excused',
@@ -17309,7 +17963,7 @@ def manage_student():
                         student_status[student_id] = 'excused'
                         
                         if DEBUG_MODE: 
-                            logger.debug(f"📝 TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id})")
+                            logger.debug(f" TEMPORARY STUDENT EXCUSED: {temp_student['name']} ({student_id})")
                         return jsonify({
                             'success': True, 
                             'title': 'Student Excused',
@@ -18428,7 +19082,7 @@ def initialize_session_timing(schedule_id):
      #  RESET DETECTION FLAG WHEN STARTING NEW SESSION
     detectionStopped = False
     if DEBUG_MODE: 
-        logger.debug("🟢 Detection enabled for new session")
+        logger.debug(" Detection enabled for new session")
     
     try:
         connection = get_db_connection()
@@ -18795,7 +19449,7 @@ def enroll_unknown_face():
         existing_attendance = cursor.fetchone()
         
         if existing_attendance:
-            print(f"📝 Updating existing attendance record (was: {existing_attendance['status']})...")
+            print(f" Updating existing attendance record (was: {existing_attendance['status']})...")
             update_attendance_sql = """
                 UPDATE attendance 
                 SET status = 'present', timestamp = NOW(), name = %s
@@ -18805,7 +19459,7 @@ def enroll_unknown_face():
             print(f"   Updated existing attendance from '{existing_attendance['status']}' to 'present'")
         else:
             # Create new attendance record
-            print("📝 Creating new attendance record...")
+            print(" Creating new attendance record...")
             attendance_sql = """
                 INSERT INTO attendance 
                 (student_id, session_id, status, timestamp, name)
@@ -18982,7 +19636,7 @@ def resume_detection():
     global detectionStopped, FRAME_BUFFER
     detectionStopped = False
     FRAME_BUFFER = []  #  CLEAR THE BUFFER
-    print("🟢 Detection resumed via API - buffer cleared")
+    print(" Detection resumed via API - buffer cleared")
     return jsonify({'success': True, 'message': 'Detection resumed'})
 
 # ------------------------------------------------------------------
@@ -19732,7 +20386,7 @@ def student_left():
                 VALUES (%s, %s, NOW(), 'student', 'missing', %s)
             """, (student_id, student_name, session_id))
             if DEBUG_MODE: 
-                logger.debug(f"📝 CREATED new 'missing' attendance record for {student_name}")
+                logger.debug(f" CREATED new 'missing' attendance record for {student_name}")
         
         conn.commit()
         cursor.close()
@@ -19831,7 +20485,7 @@ def student_returned():
                 VALUES (%s, %s, NOW(), 'student', %s, %s)
             """, (student_id, student_name, original_status, session_id))
             if DEBUG_MODE: 
-                logger.debug(f"📝 CREATED new attendance record: {student_name} -> {original_status}")
+                logger.debug(f" CREATED new attendance record: {student_name} -> {original_status}")
         
         conn.commit()
         cursor.close()
@@ -20639,13 +21293,13 @@ def open_test_camera(rtsp_url):
                             test_camera_cap.release()
                             test_camera_cap = None
                 except Exception as e:
-                    print(f"  ❌ Attempt {i+1} failed: {e}")
+                    print(f"   Attempt {i+1} failed: {e}")
                     if test_camera_cap:
                         test_camera_cap.release()
                         test_camera_cap = None
             
             if not success:
-                print("❌ All connection attempts failed")
+                print(" All connection attempts failed")
                 return False
             
             # Get camera specs
@@ -20686,11 +21340,11 @@ def open_test_camera(rtsp_url):
             else:
                 test_camera_cap.release()
                 test_camera_cap = None
-                print("❌ Camera not responding consistently")
+                print(" Camera not responding consistently")
                 return False
             
     except Exception as e:
-        print(f"❌ Camera error: {e}")
+        print(f" Camera error: {e}")
         if test_camera_cap:
             test_camera_cap.release()
             test_camera_cap = None
@@ -20774,9 +21428,9 @@ def test_camera_grabber():
                 
                 # VLC behavior: Continue for a while even with errors
                 if error_count > 50:  # Increased tolerance
-                    print(f"❌ Grabber: Too many consecutive errors ({error_count})")
+                    print(f" Grabber: Too many consecutive errors ({error_count})")
                     if time.time() - last_success_time > 10.0:  # 10 seconds no frames
-                        print("❌ Connection lost for 10+ seconds")
+                        print(" Connection lost for 10+ seconds")
                         test_camera_active = False
                         break
                 
@@ -20791,10 +21445,10 @@ def test_camera_grabber():
                 last_log_time = current_time
                 
         except Exception as e:
-            print(f"❌ Grabber error: {e}")
+            print(f" Grabber error: {e}")
             time.sleep(0.01)  # Recoverable error
     
-    print("🛑 Grabber stopped")
+    print(" Grabber stopped")
 
 def test_frame_encoder():
     """Smooth encoding with buffer management like VLC"""
@@ -20898,10 +21552,10 @@ def test_frame_encoder():
                 last_log_time = current_time
                 
         except Exception as e:
-            print(f"❌ Encoder error: {e}")
+            print(f" Encoder error: {e}")
             time.sleep(0.01)
     
-    print("🛑 Encoder stopped")
+    print(" Encoder stopped")
 
 def create_test_placeholder():
     """Create HD placeholder frame"""
@@ -21017,7 +21671,7 @@ def generate_test_frames():
             print(f"📡 Stream error: {e}")
             time.sleep(0.01)
     
-    print("🛑 Stream stopped")
+    print(" Stream stopped")
 
 @app.route('/api/test_camera')
 def test_camera():
@@ -21237,7 +21891,7 @@ def test_camera():
         <div class="header">
             <div class="status-box">
                 <div class="status-led"></div>
-                <div class="status-text" id="status">{'🟢 HD LIVE STREAM' if success else '🔴 OFFLINE'}</div>
+                <div class="status-text" id="status">{' HD LIVE STREAM' if success else '🔴 OFFLINE'}</div>
                 <div class="camera-info" id="cameraInfo">VLC-like buffering • Adaptive quality</div>
             </div>
             <div class="metrics">
@@ -21381,12 +22035,12 @@ def test_camera():
             if (fps >= 25 && latency < 100) {{
                 fpsEl.className = 'metric-value fps-excellent';
                 latencyEl.className = 'metric-value fps-excellent';
-                statusText.textContent = '🟢 HD LIVE STREAM';
+                statusText.textContent = ' HD LIVE STREAM';
                 highLatencyCount = 0;
             }} else if (fps >= 20 && latency < 200) {{
                 fpsEl.className = 'metric-value fps-good';
                 latencyEl.className = 'metric-value fps-good';
-                statusText.textContent = '🟢 LIVE STREAM';
+                statusText.textContent = ' LIVE STREAM';
                 highLatencyCount = 0;
             }} else if (fps >= 15 && latency < 300) {{
                 fpsEl.className = 'metric-value fps-fair';
@@ -21492,6 +22146,303 @@ def test_camera_stream():
             'Connection': 'keep-alive'
         }
     )
+
+@app.route('/api/student/profile', methods=['GET'])
+@login_required
+def get_student_profile():
+    # Get current user from session
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    
+    # Check if user is a student
+    if user_type != 'student':
+        return jsonify({'error': 'Access denied - Student only'}), 403
+    
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        # Query to get student data with related program and section info
+        query = """
+        SELECT 
+            s.student_id,
+            s.first_name,
+            s.last_name,
+            s.middle_name,
+            s.email,
+            s.photo_path,
+            s.section_id,
+            s.curriculum_id,
+            ys.section_name,
+            ys.year_level,
+            p.program_name,
+            c.curriculum_name,
+            c.academic_year
+        FROM students s
+        LEFT JOIN year_sections ys ON s.section_id = ys.section_id
+        LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
+        LEFT JOIN programs p ON c.program_id = p.program_id
+        WHERE s.student_id = %s AND s.status = 'active'
+        """
+        
+        cursor.execute(query, (user_id,))
+        student = cursor.fetchone()
+        
+        if not student:
+            return jsonify({'error': 'Student not found or inactive'}), 404
+        
+        # Format year level
+        year_levels = ['', '1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year']
+        year_level_text = year_levels[student['year_level']] if student['year_level'] and student['year_level'] < len(year_levels) else 'N/A'
+        
+        # Prepare response
+        profile_data = {
+            'student_id': student['student_id'],
+            'first_name': student['first_name'],
+            'last_name': student['last_name'],
+            'middle_name': student['middle_name'] or '',
+            'email': student['email'],
+            'photo_path': student['photo_path'],
+            'section': student['section_name'] or '',
+            'year_level': year_level_text,
+            'course': student['program_name'] or '',
+            'curriculum': student['curriculum_name'] or '',
+            'academic_year': student['academic_year'] or ''
+        }
+        
+        return jsonify(profile_data)
+        
+    except Error as e:
+        print(f"Database error: {e}")
+        return jsonify({'error': 'Database error'}), 500
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+@app.route('/api/student/profile/update', methods=['POST'])
+@login_required
+def update_student_profile():
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    
+    # Check if user is a student
+    if user_type != 'student':
+        return jsonify({'error': 'Access denied - Student only'}), 403
+    
+    data = request.json
+    
+    # Extract and validate data
+    first_name = data.get('first_name', '').strip()
+    last_name = data.get('last_name', '').strip()
+    middle_name = data.get('middle_name', '').strip()
+    year_level = data.get('year_level', '').strip()
+    section = data.get('section', '').strip().upper()
+    
+    if not first_name or not last_name:
+        return jsonify({'error': 'First name and last name are required'}), 400
+    
+    # Convert year level text to number
+    year_level_map = {'1st Year': 1, '2nd Year': 2, '3rd Year': 3, '4th Year': 4}
+    year_level_num = year_level_map.get(year_level, 3)  # Default to 3rd year
+    
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        # First, find the section_id based on section name and year level
+        section_query = """
+        SELECT section_id 
+        FROM year_sections 
+        WHERE section_name = %s AND year_level = %s
+        LIMIT 1
+        """
+        
+        cursor.execute(section_query, (section, year_level_num))
+        section_result = cursor.fetchone()
+        
+        section_id = section_result['section_id'] if section_result else None
+        
+        # Update student profile
+        update_query = """
+        UPDATE students 
+        SET 
+            first_name = %s,
+            last_name = %s,
+            middle_name = %s,
+            section_id = %s,
+            updated_at = NOW()
+        WHERE student_id = %s
+        """
+        
+        cursor.execute(update_query, (
+            first_name, last_name, 
+            middle_name if middle_name else None,
+            section_id, 
+            user_id
+        ))
+        
+        # Update session names
+        session['first_name'] = first_name
+        session['last_name'] = last_name
+        
+        connection.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Profile updated successfully',
+            'data': {
+                'first_name': first_name,
+                'last_name': last_name,
+                'middle_name': middle_name,
+                'year_level': year_level,
+                'section': section
+            }
+        })
+        
+    except Error as e:
+        connection.rollback()
+        print(f"Database error: {e}")
+        return jsonify({'error': 'Failed to update profile'}), 500
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+@app.route('/api/student/change-password', methods=['POST'])
+@login_required
+def change_password():
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    
+    # Check if user is a student
+    if user_type != 'student':
+        return jsonify({'error': 'Access denied - Student only'}), 403
+    
+    data = request.json
+    
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+    confirm_password = data.get('confirm_password')
+    
+    if not current_password or not new_password or not confirm_password:
+        return jsonify({'error': 'All password fields are required'}), 400
+    
+    if new_password != confirm_password:
+        return jsonify({'error': 'New passwords do not match'}), 400
+    
+    if len(new_password) < 8:
+        return jsonify({'error': 'New password must be at least 8 characters'}), 400
+    
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get current password hash
+        cursor.execute("SELECT password_hash FROM students WHERE student_id = %s", (user_id,))
+        student = cursor.fetchone()
+        
+        if not student:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        # Verify current password
+        if not bcrypt.check_password_hash(student['password_hash'], current_password):
+            return jsonify({'error': 'Current password is incorrect'}), 401
+        
+        # Hash new password
+        new_password_hash = bcrypt.generate_password_hash(new_password).decode('utf-8')
+        
+        # Update password
+        update_query = "UPDATE students SET password_hash = %s, updated_at = NOW() WHERE student_id = %s"
+        cursor.execute(update_query, (new_password_hash, user_id))
+        
+        connection.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Password changed successfully'
+        })
+        
+    except Error as e:
+        connection.rollback()
+        print(f"Database error: {e}")
+        return jsonify({'error': 'Failed to change password'}), 500
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+@app.route('/api/student/upload-photo', methods=['POST'])
+@login_required
+def upload_profile_photo():
+    user_id = session.get('user_id')
+    user_type = session.get('user_type')
+    
+    # Check if user is a student
+    if user_type != 'student':
+        return jsonify({'error': 'Access denied - Student only'}), 403
+    
+    if 'photo' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['photo']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    # Check file extension
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
+    if not '.' in file.filename or file.filename.split('.')[-1].lower() not in allowed_extensions:
+        return jsonify({'error': 'Invalid file type. Allowed: PNG, JPG, JPEG, GIF'}), 400
+    
+    # Create upload directory if not exists
+    upload_dir = 'static/uploads/profile_photos'
+    if not os.path.exists(upload_dir):
+        os.makedirs(upload_dir)
+    
+    # Generate unique filename
+    filename = f"{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file.filename.split('.')[-1]}"
+    filepath = os.path.join(upload_dir, filename)
+    relative_path = f"uploads/profile_photos/{filename}"
+    
+    try:
+        # Save file
+        file.save(filepath)
+        
+        # Update database
+        connection = get_db_connection()
+        if not connection:
+            os.remove(filepath)  # Clean up if DB fails
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = connection.cursor()
+        update_query = "UPDATE students SET photo_path = %s, updated_at = NOW() WHERE student_id = %s"
+        cursor.execute(update_query, (relative_path, user_id))
+        connection.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Profile photo updated successfully',
+            'photo_path': f"/static/{relative_path}"
+        })
+        
+    except Exception as e:
+        print(f"Upload error: {e}")
+        return jsonify({'error': 'Failed to upload photo'}), 500
+    finally:
+        if 'connection' in locals() and connection.is_connected():
+            cursor.close()
+            connection.close()
+
 
 if __name__ == "__main__":
     latest_frame = None
@@ -21714,7 +22665,7 @@ IP.2 = {current_ip}
                     result = subprocess.run(check_cmd, capture_output=True, text=True)
                     
                     if "Flask Port 5000" not in result.stdout:
-                        print("🔧 Adding firewall rule...")
+                        print("  Adding firewall rule...")
                         add_cmd = [
                             'netsh', 'advfirewall', 'firewall', 'add', 'rule',
                             'name="Flask Port 5000"', 'dir=in', 'action=allow',
@@ -21756,10 +22707,10 @@ IP.2 = {current_ip}
                 except:
                     print("⚠️  Could not verify certificate (but will use it)")
             else:
-                print("❌ Certificates not created, using HTTP")
+                print(" Certificates not created, using HTTP")
                 ssl_context = None
         else:
-            print("❌ Using HTTP (camera may not work)")
+            print(" Using HTTP (camera may not work)")
             ssl_context = None
         
         # Add firewall rule
@@ -21784,10 +22735,10 @@ IP.2 = {current_ip}
             # Show HTTP URLs
             for ip in ips:
                 print(f"      → http://{ip}:5000")
-            print(f"\n❌ WARNING: Camera requires HTTPS!")
+            print(f"\n WARNING: Camera requires HTTPS!")
             print(f"   HTTPS failed, so camera may not work")
         
-        print(f"\n🔧 Starting server on port 5000...")
+        print(f"\n  Starting server on port 5000...")
         print(f"═" * 60 + "\n")
         
         # Start server with proper configuration
@@ -21814,7 +22765,7 @@ IP.2 = {current_ip}
     
     except Exception as e:
         logger.error(f"Server error: {e}")
-        print(f"\n❌ Server error: {e}")
+        print(f"\n Server error: {e}")
         print("Press Enter to exit...")
         input()
     
