@@ -275,7 +275,7 @@
 
     .form-field select:focus {
       outline: none;
-      border-color: #4a6fa9;
+      border-color: #6f815c;
       box-shadow: 0 0 0 3px rgba(74, 111, 169, 0.1);
     }
 
@@ -320,7 +320,7 @@
 
     .form-group select:focus {
       outline: none;
-      border-color: #4a6fa9;
+      border-color: #6f815c;
       box-shadow: 0 0 0 3px rgba(74, 111, 169, 0.1);
     }
 
@@ -455,9 +455,12 @@
     }
 
     .btn-primary { 
-      background: linear-gradient(135deg, #4a6fa9 0%, #3b5b8d 100%);
+      background: linear-gradient(135deg, #6f815c 0%, #3b5b8d 100%);
       color: #fff;
       box-shadow: 0 2px 4px rgba(74, 111, 169, 0.2);
+    }
+    .btn-primary:hover, .btn-warning:hover, .btn-success:hover, .btn-secondary:hover { 
+      background: #343b2b;
     }
 
     .btn-primary:hover:not(:disabled) { 
@@ -486,7 +489,7 @@
     }
 
     .btn-warning {
-      background: #4a6fa9;
+      background: #6f815c;
       color: white;
       box-shadow: 0 2px 4px rgba(255, 193, 7, 0.2);
     }
@@ -880,5 +883,5 @@
 .checkbox-label input[type="checkbox"] {
   margin-right: 8px;
   transform: scale(1.1);
-  accent-color: #4a6fa9;
+  accent-color: #6f815c;
 }

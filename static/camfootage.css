@@ -216,7 +216,7 @@
 
         .search-bar input:focus {
             outline: none;
-            border-color: var(--primary);
+            border-color: #6f815c;
             box-shadow: 0 0 0 2px var(--primary-light);
         }
 
@@ -375,7 +375,7 @@
 
 
         .action-toggle {
-            background: #4a6fa9;
+            background: #6f815c;
             color: white;
             border: none;
             padding: 0.35rem 1rem;
@@ -397,7 +397,7 @@
             transform: translate(-50%, 100%);
         }
         .action-toggle:hover {
-            background: #3b5b8d;
+            background: #343b2b;
         }
         .action-menu {
             position: absolute;
@@ -581,7 +581,7 @@
         }
 
         .btn-submit {
-            background: #4a6fa9;
+            background: #6f815c;
             color: white;
         }
 
@@ -644,7 +644,7 @@
         }
 
         .student-count .material-icons {
-            color: #4a6fa9 !important;
+            color: #6f815c !important;
         }
 
         .student-ratio {
@@ -657,7 +657,7 @@
         }
 
         .student-ratio #detected-count {
-            color: #4a6fa9;
+            color: #6f815c;
             font-weight: 600;
         }
 
@@ -1070,12 +1070,12 @@
         .btn-submit {
             padding: 0.5rem 1rem;
             border-radius: 8px;
-            background-color: var(--primary);
+            background-color:#6f815c;
             color: white;
             font-weight: 600;
             transition: background-color 0.2s;
         }
-        .btn-submit:hover { background-color: #4338ca; }
+        .btn-submit:hover { background-color: #343b2b; }
 
         .btn-cancel {
             padding: 0.5rem 1rem;
@@ -1177,7 +1177,7 @@
         .notification-content.success .notification-icon { color: var(--success); }
         .notification-content.error .notification-icon { color: var(--danger); }
         .notification-content.warning .notification-icon { color: var(--warning); }
-        .notification-content.info .notification-icon { color: var(--primary); }
+        .notification-content.info .notification-icon { color: #6f815c; }
 
         .select-all { margin-bottom: 1rem; font-weight: 600; }
 

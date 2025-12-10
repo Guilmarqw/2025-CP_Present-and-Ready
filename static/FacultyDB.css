@@ -194,11 +194,11 @@ body {
     align-items: center;
     justify-content: center;
     font-size: 16px;
-    color: #5c6bc0;
+    color: #6f815c;
 }
 
 .action-btn:hover {
-    background-color: #5475a8 !important;
+    background-color: #343b2b !important;
     border-radius: 5px;
 }
 
@@ -208,7 +208,7 @@ body {
 
 /* Invite Button */
 .invite-btn {
-    background: #4a6fa9;
+    background: #6f815c;
     color: white;
     border: none;
     padding: 10px 20px;
@@ -223,7 +223,7 @@ body {
 }
 
 .invite-btn:hover {
-    background: #3b5b8d;
+    background: #343b2b;
 }
 
 .invite-link-container {
@@ -247,7 +247,7 @@ body {
 }
 
 .copy-btn {
-    background: #4a6fa9;
+    background: #6f815c;
     color: white;
     border: none;
     padding: 8px 16px;
@@ -260,7 +260,7 @@ body {
 }
 
 .copy-btn:hover {
-    background: #3b5b8d;
+    background: #343b2b;
 }
 
 .copy-status {
@@ -393,12 +393,12 @@ body {
 }
 
 .btn-submit {
-    background: #11998e;
+    background: #6f815c;
     color: white;
 }
 
 .btn-submit:hover {
-    background: #0d7f68;
+    background: #343b2b;
 }
 
 .btn-delete {
@@ -540,13 +540,13 @@ body {
 
 .quick-btn:hover {
     background-color: #f8f9fa;
-    border-color: #007bff;
+    border-color: #6f815c;
 }
 
 .quick-btn.active {
-    background-color: #007bff;
+    background-color: #6f815c;
     color: white;
-    border-color: #007bff;
+    border-color: #6f815c  ;
 }
 
 .link-info {

@@ -117,7 +117,7 @@
             border: none;
             cursor: pointer;
             font-size: 16px;
-            color: #5c6bc0;
+            color: #6f815c;
             transition: color 0.3s; 
             margin-left: 0.9rem;
           }
@@ -222,7 +222,7 @@
   }
 
   #addAcademicYearBtn.btn.btn-primary, #addSemesterBtn.btn.btn-primary {
-    background-color: #4a6fa9;
+    background-color: #6f815c;
     color: white;
     border: none;
     padding: 8px 14px;
@@ -230,12 +230,14 @@
     cursor: pointer;
     margin-bottom: 1rem;
   }
-
+#addAcademicYearBtn.btn.btn-primary:hover, #addSemesterBtn.btn.btn-primary:hover {
+    background-color: #343b2b;
+  }
   #addSemesterBtn.btn.btn-primary:hover {
-    background-color: #3b5b8d;
+    background-color: #343b2b;
   }
     .btn-view {
-      background: #4a6fa9;
+      background: #6f815c;
       color: white;
       padding: 5px 10px;
       border-radius: 4px;
@@ -245,7 +247,7 @@
     }
 
     .btn-view:hover {
-      background: #3b5b8d;
+      background: #343b2b;
       color: white;
     }
 
@@ -377,12 +379,12 @@
     }
 
     .btn-primary { 
-      background: #4a6fa9; 
+      background: #6f815c; 
       color: #fff; 
     }
 
     .btn-primary:hover { 
-      background: #3b5b8d; 
+      background: #343b2b; 
     }
 
     .btn-secondary { 
@@ -395,15 +397,15 @@
     }
 
     .btn-success {
-      background: #4a6fa9;
+      background: #6f815c;
       color: white;
     }
     #confirmBtn{
-      background-color: #4a6fa9;
+      background-color: #6f815c;
       color: white;
     }
     .btn-success:hover {
-      background: #218838;
+      background: #343b2b;
     }
 
     .btn-success:disabled {
@@ -450,7 +452,7 @@
       margin-right: 10px;
       width: 18px;
       height: 18px;
-      accent-color: #4a6fa9;
+      accent-color: #6f815c;
     }
 
     .checkbox-group .checkbox-label {
@@ -466,7 +468,7 @@
     }
 
     .checkbox-group .checkbox-label:hover {
-      border-color: #4a6fa9;
+      border-color: #6f815c;
       background: #e8f0fe;
     }
 
@@ -475,7 +477,7 @@
     }
 
     .checkbox-group .checkbox-label.checked {
-      border-color: #4a6fa9;
+      border-color: #6f815c;
       background: #e3f2fd;
       color: #2c3e50;
     }
@@ -640,20 +642,20 @@
   background: none;
   border: none;
   font-size: 16px;
-  color: #5c6bc0;
+  color: #6f815c;
   cursor: pointer;      
   padding: 8px 16px;
   transition: color 0.2s;
 }
 #semesterManagementPage .action-buttons .btn:hover, #academicYearsTable .action-buttons .btn:hover {
-  background: #3b5b8d;       /* same blue as .btn-edit */
+  background: #343b2b !important;       /* same blue as .btn-edit */
   color: white;
 
 }
 
 /* Keep the delete button red on hover */
 #academicYearsTable .action-buttons .btn-danger:hover {
-  background: #3b5b8d;
+  background: #343b2b;
   color: white;
 }
     .action-buttons {
@@ -669,11 +671,11 @@
     }
 
     .btn-edit:hover {
-            background: #3b5b8d;
+            background: #343b2b;
       color: white;
     }
     .btn-danger:hover {
-            background: #3b5b8d;
+            background: #343b2b !important;
       color: white;
     }
     #addSubjectBtn {
@@ -839,7 +841,7 @@
 }
 
 .unified-table thead th {
-  background: #4a6fa9;
+  background: #6f815c;
   color: white;
   padding: 16px 12px;
   text-align: center;
@@ -886,7 +888,7 @@
 }
 
 .unified-table .action-buttons .btn-danger:hover {
-  background: #e74c3c;
+  background: #343b2b;
 }
 
 .badge {
@@ -935,7 +937,7 @@
 }
 
 .badge-current {
-    background-color: #2196f3;
+    background-color: #6f815c;
     color: white;
     padding: 3px 6px;
     border-radius: 8px;

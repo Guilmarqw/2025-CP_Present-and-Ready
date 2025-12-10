@@ -109,7 +109,6 @@ body {
     background-color: rgba(52, 152, 219, 0.2);
     color: #2c3e50;
     padding-left: 20px;
-    box-shadow: inset 3px 0 0 #3498db;
 }
 
 .nav-items a i {
@@ -145,7 +144,7 @@ body {
 
 .dropdown .dropdown-btn:hover {
     background-color: rgba(52, 152, 219, 0.3);
-    color: #2c3e50;
+    color: black;
     padding-left: 20px;
 }
 
@@ -165,10 +164,10 @@ body {
 }
 
 .dropdown-content li a:hover {
-    background-color: rgba(52, 152, 219, 0.35);
-    color: #2980b9;
+    background-color: none !important;
+    color: none !important;
     padding-left: 25px;
-    border-left: 3px solid #3498db;
+    border-left: none !important;
 }
 
 /* Main Content Styles */

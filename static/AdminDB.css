@@ -41,6 +41,7 @@ body {
     border-radius: 8px;
     padding: 25px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+
 }
 
 .dashboard-content h3 {
@@ -428,7 +429,7 @@ body {
     align-items: center;
     gap: 10px;
     padding: 12px 20px;
-    background: #4a6fa9;
+    background: #445f20;
     color: white;
     border-radius: 25px;
     font-weight: bold;
@@ -491,11 +492,11 @@ body {
 
 /* Status indicators */
 .system-overview-container.has-active-period {
-    border-left: 4px solid #28a745;
+    border-left: none !important;
 }
 
 .system-overview-container.no-active-period {
-    border-left: 4px solid #dc3545;
+    border-left: none !important;
     background: #fff5f5;
 }
 

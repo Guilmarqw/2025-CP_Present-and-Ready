@@ -1,7 +1,7 @@
         .profile-container { max-width: 2000px;   }
         .profile-card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }
         .profile-header {
-            background: #4a6fa9;
+            background: #6f815c;
             color: white; padding: 40px 30px; text-align: center; position: relative;
         }
         .profile-avatar {
@@ -37,7 +37,7 @@
 
 
         .info-label {
-            font-weight: 600; color: #4a6fa9; font-size: 0.9rem;
+            font-weight: 600; color: #6f815c; font-size: 0.9rem;
             text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;
         }
         .info-value {
@@ -50,8 +50,8 @@
         .btn { padding: 14px 32px; border-radius: 10px; font-size: 1.05rem; font-weight: 600;
             cursor: pointer; transition: all 0.3s ease; display: inline-flex;
             align-items: center; gap: 10px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .btn-edit { background: #4a6fa9; color: white; }
-        .btn-edit:hover { background: #5a6fd8; transform: translateY(-3px); }
+        .btn-edit { background: #6f815c; color: white; }
+        .btn-edit:hover { background: #343b2b; transform: translateY(-3px); }
         .btn-password { background: #28a745; color: white; }
         .btn-password:hover { background: #218838; transform: translateY(-3px); }
 
@@ -105,9 +105,9 @@
             width: 100%; padding: 12px 15px; border: 1px solid #ddd; border-radius: 8px;
             font-size: 1rem; transition: border 0.3s;
         }
-        .form-group input:focus { outline: none; border-color: #4a6fa9; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+        .form-group input:focus { outline: none; border-color: #6f815c; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
         .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-        .btn-save { background: #4a6fa9; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-save { background: #6f815c; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
         .btn-cancel { background: #6c757d; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
 
         .profile-avatar { position: relative; width: 150px; height: 150px; border-radius: 50%; overflow: hidden; background: #f0f2f5; border: 5px solid #ffffff; box-shadow: 0 6px 20px rgba(0,0,0,0.15); cursor: pointer; transition: all 0.3s ease; margin: 0 auto 20px; }

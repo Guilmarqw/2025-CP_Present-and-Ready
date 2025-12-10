@@ -35,7 +35,7 @@
         }
 
         .header-btn {
-            background-color: #4a6fa9;
+            background-color: #6f815c;
             color: white;
             padding: 8px 16px;
             border-radius: 6px;
@@ -47,7 +47,7 @@
         }
 
         .header-btn:hover {
-            background-color: #3b5b8d;
+            background-color: #343b2b;
         }
 
         .content-wrapper {
@@ -184,7 +184,7 @@
             width: 200px;
             margin: 0 auto;
             padding: 12px;
-            background-color: #4a6fa9;
+            background-color: #6f815c;
             color: white;
             border: none;
             border-radius: 8px;
@@ -195,7 +195,7 @@
         }
 
         #startBtn:hover {
-            background-color: #3b5b8d;
+            background-color: #343b2b;
             transform: translateY(-2px);
         }
 
@@ -262,7 +262,7 @@
         }
 
         .warning-buttons button:hover {
-            background-color: #4a6fa9;
+            background-color: #343b2b;
         }
 
         /* Responsive Design */
@@ -352,7 +352,7 @@
 
 .modal-btn {
     padding: 8px 16px;
-    background: #4a6fa9;
+    background: #6f815c;
     color: white;
     border: none;
     border-radius: 4px;
@@ -383,7 +383,7 @@
 }
 
 .test-btn {
-    background: #4a6fa9;
+    background: #6f815c;
     color: white;
     border: none;
     padding: 12px 20px;
@@ -394,7 +394,7 @@
 }
 
 .test-btn:hover {
-    background: #3b5b8d;
+    background: #343b2b;
 }
 
 .rtsp-hint {
@@ -466,7 +466,7 @@
 }
 
 .modal-btn {
-    background: #4a6fa9;
+    background: #6f815c;
     color: white;
     border: none;
     padding: 10px 20px;
@@ -475,7 +475,7 @@
 }
 
 .modal-btn:hover {
-    background: #3b5b8d;
+    background:#343b2b;
 }
 
 .loading-indicator {
@@ -680,6 +680,6 @@
 }
 
 .camera-control-btn.primary:hover {
-    background: #0056b3;
-    border-color: #0056b3;
+    background: #343b2b;;
+    border-color: #343b2b;
 }
