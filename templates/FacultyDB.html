@@ -67,7 +67,6 @@
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h2 class="modal-title">Invite Faculty Member</h2>
-                <span class="close">&times;</span>
             </div>
             <div class="modal-body">
                 <!-- Time Duration Settings -->
@@ -140,7 +139,6 @@
     <div class="modal-content" style="max-width: 600px;">
         <div class="modal-header">
             <h2 class="modal-title">Edit Faculty Member</h2>
-            <span class="close">&times;</span>
         </div>
         <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
             <form id="editFacultyMemberForm">
@@ -221,7 +219,6 @@
         <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h2 class="modal-title">Faculty Member Details</h2>
-                <span class="close">&times;</span>
             </div>
             <div class="modal-body">
                 <div class="faculty-details">
@@ -289,7 +286,6 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title">Delete Faculty Member</h2>
-                <span class="close">&times;</span>
             </div>
             <div class="modal-body">
                 <p>Are you sure you want to delete <strong id="deleteFacultyMemberName"></strong>? This action cannot be undone.</p>
@@ -397,11 +393,11 @@
             <td style="width: 140px;">${facultyMember.designation}</td>
             <td style="width: 100px; text-align: center;">
                 <div style="display: flex; gap: 1px; justify-content: center;">
-                    <button class="action-btn edit-btn" data-id="${facultyId}" title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
                     <button class="action-btn view-btn" data-id="${facultyId}" title="View">
                         <i class="fas fa-eye"></i>
+                    </button>
+                                        <button class="action-btn edit-btn" data-id="${facultyId}" title="Edit">
+                        <i class="fas fa-edit"></i>
                     </button>
                     <button class="action-btn delete-btn" data-id="${facultyId}" title="Delete">
                         <i class="fas fa-trash"></i>

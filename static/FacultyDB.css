@@ -204,7 +204,15 @@ body {
 
 .action-btn.edit-btn:hover   { background: #4caf50; color: white; }
 .action-btn.view-btn:hover   { background: #2196f3; color: white; }
-.action-btn.delete-btn:hover { background: #f44336; color: white; }
+.action-btn.delete-btn {
+    color: #e74c3c !important;
+}
+.action-btn.delete-btn:hover {
+    background-color: #e74c3c !important;   /* Bright red on hover */
+    color: white !important;
+    border-radius: 5px;
+    transform: scale(1.08);
+}
 
 /* Invite Button */
 .invite-btn {
@@ -474,7 +482,7 @@ body {
 
 .alert-btn {
     padding: 8px 20px;
-    background: #11998e;
+    background: #6f815c;
     color: white;
     border: none;
     border-radius: 4px;
@@ -483,7 +491,7 @@ body {
 }
 
 .alert-btn:hover {
-    background: #0d7f68;
+    background: #343b2b;
 }
 
 /* Duration Controls */

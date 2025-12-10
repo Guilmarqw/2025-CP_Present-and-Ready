@@ -8,6 +8,83 @@
   <link rel="stylesheet" href="../static/classsched.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='classsched.css') }}">
 </head>
+<style>/* Delete Confirmation Modal */
+.delete-modal-overlay {
+     display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      overflow-y: auto;
+      padding: 20px 0;
+}
+
+.delete-modal {
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      width: 500px;
+      max-width: 90%;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+      max-height: 90vh;
+      overflow-y: auto;
+}
+
+@keyframes modalPop {
+  from { transform: scale(0.9); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+.delete-modal-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 10px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.delete-warning-icon {
+      color: #e74c3c;
+      margin: 0;
+      font-size: 20px;
+}
+
+.delete-modal-header h3 {
+  margin: 0;
+  color: #e74c3c;
+  font-size: 1.4rem;
+}
+
+.delete-modal-body {
+    color: #666;
+        text-align: center;
+    line-height: 1.6;
+    margin: 0 0 20px 0;
+}
+
+.delete-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+.btn-danger {
+  background: #e74c3c;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c0392b;
+}</style>
 <body>
 
   <!-- Sidebar -->
@@ -15,7 +92,7 @@
 
   <div class="main-content">
     <div class="header">
-      <h2><i class="fas fa-calendar-alt"></i> Class Schedules</h2>
+      <h2> Class Schedules</h2>
       <div class="search-box">
         <i class="fas fa-search"></i>
         <input type="text" placeholder="Search class schedules...">
@@ -37,7 +114,7 @@
       <option value="" disabled selected>Choose Program</option>
       <option value="CS">BS Computer Science</option>
       <option value="IT">BS Information Technology</option>
-      <option value="ACT">Assistive in Computer Technology</option>
+      <option value="ACT">Associate in Computer Technology</option>
     </select>
   </div>
   
@@ -189,7 +266,7 @@
           <button type="reset" class="btn" style="background: #6c757d; color: white;" id="resetBtn">
             <i class="fas fa-undo"></i> Reset All
           </button>
-          <button type="button" class="btn btn-secondary" id="clearPendingBtn" style="display: none;">
+          <button  type="button" class="btn btn-secondary" id="clearPendingBtn" style="display: none;">
             <i class="fas fa-trash"></i> Clear Pending
           </button>
           <button type="submit" class="btn btn-primary" id="saveAllBtn" disabled>
@@ -218,8 +295,29 @@
   <tbody></tbody>
 </table>
     </div>
+  </div><!-- Delete Confirmation Modal -->
+<div class="delete-modal-overlay" id="deleteModalOverlay">
+  <div class="delete-modal">
+    <div class="delete-modal-header">
+      <i class="fas fa-exclamation-triangle delete-warning-icon"></i>
+      <h3>Confirm Deletion</h3>
+    </div>
+    <div class="delete-modal-body">
+      <p id="deleteModalMessage">
+        Are you sure you want to delete all schedules for <strong id="deleteSubjectCode"></strong>?
+      </p>
+      <p style="color:#e74c3c; font-size:0.9rem; margin-top:10px;">
+        This action cannot be undone.
+      </p>
+    </div>
+    <div class="delete-modal-footer">
+      <button class="btn btn-secondary" id="cancelDeleteBtn">Cancel</button>
+      <button class="btn btn-danger" id="confirmDeleteBtn">
+        <i class="fas fa-trash"></i> Delete Permanently
+      </button>
+    </div>
   </div>
-
+</div>
   <!-- Warning Modal -->
   <div class="modal-overlay" id="modalOverlay">
     <div class="modal">
@@ -933,7 +1031,7 @@ function loadCurricula() {
             <td>${rooms.join(', ')}</td>
             <td class="action-btns">
                 <button class="action-btns delete" onclick="deleteScheduleGroup('${group.subject_code}', ${group.schedules[0].section_id})" title="Delete">
-                    <i class="fas fa-trash-alt"></i>
+                    <i class="fas fa-trash"></i>
                 </button>
             </td>
         `;
@@ -948,26 +1046,64 @@ function loadCurricula() {
         const displayHour = hour === 0 ? 12 : (hour > 12 ? hour - 12 : hour);
         return `${displayHour}:${minutes} ${period}`;
     }
+let deleteCallback = null; // Holds the function to run when user confirms
 
-    window.deleteScheduleGroup = function(subjectCode, sectionId) {
-        if (!confirm(`Delete all schedules for ${subjectCode}?`)) return;
-        
-        const scheduleIds = allSchedules
-            .filter(s => s.subject_code === subjectCode && s.section_id === sectionId)
-            .map(s => s.schedule_id);
-        
-        Promise.all(scheduleIds.map(id => 
-            fetch('/api/delete_schedule', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ schedule_id: id })
-            })
-        ))
-        .then(() => {
-            showModal('Schedules deleted successfully', 'Success');
-            loadAllSchedules();
-        });
-    }
+// Open Delete Modal
+window.deleteScheduleGroup = function(subjectCode, sectionId) {
+  document.getElementById('deleteSubjectCode').textContent = subjectCode;
+  document.getElementById('deleteModalOverlay').style.display = 'flex';
+
+  // Store what needs to be deleted when user confirms
+  deleteCallback = () => {
+    const scheduleIds = allSchedules
+      .filter(s => s.subject_code === subjectCode && s.section_id === sectionId)
+      .map(s => s.schedule_id);
+
+    Promise.all(scheduleIds.map(id => 
+      fetch('/api/delete_schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schedule_id: id })
+      }).then(r => r.json())
+    ))
+    .then(responses => {
+      const allSuccess = responses.every(r => r.success);
+      if (allSuccess) {
+        showModal('All schedules deleted successfully', 'Success');
+        loadAllSchedules();
+      } else {
+        showModal('Some schedules could not be deleted.', 'Error');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      showModal('Deletion failed. Please try again.', 'Error');
+    })
+    .finally(() => {
+      document.getElementById('deleteModalOverlay').style.display = 'none';
+    });
+  };
+};
+
+// Confirm Delete Button
+document.getElementById('confirmDeleteBtn').addEventListener('click', () => {
+  if (deleteCallback) deleteCallback();
+  deleteCallback = null;
+});
+
+// Cancel Button or Click Outside
+document.getElementById('cancelDeleteBtn').addEventListener('click', () => {
+  document.getElementById('deleteModalOverlay').style.display = 'none';
+  deleteCallback = null;
+});
+
+// Click outside modal to cancel
+document.getElementById('deleteModalOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('deleteModalOverlay')) {
+    document.getElementById('deleteModalOverlay').style.display = 'none';
+    deleteCallback = null;
+  }
+});
 
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {

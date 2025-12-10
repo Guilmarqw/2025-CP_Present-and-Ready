@@ -333,7 +333,7 @@
     /* Loading state for auto-population */
     .loading-field {
       position: relative;
-      background: linear-gradient(90deg, #f8f9fa 0%, #f8f9fa 50%, #e9ecef 50%, #f8f9fa 100%);
+      background: #445f20;
       background-size: 200% 100%;
       animation: loading 1.5s infinite;
     }
@@ -455,7 +455,7 @@
     }
 
     .btn-primary { 
-      background: linear-gradient(135deg, #6f815c 0%, #3b5b8d 100%);
+      background: #6f815c;
       color: #fff;
       box-shadow: 0 2px 4px rgba(74, 111, 169, 0.2);
     }
@@ -464,7 +464,6 @@
     }
 
     .btn-primary:hover:not(:disabled) { 
-      background: linear-gradient(135deg, #3b5b8d 0%, #2e4a70 100%);
       transform: translateY(-1px);
       box-shadow: 0 4px 8px rgba(74, 111, 169, 0.3);
     }
@@ -495,21 +494,19 @@
     }
 
     .btn-warning:hover:not(:disabled) {
-      background: linear-gradient(135deg, #e0a800 0%, #d39e00 100%);
+      background: #343b2b;
       transform: translateY(-1px);
       box-shadow: 0 4px 8px rgba(255, 193, 7, 0.3);
     }
 
     .btn-secondary {
-      background: #6c757d;
-      color: white;
+      background: #eee;
+      color: #333;
       box-shadow: 0 2px 4px rgba(108, 117, 125, 0.2);
     }
 
     .btn-secondary:hover:not(:disabled) {
-      background: #5a6268;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(108, 117, 125, 0.3);
+      background: #ddd;
     }
 
     /* Table Styling - Enhanced for merged rows */
@@ -620,14 +617,15 @@
 
     /* Action Buttons - Reduced */
     .action-btns button {
-      background: none;
-      border: none;
-      cursor: pointer;
-      margin: 0 3px;
-      font-size: 14px;
-      padding: 5px;
-      border-radius: 4px;
-      transition: all 0.2s ease;
+     width: 40px;
+    height: 40px;
+    background: none !important;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
     }
 
     .action-btns .delete {
@@ -635,8 +633,9 @@
     }
 
     .action-btns .delete:hover {
-      background: #fee;
-      transform: scale(1.1);
+      background-color: #c0392b !important;
+    border-radius: 5px;
+    color: white;
     }
 
     /* Modal Styling */
@@ -662,11 +661,11 @@
     .modal h3 {
       margin-bottom: 10px;
       font-size: 18px;
-      color: #c0392b;
+      color: black;
     }
     
     .modal button {
-      background: #c0392b;
+      background: #6c757d;
       color: white;
       border: none;
       padding: 8px 16px;
@@ -677,7 +676,7 @@
     }
     
     .modal button:hover {
-      background: #a93226;
+      background: #9e9493;
     }
 
     .warning-modal {
@@ -717,13 +716,21 @@
       font-size: 1.4rem; 
       color: #333; 
     }
-    
     .warning-modal-content p { 
       margin-bottom: 15px; 
       font-size: 0.95rem; 
       color: #555; 
     }
+#clearPendingBtn {
+  background: #e74c3c;
+    color: white !important;
+    transition: background 0.25s ease;
+}
 
+#clearPendingBtn:hover {
+    background: #c0392b !important;
+
+}
     .btn-close {
       background: #f59f00;
       color: white;

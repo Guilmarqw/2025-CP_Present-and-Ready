@@ -52,7 +52,7 @@
             align-items: center; gap: 10px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .btn-edit { background: #6f815c; color: white; }
         .btn-edit:hover { background: #343b2b; transform: translateY(-3px); }
-        .btn-password { background: #28a745; color: white; }
+        .btn-password { background: #445f20; color: white; }
         .btn-password:hover { background: #218838; transform: translateY(-3px); }
 
         .success-message {

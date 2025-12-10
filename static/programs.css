@@ -221,21 +221,70 @@
     border-bottom: 1px solid #eee;
   }
 
-  #addAcademicYearBtn.btn.btn-primary, #addSemesterBtn.btn.btn-primary {
-    background-color: #6f815c;
-    color: white;
-    border: none;
-    padding: 8px 14px;
-    border-radius: 5px;
-    cursor: pointer;
-    margin-bottom: 1rem;
-  }
-#addAcademicYearBtn.btn.btn-primary:hover, #addSemesterBtn.btn.btn-primary:hover {
-    background-color: #343b2b;
-  }
-  #addSemesterBtn.btn.btn-primary:hover {
-    background-color: #343b2b;
-  }
+/* ——————————————————————————————
+   UNIFIED BUTTON SIZES (Primary, Success, Secondary)
+   —————————————————————————————— */
+.btn,
+.btn-primary,
+.btn-success,
+.btn-secondary {
+    min-width: 50px !important;     /* All same width */
+    height: 46px !important;        /* Fixed height – looks great on desktop & mobile */
+    padding: 0 20px !important;
+    border-radius: 8px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    text-decoration: none !important;
+    transition: all 0.3s ease !important;
+    cursor: pointer !important;
+    border: none !important;
+    white-space: nowrap !important;
+}
+
+/* Primary – Green (your brand color) */
+.btn-primary,
+.btn-success {                     /* Both use same green */
+    background-color: #6f815c !important;
+    color: white !important;
+}
+.btn-primary:hover,
+.btn-success:hover {
+    background-color: #343b2b !important;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(111, 129, 92, 0.4) !important;
+}
+
+/* Secondary – Light gray */
+.btn-secondary {
+    background-color: #e9ecef !important;
+    color: #495057 !important;
+}
+.btn-secondary:hover {
+    background-color: #dee2e6 !important;
+    transform: translateY(-1px);
+}
+
+/* Disabled state */
+.btn:disabled,
+.btn-primary:disabled,
+.btn-success:disabled,
+.btn-secondary:disabled {
+    background-color: #adb5bd !important;
+    color: #6c757d !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Special fix for modal footer buttons (they were smaller before) */
+.modal-footer .btn {
+    min-width: 120px !important;   /* Slightly smaller in modals if you prefer */
+    height: 42px !important;
+}
     .btn-view {
       background: #6f815c;
       color: white;
@@ -277,7 +326,7 @@
     .back-btn {
       background: #95a5a6;
       color: white;
-      padding: 8px 15px;
+      padding: 8px 20px;
       border: none;
       border-radius: 6px;
       font-size: 14px;
@@ -378,32 +427,37 @@
       text-decoration: none;
     }
 
-    .btn-primary { 
-      background: #6f815c; 
-      color: #fff; 
-    }
+.btn-primary {
+    background-color: #6f815c !important;
+    color: white !important;
+    border: none !important;
+    min-width: 150px !important;
+    height: 38px !important;
+    padding: 0 20px !important;
+    border-radius: 6px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    transition: all 0.3s ease !important;
+    text-decoration: none !important;
+}
 
-    .btn-primary:hover { 
-      background: #343b2b; 
-    }
+.btn-primary:hover {
+    background-color: #343b2b !important;
+}
 
-    .btn-secondary { 
-      background: #6c757d; 
-      color: #fff; 
-    }
+
 
     .btn-secondary:hover { 
-      background: #545b62; 
+      background: #ddd;
     }
 
-    .btn-success {
-      background: #6f815c;
-      color: white;
-    }
-    #confirmBtn{
-      background-color: #6f815c;
-      color: white;
-    }
+
+
     .btn-success:hover {
       background: #343b2b;
     }
@@ -478,7 +532,7 @@
 
     .checkbox-group .checkbox-label.checked {
       border-color: #6f815c;
-      background: #e3f2fd;
+      background: #c1c8ba !important;
       color: #2c3e50;
     }
 
@@ -648,36 +702,74 @@
   transition: color 0.2s;
 }
 #semesterManagementPage .action-buttons .btn:hover, #academicYearsTable .action-buttons .btn:hover {
-  background: #343b2b !important;       /* same blue as .btn-edit */
+  background: #343b2b;       /* same blue as .btn-edit */
   color: white;
 
 }
 
-/* Keep the delete button red on hover */
-#academicYearsTable .action-buttons .btn-danger:hover {
-  background: #343b2b;
-  color: white;
-}
+    .action-btns .delete {
+      color: #e74c3c;
+    }
+
+    .action-btns .delete:hover {
+      background-color: #c0392b !important;
+    border-radius: 5px;
+    color: white;
+    }
+
     .action-buttons {
       display: flex;
       gap: 5px;
       flex-wrap: wrap;
     }
+.btn-danger {
+    color: #e74c3c !important;           /* White text for contrast */
+    padding: 6px 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: all 0.3s ease;
+    min-width: 36px;
+    height: 36px;                  /* Matches your other action buttons */
+}
+.modal .btn-danger {
+    background-color: #c0392b !important;
+    color: white !important;
+    border: none !important;
+}
 
+.modal .btn-danger:hover {
+    background-color: #c0392b !important;  /* even darker on hover */
+    color: white !important;
+}
+
+/* Special override for the Confirm button in the generic confirm modal */
+#confirmModal .btn-danger,
+#confirmModal .btn-danger:hover {
+    min-width: 120px !important;
+    height: 42px !important;
+    font-weight: 600 !important;
+}
+.btn-danger:hover {
+    background-color: #c0392b !important;   /* Darker red on hover */
+    color:white !important;
+}
     .btn-edit {
       background: #17a2b8;
       color: white;
-      padding: 6px 10px;
+      padding: 8px 16px;
     }
 
     .btn-edit:hover {
             background: #343b2b;
       color: white;
     }
-    .btn-danger:hover {
-            background: #343b2b !important;
-      color: white;
-    }
+ 
     #addSubjectBtn {
       padding: 8px 16px;
       border: none;
@@ -709,8 +801,8 @@
     }
 
     .selection-prompt {
-      background: #e3f2fd;
-      border: 1px solid #bbdefb;
+      background: #e6eae2 !important;
+      border: 1px solid #99e5c9;
       border-radius: 8px;
       padding: 20px;
       text-align: center;
@@ -719,13 +811,13 @@
 
     .selection-prompt i {
       font-size: 48px;
-      color: #1976d2;
+      color: #6f815c !important;
       margin-bottom: 15px;
       display: block;
     }
 
     .selection-prompt h4 {
-      color: #1976d2;
+      color: #6f815c !important;
       margin-bottom: 10px;
       font-weight: 600;
     }
@@ -973,10 +1065,7 @@
     color: white;
 }
 
-.btn-danger {
-    background-color: #f44336;
-    color: white;
-}
+
 
 .btn:hover {
     opacity: 0.8;

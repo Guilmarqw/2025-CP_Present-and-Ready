@@ -16,7 +16,7 @@
   <!-- Programs Page -->
   <div class="page-container" id="programsPage">
     <div class="header">
-      <h2><i class="fas fa-book"></i> Programs Management</h2>
+      <h2> Programs Management</h2>
       <div style="display: flex; gap: 10px;">
         <button id="switchYearBtn" class="btn btn-primary">
           <i class="fas fa-calendar-alt"></i> Switch Academic Year
@@ -53,7 +53,7 @@
               <button class="btn btn-edit" onclick="editProgram('IT')" title="Edit">
                 <i class="fas fa-edit"></i>
               </button>
-              <button class="btn btn-danger" onclick="deleteProgram('IT', 'Information Technology')" title="Delete">
+              <button style="      color: #e74c3c !important;" class="btn btn-danger" onclick="deleteProgram('IT', 'Information Technology')" title="Delete">
                 <i class="fas fa-trash"></i>
               </button>
             </td>
@@ -105,13 +105,14 @@
     <div class="header">
       <h2><i class="fas fa-calendar-alt"></i> Academic Year Management - PROGRAM_NAME</h2>
       <a href="#" id="backToProgramsFromYear" class="back-btn">
-        <i class="fas fa-arrow-left"></i> Back to Programs
+        <i class="fas fa-arrow-left"></i>Back
       </a>
     </div>
     <div class="years-table">
       <div class="academic-header">
         <h3>Available Academic Years</h3>
-        <button id="addAcademicYearBtn" class="btn btn-primary">
+        <button style="    margin-bottom: 10px !important;
+" id="addAcademicYearBtn" class="btn btn-primary">
           <i class="fas fa-plus"></i> Add Academic Year
         </button>
       </div>
@@ -136,7 +137,7 @@
     <div class="header">
       <h2><i class="fas fa-book-open"></i> Curriculum Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
       <a href="#" id="backToAcademicYearsFromBatch" class="back-btn">
-        <i class="fas fa-arrow-left"></i> Back to Academic Years
+        <i class="fas fa-arrow-left"></i> Back
       </a>
     </div>
     <div class="batches-table">
@@ -169,13 +170,14 @@
   <div class="header">
     <h2><i class="fas fa-calendar"></i> Semester Management - PROGRAM_NAME (ACADEMIC_YEAR)</h2>
     <a href="#" id="backToAcademicYears" class="back-btn">
-      <i class="fas fa-arrow-left"></i> Back to Academic Years
+      <i class="fas fa-arrow-left"></i> Back
     </a>
   </div>
   <div class="semesters-table">
     <div class="semester-header">
       <h3>Available Semesters</h3>
-      <button id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
+      <button style="    margin-bottom: 10px !important;
+" id="addSemesterBtn" class="btn btn-primary" onclick="showAddSemesterModal()">
         <i class="fas fa-plus"></i> Add Semester
       </button>
     </div>
@@ -198,7 +200,7 @@
     <div class="header">
       <h2><i class="fas fa-book"></i> Subject Management - PROGRAM_NAME</h2>
       <a href="#" id="backToSemesters" class="back-btn">
-        <i class="fas fa-arrow-left"></i> Back to Semesters
+        <i class="fas fa-arrow-left"></i> Back
       </a>
     </div>
 
@@ -392,7 +394,7 @@
     <div class="header">
       <h2><i class="fas fa-book"></i> Subject Management - PROGRAM_NAME</h2>
       <a href="#" id="backToSemesters" class="back-btn">
-        <i class="fas fa-arrow-left"></i> Back to Semesters
+        <i class="fas fa-arrow-left"></i>Back
       </a>
     </div>
 
@@ -1699,7 +1701,7 @@ function loadSemesterManagementPage(programCode, programName, academicYear, curr
     // Update back button text to "Back to Curriculum"
     const backBtn = document.getElementById('backToAcademicYears');
     if (backBtn) {
-        backBtn.innerHTML = '<i class="fas fa-arrow-left"></i> Back to Curriculum';
+        backBtn.innerHTML = '<i class="fas fa-arrow-left"></i>Back';
         backBtn.removeEventListener('click', null);
         backBtn.addEventListener('click', function(e) {
             e.preventDefault();
@@ -2367,7 +2369,7 @@ function displaySemestersForCurriculum(semesters, programCode, academicYear, cur
                         data-curriculum-id="${currentCurriculumId}"
                         data-curriculum-name="${currentCurriculumName}"
                         title="View Subjects">
-                    <i class="fas fa-eye"></i>
+                    <i class="fas fa-eye"></i>View
                 </button>
                 <button class="btn btn-edit" 
                         onclick="editSemester('${semester.semester_number}')"

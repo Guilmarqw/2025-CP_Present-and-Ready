@@ -76,11 +76,11 @@ body {
 }
 
 /* Solid colors for each card */
-.stat-card.students       { background: #445f20; } 
-.stat-card.faculty        { background: #1e4821; }  
-.stat-card.cs-students    { background: #426442; }  
-.stat-card.it-students    { background: #587656; }  
-.stat-card.act-students   { background: #6f815c; }  
+.stat-card.students       { background: #4f5449; } 
+.stat-card.faculty        { background: #5c835c; }  
+.stat-card.cs-students    { background: #738773; }  
+.stat-card.it-students    { background: #739b70; }  
+.stat-card.act-students   { background: #a5b198; }  
 
 .stat-card h4 {
     font-size: 14px;
