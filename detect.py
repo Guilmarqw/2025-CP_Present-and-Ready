@@ -22462,33 +22462,53 @@ if __name__ == "__main__":
         import subprocess
         
         def get_current_ip():
-            """Get current IP address"""
+            """Get current IP address - OFFLINE FIXED VERSION"""
             try:
+                # FIXED: Use a non-routable address instead of 8.8.8.8
+                # This works WITHOUT internet
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                s.connect(("8.8.8.8", 80))
+                s.connect(('10.255.255.255', 1))  # This works offline!
                 ip = s.getsockname()[0]
                 s.close()
                 return ip
-            except:
+            except Exception as e:
+                # If anything fails, use localhost
                 return "127.0.0.1"
         
         def get_network_info():
-            """Get all network IP addresses"""
+            """Get all network IP addresses - OFFLINE COMPATIBLE"""
             ips = []
             try:
-                # Get main IP
+                # Get main IP using OFFLINE method
                 main_ip = get_current_ip()
                 ips.append(main_ip)
                 
-                # Get hostname for mDNS
+                # Get all local IPs without internet
                 hostname = socket.gethostname()
+                
+                # Try to get additional IPs from network interfaces
+                try:
+                    import netifaces
+                    for interface in netifaces.interfaces():
+                        if interface.startswith('lo'):  # Skip loopback
+                            continue
+                        addrs = netifaces.ifaddresses(interface)
+                        if netifaces.AF_INET in addrs:
+                            for addr in addrs[netifaces.AF_INET]:
+                                ip = addr['addr']
+                                if ip != '127.0.0.1' and not ip.startswith('169.254.'):
+                                    if ip not in ips:
+                                        ips.append(ip)
+                except ImportError:
+                    # netifaces not available, just use what we have
+                    pass
                 
                 return ips, hostname
             except:
                 return ["127.0.0.1"], "localhost"
         
-        def generate_new_certificates(current_ip):
-            """Generate new SSL certificates for current IP"""
+        def generate_new_certificates(current_ip, ips_list):
+            """Generate new SSL certificates for current IPs - OFFLINE COMPATIBLE"""
             cert_file = 'cert.pem'
             key_file = 'key.pem'
             hostname = socket.gethostname()
@@ -22497,11 +22517,29 @@ if __name__ == "__main__":
                 # Clean up old files first
                 for f in [cert_file, key_file, 'ssl_config.cnf', 'csr_config.cnf', 'server.csr']:
                     if os.path.exists(f):
-                        os.remove(f)
+                        try:
+                            os.remove(f)
+                        except:
+                            pass
                 
                 print("Creating certificate with current network settings...")
                 
-                # FIXED: Added digitalSignature + nonRepudiation (solves ERR_SSL_KEY_USAGE_INCOMPATIBLE)
+                # Create alt_names section with all IPs
+                alt_names = "DNS.1 = localhost\nDNS.2 = {}.local\n".format(hostname)
+                
+                # Add all IPs to certificate
+                ip_counter = 1
+                for i, ip in enumerate(set(ips_list)):  # Use set to avoid duplicates
+                    alt_names += "IP.{} = {}\n".format(ip_counter, ip)
+                    ip_counter += 1
+                
+                # Add common private IP ranges for flexibility
+                alt_names += "IP.{} = 192.168.1.100\n".format(ip_counter)
+                ip_counter += 1
+                alt_names += "IP.{} = 192.168.0.100\n".format(ip_counter)
+                ip_counter += 1
+                alt_names += "IP.{} = 10.0.0.100".format(ip_counter)
+                
                 config_content = f"""[req]
 distinguished_name = req_distinguished_name
 x509_extensions = v3_req
@@ -22520,10 +22558,7 @@ extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = localhost
-DNS.2 = {hostname}.local
-IP.1 = 127.0.0.1
-IP.2 = {current_ip}
+{alt_names}
 """
 
                 with open('ssl_config.cnf', 'w') as f:
@@ -22548,7 +22583,7 @@ IP.2 = {current_ip}
                 
                 if result.returncode == 0:
                     print(f"SSL certificates created successfully!")
-                    print(f"Valid for IP: {current_ip}")
+                    print(f"Valid for IPs: {', '.join(set(ips_list))}")
                     print(f"Valid for: {hostname}.local")
                     return True
                 else:
@@ -22561,68 +22596,35 @@ IP.2 = {current_ip}
                 return False
         
         def create_ssl_certificate_auto():
-            """Intelligently manage SSL certificates"""
+            """Intelligently manage SSL certificates - OFFLINE COMPATIBLE"""
             cert_file = 'cert.pem'
             key_file = 'key.pem'
             
-            # Get current IP
-            current_ip = get_current_ip()
-            print(f"🌐 Current IP address: {current_ip}")
+            # Get network information
+            ips, hostname = get_network_info()
+            current_ip = ips[0] if ips else "127.0.0.1"
+            
+            print(f"🌐 Network Detection:")
+            print(f"  Computer Name: {hostname}")
+            print(f"  Detected IPs: {', '.join(ips)}")
             
             # 1. Check if certificates already exist
             if os.path.exists(cert_file) and os.path.exists(key_file):
                 try:
-                    # Verify they're valid AND contain current IP
-                    cert_valid = False
-                    ip_in_cert = False
+                    # Simple check: if files exist and are not empty
+                    cert_valid = os.path.getsize(cert_file) > 100
+                    key_valid = os.path.getsize(key_file) > 100
                     
-                    # Check if certificate has BEGIN/END CERTIFICATE
-                    with open(cert_file, 'rb') as f:
-                        content = f.read().decode('utf-8', errors='ignore')
-                        if 'BEGIN CERTIFICATE' in content and 'END CERTIFICATE' in content:
-                            cert_valid = True
-                    
-                    # Check if certificate contains current IP
-                    if cert_valid:
-                        try:
-                            # Read certificate content to check IP
-                            cert_check = subprocess.run(
-                                ['openssl', 'x509', '-in', cert_file, '-text', '-noout'],
-                                capture_output=True, text=True, timeout=3
-                            )
-                            if cert_check.returncode == 0:
-                                cert_text = cert_check.stdout
-                                # Check if current IP or hostname is in certificate
-                                hostname = socket.gethostname()
-                                if (current_ip in cert_text or 
-                                    'localhost' in cert_text or 
-                                    f'{hostname}.local' in cert_text or
-                                    '*.local' in cert_text):
-                                    ip_in_cert = True
-                                    print(f"✅ Existing certificates are valid")
-                                    print(f"✅ Certificate matches current network")
-                                    return True
-                                else:
-                                    print(f"⚠️  Certificate has different IP")
-                                    print(f"   Certificate IP: (not {current_ip})")
-                                    print(f"   Current IP: {current_ip}")
-                                    print(f"   Regenerating certificates...")
-                        except subprocess.TimeoutExpired:
-                            print("⚠️  Certificate check timeout")
-                        except:
-                            pass  # If openssl check fails
-                    
-                    if cert_valid and not ip_in_cert:
-                        # Cert exists but wrong IP - delete and recreate
-                        print(f"🔄 Certificate has wrong IP. Deleting and recreating...")
+                    if cert_valid and key_valid:
+                        # For offline use, accept existing certificates
+                        print(f"✅ Using existing SSL certificates")
+                        print(f"   (Offline mode - not validating against current network)")
+                        return True
+                    else:
+                        print("⚠️  Invalid certificate files found. Regenerating...")
                         os.remove(cert_file)
                         os.remove(key_file)
-                        return generate_new_certificates(current_ip)
-                    elif not cert_valid:
-                        print("⚠️  Invalid certificates found. Regenerating...")
-                        os.remove(cert_file)
-                        os.remove(key_file)
-                        return generate_new_certificates(current_ip)
+                        return generate_new_certificates(current_ip, ips)
                         
                 except Exception as e:
                     print(f"⚠️  Error checking certificates: {e}")
@@ -22630,13 +22632,15 @@ IP.2 = {current_ip}
                     # Clean up and regenerate
                     for f in [cert_file, key_file]:
                         if os.path.exists(f):
-                            os.remove(f)
-                    return generate_new_certificates(current_ip)
+                            try:
+                                os.remove(f)
+                            except:
+                                pass
+                    return generate_new_certificates(current_ip, ips)
             
             # 2. No certificates exist
             print("🔐 Generating SSL certificates...")
-            print(f"   For IP address: {current_ip}")
-            return generate_new_certificates(current_ip)
+            return generate_new_certificates(current_ip, ips)
         
         def add_firewall_rule():
             """Add Windows firewall rule if needed"""
@@ -22644,7 +22648,7 @@ IP.2 = {current_ip}
                 if os.name == 'nt':  # Windows
                     # Check if rule exists
                     check_cmd = ['netsh', 'advfirewall', 'firewall', 'show', 'rule', 'name="Flask Port 5000"']
-                    result = subprocess.run(check_cmd, capture_output=True, text=True)
+                    result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5)
                     
                     if "Flask Port 5000" not in result.stdout:
                         print("  Adding firewall rule...")
@@ -22653,12 +22657,12 @@ IP.2 = {current_ip}
                             'name="Flask Port 5000"', 'dir=in', 'action=allow',
                             'protocol=TCP', 'localport=5000'
                         ]
-                        subprocess.run(add_cmd, capture_output=True)
+                        subprocess.run(add_cmd, capture_output=True, timeout=10)
                         print("✅ Firewall rule added")
                     else:
                         print("✅ Firewall rule already exists")
-            except:
-                pass  # Silently fail if we can't modify firewall
+            except Exception as e:
+                print(f"ℹ️  Could not configure firewall: {e}")
         
         # ========== MAIN SERVER SETUP ==========
         print("\n" + "═" * 60)
@@ -22679,20 +22683,11 @@ IP.2 = {current_ip}
             if os.path.exists(cert_file) and os.path.exists(key_file):
                 ssl_context = (cert_file, key_file)
                 print("✅ HTTPS server ready")
-                
-                # Verify certificate one more time
-                try:
-                    test_cmd = ['openssl', 'x509', '-in', cert_file, '-text', '-noout']
-                    test_result = subprocess.run(test_cmd, capture_output=True, text=True)
-                    if test_result.returncode == 0:
-                        print("✅ Certificate verified")
-                except:
-                    print("⚠️  Could not verify certificate (but will use it)")
             else:
-                print(" Certificates not created, using HTTP")
+                print("⚠️  Certificate files not found, using HTTP")
                 ssl_context = None
         else:
-            print(" Using HTTP (camera may not work)")
+            print("⚠️  Using HTTP (some features may not work)")
             ssl_context = None
         
         # Add firewall rule
@@ -22700,26 +22695,32 @@ IP.2 = {current_ip}
         
         # Display access information
         print(f"\n📱 ACCESS FROM PHONE:")
-        print(f"   1. Connect phone to SAME WiFi network")
+        print(f"   1. Connect phone to SAME WiFi network as this computer")
         print(f"   2. Open browser and visit:")
         
         if ssl_context:
             # Show HTTPS URLs
             for ip in ips:
-                print(f"      → https://{ip}:5000")
-            print(f"      → https://{hostname}.local:5000")
+                if ip != '127.0.0.1':
+                    print(f"      → https://{ip}:5000")
+            print(f"      → https://{hostname}.local:5000 (if supported by network)")
+            print(f"      → https://localhost:5000 (on this computer only)")
             print(f"\n⚠️  FIRST TIME ACCESS:")
-            print(f"   1. You'll see 'Not Secure' warning")
-            print(f"   2. Click 'Advanced'")
-            print(f"   3. Click 'Proceed to {ips[0]} (unsafe)'")
-            print(f"   4. This is NORMAL for self-signed certificates")
+            print(f"   1. You'll see 'Not Secure' warning (NORMAL for local certificates)")
+            print(f"   2. Click 'Advanced' → 'Proceed to site' or 'Accept Risk'")
         else:
             # Show HTTP URLs
             for ip in ips:
-                print(f"      → http://{ip}:5000")
-            print(f"\n WARNING: Camera requires HTTPS!")
-            print(f"   HTTPS failed, so camera may not work")
+                if ip != '127.0.0.1':
+                    print(f"      → http://{ip}:5000")
+            print(f"      → http://{hostname}.local:5000 (if supported by network)")
+            print(f"      → http://localhost:5000 (on this computer only)")
+            print(f"\n⚠️  IMPORTANT:")
+            print(f"   • Camera may not work over HTTP")
+            print(f"   • Modern browsers may block HTTP camera access")
         
+        print(f"\n🌐 INTERNET STATUS: NOT REQUIRED FOR LOCAL ACCESS")
+        print(f"   System works completely offline after this setup!")
         print(f"\n  Starting server on port 5000...")
         print(f"═" * 60 + "\n")
         
@@ -22733,9 +22734,10 @@ IP.2 = {current_ip}
         )
     
     except OSError as e:
-        if "10049" in str(e) or "not valid" in str(e):
+        if "10049" in str(e) or "not valid" in str(e) or "10048" in str(e):
             logger.error("Network address issue. Trying localhost only...")
             print("\n⚠️  Network error, starting on localhost only...")
+            print("   You can only access from this computer at: http://localhost:5000")
             app.run(host="127.0.0.1", port=5000, debug=False, threaded=True, ssl_context=None)
         else:
             raise 
@@ -22747,8 +22749,10 @@ IP.2 = {current_ip}
     
     except Exception as e:
         logger.error(f"Server error: {e}")
-        print(f"\n Server error: {e}")
-        print("Press Enter to exit...")
+        print(f"\n❌ Server error: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\nPress Enter to exit...")
         input()
     
     finally:
