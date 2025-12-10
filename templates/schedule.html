@@ -196,7 +196,6 @@ async function loadCurricula() {
     const yearLevelSelect = document.getElementById('yearLevel');
     const sectionSelect = document.getElementById('section');
     
-    // ADD NULL CHECKS
     if (!curriculumSelect || !yearLevelSelect || !sectionSelect) {
         console.error('Required form elements not found');
         return;
@@ -211,23 +210,43 @@ async function loadCurricula() {
     }
     
     try {
-        // First get active period to get academic_year
+        console.log('Loading active period for course:', course);
+        
+        // Get active period
         const activePeriodResponse = await fetch(`/api/get_active_period?program_id=${course}`);
         const activePeriodData = await activePeriodResponse.json();
+        
+        console.log('Active period response:', activePeriodData);
         
         if (!activePeriodData.success) {
             curriculumSelect.disabled = true;
             curriculumSelect.innerHTML = '<option value="" disabled selected>No active period found</option>';
-            showModal(activePeriodData.message || 'No active academic period');
+            showModal(activePeriodData.message || 'No active academic period', 'info');
             return;
         }
         
         currentAcademicYear = activePeriodData.active_period.academic_year;
         currentSemester = activePeriodData.active_period.semester;
         
-        // Now load curricula for this program and academic year
-        const response = await fetch(`/api/get_curricula?program_id=${course}&academic_year=${encodeURIComponent(currentAcademicYear)}`);
+        console.log('Current academic period:', currentAcademicYear, currentSemester);
+        
+        // IMPORTANT: Convert semester to number for the API
+        let semesterParam = currentSemester;
+        if (currentSemester.includes('1st')) {
+            semesterParam = '1';
+        } else if (currentSemester.includes('2nd')) {
+            semesterParam = '2';
+        } else if (currentSemester.includes('3rd')) {
+            semesterParam = '3';
+        }
+        
+        // Load curricula
+        const response = await fetch(
+            `/api/get_curricula?program_id=${course}&academic_year=${encodeURIComponent(currentAcademicYear)}&semester=${encodeURIComponent(semesterParam)}`
+        );
         const data = await response.json();
+        
+        console.log('Curricula response:', data);
         
         if (data.success && data.curricula && data.curricula.length > 0) {
             curriculumSelect.disabled = false;
@@ -235,23 +254,23 @@ async function loadCurricula() {
             
             data.curricula.forEach(curriculum => {
                 const option = document.createElement('option');
-                option.value = curriculum.curriculum_id;  // Use curriculum_id as value
+                option.value = curriculum.curriculum_year;  // Use curriculum_year as value
                 option.textContent = `${curriculum.curriculum_name} (${curriculum.curriculum_year})`;
+                option.dataset.curriculumId = curriculum.curriculum_id; // Store ID in data attribute
                 curriculumSelect.appendChild(option);
             });
             
-            // Enable year level selection
             yearLevelSelect.disabled = false;
         } else {
             curriculumSelect.disabled = true;
             curriculumSelect.innerHTML = '<option value="" disabled selected>No curricula found</option>';
-            showModal('No curricula found for this course and academic year');
+            showModal(data.message || 'No curricula found for this course and academic year', 'info');
         }
     } catch (error) {
         console.error('Error loading curricula:', error);
         curriculumSelect.disabled = true;
         curriculumSelect.innerHTML = '<option value="" disabled selected>Error loading curricula</option>';
-        showModal('Failed to load curricula');
+        showModal('Failed to load curricula: ' + error.message, 'info');
     }
 }
 
