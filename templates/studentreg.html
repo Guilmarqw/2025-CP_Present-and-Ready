@@ -1121,8 +1121,8 @@ function validateStep3() {
     if (!studentIdRegex.test(studentId)) {
         showModal("Warning", "Student ID format must be: [4 digits]-[5 digits]\nExample: 2011-01795");
         return;
-
     }
+    
     if (!lastName || !firstName || !studentId || !program || !yearLevel || !sectionId) {
         showModal("Warning", "Please fill out all required fields.");
         return;
@@ -1138,12 +1138,13 @@ function validateStep3() {
         return;
     }
     
-    if (!uploadedPhoto) {
+    // FIXED: Check if we have a photo uploaded (using the file)
+    if (!window.uploadedPhotoFile) {
         showModal("Warning", "Please upload a photo.");
         return;
     }
     
-    // MODIFIED: Check if we have ANY encoding (even dummy)
+    // FIXED: Check if encoding was successful
     if (!uploadedFaceEncoding || uploadedFaceEncoding.length === 0) {
         showModal("Warning", "Photo processing failed. Please try uploading again or contact support.");
         return;
@@ -1171,6 +1172,7 @@ function validateStep3() {
         
         // Clear the dummy encoding to avoid confusion in face comparison
         uploadedFaceEncoding = null;
+        window.uploadedFaceEncoding = null;
         console.log("Proceeding with null encoding - face scan will capture fresh encoding");
     }
     
@@ -1197,7 +1199,8 @@ function resetPhotoUpload() {
     }
     
     if (uploadInput) {
-        uploadInput.value = '';
+        uploadInput.addEventListener("change", previewUploadedImage);
+        console.log("Added change event listener to photo upload input");
     }
     
     showModal("Info", "Please upload a new photo.");
@@ -2488,9 +2491,9 @@ async function previewUploadedImage(event) {
             return;
         }
         
-        // Validate file size (5MB max)
+        // Validate file size (50MB max as per your code)
         if (file.size > 50 * 1024 * 1024) {
-            showModal('Warning', 'Image must be less than or equal to 5 MB.');
+            showModal('Warning', 'Image must be less than or equal to 50 MB.');
             event.target.value = '';
             return;
         }
@@ -2510,44 +2513,50 @@ async function previewUploadedImage(event) {
                 
                 console.log("✅ Photo uploaded and previewed successfully");
                 
-                // ENCODE THE UPLOADED FACE - WITH PREPROCESSING
+                // ENCODE THE UPLOADED FACE
                 try {
                     console.log("Encoding uploaded face...");
                     
-                    // Create an image element to preprocess
-                    const img = new Image();
-                    img.onload = async function() {
-                        // Create canvas to normalize the image
-                        const tempCanvas = document.createElement('canvas');
-                        const tempCtx = tempCanvas.getContext('2d');
-                        
-                        // Set canvas size
-                        tempCanvas.width = img.width;
-                        tempCanvas.height = img.height;
-                        
-                        // Draw image (no flipping for uploaded photos)
-                        tempCtx.drawImage(img, 0, 0);
-                        
-                        // Convert to blob
-                        tempCanvas.toBlob(async (blob) => {
-                            const encoding = await encodeImageBlob(blob, false); // false = don't flip
-                            if (encoding) {
-                                uploadedFaceEncoding = Array.from(encoding);
-                                console.log("✅ Uploaded face encoded successfully");
-                                console.log("Encoding length:", uploadedFaceEncoding.length);
-                                console.log("First 5 values:", uploadedFaceEncoding.slice(0, 5));
-                            } else {
-                                console.warn("⚠ Could not encode uploaded face");
-                                showModal('Warning', 'Could not process face in uploaded photo. Please ensure:\n\n1. Your face is clearly visible\n2. Good lighting\n3. Looking straight at camera\n4. No other people in photo');
-                            }
-                        }, 'image/jpeg', 0.95);
-                    };
+                    // Store the file for registration
+                    window.uploadedPhotoFile = file;
                     
-                    img.src = uploadedPhoto;
+                    // Send to backend for encoding
+                    const encoding = await encodeImageFile(file);
+                    if (encoding) {
+                        uploadedFaceEncoding = Array.from(encoding);
+                        console.log("✅ Uploaded face encoded successfully");
+                        console.log("Encoding length:", uploadedFaceEncoding.length);
+                        console.log("First 5 values:", uploadedFaceEncoding.slice(0, 5));
+                        
+                        // Also store in window for later use
+                        window.uploadedFaceEncoding = uploadedFaceEncoding;
+                        
+                        // Show success message
+                        showModal("Success", "Photo uploaded successfully! Face features extracted.");
+                    } else {
+                        console.warn("⚠ Could not encode uploaded face");
+                        showModal('Warning', 'Could not process face in uploaded photo. Please ensure:\n\n1. Your face is clearly visible\n2. Good lighting\n3. Looking straight at camera\n4. No other people in photo');
+                        
+                        // Clear the preview if encoding fails
+                        uploadedPhoto = null;
+                        uploadedFaceEncoding = null;
+                        window.uploadedPhotoFile = null;
+                        if (uploadPreviewEl) {
+                            uploadPreviewEl.innerHTML = '<span>Click to Upload</span>';
+                        }
+                    }
                     
                 } catch (error) {
                     console.error("Error encoding uploaded face:", error);
                     showModal('Error', 'Error processing photo: ' + error.message);
+                    
+                    // Clear the preview on error
+                    uploadedPhoto = null;
+                    uploadedFaceEncoding = null;
+                    window.uploadedPhotoFile = null;
+                    if (uploadPreviewEl) {
+                        uploadPreviewEl.innerHTML = '<span>Click to Upload</span>';
+                    }
                 }
             }
         };
@@ -2563,6 +2572,7 @@ async function previewUploadedImage(event) {
         console.log(" No file selected or user cancelled");
         uploadedPhoto = null;
         uploadedFaceEncoding = null;
+        window.uploadedPhotoFile = null;
     }
     
     console.log("=== PREVIEW UPLOADED IMAGE END ===");

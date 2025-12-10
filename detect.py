@@ -15833,7 +15833,7 @@ def start_session():
 
 @app.route('/api/initialize_session', methods=['POST'])
 def initialize_session():
-    """Initialize session with parameters from URL"""
+    """Initialize session with parameters from URL - UPDATED FOR MULTIPLE SUBJECTS"""
     global session_start_time, current_session_id, session_threshold_seconds, session_total_duration_seconds
     global current_session_id
     global detectionStopped, tracks, locked_tracks, pending_confirmations  
@@ -15844,7 +15844,7 @@ def initialize_session():
     cursor = None
     
     if DEBUG_MODE: 
-        logger.debug("  INITIALIZE_SESSION CALLED")
+        logger.debug("  INITIALIZE_SESSION CALLED - MULTIPLE SUBJECTS VERSION")
 
     detectionStopped = False
 
@@ -15871,24 +15871,62 @@ def initialize_session():
         if DEBUG_MODE: 
             logger.debug(f"📦 Received data: {data}")
         
-        # IMPORTANT  Handle both schedule_id and subject_id
-        schedule_id = data.get('schedule_id')
+        # IMPORTANT: Handle multiple schedule IDs from custom timer
+        schedule_ids_str = data.get('schedule_ids')  # Comma-separated string from custom timer
+        schedule_ids = []
+        
+        if schedule_ids_str:
+            try:
+                schedule_ids = [sid.strip() for sid in schedule_ids_str.split(',') if sid.strip()]
+                if DEBUG_MODE: 
+                    logger.debug(f"  Processing multiple schedule IDs from custom timer: {schedule_ids}")
+            except Exception as e:
+                if DEBUG_MODE: 
+                    logger.debug(f"  Error parsing schedule_ids: {e}")
+                schedule_ids = []
+        
+        # For backward compatibility, also check single schedule_id from default mode
+        single_schedule_id = data.get('schedule_id')
         subject_id = data.get('subject_id')
         
-        if not schedule_id and not subject_id:
-            return jsonify({'success': False, 'message': 'Missing schedule_id or subject_id'}), 400
+        # If we have single schedule_id but no schedule_ids list, use it
+        if single_schedule_id and not schedule_ids:
+            schedule_ids = [single_schedule_id]
+        
+        # Also check if subjects data contains schedule IDs
+        subjects_json = data.get('subjects', '[]')
+        if not schedule_ids and subjects_json:
+            try:
+                import json
+                subjects_list = json.loads(subjects_json) if isinstance(subjects_json, str) else subjects_json
+                if subjects_list and isinstance(subjects_list, list):
+                    for subject in subjects_list:
+                        if subject.get('schedule_id'):
+                            schedule_ids.append(str(subject['schedule_id']))
+                if DEBUG_MODE: 
+                    logger.debug(f"  Extracted schedule IDs from subjects JSON: {schedule_ids}")
+            except Exception as e:
+                if DEBUG_MODE: 
+                    logger.debug(f"  Could not parse subjects JSON for schedule IDs: {e}")
+        
+        if not schedule_ids and not subject_id:
+            return jsonify({'success': False, 'message': 'Missing schedule_ids or subject_id'}), 400
         
         if DEBUG_MODE: 
-            logger.debug(f"  Received IDs - schedule_id: {schedule_id}, subject_id: {subject_id}")
+            logger.debug(f"  Final schedule IDs to process: {schedule_ids}")
         
         #    GENERATE UNIQUE SESSION ID
         import uuid
         import datetime as dt
         
-        if schedule_id:
-            unique_session_id = f"sch_{schedule_id}_{uuid.uuid4().hex[:8]}_{int(dt.datetime.now().timestamp())}"
-        else:
+        # Create session ID based on first schedule ID or subject ID
+        if schedule_ids:
+            first_id = schedule_ids[0]
+            unique_session_id = f"sch_{first_id}_{uuid.uuid4().hex[:8]}_{int(dt.datetime.now().timestamp())}"
+        elif subject_id:
             unique_session_id = f"sub_{subject_id}_{uuid.uuid4().hex[:8]}_{int(dt.datetime.now().timestamp())}"
+        else:
+            unique_session_id = f"session_{uuid.uuid4().hex[:8]}_{int(dt.datetime.now().timestamp())}"
         
         current_session_id = unique_session_id
 
@@ -16029,23 +16067,26 @@ def initialize_session():
             except Exception as e:
                 logger.warning(f"  Error finding section: {e}")
         
-        #    GET SUBJECT AND ROOM INFO FROM DATABASE - FIXED FOR SUBJECT_ID=43
-        subject_code = 'Unknown Subject'
-        subject_name = 'Unknown Subject'
+        #    GET SUBJECTS INFORMATION FROM DATABASE - HANDLING MULTIPLE SUBJECTS
+        subjects_info = []
+        primary_subject_code = 'Unknown Subject'
+        primary_subject_name = 'Unknown Subject'
         room = 'Unknown Room'
         class_type = 'lecture'
         subject_curriculum_year = None
         day_of_week = 'Unknown Day'
         actual_schedule_id = None
         db_subject_id = None
-        schedule_found = False
         
         try:
-            # FIRST: Check if schedule_id exists in class_schedules
-            if schedule_id:
-                if DEBUG_MODE: 
-                    logger.debug(f"  Looking for schedule_id in class_schedules: {schedule_id}")
+            # IMPORTANT: Process each schedule ID from custom timer
+            for idx, sched_id in enumerate(schedule_ids):
+                schedule_found = False
                 
+                if DEBUG_MODE: 
+                    logger.debug(f"  Processing schedule_id {idx+1}/{len(schedule_ids)}: {sched_id}")
+                
+                # Check if schedule_id exists in class_schedules
                 cursor.execute("""
                     SELECT cs.schedule_id, cs.subject_id, cs.room, cs.day_of_week, cs.class_type,
                            s.subject_code, s.subject_name, c.curriculum_year,
@@ -16054,7 +16095,7 @@ def initialize_session():
                     JOIN subjects s ON cs.subject_id = s.subject_id
                     LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
                     WHERE cs.schedule_id = %s AND cs.status = 'active'
-                """, (schedule_id,))
+                """, (sched_id,))
                 
                 schedule_info = cursor.fetchone()
                 
@@ -16062,86 +16103,90 @@ def initialize_session():
                     schedule_found = True
                     if DEBUG_MODE: 
                         logger.debug(f"   Found schedule in database: schedule_id={schedule_info['schedule_id']}")
-                    actual_schedule_id = schedule_info['schedule_id']
-                    db_subject_id = schedule_info['subject_id']
-                    subject_code = schedule_info.get('subject_code', 'Unknown Subject')
-                    subject_name = schedule_info.get('subject_name', 'Unknown Subject')
-                    room = schedule_info.get('room', 'Unknown Room')
-                    class_type = schedule_info.get('class_type', 'lecture')
-                    day_of_week = schedule_info.get('day_of_week', 'Unknown Day')
-                    subject_curriculum_year = schedule_info.get('curriculum_year')
                     
-                    # Get current day and check if it matches the schedule
-                    try:
-                        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                        current_day_index = dt.datetime.now().weekday()
-                        current_day = day_names[current_day_index]
+                    # Store this subject's info
+                    subject_data = {
+                        'schedule_id': schedule_info['schedule_id'],
+                        'subject_id': schedule_info['subject_id'],
+                        'subject_code': schedule_info.get('subject_code', 'Unknown Subject'),
+                        'subject_name': schedule_info.get('subject_name', 'Unknown Subject'),
+                        'class_type': schedule_info.get('class_type', 'lecture'),
+                        'curriculum_year': schedule_info.get('curriculum_year'),
+                        'room': schedule_info.get('room', 'Unknown Room'),
+                        'day_of_week': schedule_info.get('day_of_week', 'Unknown Day'),
+                        'units': None  # Will try to get units
+                    }
+                    
+                    # Try to get units from subjects table
+                    cursor.execute("""
+                        SELECT units FROM subjects WHERE subject_id = %s
+                    """, (schedule_info['subject_id'],))
+                    unit_result = cursor.fetchone()
+                    if unit_result:
+                        subject_data['units'] = unit_result.get('units', 3)
+                    
+                    subjects_info.append(subject_data)
+                    
+                    # Use first subject as primary for display
+                    if idx == 0:
+                        actual_schedule_id = schedule_info['schedule_id']
+                        db_subject_id = schedule_info['subject_id']
+                        primary_subject_code = schedule_info.get('subject_code', 'Unknown Subject')
+                        primary_subject_name = schedule_info.get('subject_name', 'Unknown Subject')
+                        room = schedule_info.get('room', 'Unknown Room')
+                        class_type = schedule_info.get('class_type', 'lecture')
+                        day_of_week = schedule_info.get('day_of_week', 'Unknown Day')
+                        subject_curriculum_year = schedule_info.get('curriculum_year')
                         
-                        # If schedule day doesn't match current day, log a warning
-                        if day_of_week != current_day and current_day != 'Sunday':
-                            logger.warning(f"  Schedule is for {day_of_week}, but today is {current_day}")
-                    except Exception as day_error:
-                        logger.warning(f"  Could not determine day match: {day_error}")
-                    
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Database values - Subject: {subject_code}, Room: {room}, Day: {day_of_week}")
-                    
-                    # Use this schedule's section_id if not already found
-                    if schedule_info.get('section_id') and section_id is None:
-                        section_id = schedule_info['section_id']
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Using section_id from schedule: {section_id}")
-                else:
-                    logger.warning(f"  No schedule found with schedule_id={schedule_id}")
-                    
-                    #  Check if the URL passed subject information in the 'subjects' parameter
-                    subjects_data = data.get('subjects', '[]')
-                    
-                    try:
-                        # Try to parse the subjects JSON array
-                        import json
-                        subjects_list = json.loads(subjects_data)
-                        
-                        if subjects_list and isinstance(subjects_list, list) and len(subjects_list) > 0:
-                            # Get the first subject from the list
-                            first_subject = subjects_list[0]
-                            
-                            subject_code = first_subject.get('subject_code', 'Unknown Subject')
-                            subject_name = first_subject.get('subject_name', 'Unknown Subject')
-                            class_type = first_subject.get('class_type', 'lecture')
-                            
+                        # Use this schedule's section_id if not already found
+                        if schedule_info.get('section_id') and section_id is None:
+                            section_id = schedule_info['section_id']
                             if DEBUG_MODE: 
-                                logger.debug(f"  Using subject from URL parameters: {subject_code} - {subject_name}")
-                    except Exception as json_error:
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Could not parse subjects JSON: {json_error}")
-                    
-                    # IMPORTANT  Check if schedule_id might actually be a subject_id
-                    # Example: schedule_id=44 doesn't exist in class_schedules but subject_id=44 exists in subjects
-                    if schedule_id and str(schedule_id).isdigit():
-                        if DEBUG_MODE: 
-                            logger.debug(f"  schedule_id {schedule_id} not found in class_schedules, checking if it's a valid subject_id...")
+                                logger.debug(f"  Using section_id from schedule: {section_id}")
                         
-                        # First check if it's a valid subject_id
+                        if DEBUG_MODE: 
+                            logger.debug(f"  Primary subject: {primary_subject_code} - {primary_subject_name}")
+                
+                else:
+                    logger.warning(f"  No schedule found with schedule_id={sched_id}")
+                    
+                    # Check if sched_id might actually be a subject_id
+                    if sched_id and str(sched_id).isdigit():
+                        if DEBUG_MODE: 
+                            logger.debug(f"  schedule_id {sched_id} not found in class_schedules, checking if it's a valid subject_id...")
+                        
+                        # Check if it's a valid subject_id
                         cursor.execute("""
                             SELECT subject_id, subject_code, subject_name, class_type,
-                                   curriculum_id, section_id
+                                   curriculum_id, section_id, units
                             FROM subjects 
                             WHERE subject_id = %s AND status = 'active'
-                        """, (schedule_id,))
+                        """, (sched_id,))
                         
                         subject_check = cursor.fetchone()
                         if subject_check:
                             if DEBUG_MODE: 
-                                logger.debug(f"  ✓ Found that schedule_id={schedule_id} is actually subject_id={subject_check['subject_id']}")
-                            # This is actually a subject_id, not a schedule_id
-                            db_subject_id = subject_check['subject_id']
-                            subject_code = subject_check.get('subject_code', 'Unknown Subject')
-                            subject_name = subject_check.get('subject_name', 'Unknown Subject')
-                            class_type = subject_check.get('class_type', 'lecture')
+                                logger.debug(f"  ✓ Found that schedule_id={sched_id} is actually subject_id={subject_check['subject_id']}")
                             
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Using subject information: {subject_code} - {subject_name}")
+                            # Store subject info
+                            subject_data = {
+                                'subject_id': subject_check['subject_id'],
+                                'subject_code': subject_check.get('subject_code', 'Unknown Subject'),
+                                'subject_name': subject_check.get('subject_name', 'Unknown Subject'),
+                                'class_type': subject_check.get('class_type', 'lecture'),
+                                'curriculum_year': None,
+                                'units': subject_check.get('units', 3)
+                            }
+                            
+                            # Try to find curriculum info
+                            if subject_check.get('curriculum_id'):
+                                cursor.execute("""
+                                    SELECT curriculum_year FROM curricula 
+                                    WHERE curriculum_id = %s
+                                """, (subject_check['curriculum_id'],))
+                                curriculum_result = cursor.fetchone()
+                                if curriculum_result:
+                                    subject_data['curriculum_year'] = curriculum_result['curriculum_year']
                             
                             # Try to find ANY schedule for this subject
                             cursor.execute("""
@@ -16153,197 +16198,104 @@ def initialize_session():
                                     CASE WHEN cs.status = 'active' THEN 0 ELSE 1 END,
                                     cs.schedule_id DESC 
                                 LIMIT 1
-                            """, (db_subject_id,))
+                            """, (subject_check['subject_id'],))
                             
-                            actual_schedule = cursor.fetchone()
-                            if actual_schedule:
-                                actual_schedule_id = actual_schedule['schedule_id']
-                                room = actual_schedule.get('room', 'TBA')
-                                day_of_week = actual_schedule.get('day_of_week', 'Unknown Day')
-                                if DEBUG_MODE: 
-                                    logger.debug(f"  Found schedule for subject: schedule_id={actual_schedule_id}, room={room}")
+                            schedule_result = cursor.fetchone()
+                            if schedule_result:
+                                subject_data['schedule_id'] = schedule_result['schedule_id']
+                                subject_data['room'] = schedule_result.get('room', 'TBA')
+                                subject_data['day_of_week'] = schedule_result.get('day_of_week', 'Unknown Day')
                             else:
-                                # No schedule exists, use subject info with TBA room
-                                room = 'TBA'
-                                if DEBUG_MODE: 
-                                    logger.debug(f"  No schedule exists for subject_id={db_subject_id}, using room='TBA'")
+                                subject_data['room'] = 'TBA'
+                                subject_data['day_of_week'] = 'Unknown Day'
                             
-                            # Set subject_id parameter for consistency
-                            subject_id = schedule_id
-                            schedule_id = None  # Clear since we found it's actually a subject_id
-                        else:
-                            if DEBUG_MODE: 
-                                logger.debug(f"  schedule_id {schedule_id} is not a valid subject_id either")
+                            subjects_info.append(subject_data)
+                            
+                            # Use as primary if first
+                            if idx == 0:
+                                db_subject_id = subject_check['subject_id']
+                                primary_subject_code = subject_check.get('subject_code', 'Unknown Subject')
+                                primary_subject_name = subject_check.get('subject_name', 'Unknown Subject')
+                                class_type = subject_check.get('class_type', 'lecture')
+                                room = subject_data.get('room', 'TBA')
+                                day_of_week = subject_data.get('day_of_week', 'Unknown Day')
+                                
+                                # Use subject's section_id if available
+                                if subject_check.get('section_id') and section_id is None:
+                                    section_id = subject_check['section_id']
+                                    if DEBUG_MODE: 
+                                        logger.debug(f"  Using section_id from subject table: {section_id}")
             
-            # SECOND: Process subject_id (either from parameter or discovered above)
-            subject_id_to_check = None
-            
-            # Determine which ID to check
-            if subject_id:
-                subject_id_to_check = subject_id
-                if DEBUG_MODE: 
-                    logger.debug(f"  Using subject_id from parameter: {subject_id_to_check}")
-            elif schedule_id and not schedule_found and str(schedule_id).isdigit():
-                # Check if schedule_id could be a subject_id
-                cursor.execute("SELECT subject_id FROM subjects WHERE subject_id = %s", (schedule_id,))
-                if cursor.fetchone():
-                    subject_id_to_check = schedule_id
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Using schedule_id as subject_id: {subject_id_to_check}")
-
-            if subject_id_to_check and not schedule_found:
-                if DEBUG_MODE: 
-                    logger.debug(f"  Looking up subject information for subject_id: {subject_id_to_check}")
-                
-                cursor.execute("""
-                    SELECT s.subject_id, s.subject_code, s.subject_name, s.class_type, 
-                           c.curriculum_year, s.curriculum_id, s.section_id
-                    FROM subjects s
-                    LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
-                    WHERE s.subject_id = %s AND s.status = 'active'
-                """, (subject_id_to_check,))
-                
-                subject_info = cursor.fetchone()
-                
-                if subject_info:
-                    if DEBUG_MODE: 
-                        logger.debug(f"   Found subject by ID: {subject_info['subject_id']}")
-                    db_subject_id = subject_info['subject_id']
-                    subject_code = subject_info.get('subject_code', 'Unknown Subject')
-                    subject_name = subject_info.get('subject_name', 'Unknown Subject')
-                    class_type = subject_info.get('class_type', 'lecture')
-                    subject_curriculum_year = subject_info.get('curriculum_year')
-                    
-                    # Use subject's section_id if not already found
-                    if subject_info.get('section_id') and section_id is None:
-                        section_id = subject_info['section_id']
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Using section_id from subject table: {section_id}")
-                    
-                    # Try to find ANY schedule for this subject (prioritize active ones)
-                    try:
-                        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                        current_day_name = day_names[dt.datetime.now().weekday()]
-                        cursor.execute("""
-                            SELECT cs.schedule_id, cs.room, cs.day_of_week, cs.section_id,
-                                   cs.start_time, cs.end_time, cs.status, cs.class_type
-                            FROM class_schedules cs
-                            WHERE cs.subject_id = %s
-                            ORDER BY 
-                                CASE WHEN cs.status = 'active' THEN 0 ELSE 1 END,
-                                CASE WHEN cs.day_of_week = %s THEN 0 ELSE 1 END,
-                                cs.schedule_id DESC 
-                            LIMIT 1
-                        """, (db_subject_id, current_day_name))
-                    except:
-                        cursor.execute("""
-                            SELECT cs.schedule_id, cs.room, cs.day_of_week, cs.section_id,
-                                   cs.start_time, cs.end_time, cs.status, cs.class_type
-                            FROM class_schedules cs
-                            WHERE cs.subject_id = %s
-                            ORDER BY 
-                                CASE WHEN cs.status = 'active' THEN 0 ELSE 1 END,
-                                cs.schedule_id DESC 
-                            LIMIT 1
-                        """, (db_subject_id,))
-                    
-                    schedule_info = cursor.fetchone()
-                    if schedule_info:
-                        actual_schedule_id = schedule_info['schedule_id']
-                        room = schedule_info.get('room', 'Unknown Room')
-                        day_of_week = schedule_info.get('day_of_week', 'Unknown Day')
-                        
-                        # If room is still empty or 'Unknown Room', provide a default
-                        if not room or room.strip() == '' or room == 'Unknown Room':
-                            room = 'TBA'  # To Be Announced
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Room field was empty, using 'TBA'")
-                        
-                        # Use this schedule's section_id if not already found
-                        if schedule_info.get('section_id') and section_id is None:
-                            section_id = schedule_info['section_id']
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Using section_id from subject's schedule: {section_id}")
-                        
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Found schedule for subject: Room={room}, Day={day_of_week}, Schedule ID={actual_schedule_id}")
-                    else:
-                        logger.warning(f"  No schedule found for subject_id={db_subject_id}")
-                        
-                        #  Since subject exists but has no schedule, use default room
-                        room = 'TBA'  # Default room for subjects without schedules
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Subject exists but has no schedule. Using default room: {room}")
-                        
-                        # Try to get current day for display
-                        try:
-                            day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                            current_day_index = dt.datetime.now().weekday()
-                            day_of_week = day_names[current_day_index]
-                            if DEBUG_MODE: 
-                                logger.debug(f"  Using current system day: {day_of_week}")
-                        except Exception as day_error:
-                            logger.warning(f"  Could not determine day of week: {day_error}")
-                else:
-                    logger.warning(f"  No subject found with ID={subject_id_to_check}")
-            
-            # THIRD: If still no subject info, check if we have subject data from URL parameters
-            if subject_code == 'Unknown Subject' and data.get('subjects'):
+            # If no subjects were found via schedule_ids, check the subjects JSON parameter
+            if not subjects_info and subjects_json:
                 try:
                     import json
-                    subjects_data = json.loads(data.get('subjects', '[]'))
+                    subjects_list = json.loads(subjects_json) if isinstance(subjects_json, str) else subjects_json
                     
-                    if subjects_data and isinstance(subjects_data, list) and len(subjects_data) > 0:
-                        # Get the first subject from the list
-                        first_subject = subjects_data[0]
-                        
-                        subject_code = first_subject.get('subject_code', 'Unknown Subject')
-                        subject_name = first_subject.get('subject_name', 'Unknown Subject')
-                        class_type = first_subject.get('class_type', 'lecture')
-                        
-                        if DEBUG_MODE: 
-                            logger.debug(f"  Using subject from URL parameters: {subject_code} - {subject_name}")
-                        
-                        # Try to find the subject in database by code
-                        if subject_code != 'Unknown Subject':
-                            cursor.execute("""
-                                SELECT subject_id FROM subjects 
-                                WHERE subject_code = %s OR subject_name = %s
-                                LIMIT 1
-                            """, (subject_code, subject_name))
+                    if subjects_list and isinstance(subjects_list, list):
+                        for idx, subj_data in enumerate(subjects_list):
+                            subject_data = {
+                                'schedule_id': subj_data.get('schedule_id'),
+                                'subject_id': subj_data.get('schedule_id'),  # Using schedule_id as subject_id for now
+                                'subject_code': subj_data.get('subject_code', 'Unknown Subject'),
+                                'subject_name': subj_data.get('subject_name', 'Unknown Subject'),
+                                'class_type': subj_data.get('class_type', 'lecture'),
+                                'curriculum_year': subj_data.get('curriculum_year'),
+                                'units': subj_data.get('units', 3),
+                                'room': 'TBA',
+                                'day_of_week': 'Unknown Day'
+                            }
                             
-                            subject_in_db = cursor.fetchone()
-                            if subject_in_db:
-                                db_subject_id = subject_in_db['subject_id']
+                            # Try to get actual subject_id from database
+                            if subj_data.get('subject_code'):
+                                cursor.execute("""
+                                    SELECT subject_id FROM subjects 
+                                    WHERE subject_code = %s LIMIT 1
+                                """, (subj_data['subject_code'],))
+                                db_subject = cursor.fetchone()
+                                if db_subject:
+                                    subject_data['subject_id'] = db_subject['subject_id']
+                            
+                            subjects_info.append(subject_data)
+                            
+                            if idx == 0:
+                                primary_subject_code = subj_data.get('subject_code', 'Unknown Subject')
+                                primary_subject_name = subj_data.get('subject_name', 'Unknown Subject')
+                                class_type = subj_data.get('class_type', 'lecture')
+                                room = 'TBA'
+                                
                                 if DEBUG_MODE: 
-                                    logger.debug(f"  Found subject in database: subject_id={db_subject_id}")
+                                    logger.debug(f"  Using subject from JSON parameter: {primary_subject_code} - {primary_subject_name}")
+                    
+                    if DEBUG_MODE: 
+                        logger.debug(f"  Loaded {len(subjects_info)} subjects from JSON parameter")
+                        
                 except Exception as json_error:
                     if DEBUG_MODE: 
-                        logger.debug(f"  Could not parse subjects from URL: {json_error}")
-            
-            # FOURTH: Get current day if still unknown
-            if day_of_week == 'Unknown Day':
-                try:
-                    day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                    current_day_index = dt.datetime.now().weekday()
-                    day_of_week = day_names[current_day_index]
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Using current system day: {day_of_week}")
-                except Exception as day_error:
-                    logger.warning(f"  Could not determine day of week: {day_error}")
-            
-            # FINAL: Ensure room is not 'Unknown Room'
-            if room == 'Unknown Room':
-                room = 'TBA'  # Default room
-                if DEBUG_MODE: 
-                    logger.debug(f"  Final check: Setting default room to: {room}")
-                    
+                        logger.debug(f"  Could not parse subjects JSON: {json_error}")
+        
         except Exception as e:
-            logger.error(f"  Error fetching subject/schedule info: {e}", exc_info=True)
-            # Fallback to URL parameters
-            subject_code = data.get('subject', 'Unknown Subject')
-            subject_name = data.get('subject', 'Unknown Subject')
-            room = 'TBA'  # Default room
+            logger.error(f"  Error fetching subjects info: {e}", exc_info=True)
+            # Fallback
+            primary_subject_code = data.get('subject', 'Unknown Subject')
+            primary_subject_name = data.get('subject', 'Unknown Subject')
+            room = 'TBA'
+        
+        # If still no subjects, create a default
+        if not subjects_info:
+            subjects_info.append({
+                'subject_code': primary_subject_code,
+                'subject_name': primary_subject_name,
+                'class_type': class_type,
+                'curriculum_year': subject_curriculum_year,
+                'room': room,
+                'units': 3
+            })
+        
+        if DEBUG_MODE: 
+            logger.debug(f"  Total subjects for this session: {len(subjects_info)}")
+            for subj in subjects_info:
+                logger.debug(f"    - {subj.get('subject_code')}: {subj.get('subject_name')} ({subj.get('class_type')}) - Units: {subj.get('units', 3)}")
         
         #    GET FACULTY INFO
         faculty_name = data.get('instructor', 'Unknown Instructor')
@@ -16403,17 +16355,19 @@ def initialize_session():
             logger.warning(f"  Could not fetch faculty info: {e}")
         
         #    SAVE SESSION TO DATABASE
-        original_schedule_id = actual_schedule_id if actual_schedule_id else (schedule_id if schedule_found else None)
+        # Create a combined schedule ID for multiple subjects
+        if schedule_ids:
+            combined_schedule_id = "_".join([str(sid) for sid in schedule_ids[:3]])  # First 3 IDs
+            if len(schedule_ids) > 3:
+                combined_schedule_id += f"_plus{len(schedule_ids)-3}"
+        else:
+            combined_schedule_id = f"multi_sub_{int(dt.datetime.now().timestamp())}"
+        
+        # Use first subject's schedule_id as original_schedule_id for backward compatibility
+        original_schedule_id = actual_schedule_id if actual_schedule_id else combined_schedule_id
         
         try:
-            # If no original_schedule_id, use a placeholder
-            if not original_schedule_id:
-                if db_subject_id:
-                    original_schedule_id = f"manual_sub_{db_subject_id}"
-                else:
-                    original_schedule_id = "manual_session"
-            
-            # First, try to get the next session instance number
+            # Get the next session instance number
             cursor.execute("""
                 SELECT COALESCE(MAX(session_instance), 0) + 1 as next_instance 
                 FROM attendance_sessions 
@@ -16422,20 +16376,35 @@ def initialize_session():
             instance_result = cursor.fetchone()
             next_instance = instance_result['next_instance'] if instance_result else 1
             
-            # Insert into attendance_sessions
+            # Create a combined subject display
+            if len(subjects_info) == 1:
+                subject_display = subjects_info[0]['subject_code']
+                subject_name_display = subjects_info[0]['subject_name']
+            elif len(subjects_info) == 2:
+                subject_display = f"{subjects_info[0]['subject_code']} & {subjects_info[1]['subject_code']}"
+                subject_name_display = f"Multiple Subjects (2)"
+            else:
+                subject_display = f"{subjects_info[0]['subject_code']} +{len(subjects_info)-1}"
+                subject_name_display = f"Multiple Subjects ({len(subjects_info)})"
+            
+            # Calculate total units
+            total_units = sum([subj.get('units', 3) for subj in subjects_info])
+            
+            # Insert into attendance_sessions with multi-subject support
             cursor.execute("""
                 INSERT INTO attendance_sessions 
                 (session_id, class_name, subject_code, subject_name, room, started_at, 
                  late_threshold_minutes, total_duration_minutes, 
                  threshold_seconds_total, session_duration_seconds_total,
                  created_by, status, section_id,
-                 original_schedule_id, session_instance, subject_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s, %s)
+                 original_schedule_id, session_instance, subject_id,
+                 is_multi_subject, subjects_json, total_units)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s, %s, %s, %s, %s)
             """, (
                 unique_session_id,
                 f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
-                subject_code,
-                subject_name,
+                subject_display,  # Combined subject code display
+                subject_name_display,  # Combined subject name
                 room,
                 session_start_time,
                 session_threshold_seconds // 60,
@@ -16446,16 +16415,22 @@ def initialize_session():
                 section_id,
                 original_schedule_id,
                 next_instance,
-                db_subject_id
+                db_subject_id if db_subject_id else None,
+                1 if len(subjects_info) > 1 else 0,  # is_multi_subject flag
+                json.dumps(subjects_info) if subjects_info else None,  # Store all subjects as JSON
+                total_units
             ))
+            
             if DEBUG_MODE: 
-                logger.debug(f"💾 Session saved to database with unique ID: {unique_session_id}, instance: {next_instance}")
+                logger.debug(f"💾 Session saved to database with unique ID: {unique_session_id}")
             if DEBUG_MODE: 
-                logger.debug(f"  Database fields - Schedule ID: {original_schedule_id}, Subject ID: {db_subject_id}, Section ID: {section_id}")
+                logger.debug(f"  Multi-subject: {len(subjects_info)} subjects, Total units: {total_units}")
+            if DEBUG_MODE: 
+                logger.debug(f"  Combined ID: {combined_schedule_id}")
             
         except Exception as e:
-            logger.error(f"  Could not save session to database: {e}")
-            # Try simpler insert without instance number
+            logger.error(f"  Could not save session to database: {e}", exc_info=True)
+            # Try simpler insert without multi-subject fields
             try:
                 cursor.execute("""
                     INSERT INTO attendance_sessions 
@@ -16467,8 +16442,8 @@ def initialize_session():
                 """, (
                     unique_session_id,
                     f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
-                    subject_code,
-                    subject_name,
+                    primary_subject_code,
+                    primary_subject_name,
                     room,
                     session_start_time,
                     session_threshold_seconds // 60,
@@ -16481,38 +16456,10 @@ def initialize_session():
                     db_subject_id
                 ))
                 if DEBUG_MODE: 
-                    logger.debug(f"💾 Session saved without instance number: {unique_session_id}")
+                    logger.debug(f"💾 Session saved with basic insert: {unique_session_id}")
             except Exception as retry_error:
                 logger.error(f"  Failed to save session even with retry: {retry_error}")
-                # Basic insert with minimal fields
-                try:
-                    cursor.execute("""
-                        INSERT INTO attendance_sessions 
-                        (session_id, class_name, subject_code, subject_name, room, started_at, 
-                         late_threshold_minutes, total_duration_minutes, 
-                         threshold_seconds_total, session_duration_seconds_total,
-                         created_by, status, section_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s)
-                    """, (
-                        unique_session_id,
-                        f"{data.get('program', 'Unknown')} {data.get('year_level', '')}{data.get('section', '')}",
-                        subject_code,
-                        subject_name,
-                        room,
-                        session_start_time,
-                        session_threshold_seconds // 60,
-                        session_total_duration_seconds // 60,
-                        session_threshold_seconds,
-                        session_total_duration_seconds,
-                        data.get('instructor', 'System'),
-                        section_id
-                    ))
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Session saved with basic insert: {unique_session_id}")
-                except Exception as final_error:
-                    logger.error(f"  All insert attempts failed: {final_error}")
-                    # Don't raise error, just log it - session can continue without DB entry
-                    pass
+                # Don't raise error, just log it - session can continue without DB entry
         
         #   Initialize faces AFTER session is saved to database
         initialize_faces_for_session()
@@ -16560,27 +16507,57 @@ def initialize_session():
             else:
                 return subject_code
         
-        subject_display = format_subject_display(subject_code, class_type)
+        # Create combined subject display
+        if len(subjects_info) == 1:
+            subject_display = format_subject_display(primary_subject_code, class_type)
+        else:
+            subject_codes = []
+            for subj in subjects_info[:3]:
+                code = subj.get('subject_code', '')
+                if subj.get('class_type') == 'laboratory':
+                    code += " (Lab)"
+                elif subj.get('class_type') == 'lecture':
+                    code += " (Lec)"
+                subject_codes.append(code)
+            
+            subject_display = " + ".join(subject_codes)
+            if len(subjects_info) > 3:
+                subject_display += f" +{len(subjects_info)-3}"
         
         #    FORMAT HEADER DISPLAY TEXT
-        def format_header_display(subject_code, room):
-            """Format header display: Subject Code - Room (Day)"""
+        def format_header_display(subject_codes, room):
+            """Format header display: Subject Code(s) - Room (Day)"""
+            if not subject_codes:
+                return "Multiple Subjects"
+                
+            if len(subject_codes) == 1:
+                display = subject_codes[0]
+            elif len(subject_codes) == 2:
+                display = f"{subject_codes[0]} & {subject_codes[1]}"
+            else:
+                display = f"{subject_codes[0]} +{len(subject_codes)-1}"
+            
             # If room is 'TBA', use a more generic display
             if room == 'TBA' or room == 'Unknown Room':
-                return f"{subject_code}"
-            return f"{subject_code} - {room}"
+                return display
+            return f"{display} - {room}"
         
-        header_display = format_header_display(subject_code, room)
+        subject_codes = [subj.get('subject_code', '') for subj in subjects_info]
+        header_display = format_header_display(subject_codes, room)
         
         #    STORE SESSION DATA - USE UNIQUE SESSION ID
         session_data = {
             'session_id': unique_session_id,
             'schedule_id': original_schedule_id,
-            'subject_id': db_subject_id,
+            'schedule_ids': schedule_ids,  # Add array of schedule IDs
+            'subject_ids': [subj.get('subject_id') for subj in subjects_info if subj.get('subject_id')],
             'instructor': faculty_name,
-            'subject_code': subject_code,
-            'subject_name': subject_name,
+            'subject_code': primary_subject_code,
+            'subject_name': primary_subject_name,
             'subject_display': subject_display,
+            'subjects': subjects_info,  # Add all subjects data
+            'subjects_count': len(subjects_info),
+            'total_units': total_units if 'total_units' in locals() else sum([subj.get('units', 3) for subj in subjects_info]),
             'room': room,
             'class_type': class_type,
             'day_of_week': day_of_week,
@@ -16597,7 +16574,8 @@ def initialize_session():
             'threshold_display': format_time_display(session_threshold_seconds),
             'start_time': session_start_time.isoformat(),
             'section_id': section_id,
-            'curriculum_year': subject_curriculum_year
+            'curriculum_year': subject_curriculum_year,
+            'is_multi_subject': len(subjects_info) > 1
         }
         
         # ADD CURRICULUM INFO IF AVAILABLE
@@ -16615,7 +16593,9 @@ def initialize_session():
         if DEBUG_MODE: 
             logger.debug(f"  Class: {data.get('program')} {data.get('year_level')}{data.get('section')}")
         if DEBUG_MODE: 
-            logger.debug(f"  Subject: {subject_code} - {subject_name}")
+            logger.debug(f"  Subjects: {len(subjects_info)} subjects")
+        if DEBUG_MODE: 
+            logger.debug(f"  Primary Subject: {primary_subject_code} - {primary_subject_name}")
         if DEBUG_MODE: 
             logger.debug(f"  Room: {room}")
         if DEBUG_MODE: 
@@ -16625,11 +16605,13 @@ def initialize_session():
         if DEBUG_MODE: 
             logger.debug(f"  Section ID: {section_id}")
         if DEBUG_MODE: 
-            logger.debug(f"  Subject ID: {db_subject_id}")
+            logger.debug(f"  Subject IDs: {[subj.get('subject_id') for subj in subjects_info]}")
         if DEBUG_MODE: 
-            logger.debug(f" Unique Session ID returned: {unique_session_id}")
+            logger.debug(f"  Unique Session ID returned: {unique_session_id}")
         if DEBUG_MODE: 
             logger.debug(f"  Header Display: {header_display}")
+        if DEBUG_MODE: 
+            logger.debug(f"  Total Units: {session_data['total_units']}")
         
         return jsonify({
             'success': True, 
