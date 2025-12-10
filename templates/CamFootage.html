@@ -695,20 +695,52 @@ window.addEventListener('load', () => {
     initializeSearch();
     setupStudentContextMenu();
     
-    // Extract URL parameters
+    //   Extract URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     
     //   Handle both schedule_id (singular) and schedule_ids (plural)
     let scheduleId = urlParams.get('schedule_id'); // Try singular first
+    let scheduleIdsParam = urlParams.get('schedule_ids'); // Get the comma-separated list
     
-    // If schedule_id not found, check for schedule_ids (plural)
-    if (!scheduleId) {
-        const scheduleIdsParam = urlParams.get('schedule_ids');
-        if (scheduleIdsParam) {
-            // Take the first schedule ID from comma-separated list
-            const scheduleIds = scheduleIdsParam.split(',');
+    let scheduleIds = [];
+    
+    // Process schedule_ids parameter
+    if (scheduleIdsParam) {
+        scheduleIds = scheduleIdsParam.split(',').filter(id => id.trim());
+        console.log(`✅ Processing multiple schedule IDs: ${scheduleIds}`);
+        
+        // Use first schedule ID as primary for backward compatibility
+        if (scheduleIds.length > 0 && !scheduleId) {
             scheduleId = scheduleIds[0];
             console.log(`  Using first schedule ID from schedule_ids: ${scheduleId}`);
+        }
+    }
+    
+    // Fallback to single schedule_id if no schedule_ids
+    if (!scheduleIds.length && scheduleId) {
+        scheduleIds = [scheduleId];
+    }
+    
+    // 🔍 DEBUG SUBJECTS PARAMETER
+    const subjectsParam = urlParams.get('subjects');
+    console.log('🔍 Subjects parameter raw:', subjectsParam);
+    
+    let parsedSubjects = [];
+    if (subjectsParam && subjectsParam !== '[]') {
+        try {
+            const decodedSubjects = decodeURIComponent(subjectsParam);
+            console.log('🔍 Subjects decoded:', decodedSubjects);
+            
+            parsedSubjects = JSON.parse(decodedSubjects);
+            console.log('✅ Subjects parsed successfully:', parsedSubjects);
+            
+            // Extract schedule IDs from subjects if not already provided
+            if (scheduleIds.length === 0 && parsedSubjects.length > 0) {
+                scheduleIds = parsedSubjects.map(subject => subject.schedule_id || subject.subject_id).filter(id => id);
+                console.log(`✅ Extracted schedule IDs from subjects: ${scheduleIds}`);
+            }
+        } catch (error) {
+            console.error('❌ Error parsing subjects JSON:', error);
         }
     }
     
@@ -717,10 +749,13 @@ window.addEventListener('load', () => {
     const today = new Date();
     const currentDayOfWeek = dayNames[today.getDay()];
     
+    // ✅ FIXED: Convert scheduleIds array to comma-separated string
     const sessionData = {
-        schedule_id: scheduleId,
+        schedule_id: scheduleId,  // Primary/First schedule ID (for backward compatibility)
+        schedule_ids: scheduleIds.join(','),  // ✅ COMMA-SEPARATED STRING
         instructor: urlParams.get('instructor') || 'Unknown Instructor',
         subject: urlParams.get('subject') || 'Unknown Subject',
+        subjects: subjectsParam || '[]',  // Keep the JSON string of subjects
         year_level: urlParams.get('year_level') || 'Unknown Year',
         program: urlParams.get('program') || 'Unknown Program',
         section: urlParams.get('section') || 'Unknown Section',
@@ -729,8 +764,13 @@ window.addEventListener('load', () => {
         rtsp_url: decodeURIComponent(urlParams.get('rtsp_url') || ''),
         mode: urlParams.get('mode') || 'default'
     };
-    
-    console.log('  Session data from URL:', sessionData);
+
+    console.log('✅ Session data prepared:', {
+        schedule_id: sessionData.schedule_id,
+        schedule_ids: sessionData.schedule_ids,
+        subjects_param_length: subjectsParam ? subjectsParam.length : 0,
+        parsed_subjects_count: parsedSubjects.length
+    });
     
     //  SET INITIAL FALLBACK VALUES (will be updated if API succeeds)
     currentSessionId = sessionData.schedule_id || ('fallback_' + Date.now());
@@ -766,7 +806,9 @@ window.addEventListener('load', () => {
         faculty_photo: '../static/images/default-avatar.jpg',
         role: 'Faculty Member',
         program_display: programDisplay,
-        start_time: new Date().toISOString()
+        start_time: new Date().toISOString(),
+        subjects: parsedSubjects, // Store parsed subjects for reference
+        schedule_ids: scheduleIds // Store schedule IDs array
     };
     
     //  UPDATE UI IMMEDIATELY WITH FALLBACK DATA
@@ -777,7 +819,7 @@ window.addEventListener('load', () => {
     
     //  VALIDATE: Make sure we have a schedule_id before calling API
     if (!sessionData.schedule_id) {
-        console.error('  No schedule_id found in URL parameters');
+        console.error('❌ No schedule_id found in URL parameters');
         showAlertModal('error', 'Missing schedule information. Please start the session again.', 'Session Error');
         
         // Load students with fallback
@@ -796,6 +838,7 @@ window.addEventListener('load', () => {
     
     // Initialize session on backend with error handling
     console.log('📡 Calling /api/initialize_session...');
+    console.log('  Sending data:', JSON.stringify(sessionData, null, 2));
     
     fetch('/api/initialize_session', {
         method: 'POST',
@@ -817,7 +860,7 @@ window.addEventListener('load', () => {
         console.log('🔴 Session initialization response:', data);
         
         if (data && data.success) {
-            console.log('   Session initialized successfully');
+            console.log('✅ Session initialized successfully');
             
             //  UPDATE WITH REAL DATA FROM BACKEND
             currentSessionId = data.data.session_id || currentSessionId;
@@ -862,10 +905,14 @@ window.addEventListener('load', () => {
                 faculty_photo: data.data.faculty_photo || '../static/images/default-avatar.jpg',
                 role: data.data.role || 'Faculty Member',
                 program_display: backendProgramDisplay,
-                start_time: data.data.start_time || new Date().toISOString()
+                start_time: data.data.start_time || new Date().toISOString(),
+                subjects: data.data.subjects || parsedSubjects,
+                schedule_ids: scheduleIds,
+                is_multi_subject: data.data.is_multi_subject || false,
+                subjects_count: data.data.subjects_count || parsedSubjects.length
             };
             
-            console.log('🔴 Updated global variables:', window._sessionData);
+            console.log('✅ Updated global variables:', window._sessionData);
             
             //  UPDATE UI WITH REAL DATA
             updateSessionUI(window._sessionData);
@@ -874,7 +921,7 @@ window.addEventListener('load', () => {
             isSessionEnding = false;
             isDetectionStopped = false;
             resumePythonDetection();
-            console.log(' Detection EXPLICITLY ENABLED for new session');
+            console.log('✅ Detection EXPLICITLY ENABLED for new session');
             
             //  LOAD STUDENTS
             setTimeout(() => {
@@ -882,7 +929,7 @@ window.addEventListener('load', () => {
                     console.log('🔴 Loading students with session data');
                     loadClassStudents(window._sessionData.program, window._sessionData.year_level, window._sessionData.section);
                 } else {
-                    console.error('  Missing parameters for loadClassStudents');
+                    console.error('❌ Missing parameters for loadClassStudents');
                     if (sessionData.program && sessionData.year_level && sessionData.section) {
                         console.log('  Falling back to URL parameters');
                         loadClassStudents(sessionData.program, sessionData.year_level, sessionData.section);
@@ -894,10 +941,10 @@ window.addEventListener('load', () => {
             updateStudentCount();
             setInterval(updateStudentCount, 6000);
             
-            console.log('  Session started successfully with backend data');
+            console.log('✅ Session started successfully with backend data');
             
         } else {
-            console.error('  Session initialization failed:', data?.message || 'Unknown error');
+            console.error('❌ Session initialization failed:', data?.message || 'Unknown error');
             
             //  SHOW WARNING BUT KEEP USING FALLBACK VALUES
             showAlertModal('warning', 
@@ -916,7 +963,7 @@ window.addEventListener('load', () => {
         }
     })
     .catch(err => {
-        console.error('  Error initializing session:', err);
+        console.error('❌ Error initializing session:', err);
         
         //  CHECK SPECIFIC ERROR
         let errorMessage = 'Connected with limited functionality. ';

@@ -32,13 +32,13 @@
     <h3 class="group-title">Camera Settings</h3>
     
     <!-- Stream Type Selection -->
-    <div class="stream-type-selector">
-        <label class="radio-label">
-            <input type="radio" name="streamType" value="main">
-            <span>Main Stream (4K) - Recommended for Face Recognition</span>
-        </label>
-    
-    </div>
+<div class="stream-type-selector">
+    <label class="radio-label">
+        <input type="radio" name="streamType" value="main" checked>
+        <span>Main Stream (4K) - Recommended for Face Recognition</span>
+    </label>
+ 
+</div>
     
     <div class="input-group">
         <input type="text" id="rtspUrl" placeholder="Enter RTSP URL" 
@@ -624,6 +624,56 @@ function updateDurationBasedOnUnits() {
     });
 }
 
+function updateThresholdBasedOnDuration(hours, minutes) {
+    const totalMinutes = (hours * 60) + minutes;
+    
+    // Calculate appropriate threshold based on total duration
+    let thresholdMinutes;
+    
+    if (totalMinutes <= 60) {
+        // 1 hour or less: 10% of duration, minimum 5 minutes
+        thresholdMinutes = Math.max(5, Math.round(totalMinutes * 0.1));
+    } else if (totalMinutes <= 120) {
+        // 1-2 hours: 15 minutes
+        thresholdMinutes = 15;
+    } else if (totalMinutes <= 180) {
+        // 2-3 hours: 20 minutes
+        thresholdMinutes = 20;
+    } else {
+        // More than 3 hours: 25 minutes
+        thresholdMinutes = 25;
+    }
+    
+    // Ensure threshold is reasonable (not more than 30% of total time)
+    const maxThreshold = Math.round(totalMinutes * 0.3);
+    thresholdMinutes = Math.min(thresholdMinutes, maxThreshold);
+    
+    // Update threshold display
+    const thresholdHoursInput = document.getElementById('thresholdHours');
+    const thresholdMinutesInput = document.getElementById('thresholdMinutes');
+    const thresholdSecondsInput = document.getElementById('thresholdSeconds');
+    
+    if (thresholdHoursInput && thresholdMinutesInput) {
+        // If threshold is more than 60 minutes, convert to hours
+        if (thresholdMinutes >= 60) {
+            const thresholdHours = Math.floor(thresholdMinutes / 60);
+            const remainingMinutes = thresholdMinutes % 60;
+            thresholdHoursInput.value = String(thresholdHours).padStart(2, '0');
+            thresholdMinutesInput.value = String(remainingMinutes).padStart(2, '0');
+        } else {
+            thresholdHoursInput.value = '00';
+            thresholdMinutesInput.value = String(thresholdMinutes).padStart(2, '0');
+        }
+        thresholdSecondsInput.value = '00';
+    }
+    
+    console.log('Threshold updated based on duration:', {
+        totalMinutes: totalMinutes,
+        thresholdMinutes: thresholdMinutes,
+        display: `${thresholdHoursInput.value}h ${thresholdMinutesInput.value}m`
+    });
+}
+
 function updateSelectedSubjects() {
     const subjectDropdown = document.getElementById('subjectCode');
     const selectedSubjectsContainer = document.getElementById('selectedSubjects');
@@ -874,20 +924,26 @@ function loadCameraTest(rtspUrl) {
 }
 
 
-// Update the RTSP handling in your timer.html JavaScript
+// Fix the RTSP initialization - replace the problematic section
 document.addEventListener('DOMContentLoaded', function() {
     const rtspUrlInput = document.getElementById('rtspUrl');
     const streamTypeRadios = document.querySelectorAll('input[name="streamType"]');
     const testRtspBtn = document.getElementById('testRtspBtn');
     
-    // Base URL without channel - CORRECT FORMAT
+    // Base URL without channel
     let baseUrl = 'rtsp://admin:@101Pok3r5610@192.168.1.64:554';
     
     // Function to update URL based on selected stream type
     function updateRtspUrl() {
-        const selectedType = document.querySelector('input[name="streamType"]:checked').value;
+        const selectedType = document.querySelector('input[name="streamType"]:checked');
         
-        if (selectedType === 'main') {
+        if (!selectedType) {
+            // Default to main stream if nothing is checked
+            rtspUrlInput.value = baseUrl + '/Streaming/Channels/101';
+            return;
+        }
+        
+        if (selectedType.value === 'main') {
             // Main stream (4K) - Channel 101
             rtspUrlInput.value = baseUrl + '/Streaming/Channels/101';
         } else {
@@ -901,14 +957,39 @@ document.addEventListener('DOMContentLoaded', function() {
         radio.addEventListener('change', updateRtspUrl);
     });
     
-    // Initialize with sub-stream (recommended)
-    document.querySelector('input[name="streamType"][value="sub"]').checked = true;
+    // SAFELY initialize the radio buttons
+    // First check what radio buttons actually exist
+    const subStreamRadio = document.querySelector('input[name="streamType"][value="sub"]');
+    const mainStreamRadio = document.querySelector('input[name="streamType"][value="main"]');
+    
+    // Check which ones exist and set defaults accordingly
+    if (subStreamRadio && mainStreamRadio) {
+        // Both exist - default to sub-stream for face recognition
+        subStreamRadio.checked = true;
+        console.log('Defaulting to Sub-Stream for better face recognition performance');
+    } else if (mainStreamRadio) {
+        // Only main stream exists
+        mainStreamRadio.checked = true;
+        console.log('Only Main Stream available, defaulting to it');
+    } else if (subStreamRadio) {
+        // Only sub-stream exists (unlikely but handle it)
+        subStreamRadio.checked = true;
+        console.log('Only Sub-Stream available, defaulting to it');
+    } else {
+        // No stream type radios found at all
+        console.warn('No stream type radio buttons found');
+        // Set a default URL anyway
+        rtspUrlInput.value = baseUrl + '/Streaming/Channels/102';
+    }
+    
+    // Initialize the URL
     updateRtspUrl();
     
-    // Enhanced Test Camera function with CORRECT authentication
+    // Enhanced Test Camera function
     testRtspBtn.addEventListener('click', async function() {
         const rtspUrl = rtspUrlInput.value.trim();
-        const streamType = document.querySelector('input[name="streamType"]:checked').value;
+        const selectedRadio = document.querySelector('input[name="streamType"]:checked');
+        const streamType = selectedRadio ? selectedRadio.value : 'main';
         
         if (!rtspUrl) {
             showModal('Error', 'Please enter RTSP URL');
@@ -1134,11 +1215,15 @@ async function startSession(event) {
         return;
     }
 
+    //   FIXED: Properly encode subjects parameter
+    const subjectsJsonString = JSON.stringify(selectedSubjects);
+    const encodedSubjects = encodeURIComponent(subjectsJsonString);
+    
     //   ENHANCED: Redirect to camfootage with multiple subjects
     const params = new URLSearchParams({
         schedule_ids: settings.scheduleIds.join(','), //   COMMA-SEPARATED SCHEDULE IDs
         instructor: settings.classDetails.instructor,
-        subjects: JSON.stringify(selectedSubjects), //   ALL SUBJECTS DATA AS JSON
+        subjects: encodedSubjects, //   ✅ FIXED: URL-ENCODED SUBJECTS DATA
         year_level: settings.classDetails.yearLevel,
         program: settings.classDetails.course,
         section: settings.classDetails.section,
@@ -1148,7 +1233,13 @@ async function startSession(event) {
         mode: timerMode
     });
 
-    console.log('  REDIRECTING WITH MULTIPLE SUBJECTS:', selectedSubjects);
+    console.log('✅ REDIRECTING WITH MULTIPLE SUBJECTS:', {
+        scheduleIds: settings.scheduleIds,
+        subjectsCount: selectedSubjects.length,
+        firstSubject: selectedSubjects[0]?.subject_code || 'None',
+        encodedSubjects: encodedSubjects.substring(0, 100) + '...',
+        fullUrl: `/camfootage?${params.toString().substring(0, 200)}...`
+    });
     
     // Add a small delay to ensure camera is ready
     setTimeout(() => {
