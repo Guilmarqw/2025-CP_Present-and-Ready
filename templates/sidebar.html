@@ -4,9 +4,68 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard</title>
+    
+    <!-- DNS Prefetch for external resources -->
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+    
+    <!-- Preconnect to CDN for faster connection -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    
+    <!-- Preload critical CSS -->
+    <link rel="preload" href="{{ url_for('static', filename='sidebar.css') }}?v=7" as="style">
+    
+    <!-- CRITICAL: FontAwesome first with preload (required for icons) -->
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" as="style">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../static/sidebar.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
+    
+    <!-- Load sidebar CSS non-blocking -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}?v=7" media="print" onload="this.media='all'">
+    
+    <!-- Fallback for non-supporting browsers -->
+    <noscript><link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}?v=7"></noscript>
+    
+    <!-- Inline critical styles for instant paint - FIXED: Absolute positioning for zero-delay -->
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background-color: #f5f7f9; color: #333; display: flex; min-height: 100vh; }
+        .sidebar { 
+            width: 250px; 
+            background: white; 
+            color: black; 
+            height: 100vh; 
+            position: fixed;
+            top: 0;
+            left: 0;
+            padding: 20px 0; 
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1); 
+            display: flex; 
+            flex-direction: column; 
+            z-index: 1000; 
+            scrollbar-width: none;
+        }
+        .sidebar::-webkit-scrollbar { width: 0; background: transparent; }
+        .user-info { display: flex; flex-direction: column; align-items: center; padding: 15px 20px; margin-bottom: 20px; border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .user-info .avatar { width: 70px; height: 70px; border-radius: 50%; background-color: #1a2530; display: flex; align-items: center; justify-content: center; margin-bottom: 15px; font-size: 28px; color: white; }
+        .user-info .name { font-weight: 600; font-size: 18px; margin-bottom: 5px; color: #333; }
+        .user-info .role { color: #aab7c5; font-size: 14px; }
+        .nav-items { list-style: none; padding: 0 15px; flex-grow: 1; overflow-y: auto; scrollbar-width: none; }
+        .nav-items::-webkit-scrollbar { width: 0; background: transparent; }
+        .nav-items li { margin-bottom: 5px; }
+        .nav-items a { display: flex; align-items: center; padding: 12px 15px; color: black; text-decoration: none; border-radius: 5px; transition: all 0.3s ease; }
+        .nav-items a:hover { background-color: rgba(0,0,0,0.05); }
+        .nav-items a.active { background-color: #4a6fa9; color: white; font-weight: 600; }
+        .nav-items a.active:hover { background-color: #3b5b8d; }
+        .nav-items a i { margin-right: 10px; font-size: 18px; width: 24px; text-align: center; }
+        .nav-items .timer-item a { background-color: #4a6fa9; color: white; font-weight: 600; }
+        .nav-items .timer-item a:hover { background-color: #3b5b8d; }
+        .dropdown .dropdown-btn { display: flex; align-items: center; padding: 12px 15px; color: black; text-decoration: none; border-radius: 5px; cursor: pointer; transition: all 0.3s ease; }
+        .dropdown .dropdown-btn:hover { background-color: rgba(0,0,0,0.05); }
+        .dropdown .dropdown-btn.active { background-color: #4a6fa9; color: white; font-weight: 600; }
+        .dropdown-content { display: none; list-style: none; padding-left: 20px; }
+        .dropdown-content li a { display: flex; align-items: center; padding: 10px 15px; color: #555; font-size: 14px; border-radius: 5px; }
+        .dropdown-content li a:hover { background-color: rgba(0,0,0,0.05); }
+        .dropdown-content li a.active { background-color: #e8f0f8; color: #4a6fa9; font-weight: 600; }
+    </style>
 </head>
 <body>
     <!-- Sidebar -->
@@ -133,27 +192,31 @@
             });
 
             // Set active link based on current path
-            const currentPath = window.location.pathname;
-            console.log('Current path:', currentPath);
-            
+            const currentPathClean = window.location.pathname.replace(/\/$/, '');
+            console.log('Cleaned current path:', currentPathClean);
+
             document.querySelectorAll('.nav-items a').forEach(link => {
-                const linkPath = link.getAttribute('href');
-                if (linkPath === '#') return; // Skip dropdown buttons
+                let linkHref = link.getAttribute('href');
                 
-                if (currentPath === linkPath || (linkPath !== '/' && currentPath.startsWith(linkPath))) {
+                // Skip dropdown toggle buttons
+                if (linkHref === '#' || link.classList.contains('dropdown-btn')) return;
+                
+                // Clean the href the same way (remove trailing slash)
+                let cleanHref = linkHref.replace(/\/$/, '');
+                
+                // Exact match OR startsWith (for nested routes)
+                if (currentPathClean === cleanHref || (cleanHref !== '' && currentPathClean.startsWith(cleanHref + '/'))) {
                     link.classList.add('active');
-                    console.log('Active link:', linkPath);
-                    
-                    // Auto-expand dropdown if this link is in a dropdown
+                    console.log('Active link set:', cleanHref);
+
+                    // Auto-expand parent dropdown if exists
                     const dropdownContent = link.closest('.dropdown-content');
                     if (dropdownContent) {
                         dropdownContent.style.display = 'block';
-                        const dropdownBtn = dropdownContent.previousElementSibling;
-                        const chevron = dropdownBtn.querySelector('.fa-chevron-down');
-                        if (chevron) {
-                            chevron.style.transform = 'rotate(180deg)';
-                        }
-                        console.log('Expanded dropdown for active link');
+                        const btn = dropdownContent.previousElementSibling;
+                        btn.classList.add('active');
+                        const chevron = btn.querySelector('.fa-chevron-down');
+                        if (chevron) chevron.style.transform = 'rotate(180deg)';
                     }
                 }
             });
@@ -174,84 +237,84 @@
             const userRole = '{{ user_role }}';
             const userType = '{{ user_type }}';
             
-            if (userType === 'faculty') {
-                sidebarTitle.textContent = 'Faculty Dashboard';
-            } else {
-                switch(userRole) {
-                    case 'super_admin':
-                        sidebarTitle.textContent = 'Super Admin Dashboard';
-                        break;
-                    case 'admin':
-                        sidebarTitle.textContent = 'Admin Dashboard';
-                        break;
-                    case 'moderator':
-                        sidebarTitle.textContent = 'Moderator Dashboard';
-                        break;
-                    default:
-                        sidebarTitle.textContent = 'Admin Dashboard';
+            if (sidebarTitle) {
+                if (userType === 'faculty') {
+                    sidebarTitle.textContent = 'Faculty Dashboard';
+                } else {
+                    switch(userRole) {
+                        case 'super_admin':
+                            sidebarTitle.textContent = 'Super Admin Dashboard';
+                            break;
+                        case 'admin':
+                            sidebarTitle.textContent = 'Admin Dashboard';
+                            break;
+                        case 'moderator':
+                            sidebarTitle.textContent = 'Moderator Dashboard';
+                            break;
+                        default:
+                            sidebarTitle.textContent = 'Admin Dashboard';
+                    }
                 }
+                console.log('Sidebar title set to:', sidebarTitle.textContent);
             }
-            console.log('Sidebar title set to:', sidebarTitle.textContent);
         }
         
         // Call backup title update
         updateSidebarTitle();
 
         // Function to load user profile photo
-function loadUserPhoto() {
-    const avatarElement = document.querySelector('.user-info .avatar');
-    const iconElement = avatarElement.querySelector('i');
-    const userType = '{{ user_type }}';
-    const userId = '{{ user_id }}'; // You'll need to pass this from backend
-    
-    console.log('Loading photo for:', { userType, userId });
-    
-    if (!userId || userId === 'None' || !avatarElement) {
-        console.log('No user ID or avatar element found');
-        return;
-    }
-    
-    // Determine photo path based on user type
-    let photoPath;
-    if (userType === 'faculty') {
-        photoPath = `/static/images/faculty_photos/${userId}.jpg`;
-    } else if (userType === 'admin') {
-        photoPath = `/static/images/admin_photos/${userId}.jpg`;
-    } else {
-        console.log('Unknown user type:', userType);
-        return;
-    }
-    
-    console.log('Attempting to load photo from:', photoPath);
-    
-    // Try to load the photo
-    const img = new Image();
-    img.src = photoPath;
-    
-    img.onload = function() {
-        console.log('Photo loaded successfully');
-        avatarElement.style.backgroundImage = `url('${photoPath}')`;
-        avatarElement.style.backgroundSize = 'cover';
-        avatarElement.style.backgroundPosition = 'center';
-        avatarElement.style.backgroundRepeat = 'no-repeat';
-        if (iconElement) iconElement.style.display = 'none';
-    };
-    
-    img.onerror = function() {
-        console.log('Photo not found, using default avatar');
-        // Keep the default icon visible
-        avatarElement.style.backgroundImage = 'none';
-        if (iconElement) iconElement.style.display = 'block';
-    };
-}
+        function loadUserPhoto() {
+            const avatarElement = document.querySelector('.user-info .avatar');
+            const iconElement = avatarElement?.querySelector('i');
+            const userType = '{{ user_type }}';
+            const userId = '{{ user_id }}';
+            
+            console.log('Loading photo for:', { userType, userId });
+            
+            if (!userId || userId === 'None' || !avatarElement) {
+                console.log('No user ID or avatar element found');
+                return;
+            }
+            
+            // Determine photo path based on user type
+            let photoPath;
+            if (userType === 'faculty') {
+                photoPath = `/static/images/faculty_photos/${userId}.jpg`;
+            } else if (userType === 'admin') {
+                photoPath = `/static/images/admin_photos/${userId}.jpg`;
+            } else {
+                console.log('Unknown user type:', userType);
+                return;
+            }
+            
+            console.log('Attempting to load photo from:', photoPath);
+            
+            // Try to load the photo
+            const img = new Image();
+            img.src = photoPath;
+            
+            img.onload = function() {
+                console.log('Photo loaded successfully');
+                avatarElement.style.backgroundImage = `url('${photoPath}')`;
+                avatarElement.style.backgroundSize = 'cover';
+                avatarElement.style.backgroundPosition = 'center';
+                avatarElement.style.backgroundRepeat = 'no-repeat';
+                if (iconElement) iconElement.style.display = 'none';
+            };
+            
+            img.onerror = function() {
+                console.log('Photo not found, using default avatar');
+                avatarElement.style.backgroundImage = 'none';
+                if (iconElement) iconElement.style.display = 'block';
+            };
+        }
 
-// Load photo when page loads
-if (document.readyState !== 'loading') {
-    loadUserPhoto();
-} else {
-    document.addEventListener('DOMContentLoaded', loadUserPhoto);
-}
-        
+        // Load photo when page loads
+        if (document.readyState !== 'loading') {
+            loadUserPhoto();
+        } else {
+            document.addEventListener('DOMContentLoaded', loadUserPhoto);
+        }
     </script>
 </body>
 </html>

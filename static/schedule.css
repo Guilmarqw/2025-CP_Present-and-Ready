@@ -11,15 +11,7 @@
             display: flex;
             min-height: 100vh;
         }
- .nav-items a.active {
-      background-color: #555;
-      color: white;
-      opacity: 0.4;
-    }
-        .nav-items a.active:hover {
-      background-color: #555;
-      color: white;
-    }
+
 
         /* Sidebar Styles */
         .sidebar {

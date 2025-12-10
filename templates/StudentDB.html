@@ -1169,6 +1169,33 @@ async function onCurriculumChange() {
     .then(html => { 
         document.getElementById('sidebar-container').innerHTML = html; 
         
+        // HIGHLIGHT ACTIVE PAGE
+        const currentPath = window.location.pathname;
+        console.log('Current page path:', currentPath);
+        
+        document.querySelectorAll('#sidebar-container .nav-items a[href]').forEach(link => {
+            const href = link.getAttribute('href');
+            if (href && href !== '#') {
+                const cleanHref = href.replace(/\/$/, '');
+                const cleanPath = currentPath.replace(/\/$/, '');
+                
+                if (cleanPath === cleanHref || (cleanHref !== '' && cleanPath.startsWith(cleanHref + '/'))) {
+                    link.classList.add('active');
+                    console.log('Highlighted link:', href);
+                    
+                    // Auto-expand parent dropdown if exists
+                    const dropdown = link.closest('.dropdown-content');
+                    if (dropdown) {
+                        dropdown.style.display = 'block';
+                        const btn = dropdown.previousElementSibling;
+                        if (btn) btn.classList.add('active');
+                        const chevron = btn?.querySelector('.fa-chevron-down');
+                        if (chevron) chevron.style.transform = 'rotate(180deg)';
+                    }
+                }
+            }
+        });
+        
         // ADD NAVIGATION HANDLERS FOR SIDEBAR LINKS
         document.addEventListener('click', function(e) {
             const link = e.target.closest('#sidebar-container .nav-items a[href]');

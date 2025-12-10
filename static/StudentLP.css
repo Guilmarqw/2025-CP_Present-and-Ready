@@ -185,9 +185,10 @@
             font-size: 36px;
             font-weight: 700;
         }
-        .stat-card.rate { background: #f46b45; }
-        .stat-card.total-classes { background: #4a90e2; }
-        .stat-card.attended { background: #50c878; }
+
+        .stat-card.rate { background: #445f20; }
+        .stat-card.total-classes { background: #1e4821; }
+        .stat-card.attended { background: #426442; }
 
         .courses-table {
             background: #fff;

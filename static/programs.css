@@ -111,15 +111,7 @@
       background-color: rgba(0, 0, 0, 0.05);
     }
 
-    .nav-items a.active {
-      background-color: #555;
-      color: white;
-      opacity: 0.4;
-    }
-        .nav-items a.active:hover {
-      background-color: #555;
-      color: white;
-    }
+ 
     .action-buttons .btn {
             background: none;
             border: none;

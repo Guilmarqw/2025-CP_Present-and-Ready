@@ -105,6 +105,13 @@ body {
     transition: all 0.3s ease;
 }
 
+.nav-items a:hover {
+    background-color: rgba(52, 152, 219, 0.2);
+    color: #2c3e50;
+    padding-left: 20px;
+    box-shadow: inset 3px 0 0 #3498db;
+}
+
 .nav-items a i {
     margin-right: 10px;
     font-size: 18px;
@@ -137,7 +144,9 @@ body {
 }
 
 .dropdown .dropdown-btn:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: rgba(52, 152, 219, 0.3);
+    color: #2c3e50;
+    padding-left: 20px;
 }
 
 .dropdown-content {
@@ -156,7 +165,10 @@ body {
 }
 
 .dropdown-content li a:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: rgba(52, 152, 219, 0.35);
+    color: #2980b9;
+    padding-left: 25px;
+    border-left: 3px solid #3498db;
 }
 
 /* Main Content Styles */

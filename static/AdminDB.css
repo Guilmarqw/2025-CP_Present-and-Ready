@@ -75,11 +75,11 @@ body {
 }
 
 /* Solid colors for each card */
-.stat-card.students       { background: #667eea; }  /* Indigo */
-.stat-card.faculty        { background: #f5576c; }  /* Pink-Red */
-.stat-card.cs-students    { background: #4facfe; }  /* Sky Blue */
-.stat-card.it-students    { background: #43e97b; }  /* Green */
-.stat-card.act-students   { background: #fa709a; }  /* Coral */
+.stat-card.students       { background: #445f20; } 
+.stat-card.faculty        { background: #1e4821; }  
+.stat-card.cs-students    { background: #426442; }  
+.stat-card.it-students    { background: #587656; }  
+.stat-card.act-students   { background: #6f815c; }  
 
 .stat-card h4 {
     font-size: 14px;
@@ -361,12 +361,12 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
-
-.overview-card.academic-year { border-left-color: #28a745; }
-.overview-card.curriculum { border-left-color: #6f42c1; }
-.overview-card.semester { border-left-color: #fd7e14; }
-.overview-card.sections { border-left-color: #e83e8c; }
-.overview-card.subjects { border-left-color: #20c997; }
+.
+.overview-card.academic-year { border-left-color: #445f20; }
+.overview-card.curriculum { border-left-color: #1e4821; }
+.overview-card.semester { border-left-color: #426442; }
+.overview-card.sections { border-left-color: #587656; }
+.overview-card.subjects { border-left-color: #6f815c; }
 
 .overview-icon {
     font-size: 2rem;
@@ -374,11 +374,6 @@ body {
     color: #6c757d;
 }
 
-.overview-card.academic-year .overview-icon { color: #28a745; }
-.overview-card.curriculum .overview-icon { color: #6f42c1; }
-.overview-card.semester .overview-icon { color: #fd7e14; }
-.overview-card.sections .overview-icon { color: #e83e8c; }
-.overview-card.subjects .overview-icon { color: #20c997; }
 
 .overview-content h4 {
     margin: 0 0 5px 0;
@@ -433,7 +428,7 @@ body {
     align-items: center;
     gap: 10px;
     padding: 12px 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #4a6fa9;
     color: white;
     border-radius: 25px;
     font-weight: bold;
@@ -504,13 +499,3 @@ body {
     background: #fff5f5;
 }
 
-/* Card colors */
-.overview-card.curriculum { border-left-color: #6f42c1; }
-.overview-card.semester { border-left-color: #fd7e14; }
-.overview-card.sections { border-left-color: #e83e8c; }
-.overview-card.subjects { border-left-color: #20c997; }
-
-.overview-card.curriculum .overview-icon { color: #6f42c1; }
-.overview-card.semester .overview-icon { color: #fd7e14; }
-.overview-card.sections .overview-icon { color: #e83e8c; }
-.overview-card.subjects .overview-icon { color: #20c997; }
