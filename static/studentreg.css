@@ -666,25 +666,46 @@ video {
     font-size: 14px;
     transition: color 0.3s ease;
 }
-
-/* Video styling */
+/* Replace the existing .face-scan block (around line where width: 320px is set) */
 .face-scan {
     position: relative;
-    width: 320px;
-    height: 240px;
-    margin: 0 auto 20px;
-    border-radius: 8px;
+    width: 100%;                    /* Full width of parent */
+    max-width: 380px;               /* Reasonable max on larger phones */
+    margin: 20px auto;              /* Center horizontally */
+    aspect-ratio: 4 / 3;            /* Maintain 4:3 ratio (common for webcam) */
+    border-radius: 12px;            /* Slightly larger radius for modern look */
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    background: #000;              /* Black fallback while loading */
+    border: 4px solid #900;         /* Keep your accent color */
 }
 
+/* Ensure video fills the container properly on all devices */
 #video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scaleX(-1);
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;              /* Covers entire area without distortion */
+    transform: scaleX(-1);          /* Keep mirror effect for selfie cam */
+    display: block;
 }
 
+/* Optional: Extra safety for very small screens (≤320px) */
+@media (max-width: 340px) {
+    .face-scan {
+        max-width: 100%;
+        margin: 15px auto;
+        border-radius: 10px;
+        border-width: 3px;
+    }
+    
+    .content {
+        padding: 15px 10px;
+    }
+    
+    .scan-instruction {
+        font-size: 15px;
+    }
+}
 .scan-instruction {
     text-align: center;
     margin: 15px 0;

@@ -123,22 +123,23 @@ input[type="password"] {
   margin-bottom: 8px;
 }
 .name-fields input { flex: 1; }
-
 /* -------------------------------------------------
-   OTP / PIN BOXES
+   OTP / PIN BOXES - AUTO ADJUST WITH SLIGHT SHRINK
    ------------------------------------------------- */
-.otp-boxes, .pin-boxes {
+.otp-boxes,
+.pin-boxes {
   display: flex;
   justify-content: center;
   gap: 8px;
   flex-wrap: nowrap !important;
-  overflow-x: auto;
+  overflow-x: hidden;
   padding: 10px 0;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  margin: 15px 0;
   -webkit-overflow-scrolling: touch;
+  margin: 15px 0;
 }
+
 .otp-boxes::-webkit-scrollbar,
 .pin-boxes::-webkit-scrollbar {
   display: none;
@@ -146,45 +147,120 @@ input[type="password"] {
 
 .otp-boxes input,
 .pin-boxes input {
-  width: 48px;
-  height: 56px;
+  width: 52px; /* Slightly larger for better touch */
+  height: 58px; /* Slightly taller */
   text-align: center;
   font-size: 24px;
-  flex-shrink: 0;
-  border: 1px solid #ccc;
+  font-weight: 600;
+  border: 2px solid #ccc;
   border-radius: 8px;
+  outline: none;
+  transition: all 0.2s ease;
+  flex: 1; /* Auto-adjust width */
+  min-width: 40px; /* Minimum width */
+  max-width: 60px; /* Maximum width */
+  -moz-appearance: textfield;
+  background-color: white;
 }
 
-/* 375px – iPhone SE / common small mobile */
-@media (max-width: 380px) {
-  .otp-boxes, .pin-boxes {
+.otp-boxes input:focus,
+.pin-boxes input:focus {
+  border-color: #238e5a;
+  box-shadow: 0 0 0 2px rgba(35, 142, 90, 0.2);
+  transform: translateY(-1px); /* Slight lift effect */
+}
+
+.otp-boxes input::-webkit-inner-spin-button,
+.otp-boxes input::-webkit-outer-spin-button,
+.pin-boxes input::-webkit-inner-spin-button,
+.pin-boxes input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Tablet and smaller laptops */
+@media (max-width: 768px) {
+  .otp-boxes,
+  .pin-boxes {
     gap: 6px;
+    padding: 8px 5px;
   }
+  
   .otp-boxes input,
   .pin-boxes input {
-    width: 42px;
-    height: 50px;
+    width: 48px;
+    height: 54px;
     font-size: 22px;
+    min-width: 38px;
+    max-width: 55px;
   }
 }
 
-/* 320px – ultra-narrow (safe fallback) */
-@media (max-width: 340px) {
-  .otp-boxes, .pin-boxes {
-    gap: 4px;
+/* Mobile phones */
+@media (max-width: 480px) {
+  .otp-boxes,
+  .pin-boxes {
+    gap: 5px;
+    padding: 8px 2px;
   }
+  
   .otp-boxes input,
   .pin-boxes input {
-    width: 38px !important;
-    height: 44px !important;
-    font-size: 18px !important;
-    border-radius: 6px;
+    width: 44px;
+    height: 50px;
+    font-size: 20px;
+    min-width: 36px;
+    max-width: 50px;
   }
 }
 
-/* -------------------------------------------------
-   BUTTONS
-   ------------------------------------------------- */
+/* Small mobile phones (iPhone SE, etc.) */
+@media (max-width: 375px) {
+  .otp-boxes,
+  .pin-boxes {
+    gap: 4px;
+    padding: 6px 0;
+  }
+  
+  .otp-boxes input,
+  .pin-boxes input {
+    width: 40px;
+    height: 46px;
+    font-size: 18px;
+    min-width: 34px;
+    max-width: 45px;
+  }
+}
+
+/* Ultra-small screens - auto-adjust to fit */
+@media (max-width: 320px) {
+  .otp-boxes,
+  .pin-boxes {
+    gap: 3px;
+    padding: 5px 0;
+  }
+  
+  .otp-boxes input,
+  .pin-boxes input {
+    width: 38px;
+    height: 44px;
+    font-size: 17px;
+    min-width: 32px;
+    max-width: 42px;
+    border-width: 1.5px;
+  }
+  
+  /* When container is very narrow, let boxes shrink more */
+  .container {
+    padding: 0 5px;
+  }
+  
+  .otp-boxes input:focus,
+  .pin-boxes input:focus {
+    box-shadow: 0 0 0 1px rgba(35, 142, 90, 0.2);
+  }
+}
+
 button {
   background: #238e5a;
   color: white;
@@ -206,20 +282,7 @@ button:disabled { background: #cccccc; cursor: not-allowed; }
   text-decoration: underline;
 }
 
-/* -------------------------------------------------
-   FACE SCAN & UPLOAD
-   ------------------------------------------------- */
-.face-scan {
-  width: 220px;
-  height: 220px;
-  border: 4px solid #3a86ff;
-  border-radius: 50%;
-  margin: 20px auto;
-  overflow: hidden;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
+
 video { width: 100%; height: 100%; object-fit: cover; }
 
 .upload-container {
@@ -312,6 +375,37 @@ video { width: 100%; height: 100%; object-fit: cover; }
 .modal-content h3 { margin: 0 0 10px; font-size: 18px; color: #238e5a; }
 .modal-content button { margin-top: 15px; width: auto; }
 
+#canvas {
+    display: none;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+    .face-scan {
+        max-width: 320px;
+        margin: 15px auto;
+        border-radius: 10px;
+    }
+}
+
+@media (max-width: 340px) {
+    .face-scan {
+        max-width: 280px;
+        border-radius: 8px;
+        border-width: 3px;
+    }
+    
+    .content {
+        padding: 15px 10px;
+    }
+    
+    .scan-instruction {
+        font-size: 15px;
+    }
+}
 /* -------------------------------------------------
    VIDEO / CANVAS (face capture)
    ------------------------------------------------- */
@@ -615,22 +709,41 @@ video { width: 100%; height: 100%; object-fit: cover; }
     transition: color 0.3s ease;
 }
 
-/* Video styling */
+/* ====================== FINAL FACE SCAN STYLES (MOBILE-FIRST) ====================== */
 .face-scan {
-    position: relative;
-    width: 320px;
-    height: 240px;
-    margin: 0 auto 20px;
-    border-radius: 8px;
+ position: relative;
+    width: 100%;                    /* Full width of parent */
+    max-width: 380px;               /* Reasonable max on larger phones */
+    margin: 20px auto;              /* Center horizontally */
+    aspect-ratio: 4 / 3;            /* Maintain 4:3 ratio (common for webcam) */
+    border-radius: 12px;            /* Slightly larger radius for modern look */
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    background: #000;              /* Black fallback while loading */
+    border: 4px solid #238e5a;     /* Your green accent color */
 }
 
+
+.face-scan video,
+.face-scan canvas {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  transform: scaleX(-1); /* mirror for selfie feel */
+}
+
+/* Optional: slightly larger on tablets/desktops */
+@media (min-width: 640px) {
+  .face-scan {
+    max-width: 340px;
+  }
+}
 #video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scaleX(-1);
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;              /* Covers entire area without distortion */
+    transform: scaleX(-1);          /* Keep mirror effect for selfie cam */
+    display: block;
 }
 
 .scan-instruction {
