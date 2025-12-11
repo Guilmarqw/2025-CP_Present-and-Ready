@@ -1,23 +1,14 @@
-        .profile-container { max-width: 2000px; }
+        .profile-container { max-width: 2000px;   }
         .profile-card { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }
         .profile-header {
-            background: #4a6fa9; color: white; padding: 40px 30px; text-align: center; position: relative;
+            background: #6f815c;
+            color: white; padding: 40px 30px; text-align: center; position: relative;
         }
-        .profile-avatar {
-            position: relative; width: 150px; height: 150px; border-radius: 50%; overflow: hidden;
-            background: #f0f2f5; border: 5px solid #ffffff; box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-            cursor: pointer; transition: all 0.3s ease; margin: 0 auto 20px;
-        }
+  .profile-avatar { position: relative; width: 150px; height: 150px; border-radius: 50%; overflow: hidden; background: #f0f2f5; border: 5px solid #ffffff; box-shadow: 0 6px 20px rgba(0,0,0,0.15); cursor: pointer; transition: all 0.3s ease; margin: 0 auto 20px; }
         .profile-avatar:hover { transform: scale(1.06); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
-        .profile-avatar i { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 70px; color: #495057; transition: opacity 0.3s; }
+        .profile-avatar i { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 70px; color: #495057; transition: opacity 0.3s; }
         .profile-avatar img { width: 100%; height: 100%; object-fit: cover; display: none; }
-        .profile-avatar::before {
-            content: "Click to Change Photo"; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 16px; font-weight: 500;
-            display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s;
-            border-radius: 50%; pointer-events: none; z-index: 2;
-        }
+        .profile-avatar::before { content: "Click to Change Photo"; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 16px; font-weight: 500; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s; border-radius: 50%; pointer-events: none; z-index: 2; }
         .profile-avatar:hover::before { opacity: 1; }
         .profile-name { font-size: 2rem; font-weight: 600; margin: 0 0 8px 0; }
         .profile-role { font-size: 1.2rem; opacity: 0.95; font-weight: 400; }
@@ -62,7 +53,7 @@
 
 }
         .info-label {
-            font-weight: 600; color: #4a6fa9; font-size: 0.85rem;
+            font-weight: 600; color: #6f815c; font-size: 0.9rem;
             text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;
         }
         .info-value {
@@ -78,10 +69,10 @@
             cursor: pointer; transition: all 0.3s ease; display: inline-flex;
             align-items: center; gap: 10px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
-        .btn-edit { background: #4a6fa9; color: white; }
-        .btn-edit:hover { background: #5a7fe8; transform: translateY(-3px); }
-        .btn-password { background: #28a745; color: white; }
-        .btn-password:hover { background: #218838; transform: translateY(-3px); }
+        .btn-edit { background: #6f815c; color: white; }
+        .btn-edit:hover { background: #343b2b; }
+        .btn-password { background: #445f20; color: white; }
+        .btn-password:hover { background: #215c30;  }
 
         .success-message {
             background: #d4edda; color: #155724; padding: 15px 25px; border-radius: 10px;
@@ -166,21 +157,10 @@
             margin-top: 20px;
             flex-shrink: 0;
         }
-        .btn-save {
-            background: #4a6fa9;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-        }
-        .btn-cancel {
-            background: #6c757d;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;}
+        .btn-save { background: #6f815c; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-save:hover { background: #343b2b !important; }
+        .btn-cancel { background: #eee; color: #333; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-cancel:hover { background: #ddd !important; }
 .sidebar .nav-items i {
     font-size: 1.4em;   /* adjust as needed */
     min-width: 30px;

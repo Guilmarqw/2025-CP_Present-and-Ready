@@ -284,9 +284,7 @@
     <!-- Delete Confirmation Modal -->
     <div id="deleteFacultyMemberModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Delete Faculty Member</h2>
-            </div>
+
             <div class="modal-body">
                 <p>Are you sure you want to delete <strong id="deleteFacultyMemberName"></strong>? This action cannot be undone.</p>
             </div>
@@ -563,13 +561,25 @@
         const alertIcon = document.getElementById('alertIcon');
 
         // Modal functions
-        function openModal(modal) {
-            if (modal) modal.style.display = "block";
+function openModal(modal) {
+    if (modal) {
+        if (modal.id === "deleteFacultyMemberModal") {
+            modal.classList.add("show");  // Triggers flex centering
+            modal.style.display = "flex"; // Force flex
+        } else {
+            modal.style.display = "block"; // Normal behavior for other modals
         }
+    }
+}
 
-        function closeModal(modal) {
-            if (modal) modal.style.display = "none";
+function closeModal(modal) {
+    if (modal) {
+        modal.style.display = "none";
+        if (modal.id === "deleteFacultyMemberModal") {
+            modal.classList.remove("show"); // Clean up
         }
+    }
+}
 
         // Show alert function
         function showAlert(message, isSuccess = true) {
