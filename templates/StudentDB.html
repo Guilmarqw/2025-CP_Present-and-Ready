@@ -588,8 +588,7 @@ function getYearLevelDisplay(yearLevel) {
         '1': '1st Year',
         '2': '2nd Year', 
         '3': '3rd Year',
-        '4': '4th Year',
-        '5': '5th Year'
+        '4': '4th Year'
     };
     return yearMap[yearLevel] || `${yearLevel} Year`;
 }
@@ -752,45 +751,73 @@ document.addEventListener('DOMContentLoaded', function() {
         sectionSelect.innerHTML = '<option value="">Loading sections...</option>';
         
         try {
-            const academicYear = '2025-2026';
-            const semester = '1st Semester';
+            // FIRST: Get the current academic year and semester from the system
+            const academicSemesterResponse = await fetch('/api/get_current_academic_semester');
+            const academicSemesterData = await academicSemesterResponse.json();
             
+            let academicYear = '';
+            let semester = '';
+            
+            if (academicSemesterData.success) {
+                academicYear = academicSemesterData.academic_year;
+                semester = academicSemesterData.semester;
+            } else {
+                // Fallback to current academic year calculation
+                const currentDate = new Date();
+                const currentYear = currentDate.getFullYear();
+                const currentMonth = currentDate.getMonth();
+                
+                // Academic year logic: if month is June or later, use currentYear-nextYear
+                if (currentMonth >= 5) { // June-December
+                    academicYear = `${currentYear}-${currentYear + 1}`;
+                } else { // January-May
+                    academicYear = `${currentYear - 1}-${currentYear}`;
+                }
+                semester = '1st Semester'; // Default
+            }
+            
+            console.log('Using academic year:', academicYear, 'semester:', semester);
+            
+            // Call the API with all required parameters
             const params = new URLSearchParams({
                 program_id: programId,
                 academic_year: academicYear,
                 semester: semester,
-                curriculum_id: curriculumId
+                curriculum_id: curriculumId,
+                year_level: yearLevel  // Add year_level parameter
             });
             
             const response = await fetch(`/api/get_year_sections?${params}`);
             const data = await response.json();
             
-            sectionSelect.innerHTML = '<option value="">All Sections</option>';
+            console.log('Sections API response:', data);
+            
+            sectionSelect.innerHTML = '<option value="">Select Section</option>';
             
             if (data.success && data.sections && data.sections.length > 0) {
-                // Filter sections by the selected year level
-                const filteredSections = data.sections.filter(section => 
-                    section.year_level.toString() === yearLevel
-                );
-                
-                if (filteredSections.length > 0) {
-                    filteredSections.forEach(section => {
-                        const option = document.createElement('option');
-                        option.value = section.section_id;
-                        option.textContent = section.section_name;
-                        sectionSelect.appendChild(option);
-                    });
-                    sectionSelect.disabled = false;
-                } else {
-                    sectionSelect.innerHTML = '<option value="">No sections for selected year</option>';
-                }
+                // No need to filter - API should already filter by year_level
+                data.sections.forEach(section => {
+                    const option = document.createElement('option');
+                    option.value = section.section_id;
+                    option.textContent = section.section_name;
+                    sectionSelect.appendChild(option);
+                });
+                sectionSelect.disabled = false;
+                console.log(`Loaded ${data.sections.length} sections for Year ${yearLevel}`);
             } else {
+                console.warn('No sections found for filters:', { programId, curriculumId, yearLevel, academicYear, semester });
                 sectionSelect.innerHTML = '<option value="">No sections available</option>';
             }
         } catch (error) {
             console.error('Error fetching sections:', error);
             sectionSelect.innerHTML = '<option value="">Error loading sections</option>';
         }
+    } else {
+        console.log('Missing filter values:', {
+            programId: programId || 'not selected',
+            curriculumId: curriculumId || 'not selected',
+            yearLevel: yearLevel || 'not selected'
+        });
     }
 }
 
@@ -807,35 +834,35 @@ async function onCurriculumChange() {
     }
 }
 
-        function addEventListenersToRow(row) {
-            const editBtn = row.querySelector('.edit-btn');
-            const viewBtn = row.querySelector('.view-btn');
-            const deleteBtn = row.querySelector('.delete-btn');
+function addEventListenersToRow(row) {
+    const editBtn = row.querySelector('.edit-btn');
+    const viewBtn = row.querySelector('.view-btn');
+    const deleteBtn = row.querySelector('.delete-btn');
 
-            editBtn?.addEventListener('click', function () {
-                const id = this.getAttribute('data-id');
-                const student = allStudents.find(s => s.id === id);
-                if (student) {
-                    populateEditForm(student);
-                    openModal(editStudentModal);
-                }
-            });
-
-            viewBtn?.addEventListener('click', function () {
-                const id = this.getAttribute('data-id');
-                openViewStudentModal(id);
-            });
-
-            deleteBtn?.addEventListener('click', function () {
-                const id = this.getAttribute('data-id');
-                const student = allStudents.find(s => s.id === id);
-                if (student) {
-                    document.getElementById('deleteStudentName').textContent = student.name;
-                    confirmDelete.setAttribute('data-id', student.id);
-                    openModal(deleteStudentModal);
-                }
-            });
+    editBtn?.addEventListener('click', function () {
+        const id = this.getAttribute('data-id');
+        const student = allStudents.find(s => s.id === id);
+        if (student) {
+            populateEditForm(student);
+            openModal(editStudentModal);
         }
+    });
+
+    viewBtn?.addEventListener('click', function () {
+        const id = this.getAttribute('data-id');
+        openViewStudentModal(id);
+    });
+
+    deleteBtn?.addEventListener('click', function () {
+        const id = this.getAttribute('data-id');
+        const student = allStudents.find(s => s.id === id);
+        if (student) {
+            document.getElementById('deleteStudentName').textContent = student.name;
+            confirmDelete.setAttribute('data-id', student.id);
+            openModal(deleteStudentModal);
+        }
+    });
+}
 
         if (submitEditStudent) {
             submitEditStudent.addEventListener('click', async function () {
@@ -1000,88 +1027,297 @@ async function onCurriculumChange() {
                 });
         }
 
-        async function loadProgramsToDropdown(dropdownId) {
-            try {
-                const response = await fetch('/api/get_programs');
-                const data = await response.json();
-                if (data.success && data.programs) {
-                    const dropdown = document.getElementById(dropdownId);
-                    dropdown.innerHTML = '<option value="">Select Course</option>'; // clear first
-                    data.programs.forEach(program => {
-                        const option = document.createElement('option');
-                        option.value = program.program_id;
-                        option.textContent = program.program_name;
-                        dropdown.appendChild(option);
-                    });
-                }
-            } catch (error) {
-                console.error('Error loading programs:', error);
-            }
+async function loadProgramsToDropdown(dropdownId) {
+    try {
+        const response = await fetch('/api/get_programs');
+        const data = await response.json();
+        if (data.success && data.programs) {
+            const dropdown = document.getElementById(dropdownId);
+            dropdown.innerHTML = '<option value="">Select Course</option>';
+            data.programs.forEach(program => {
+                const option = document.createElement('option');
+                option.value = program.program_id;
+                option.textContent = program.program_name;
+                dropdown.appendChild(option);
+            });
         }
+    } catch (error) {
+        console.error('Error loading programs:', error);
+    }
+}
 
-        async function fetchEditSections(selectedProgram, selectedYear, currentSectionId) {
+// Event listeners for program/year change in edit modal
+const editProgram = document.getElementById('editProgram');
+const editYearLevel = document.getElementById('editYearLevel');
+
+if (editProgram && editYearLevel) {
+    editProgram.addEventListener('change', function() {
+        const programId = this.value;
+        const yearLevel = editYearLevel.value;
+        const sectionId = document.getElementById('editSection').value;
+        const studentId = document.getElementById('editStudentId').value;
+        
+        // Update year level restrictions
+        updateYearLevelsForProgram(programId, yearLevel);
+        
+        // Fetch new sections
+        if (programId && yearLevel) {
+            fetchEditSections(programId, yearLevel, sectionId, null, studentId);
+        }
+    });
+    
+    editYearLevel.addEventListener('change', function() {
+        const programId = editProgram.value;
+        const yearLevel = this.value;
+        const sectionId = document.getElementById('editSection').value;
+        const studentId = document.getElementById('editStudentId').value;
+        
+        // Fetch new sections
+        if (programId && yearLevel) {
+            fetchEditSections(programId, yearLevel, sectionId, null, studentId);
+        }
+    });
+}
+
+
+async function fetchEditSections(selectedProgram, selectedYear, currentSectionId, curriculumId, studentId = null) {
     const sectionDropdown = document.getElementById('editSection');
     sectionDropdown.innerHTML = '<option value="">Loading...</option>';
     sectionDropdown.disabled = true;
 
     if (selectedProgram && selectedYear) {
         try {
-            const response = await fetch(`/api/get_sections_with_semester?program_id=${selectedProgram}&year_level=${selectedYear}`);
+            console.log('Fetching sections for edit:', {
+                program: selectedProgram,
+                year: selectedYear,
+                curriculumId: curriculumId,
+                currentSectionId: currentSectionId,
+                studentId: studentId
+            });
+            
+            // Build parameters
+            const params = new URLSearchParams({
+                program_id: selectedProgram,
+                year_level: selectedYear
+            });
+            
+            // Add curriculum_id if available
+            if (curriculumId && curriculumId !== 'null' && curriculumId !== 'undefined' && curriculumId !== '') {
+                params.append('curriculum_id', curriculumId);
+            }
+            
+            // Add student_id to help fetch curriculum from database
+            if (studentId) {
+                params.append('student_id', studentId);
+            }
+            
+            const response = await fetch(`/api/get_sections_for_student_edit?${params}`);
             const data = await response.json();
             
+            console.log('Sections API response:', data);
+            
             sectionDropdown.innerHTML = '<option value="">Select Section</option>';
-            if (data.success && data.sections) {
+            
+            if (data.success && data.sections && data.sections.length > 0) {
                 data.sections.forEach(section => {
                     const option = document.createElement('option');
                     option.value = section.section_id;
-                    // Show full hierarchy: Course - Curriculum - Year - Section
-                    const courseName = document.getElementById('editProgram').options[document.getElementById('editProgram').selectedIndex].text;
-                    option.textContent = `${courseName} - ${section.curriculum_year} Curriculum - Year ${selectedYear} - ${section.section_name}`;
-                    // Store curriculum info in data attribute
-                    option.dataset.curriculumYear = section.curriculum_year;
-                    if (section.section_id === currentSectionId) option.selected = true;
+                    
+                    // Display section name with curriculum info if available
+                    let displayText = section.section_name;
+                    if (section.curriculum_year) {
+                        displayText += ` (${section.curriculum_year} Curriculum)`;
+                    }
+                    option.textContent = displayText;
+                    
+                    // Store curriculum info in data attributes
+                    if (section.curriculum_id) {
+                        option.dataset.curriculumId = section.curriculum_id;
+                    }
+                    
+                    // Select current section
+                    if (section.section_id == currentSectionId) {
+                        option.selected = true;
+                        console.log(`Selected section: ${section.section_name}`);
+                    }
+                    
                     sectionDropdown.appendChild(option);
                 });
                 sectionDropdown.disabled = false;
-                console.log(`Loaded ${data.sections.length} sections for editing`);
+                console.log(`✓ Loaded ${data.sections.length} sections`);
             } else {
+                console.warn('No sections found:', data.message || 'No sections');
                 sectionDropdown.innerHTML = '<option value="">No sections available</option>';
+                sectionDropdown.disabled = false;
             }
         } catch (error) {
             console.error('Error fetching sections:', error);
             sectionDropdown.innerHTML = '<option value="">Error loading sections</option>';
+            sectionDropdown.disabled = false;
         }
+    } else {
+        sectionDropdown.innerHTML = '<option value="">Select Program and Year First</option>';
+        sectionDropdown.disabled = false;
     }
 }
 
-        async function populateEditForm(student) {
-            document.getElementById('editStudentId').value = student.id;
-            document.getElementById('editStudentIdNumber').value = student.idNumber || '';
-            document.getElementById('editEmail').value = student.email || '';
-            document.getElementById('editStatus').value = student.status || 'active';
 
-            let first = '', middle = '', last = '';
-            if (student.name) {
-                const parts = student.name.split(' ');
-                if (parts.length === 1) first = parts[0];
-                else if (parts.length === 2) { first = parts[0]; last = parts[1]; }
-                else { first = parts[0]; last = parts[parts.length-1]; middle = parts.slice(1, -1).join(' '); }
-            }
-            document.getElementById('editFirstName').value = first;
-            document.getElementById('editMiddleName').value = middle;
-            document.getElementById('editLastName').value = last;
-            
-            const programDropdown = document.getElementById('editProgram');
-            const yearDropdown = document.getElementById('editYearLevel');
-            
-            programDropdown.innerHTML = '<option value="">Loading Courses...</option>';
-            await loadProgramsToDropdown('editProgram');
 
-            programDropdown.value = student.program_id;
-            yearDropdown.value = student.year_level;
-
-            await fetchEditSections(student.program_id, student.year_level, student.section_id);
+if (editProgram && editYearLevel) {
+    editProgram.addEventListener('change', function() {
+        const programId = this.value;
+        const yearLevel = editYearLevel.value;
+        const sectionId = document.getElementById('editSection').value;
+        const studentId = document.getElementById('editStudentId').value;
+        
+        // Update year level restrictions
+        updateYearLevelsForProgram(programId, yearLevel);
+        
+        // Fetch new sections
+        if (programId && yearLevel) {
+            fetchEditSections(programId, yearLevel, sectionId, null, studentId);
         }
+    });
+    
+    editYearLevel.addEventListener('change', function() {
+        const programId = editProgram.value;
+        const yearLevel = this.value;
+        const sectionId = document.getElementById('editSection').value;
+        const studentId = document.getElementById('editStudentId').value;
+        
+        // Fetch new sections
+        if (programId && yearLevel) {
+            fetchEditSections(programId, yearLevel, sectionId, null, studentId);
+        }
+    });
+}
+
+
+function updateYearLevelsForProgram(programId, currentYearLevel) {
+    const yearDropdown = document.getElementById('editYearLevel');
+    
+    if (!yearDropdown) return;
+    
+    // For ACT program, disable years 3 and 4
+    if (programId && programId.toUpperCase() === 'ACT') {
+        Array.from(yearDropdown.options).forEach(option => {
+            if (option.value === '3' || option.value === '4') {
+                option.disabled = true;
+                option.style.color = '#999';
+            } else {
+                option.disabled = false;
+                option.style.color = '';
+            }
+        });
+    } else {
+        // Enable all options for non-ACT programs
+        Array.from(yearDropdown.options).forEach(option => {
+            option.disabled = false;
+            option.style.color = '';
+        });
+    }
+    
+    // Set current year level
+    if (currentYearLevel) {
+        yearDropdown.value = currentYearLevel;
+    }
+}
+
+function updateYearLevelsBasedOnProgram(programId, currentYearLevel) {
+    const yearDropdown = document.getElementById('editYearLevel');
+    
+    // Get the selected program name
+    const programSelect = document.getElementById('editProgram');
+    const selectedOption = programSelect.options[programSelect.selectedIndex];
+    const programName = selectedOption ? selectedOption.textContent.toUpperCase() : '';
+    
+    // Check if it's ACT program
+    const isACT = programName.includes('ACT') || programId.toString().includes('ACT');
+    
+    // Update year options
+    const yearOptions = isACT ? 
+        ['1', '2'] : // ACT only has 1st and 2nd year
+        ['1', '2', '3', '4']; // Other programs have all years
+    
+    // Save current selection
+    yearDropdown.innerHTML = '<option value="">Select Year Level</option>';
+    
+    yearOptions.forEach(yearValue => {
+        const option = document.createElement('option');
+        option.value = yearValue;
+        option.textContent = getYearLevelDisplay(yearValue);
+        
+        // Select current year if it matches
+        if (yearValue === currentYearLevel) {
+            option.selected = true;
+        }
+        
+        // If current year is not in the list (e.g., ACT student with year 3), show it anyway
+        // This handles cases where an ACT student was incorrectly assigned year 3/4
+        if (currentYearLevel && yearValue === currentYearLevel) {
+            option.selected = true;
+        }
+        
+        yearDropdown.appendChild(option);
+    });
+    
+    // If current year is not in standard list (e.g., year 3 for ACT), add it as an option
+    if (currentYearLevel && !yearOptions.includes(currentYearLevel)) {
+        const specialOption = document.createElement('option');
+        specialOption.value = currentYearLevel;
+        specialOption.textContent = getYearLevelDisplay(currentYearLevel) + ' (Special)';
+        specialOption.selected = true;
+        yearDropdown.appendChild(specialOption);
+    }
+}
+
+async function populateEditForm(student) {
+    console.log('=== populateEditForm ===');
+    console.log('Student data:', student);
+    
+    // 1. Set basic student info
+    document.getElementById('editStudentId').value = student.id;
+    document.getElementById('editStudentIdNumber').value = student.idNumber || '';
+    document.getElementById('editEmail').value = student.email || '';
+    document.getElementById('editStatus').value = student.status || 'active';
+    
+    // 2. Split name
+    let first = '', middle = '', last = '';
+    if (student.name) {
+        const parts = student.name.split(' ');
+        if (parts.length === 1) first = parts[0];
+        else if (parts.length === 2) { first = parts[0]; last = parts[1]; }
+        else { first = parts[0]; last = parts[parts.length-1]; middle = parts.slice(1, -1).join(' '); }
+    }
+    document.getElementById('editFirstName').value = first;
+    document.getElementById('editMiddleName').value = middle;
+    document.getElementById('editLastName').value = last;
+    
+    // 3. Load and set program
+    const programDropdown = document.getElementById('editProgram');
+    programDropdown.innerHTML = '<option value="">Loading Courses...</option>';
+    await loadProgramsToDropdown('editProgram');
+    programDropdown.value = student.program_id;
+    
+    // 4. Set year level and apply ACT restrictions
+    const yearDropdown = document.getElementById('editYearLevel');
+    yearDropdown.value = student.year_level;
+    updateYearLevelsForProgram(student.program_id, student.year_level);
+    
+    // 5. Set section dropdown to loading
+    const sectionDropdown = document.getElementById('editSection');
+    sectionDropdown.innerHTML = '<option value="">Loading sections...</option>';
+    sectionDropdown.disabled = true;
+    
+    // 6. Fetch sections with student's curriculum_id
+    await fetchEditSections(
+        student.program_id, 
+        student.year_level, 
+        student.section_id,
+        student.curriculum_id || null,
+        student.id
+    );
+}
 
         function initializeStudentInviteModal() {
             const genBtn = document.getElementById('generate-student-link-btn');
@@ -1249,8 +1485,6 @@ cancelButtons.forEach(b => b.addEventListener('click', () => closeModal(b.closes
 if (alertButton) alertButton.addEventListener('click', () => closeModal(alertModal));
 window.addEventListener('click', e => { if (e.target.classList.contains('modal')) closeModal(e.target); });
 
-const editProgram = document.getElementById('editProgram');
-const editYearLevel = document.getElementById('editYearLevel');
 
 if (editProgram && editYearLevel) {
     function updateEditSectionDropdown() {

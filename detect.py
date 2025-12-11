@@ -60,13 +60,13 @@ jpeg = None
 
 try:
     from turbojpeg import TurboJPEG
-    print("✅ PyTurboJPEG imported successfully")
+    print(" PyTurboJPEG imported successfully")
     
     # Use the correct DLL - libturbojpeg.dll
     dll_path = r'C:\libjpeg-turbo-gcc64\bin\libturbojpeg.dll'
     
     if os.path.exists(dll_path):
-        print(f"✅ Found: {dll_path}")
+        print(f" Found: {dll_path}")
         print(f"   Size: {os.path.getsize(dll_path):,} bytes")
         
         try:
@@ -80,7 +80,7 @@ try:
             test_img[:, :, 0] = 255  # Red image
             
             encoded = jpeg.encode(test_img, quality=85)
-            print(f"✅ TurboJPEG test passed! Encoded {len(encoded):,} bytes")
+            print(f" TurboJPEG test passed! Encoded {len(encoded):,} bytes")
             
         except Exception as e:
             print(f" Error loading TurboJPEG: {e}")
@@ -89,7 +89,7 @@ try:
             try:
                 jpeg = TurboJPEG()  # Auto-detect
                 USE_TURBOJPEG = True
-                print("✅ TurboJPEG auto-detected successfully!")
+                print(" TurboJPEG auto-detected successfully!")
             except Exception as e2:
                 print(f" Auto-detect also failed: {e2}")
     else:
@@ -101,7 +101,7 @@ except ImportError as e:
 except Exception as e:
     print(f" Unexpected error: {e}")
 
-print(f"\nTurboJPEG status: {'ENABLED ✅' if USE_TURBOJPEG else 'DISABLED ⚠️ (using OpenCV)'}")
+print(f"\nTurboJPEG status: {'ENABLED ' if USE_TURBOJPEG else 'DISABLED  (using OpenCV)'}")
 
 
 # =========================
@@ -154,32 +154,26 @@ pending_confirmations: Dict[str, Dict[str, Any]] = {}
 UNKNOWN_FACES_FOR_ENROLLMENT: Dict[str, Dict[str, Any]] = {}
 
 FACE_SCAN_START_TIME = None
-FACE_SCAN_DURATION = 15  # seconds
+FACE_SCAN_DURATION = 30  
 is_face_scan_active_flag = False
 
 if torch.cuda.is_available():
     torch.cuda.empty_cache()  # Clear GPU cache after each YOLO call
 last_detection_time = 0
 face_scan_start_time = None
-pose_attempts = {}
 student_presence_tracker = {}  # Tracks when students are present/missing
 current_session_id = None  
-DEBUG_MODE = True
+DEBUG_MODE = False
 _last_cooldown_log_time = {}
-MIN_FACE_WIDTH_FOR_RECOGNITION = 45  # Minimum face width in pixels
-MIN_FACE_HEIGHT_FOR_RECOGNITION = 45  # Minimum face height in pixels
 
-FAST_LOCK_THRESHOLD = 0.65  
 
 tracks = []
 locked_tracks = {}  # {person_id: {'track': track_obj, 'body_tracker': bytetrack_id, ...}}
 attendance = {}
 tracking_history = {}
 frame_history = []
-MAX_TRACK_AGE = 30
 
 _last_cooldown_log_time = defaultdict(float)
-_cooldown_log_interval = 10.0 
 
 RECOGNITION_THRESHOLD = 0.58
 
@@ -215,7 +209,7 @@ thread_safe_lock = threading.RLock()
 FACE_SIMILARITY_THRESHOLD = 0.6
 
 detectionStopped = False
-current_fps = 30.0
+current_fps = 20
 frame_timestamps = []
 skip_frame_counter = 0
 
@@ -237,7 +231,7 @@ CONFIRMATION_SIMILARITY_THRESHOLD = 0.50
 BODY_MATCH_IOU_THRESHOLD = 0.1
 FACE_TO_BODY_VERTICAL_RATIO = 0.7  # Face should be in upper 60% of body
 REID_DISTANCE_THRESHOLD = 0.15
-DETECT_EVERY = 2
+DETECT_EVERY = 1
 
 MIN_REID_CONFIDENCE = 0.92  # Minimum ReID confidence to accept match
 MAX_SIZE_CHANGE_RATIO = 0.15  # Max 15% size change between frames
@@ -262,8 +256,8 @@ dummy_frame = None
 latest_frame = None
 stop_flag = False
 
-MAX_TRACKS = 30
-MAX_UNLOCKED_TRACKS = 5
+MAX_TRACKS = 15
+MAX_UNLOCKED_TRACKS = 3
 EXPAND_BOX_RATIO = 0.4
 
 PASSWORD_RESET_EXPIRE_HOURS = 24
@@ -1113,7 +1107,7 @@ def send_otp_email(email, otp_code):
                     </div>
                 </div>
                 <p>This code will expire in <strong>10 minutes</strong>.</p>
-                <p style="color: #e74c3c; font-weight: bold;">⚠️ Do not share this code with anyone.</p>
+                <p style="color: #e74c3c; font-weight: bold;"> Do not share this code with anyone.</p>
                 <p>If you didn't request this OTP, please ignore this email.</p>
                 <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
                 <p style="font-size: 12px; color: #777;">
@@ -1261,7 +1255,7 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
             known_face_encodings[idx] = encoding
             known_face_names[idx] = f"{first_name} {last_name}"
             known_face_types[idx] = person_type
-            logger.info(f"✅ Updated existing {person_type} {first_name} {last_name} ({id}) in memory")
+            logger.info(f" Updated existing {person_type} {first_name} {last_name} ({id}) in memory")
         else:
             #  NEW  Add new face at the BEGINNING for better recognition priority
             # This ensures newly registered faces are checked first
@@ -1270,7 +1264,7 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
             known_face_names.insert(0, full_name)
             known_face_ids.insert(0, id)
             known_face_types.insert(0, person_type)
-            logger.info(f"✅ Added NEW {person_type} {full_name} ({id}) to memory (at front)")
+            logger.info(f" Added NEW {person_type} {full_name} ({id}) to memory (at front)")
         
         # Rebuild the array
         rebuild_known_faces_array()
@@ -1278,12 +1272,12 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
         #  NEW: Immediate verification
         if id in known_face_ids:
             idx = known_face_ids.index(id)
-            logger.info(f"📋 Verification: {person_type} {full_name} is at index {idx} in memory")
+            logger.info(f" Verification: {person_type} {full_name} is at index {idx} in memory")
             
             #  NEW: Also check if properly normalized
             if KNOWN_FACE_ENCODINGS_ARRAY is not None and idx < len(KNOWN_FACE_ENCODINGS_ARRAY):
                 encoding_norm = np.linalg.norm(KNOWN_FACE_ENCODINGS_ARRAY[idx])
-                logger.info(f"📋 Encoding norm after rebuild: {encoding_norm:.4f}")
+                logger.info(f" Encoding norm after rebuild: {encoding_norm:.4f}")
         else:
             logger.error(f" {person_type} {full_name} NOT found in memory after add!")
         
@@ -1295,7 +1289,7 @@ def add_face_to_memory(id, first_name, last_name, face_encoding, person_type):
             
             # Check if normalized properly
             if not np.allclose(norms, 1.0, atol=0.01):
-                logger.warning(f"⚠️ Encodings not properly normalized! Re-normalizing...")
+                logger.warning(f" Encodings not properly normalized! Re-normalizing...")
                 # Force re-normalization
                 rebuild_known_faces_array()
         
@@ -1432,7 +1426,7 @@ def rebuild_known_faces_array():
                 norms[norms == 0] = 1
                 KNOWN_FACE_ENCODINGS_ARRAY = KNOWN_FACE_ENCODINGS_ARRAY / norms
             
-            logger.info(f"✅ Built face encodings array: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
+            logger.info(f" Built face encodings array: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
             
         except Exception as e:
             logger.error(f" Failed to build face encodings array: {e}")
@@ -1463,9 +1457,9 @@ def debug_embedding_quality():
         # Check if normalized
         if np.allclose(norms, 1.0, atol=0.01):
             if DEBUG_MODE: 
-                logger.debug("✅ Embeddings are normalized")
+                logger.debug(" Embeddings are normalized")
         else:
-            logger.warning("⚠️ Embeddings are NOT normalized!")
+            logger.warning(" Embeddings are NOT normalized!")
             
         # Sample first few embeddings
         for i in range(min(3, len(known_face_names))):
@@ -1507,7 +1501,7 @@ def load_known_faces_from_db():
         
         cursor.execute("SHOW TABLES LIKE 'faculty'")
         if not cursor.fetchone():
-            logger.warning("⚠️ 'faculty' table doesn't exist, skipping faculty faces")
+            logger.warning(" 'faculty' table doesn't exist, skipping faculty faces")
         
         #  FIX 2: Load STUDENTS with better error handling
         try:
@@ -1646,7 +1640,7 @@ def load_known_faces_from_db():
         if total_loaded > 0:
             rebuild_known_faces_array()
             
-            logger.info(f"✅ Successfully loaded {total_loaded} faces total")
+            logger.info(f" Successfully loaded {total_loaded} faces total")
             logger.info(f"   - Students: {len([t for t in known_face_types if t == 'student'])}")
             logger.info(f"   - Faculty: {len([t for t in known_face_types if t == 'faculty'])}")
             if errors > 0:
@@ -1694,12 +1688,12 @@ for retry in range(MAX_RETRIES):
         
         if success and len(known_face_names) > 0:
             faces_loaded = True
-            logger.info(f"✅ Startup successful: {len(known_face_names)} faces loaded")
+            logger.info(f" Startup successful: {len(known_face_names)} faces loaded")
             if KNOWN_FACE_ENCODINGS_ARRAY is not None:
                 logger.info(f"   Embeddings shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape}")
             break
         else:
-            logger.warning(f"⚠️ Attempt {retry+1} failed or returned 0 faces")
+            logger.warning(f" Attempt {retry+1} failed or returned 0 faces")
             if retry < MAX_RETRIES - 1:
                 time.sleep(2)  # Wait 2 seconds before retry
                 
@@ -1712,7 +1706,7 @@ if not faces_loaded:
     logger.error("🚨 CRITICAL: Failed to load faces after all retries!")
     logger.error("🚨 Face recognition WILL NOT WORK!")
 else:
-    logger.info("✅ Face recognition system READY")
+    logger.info(" Face recognition system READY")
 
 
 def load_recent_registered_students(cursor):
@@ -1932,7 +1926,7 @@ def initialize_faces_for_session():
         
         # Get current section students
         current_section_students = get_current_section_student_ids()
-        logger.info(f"📋 Current section has {len(current_section_students)} students")
+        logger.info(f" Current section has {len(current_section_students)} students")
         
         # Clear existing arrays
         known_face_encodings.clear()
@@ -1941,7 +1935,7 @@ def initialize_faces_for_session():
         known_face_types.clear()
         
         if not current_section_students:
-            logger.warning("⚠️ No current section students found - loading all faces")
+            logger.warning(" No current section students found - loading all faces")
             # Fallback: load all faces
             load_known_faces_from_db()
             rebuild_known_faces_array()
@@ -2041,7 +2035,7 @@ def initialize_faces_for_session():
         # Rebuild array
         rebuild_known_faces_array()
         
-        logger.info(f"✅ Loaded {total_loaded} faces for current session")
+        logger.info(f" Loaded {total_loaded} faces for current session")
         logger.info(f"   - Students: {len([t for t in known_face_types if t == 'student'])}")
         logger.info(f"   - Faculty: {len([t for t in known_face_types if t == 'faculty'])}")
         
@@ -2117,7 +2111,7 @@ def open_stream(rtsp_url=None):
                         ret, frame = cap.read()
                         if ret and frame is not None:
                             success = True
-                            logger.info(f"  ✅ Connected with attempt {i+1}")
+                            logger.info(f"   Connected with attempt {i+1}")
                             break
                         else:
                             cap.release()
@@ -2192,25 +2186,63 @@ def open_stream(rtsp_url=None):
         return False
 
 def grabber():
-    """ULTRA-LOW LATENCY frame grabbing"""
+    """ULTRA-LOW LATENCY frame grabbing WITH FULL AUTO-RECONNECTION"""
     global latest_frame, stop_flag, camera_available, use_dummy_feed, cap, current_rtsp_url, last_frame_time, grabber_active
     
     frame_counter = 0
     last_log_time = time.time()
     error_count = 0
     last_success_time = time.time()
+    last_reconnect_time = 0
+    reconnect_cooldown = 3  # seconds between reconnect attempts
     
-    #     MINIMAL BUFFER FOR LOW LATENCY
-    max_queue_size = 2  # MAX 2 FRAMES IN QUEUE!
+    # MINIMAL BUFFER FOR LOW LATENCY
+    max_queue_size = 2
     
-    logger.info("🎥 Grabber started (ULTRA-LOW LATENCY)")
+    logger.info("🎥 Grabber started (ULTRA-LOW LATENCY with AUTO-RECONNECTION)")
     
     while not stop_flag and grabber_active:
         try:
             ret = False
             frame = None
             
-            #    MINIMAL LOCK TIME - only during frame read
+            # 🔥 CRITICAL FIX: Check if camera needs restart
+            current_time = time.time()
+            
+            if cap is None or not cap.isOpened():
+                # Camera is dead, attempt full restart
+                if current_rtsp_url and (current_time - last_reconnect_time) > reconnect_cooldown:
+                    logger.warning("🔥 Camera connection dead! FULL RESTART needed...")
+                    
+                    # Clear the queue
+                    while not frame_queue.empty():
+                        try:
+                            frame_queue.get_nowait()
+                        except:
+                            break
+                    
+                    # Force reconnect
+                    last_reconnect_time = current_time
+                    success = open_stream(current_rtsp_url)
+                    
+                    if success:
+                        logger.info("✅ Camera RESTARTED successfully!")
+                        error_count = 0
+                        last_success_time = current_time
+                        continue
+                    else:
+                        logger.error("❌ Camera restart failed")
+                        camera_available = False
+                        use_dummy_feed = True
+                        # Wait before next attempt
+                        time.sleep(reconnect_cooldown)
+                        continue
+                else:
+                    # Wait for cooldown
+                    time.sleep(0.1)
+                    continue
+            
+            # Try to read frame
             with cap_lock:
                 if cap and cap.isOpened():
                     ret, frame = cap.read()
@@ -2218,63 +2250,156 @@ def grabber():
             if ret and frame is not None and frame.size > 0:
                 error_count = 0
                 frame_counter += 1
-                last_success_time = time.time()
+                last_success_time = current_time
                 
-                #    UPDATE LATEST FRAME FIRST (for immediate access)
+                # UPDATE LATEST FRAME
                 latest_frame = frame
-                last_frame_time = time.time()
+                last_frame_time = current_time
                 
-                # Get frame size
-                h, w = frame.shape[:2]
-                
-                #    ULTRA-LOW LATENCY QUEUE MANAGEMENT
-                current_queue_size = frame_queue.qsize()
-                
-                if current_queue_size >= max_queue_size:
-                    #    CRITICAL: QUEUE TOO FULL - DROP OLDEST FRAME
+                # Queue management
+                if frame_queue.qsize() >= max_queue_size:
                     try:
-                        frame_queue.get_nowait()  # Drop oldest frame
-                        logger.debug("Dropped old frame to reduce latency")
+                        frame_queue.get_nowait()
                     except:
                         pass
                 
-                #    PUT FRAME WITH TIMEOUT (don't block)
                 try:
                     frame_queue.put_nowait(frame.copy())
                 except queue.Full:
-                    # Queue full even after clearing, skip this frame
                     pass
                 
             else:
                 error_count += 1
                 
-                # Faster error recovery
-                if error_count > 20:  # Reduced from 50
-                    logger.warning(f"Too many consecutive errors ({error_count})")
-                    if time.time() - last_success_time > 3.0:  # Reduced from 10 seconds
-                        logger.error("Connection lost for 3+ seconds")
-                        camera_available = False
-                        use_dummy_feed = True
-                        break
+                # 🔥 IMMEDIATE RECONNECTION ON ERROR
+                if error_count > 3:  # Just 3 failed reads
+                    logger.warning(f"🔥 Camera read failed {error_count} times")
+                    
+                    # Close and restart if no success for 2 seconds
+                    if current_time - last_success_time > 2.0:
+                        logger.error("🔥 Connection timeout! Closing camera...")
+                        
+                        # Close camera
+                        with cap_lock:
+                            if cap is not None:
+                                try:
+                                    cap.release()
+                                except:
+                                    pass
+                                cap = None
+                                camera_available = False
+                        
+                        # Clear queue
+                        while not frame_queue.empty():
+                            try:
+                                frame_queue.get_nowait()
+                            except:
+                                break
+                        
+                        latest_frame = None
+                        time.sleep(0.5)
+                        continue
                 
-                time.sleep(0.005)  # Shorter sleep on error
+                time.sleep(0.005)
             
-            # Log less frequently to reduce overhead
-            current_time = time.time()
-            if current_time - last_log_time >= 3.0:  # Every 3 seconds instead of 2
+            # Logging
+            if current_time - last_log_time >= 2.0:
                 if 'frame' in locals() and frame is not None:
                     h, w = frame.shape[:2]
-                    fps = frame_counter / (current_time - last_log_time)
+                    fps = frame_counter / 2.0
                     queue_size = frame_queue.qsize()
-                    logger.info(f"🎥 Stats: {fps:.1f} FPS | Q:{queue_size} | {w}x{h}")
+                    
+                    status = "✅" if cap and cap.isOpened() else "🔥"
+                    logger.info(f"{status} Camera | {fps:.1f} FPS | Queue: {queue_size}")
+                
                 frame_counter = 0
                 last_log_time = current_time
                 
         except Exception as e:
-            logger.error(f"Grabber error: {e}")
-            time.sleep(0.005)  # Even shorter recovery sleep
+            logger.error(f"🔥 Grabber CRASH: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # 🔥 FULL RECOVERY ON ANY ERROR
+            with cap_lock:
+                if cap is not None:
+                    try:
+                        cap.release()
+                    except:
+                        pass
+                    cap = None
+                    camera_available = False
+            
+            # Clear everything
+            while not frame_queue.empty():
+                try:
+                    frame_queue.get_nowait()
+                except:
+                    break
+            
+            latest_frame = None
+            time.sleep(1)
     
     logger.info(" Grabber stopped")
+
+def restart_camera_stream():
+    """FULL RESTART of camera stream - called when video feed is dead"""
+    global cap, camera_available, use_dummy_feed, current_rtsp_url
+    
+    logger.warning("🔄 FULL CAMERA RESTART initiated...")
+    
+    try:
+        # Stop current stream
+        with cap_lock:
+            if cap is not None:
+                try:
+                    cap.release()
+                except:
+                    pass
+                cap = None
+        
+        camera_available = False
+        use_dummy_feed = True
+        
+        # Clear queues
+        while not frame_queue.empty():
+            try:
+                frame_queue.get_nowait()
+            except:
+                break
+        
+        # Wait a bit
+        time.sleep(1)
+        
+        # Reconnect if we have URL
+        if current_rtsp_url:
+            logger.info(f"🔄 Reconnecting to {current_rtsp_url[:80]}...")
+            
+            # Try multiple reconnect attempts
+            for attempt in range(3):
+                logger.info(f"  Attempt {attempt + 1}/3...")
+                success = open_stream(current_rtsp_url)
+                
+                if success:
+                    logger.info("✅ Camera RESTARTED successfully!")
+                    
+                    # Start grabber thread if not running
+                    if not grabber_active or not (grabber_thread and grabber_thread.is_alive()):
+                        start_grabber_thread()
+                    
+                    return True
+                
+                time.sleep(2)
+            
+            logger.error("❌ All restart attempts failed")
+            return False
+        else:
+            logger.error("❌ No RTSP URL available for restart")
+            return False
+            
+    except Exception as e:
+        logger.error(f"🔥 Camera restart failed: {e}")
+        return False    
     
 def start_grabber_thread():
     """Start or restart the grabber thread"""
@@ -2833,7 +2958,7 @@ def calculate_real_fps():
         if time_span > 0:
             current_fps = len(frame_timestamps) / time_span
         else:
-            current_fps = 30.0  # Fallback
+            current_fps = 20  # Fallback
     
     return current_fps
 
@@ -2953,7 +3078,7 @@ def enhanced_recognize_face(face_image, face_width_pixels, tolerance=0.35, is_lo
             
             confidence = best_similarity
             
-            # ✅ Check against the ADAPTIVE threshold
+            #  Check against the ADAPTIVE threshold
             if is_locked_track or confidence >= recognition_threshold:
                 name = known_face_names[best_match_index]
                 id = known_face_ids[best_match_index]
@@ -3105,11 +3230,10 @@ def check_face_recognition_status():
     elif status['encodings_array_exists'] == False:
         logger.error(" FACE RECOGNITION STATUS: ENCODINGS ARRAY NOT BUILT")
     else:
-        logger.info(f"✅ FACE RECOGNITION STATUS: {status['faces_in_memory']} faces ready")
+        logger.info(f" FACE RECOGNITION STATUS: {status['faces_in_memory']} faces ready")
     
     return status
 
-# Call this after loading faces
 check_face_recognition_status()
 
 def refresh_with_detections(frame, rgb, frame_idx):
@@ -3120,36 +3244,41 @@ def refresh_with_detections(frame, rgb, frame_idx):
       FIXED: Allows tracking through obstacles and partial occlusion
       RETAINED: Still prevents identity swapping but with more flexibility
     
-    🚨 CRITICAL FIXES APPLIED:
     1. Fixed section validation - only recognizes students in current section
     2. Fixed false recognition - stricter thresholds and additional verification
     3. Fixed recognition when no face is present - better face validation
     """
-    # 🚨🚨🚨  ADD THIS AT THE VERY BEGINNING 🚨🚨🚨
     global tracks, locked_tracks, pending_confirmations, KNOWN_FACE_ENCODINGS_ARRAY
     global detectionStopped, current_fps, skip_frame_counter, student_presence_tracker
     global KNOWN_FACE_ENCODINGS_NORMALIZED, known_face_names, known_face_encodings, known_face_ids, known_face_types
+
+    SKIP_FACTOR = 2  # Process every 2nd frame
+    if frame_idx % SKIP_FACTOR != 0:
+        if tracks:
+            for tr in tracks:
+                tr['last_seen'] = frame_idx
+        return
+
+    scale = 0.75  # 75% size
+    small_rgb = cv2.resize(rgb, (0, 0), fx=scale, fy=scale)
+
+    small_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
     
-    #  EMERGENCY FACE LOADING: If faces aren't loaded, FORCE RELOAD NOW!
     if frame_idx == 1 or (KNOWN_FACE_ENCODINGS_ARRAY is None or KNOWN_FACE_ENCODINGS_ARRAY.size == 0 or len(known_face_names) == 0):
         logger.warning(f"🚨 Frame {frame_idx}: Face encodings missing! Emergency reload...")
         
-        # Try to load faces
         success = load_known_faces_from_db()
         
         if success and len(known_face_names) > 0 and KNOWN_FACE_ENCODINGS_ARRAY is not None:
-            logger.info(f"✅ Emergency reload successful: {len(known_face_names)} faces loaded")
+            logger.info(f" Emergency reload successful: {len(known_face_names)} faces loaded")
         else:
             logger.error(f" Emergency reload FAILED! No faces available for recognition.")
-            # Still continue but recognition won't work
     
     if DEBUG_MODE: 
         logger.debug(f"  refresh_with_detections CALLED - Frame {frame_idx}")
     
-    # ANTI-SWAP: Initialize tracking history for movement prediction
     global locked_track_history, locked_track_predictions, locked_track_signatures
     
-    # Initialize if not exists
     if 'locked_track_history' not in globals():
         locked_track_history = {}  # Stores past positions for movement prediction
     if 'locked_track_predictions' not in globals():
@@ -3157,13 +3286,11 @@ def refresh_with_detections(frame, rgb, frame_idx):
     if 'locked_track_signatures' not in globals():
         locked_track_signatures = {}  # Stores body shape signatures
     
-    # DEBUG: Log face recognition status
     if frame_idx % 100 == 0:  # Every 100 frames
         logger.info(f"📊 Detection Status: {len(known_face_names)} known faces | "
                    f"Array: {'Yes' if KNOWN_FACE_ENCODINGS_ARRAY is not None else 'No'} | "
                    f"Shape: {KNOWN_FACE_ENCODINGS_ARRAY.shape if KNOWN_FACE_ENCODINGS_ARRAY is not None else 'N/A'}")
     
-    # Check if we have faces loaded (AGAIN after emergency reload)
     if KNOWN_FACE_ENCODINGS_ARRAY is None or KNOWN_FACE_ENCODINGS_ARRAY.size == 0:
         logger.error(" CRITICAL: Face encodings STILL not loaded! Recognition impossible.")
         # Try one more aggressive reload
@@ -3178,15 +3305,15 @@ def refresh_with_detections(frame, rgb, frame_idx):
             rebuild_known_faces_array()
             
         # If still no faces, CONTINUE ANYWAY but with limited recognition
-        logger.warning("⚠️ Continuing with EMPTY face database - will detect but not recognize faces")
+        logger.warning(" Continuing with EMPTY face database - will detect but not recognize faces")
         # Don't return - continue with face detection and show "Unknown" labels
     
     if detectionStopped:
         return
     
     # Skip every other frame if FPS is too low
-    if current_fps < 10 and frame_idx % 30 == 0:
-        logger.warning(f"⚠️ Low FPS: {current_fps:.1f} - Detection may be slow")
+    if current_fps < 10 and frame_idx % 20 == 0:
+        logger.warning(f" Low FPS: {current_fps:.1f} - Detection may be slow")
     
     h, w = frame.shape[:2]
     
@@ -4348,7 +4475,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                     if matched_id not in current_section_students:
                                         # This student is NOT in current section
                                         name = "Unknown - Wrong Section"
-                                        logger.warning(f"⚠️ Student {matched_name} ({matched_id}) recognized but NOT in current section!")
+                                        logger.warning(f" Student {matched_name} ({matched_id}) recognized but NOT in current section!")
                                         
                                         # Don't mark attendance or lock this track
                                         # Just show as "Unknown - Wrong Section"
@@ -5067,12 +5194,7 @@ def update_trackers_with_body(rgb, frame, frame_idx):
                     if lock_info.get('type') == 'student' and lock_info.get('id') in student_presence_tracker:
                         student_presence_tracker[lock_info['id']]['last_body_seen'] = current_time
                         student_presence_tracker[lock_info['id']]['last_seen'] = current_time
-                        student_presence_tracker[lock_info['id']]['present'] = True
-                    if DEBUG_MODE: 
-                        logger.debug(f"  ANTI-SWAP: Updated {lock_info.get('name', person_id)} position (IoU: {overlap_iou:.2f})")
-                else:
-                   logger.warning(f"  ANTI-SWAP: Different body in {zone_info['lock_info'].get('name', person_id)}'s inner zone - Skipping")
-    
+                        student_presence_tracker[lock_info['id']]['present'] = True             
                 
                 break  # Move to next body detection
             
@@ -6516,65 +6638,117 @@ def make_divisible_by_32(dim):
 
 @app.route('/video_feed')
 def video_feed():
-    """Stream video feed with CONTINUOUS detection - FIXED VERSION"""
+    """Stream video feed with AUTOMATIC RESTART on disconnection"""
     def generate():
         global latest_frame, tracks, locked_tracks, pending_confirmations, stop_flag
-        global detectionStopped, DETECT_EVERY
+        global detectionStopped, DETECT_EVERY, camera_available, use_dummy_feed
+        global cap, current_rtsp_url
         
         frame_idx = 0
         last_log_time = time.time()
-        detection_counter = 0  # Track when to run detection
+        last_frame_time = time.time()
+        consecutive_no_frames = 0
+        last_restart_time = 0
+        restart_cooldown = 10  # seconds between restarts
+        
+        # Black screen image for when camera is dead
+        black_screen = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(black_screen, "CAMERA OFFLINE", (150, 200),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.putText(black_screen, "Reconnecting...", (180, 250),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         
         while not stop_flag and not detectionStopped:
             try:
                 start_time = time.time()
+                current_time = time.time()
                 
-                # Get frame
+                # 🔥 CHECK IF WE NEED FORCED RESTART
+                time_since_last_frame = current_time - last_frame_time
+                time_since_last_restart = current_time - last_restart_time
+                
+                # If no frames for 5 seconds, force restart
+                if time_since_last_frame > 5.0 and time_since_last_restart > restart_cooldown:
+                    if camera_available and current_rtsp_url:
+                        logger.warning(f"🔥 NO FRAMES FOR {time_since_last_frame:.1f}s! Forcing restart...")
+                        
+                        # Call restart function
+                        if restart_camera_stream():
+                            last_restart_time = current_time
+                            last_frame_time = current_time
+                            consecutive_no_frames = 0
+                            time.sleep(2)  # Give time to restart
+                            continue
+                
+                # Try to get frame
                 frame = None
+                got_frame = False
+                
                 try:
-                    frame = frame_queue.get(timeout=0.02)  # 20ms timeout
+                    # Quick check if queue has frames
+                    if not frame_queue.empty():
+                        frame = frame_queue.get(timeout=0.005)
+                        got_frame = True
+                        consecutive_no_frames = 0
+                        last_frame_time = current_time
                 except queue.Empty:
-                    if latest_frame is not None:
-                        frame = latest_frame.copy()
+                    consecutive_no_frames += 1
+                
+                # 🔥 HANDLE NO FRAMES SCENARIO
+                if not got_frame:
+                    if consecutive_no_frames > 10:  # 10 iterations without frame
+                        # Use latest frame or black screen
+                        if latest_frame is not None:
+                            frame = latest_frame.copy()
+                        else:
+                            frame = black_screen.copy()
+                        
+                        # Add warning text
+                        cv2.putText(frame, f"NO FRAMES: {consecutive_no_frames}", (10, 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     else:
-                        time.sleep(0.001)
+                        # Just wait a bit
+                        time.sleep(0.005)
                         continue
                 
-                if frame is None:
-                    continue
-                
+                # Process frame
                 h, w = frame.shape[:2]
                 
-                #  ** Respect DETECT_EVERY setting**
-                should_detect = (frame_idx % DETECT_EVERY == 0)
+                # 🔥 ADD STATUS OVERLAY
+                status_text = ""
+                status_color = (0, 255, 0)  # Green for good
+                
+                if not camera_available:
+                    status_text = "CAMERA OFFLINE"
+                    status_color = (0, 0, 255)  # Red
+                elif consecutive_no_frames > 5:
+                    status_text = f"WEAK CONNECTION ({consecutive_no_frames})"
+                    status_color = (0, 165, 255)  # Orange
+                elif time_since_last_frame > 1.0:
+                    status_text = "SLOW FRAMES"
+                    status_color = (0, 255, 255)  # Yellow
+                
+                if status_text:
+                    # Draw status bar
+                    cv2.rectangle(frame, (0, 0), (w, 30), (0, 0, 0), -1)
+                    cv2.putText(frame, f"⚠️ {status_text}", (10, 20),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+                
+                # Optional: Only run detection if we have good connection
+                should_detect = (frame_idx % DETECT_EVERY == 0) and camera_available and consecutive_no_frames < 5
                 
                 if should_detect:
                     try:
-                        # Convert to RGB for face detection
                         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        
-                        #  **RUN FACE DETECTION according to DETECT_EVERY**
                         refresh_with_detections(frame, rgb, frame_idx)
-                        
-                        #  **UPDATE TRACKERS for better following**
                         update_trackers_with_body(rgb, frame, frame_idx)
-                        
                     except Exception as e:
                         if DEBUG_MODE:
-                            logger.error(f"Detection/Tracking error: {e}")
-                
-                # Always update tracking visualization even if not detecting
-                # This ensures yellow boxes don't disappear
-                try:
-                    # Keep visualizing existing tracks even without detection
-                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    update_trackers_with_body(rgb, frame, frame_idx, visualize_only=True)
-                except:
-                    pass
+                            logger.debug(f"Detection skipped: {e}")
                 
                 frame_idx += 1
                 
-                # Resize for streaming if needed
+                # Encode and stream
                 TARGET_WIDTH, TARGET_HEIGHT = 1280, 720
                 if w != TARGET_WIDTH or h != TARGET_HEIGHT:
                     frame_to_encode = cv2.resize(frame, (TARGET_WIDTH, TARGET_HEIGHT), 
@@ -6582,46 +6756,40 @@ def video_feed():
                 else:
                     frame_to_encode = frame
                 
-                # Encode the frame
                 encode_params = [cv2.IMWRITE_JPEG_QUALITY, 85]
                 success, buffer = cv2.imencode('.jpg', frame_to_encode, encode_params)
                 if not success:
                     continue
+                
                 frame_bytes = buffer.tobytes()
                 
-                # Send the frame
+                # Stream the frame
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + 
                        frame_bytes + b'\r\n')
                 
-                # Maintain ~30 FPS
+                # Rate limiting
                 processing_time = time.time() - start_time
-                target_fps = 30
-                target_frame_time = 1.0 / target_fps
-                sleep_time = max(0.001, target_frame_time - processing_time)
+                target_time = 1.0 / 30.0
+                sleep_time = max(0.001, target_time - processing_time)
                 time.sleep(sleep_time)
                 
-                # Log every 2 seconds
-                current_time = time.time()
-                if current_time - last_log_time >= 2.0:
+                # Log periodically
+                if current_time - last_log_time >= 3.0:
                     queue_size = frame_queue.qsize()
-                    locked_count = len(locked_tracks)
-                    pending_count = len(pending_confirmations)
-                    track_count = len(tracks)
+                    cam_status = "ONLINE ✅" if camera_available else "OFFLINE 🔥"
                     
-                    logger.info(f" Continuous Detection | Frame: {frame_idx} | "
-                               f"Queue: {queue_size} | Tracks: {track_count} | "
-                               f"Locked: {locked_count} | Pending: {pending_count}")
+                    logger.info(f"📹 Stream | Status: {cam_status} | "
+                               f"Frame: {frame_idx} | Queue: {queue_size} | "
+                               f"NoFrames: {consecutive_no_frames}")
                     last_log_time = current_time
                 
             except GeneratorExit:
-                if DEBUG_MODE:
-                    logger.info(" Stream: Client disconnected")
+                logger.info(" Client disconnected from video feed")
                 break
             except Exception as e:
-                if DEBUG_MODE:
-                    logger.error(f" Stream error: {e}")
-                time.sleep(0.01)
+                logger.error(f" Stream error: {e}")
+                time.sleep(0.1)
     
     return Response(
         generate(),
@@ -6633,6 +6801,35 @@ def video_feed():
             'X-Accel-Buffering': 'no'
         }
     )
+
+@app.route('/api/restart_camera', methods=['POST'])
+def api_restart_camera():
+    """API endpoint to manually restart camera"""
+    try:
+        rtsp_url = request.json.get('rtsp_url')
+        
+        if rtsp_url:
+            # Update RTSP URL if provided
+            global current_rtsp_url
+            current_rtsp_url = rtsp_url
+        
+        success = restart_camera_stream()
+        
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': 'Camera restarted successfully',
+                'camera_available': camera_available
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Camera restart failed'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"API restart error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 def emergency_cleanup():
     """Emergency cleanup when system is under heavy load"""
@@ -7216,6 +7413,7 @@ def verify_reset_otp():
     except Exception as e:
         logger.error(f"Reset password error: {e}")
         return jsonify({'success': False, 'message': 'Failed to reset password'})
+
 
     
 @app.route('/api/get_students_enhanced', methods=['GET'])
@@ -9942,16 +10140,16 @@ def register_student():
                     if DEBUG_MODE:
                         logger.debug(f"Added multi-angle {i+1} to memory for {student_id}")
                 
-                logger.info(f"✅ Added student {student_id} to memory with {len(multi_angle_embeddings)} additional angles")
+                logger.info(f" Added student {student_id} to memory with {len(multi_angle_embeddings)} additional angles")
                 
                 # Verify storage
                 if student_id in known_face_ids:
                     idx = known_face_ids.index(student_id)
                     if DEBUG_MODE:
-                        logger.debug(f"✅ VERIFIED: Student {student_id} is at index {idx} in known_face_ids")
+                        logger.debug(f" VERIFIED: Student {student_id} is at index {idx} in known_face_ids")
                         logger.debug(f"Total faces in memory: {len(known_face_ids)}")
                 else:
-                    logger.error(f"❌ CRITICAL: Student {student_id} NOT found in known_face_ids after registration!")
+                    logger.error(f" CRITICAL: Student {student_id} NOT found in known_face_ids after registration!")
                     
         except Exception as e:
             logger.error(f"Failed to add student {student_id} to memory: {e}")
@@ -9997,7 +10195,7 @@ def register_student():
         conn.close()
         
         # LOG SUCCESS WITH DETAILS
-        logger.info(f"✅ Student registered successfully: {student_id} ({first_name} {last_name})")
+        logger.info(f" Student registered successfully: {student_id} ({first_name} {last_name})")
         logger.info(f"   - Program: {program_id}")
         logger.info(f"   - Section: {section_info['name']} (ID: {section_id})")
         logger.info(f"   - Curriculum: {curriculum_id} ({curriculum_name})")
@@ -10297,12 +10495,12 @@ def register_faculty():
                     
                     logger.debug(f"Added multi-angle {i+1} to memory for faculty {faculty_id}")
                 
-                logger.info(f"✅ Added faculty {faculty_id} to memory with {len(multi_angle_embeddings)} additional angles")
+                logger.info(f" Added faculty {faculty_id} to memory with {len(multi_angle_embeddings)} additional angles")
                 
                 # Verify storage
                 if faculty_id in known_face_ids:
                     idx = known_face_ids.index(faculty_id)
-                    logger.debug(f"✅ VERIFIED: Faculty {faculty_id} is at index {idx} in known_face_ids")
+                    logger.debug(f" VERIFIED: Faculty {faculty_id} is at index {idx} in known_face_ids")
                 else:
                     logger.error(f" CRITICAL: Faculty {faculty_id} NOT found in known_face_ids after registration!")
                     
@@ -10347,7 +10545,7 @@ def register_faculty():
         conn.close()
         
         # LOG SUCCESS WITH DETAILS
-        logger.info(f"✅ Faculty registered successfully: {faculty_id} ({first_name} {last_name})")
+        logger.info(f" Faculty registered successfully: {faculty_id} ({first_name} {last_name})")
         logger.info(f"   - Department: {department}")
         logger.info(f"   - Designation: {designation}")
         logger.info(f"   - Multi-angle encodings: {len(multi_angle_embeddings)}")
@@ -11058,7 +11256,7 @@ def get_summary_data():
             print(f"  DEBUG Session: {session_id}")
             print(f"   - Section ID: {section_id}")
             
-            # ✅ FIRST: Clean up any existing duplicates in this session
+            #  FIRST: Clean up any existing duplicates in this session
             cleanup_duplicate_attendance(session_id)
             
             # Duration calculation
@@ -11099,7 +11297,7 @@ def get_summary_data():
                 if section_part:
                     section_display = f"2{section_part[0]}"
             
-            # ✅ FIXED: COMPLETE QUERY THAT HANDLES EMPTY STATUS AND MISSING
+            #  FIXED: COMPLETE QUERY THAT HANDLES EMPTY STATUS AND MISSING
             cursor.execute("""
                 WITH cleaned_attendance AS (
                     -- Get latest non-empty status for each student
@@ -11407,7 +11605,7 @@ def update_attendance():
             subject_code = session_info.get('subject_code', 'IT99')
             subject_name = session_info.get('subject_name', 'AMBUTT UY')
             room = session_info.get('room', 'Unknown Room')
-            section_id = session_info.get('section_id')  # ✅ ADDED THIS LINE
+            section_id = session_info.get('section_id')  #  ADDED THIS LINE
             
             if not section_id:
                 print(f"  WARNING: No section_id found for session {session_id}")
@@ -11431,7 +11629,7 @@ def update_attendance():
                 status = update['status']
                 remarks = update.get('remarks', '')
                 
-                # ✅ CRITICAL: Don't allow empty status updates
+                #  CRITICAL: Don't allow empty status updates
                 if status == '' or status is None:
                     status = 'absent'  # Convert empty to absent
                 
@@ -11449,7 +11647,7 @@ def update_attendance():
                 existing_record = cursor.fetchone()
                 
                 if existing_record:
-                    # ✅ UPDATE existing record regardless of its status
+                    #  UPDATE existing record regardless of its status
                     cursor.execute("""
                         UPDATE attendance 
                         SET status = %s, 
@@ -11474,7 +11672,7 @@ def update_attendance():
                         # Student not in database, use name from update if available
                         student_name = update.get('student_name', f"Student {student_id}")
                     
-                    # ✅ INSERT new record with section_id
+                    #  INSERT new record with section_id
                     cursor.execute("""
                         INSERT INTO attendance (
                             session_id, student_id, name, status, 
@@ -11567,7 +11765,7 @@ def export_csv():
             
             print(f"  DEBUG Program: {program_display}, Section: {section_display}")
             
-            # ✅ FIXED: SINGLE RECORD PER STUDENT - Consolidates empty/missing status
+            #  FIXED: SINGLE RECORD PER STUDENT - Consolidates empty/missing status
             cursor.execute("""
                 WITH cleaned_attendance AS (
                     -- Get latest non-empty status for each student
@@ -11877,7 +12075,7 @@ def cleanup_duplicate_attendance(session_id):
                     
                 # Commit changes
                 cursor.connection.commit()
-                print(f"  ✅ Duplicate cleanup complete")
+                print(f"   Duplicate cleanup complete")
             
     except Exception as e:
         print(f"  Error in cleanup_duplicate_attendance: {e}")
@@ -13576,10 +13774,10 @@ def get_faculty_schedules_for_timer():
                     logged_in_user = f"{user_data['first_name']} {user_data['middle_name']} {user_data['last_name']}"
 
         if user_type == 'admin':
-            # ✅ FIXED: Admin can see all ACTUAL schedules
+            #  FIXED: Admin can see all ACTUAL schedules
             cursor.execute("""
                 SELECT DISTINCT
-                    cs.schedule_id,  -- ✅ USE ACTUAL schedule_id from class_schedules
+                    cs.schedule_id,  --  USE ACTUAL schedule_id from class_schedules
                     s.subject_id,
                     s.subject_code,
                     s.subject_name,
@@ -13590,12 +13788,12 @@ def get_faculty_schedules_for_timer():
                     p.program_name,
                     p.program_name as program,
                     c.curriculum_year,
-                    cs.room,
-                    cs.day_of_week,
+                    cs.room,  --  INCLUDED: Room information
+                    cs.day_of_week,  --  INCLUDED: Day of week
                     cs.start_time,
                     cs.end_time
                 FROM class_schedules cs
-                JOIN subjects s ON cs.subject_id = s.subject_id  -- ✅ JOIN with subjects
+                JOIN subjects s ON cs.subject_id = s.subject_id  --  JOIN with subjects
                 JOIN year_sections ys ON s.section_id = ys.section_id
                 JOIN programs p ON ys.program_id = p.program_id
                 LEFT JOIN curricula c ON ys.curriculum_id = c.curriculum_id
@@ -13603,10 +13801,10 @@ def get_faculty_schedules_for_timer():
                 ORDER BY s.subject_code, cs.schedule_id
             """)
         else:
-            # ✅ FIXED: Faculty member sees only their assigned ACTUAL schedules
+            #  FIXED: Faculty member sees only their assigned ACTUAL schedules
             cursor.execute("""
                 SELECT DISTINCT
-                    cs.schedule_id,  -- ✅ USE ACTUAL schedule_id from class_schedules
+                    cs.schedule_id,  --  USE ACTUAL schedule_id from class_schedules
                     s.subject_id,
                     s.subject_code,
                     s.subject_name,
@@ -13617,13 +13815,13 @@ def get_faculty_schedules_for_timer():
                     p.program_name,
                     p.program_name as program,
                     c.curriculum_year,
-                    cs.room,
-                    cs.day_of_week,
+                    cs.room,  --  INCLUDED: Room information
+                    cs.day_of_week,  --  INCLUDED: Day of week
                     cs.start_time,
                     cs.end_time
                 FROM faculty_schedules fs
-                JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id  -- ✅ JOIN with class_schedules
-                JOIN subjects s ON cs.subject_id = s.subject_id  -- ✅ THEN join with subjects
+                JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id  --  JOIN with class_schedules
+                JOIN subjects s ON cs.subject_id = s.subject_id  --  THEN join with subjects
                 JOIN year_sections ys ON s.section_id = ys.section_id
                 JOIN programs p ON ys.program_id = p.program_id
                 LEFT JOIN curricula c ON ys.curriculum_id = c.curriculum_id
@@ -13636,9 +13834,9 @@ def get_faculty_schedules_for_timer():
         schedules = cursor.fetchall()
         
         # Log for debugging
-        print(f"📋 DEBUG: Found {len(schedules)} schedules")
+        print(f" DEBUG: Found {len(schedules)} schedules")
         for sched in schedules:
-            print(f"  - schedule_id: {sched['schedule_id']}, subject: {sched['subject_code']}, subject_id: {sched['subject_id']}")
+            print(f"  - schedule_id: {sched['schedule_id']}, subject: {sched['subject_code']}, room: {sched['room']}, day: {sched['day_of_week']}, time: {sched['start_time']} - {sched['end_time']}")
         
         cursor.close()
         conn.close()
@@ -14766,6 +14964,8 @@ def get_current_class():
         current_time = datetime.now()
         current_time_str = current_time.strftime('%H:%M:%S')
         
+        print(f"🔍 DEBUG: Current day: {current_day}, Current time: {current_time_str}")
+        
         # Get logged in user's name based on user type
         logged_in_user = ""
         if user_type == 'admin':
@@ -14783,12 +14983,13 @@ def get_current_class():
                 if user_data['middle_name']:
                     logged_in_user = f"{user_data['first_name']} {user_data['middle_name']} {user_data['last_name']}"
 
+        # Query for BOTH admin and faculty
         if user_type == 'admin':
-            # ✅ FIXED: Admin can see all current classes
-            cursor.execute("""
-                SELECT DISTINCT
+            # Admin - Get specific schedule for TODAY
+            query = """
+                SELECT 
                     cs.schedule_id,
-                    s.subject_id,  -- ✅ ADD subject_id
+                    s.subject_id,
                     cs.day_of_week,
                     cs.start_time,
                     cs.end_time,
@@ -14796,35 +14997,37 @@ def get_current_class():
                     cs.class_type,
                     s.subject_code,
                     s.subject_name,
-                    s.units,  -- ✅ ADD units
+                    s.units,
                     ys.year_level,
-                    ys.section_id,  -- ✅ ADD section_id
+                    ys.section_id,
                     ys.section_name,
                     p.program_name,
                     p.program_id,
                     c.curriculum_year,
-                    c.curriculum_id,  -- ✅ ADD curriculum_id
+                    c.curriculum_id,
                     CONCAT(f.first_name, ' ', f.last_name) as instructor_name
                 FROM class_schedules cs
                 JOIN subjects s ON cs.subject_id = s.subject_id
-                JOIN year_sections ys ON s.section_id = ys.section_id  -- ✅ FIXED: Join via subject's section_id
+                JOIN year_sections ys ON s.section_id = ys.section_id
                 JOIN programs p ON ys.program_id = p.program_id
-                LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id  -- ✅ FIXED: Join via subject's curriculum_id
+                LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
                 LEFT JOIN faculty_schedules fs ON cs.schedule_id = fs.schedule_id
                 LEFT JOIN faculty f ON fs.faculty_id = f.faculty_id
-                WHERE cs.status = 'active' AND s.status = 'active'
-                AND cs.day_of_week = %s
-                AND cs.start_time <= %s
-                AND cs.end_time >= %s
+                WHERE cs.status = 'active' 
+                AND s.status = 'active'
+                AND cs.day_of_week = %s  -- SPECIFIC DAY (Monday, Tuesday, etc.)
+                AND cs.start_time <= %s  -- CURRENT TIME is AFTER start time
+                AND cs.end_time >= %s    -- CURRENT TIME is BEFORE end time
                 ORDER BY cs.start_time
                 LIMIT 1
-            """, (current_day, current_time_str, current_time_str))
+            """
+            params = (current_day, current_time_str, current_time_str)
         else:
-            # ✅ FIXED: Faculty member sees only their current classes
-            cursor.execute("""
+            # Faculty - Get THEIR specific schedule for TODAY
+            query = """
                 SELECT 
                     cs.schedule_id,
-                    s.subject_id,  -- ✅ ADD subject_id
+                    s.subject_id,
                     cs.day_of_week,
                     cs.start_time,
                     cs.end_time,
@@ -14832,41 +15035,61 @@ def get_current_class():
                     cs.class_type,
                     s.subject_code,
                     s.subject_name,
-                    s.units,  -- ✅ ADD units
+                    s.units,
                     ys.year_level,
-                    ys.section_id,  -- ✅ ADD section_id
+                    ys.section_id,
                     ys.section_name,
                     p.program_name,
                     p.program_id,
                     c.curriculum_year,
-                    c.curriculum_id,  -- ✅ ADD curriculum_id
+                    c.curriculum_id,
                     CONCAT(f.first_name, ' ', f.last_name) as instructor_name
                 FROM faculty_schedules fs
                 JOIN class_schedules cs ON fs.schedule_id = cs.schedule_id
                 JOIN subjects s ON cs.subject_id = s.subject_id
-                JOIN year_sections ys ON s.section_id = ys.section_id  -- ✅ FIXED: Join via subject's section_id
+                JOIN year_sections ys ON s.section_id = ys.section_id
                 JOIN programs p ON ys.program_id = p.program_id
-                LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id  -- ✅ FIXED: Join via subject's curriculum_id
+                LEFT JOIN curricula c ON s.curriculum_id = c.curriculum_id
                 JOIN faculty f ON fs.faculty_id = f.faculty_id
                 WHERE fs.faculty_id = %s 
-                AND cs.status = 'active' AND s.status = 'active'
-                AND cs.day_of_week = %s
-                AND cs.start_time <= %s
-                AND cs.end_time >= %s
+                AND cs.status = 'active' 
+                AND s.status = 'active'
+                AND cs.day_of_week = %s  -- SPECIFIC DAY (Monday, Tuesday, etc.)
+                AND cs.start_time <= %s  -- CURRENT TIME is AFTER start time
+                AND cs.end_time >= %s    -- CURRENT TIME is BEFORE end time
                 ORDER BY cs.start_time
                 LIMIT 1
-            """, (user_id, current_day, current_time_str, current_time_str))
+            """
+            params = (user_id, current_day, current_time_str, current_time_str)
+        
+        print(f"🔍 DEBUG: Running query for {current_day} at {current_time_str}")
+        cursor.execute(query, params)
         
         current_class = cursor.fetchone()
         
         # Debug log
         print(f"🔍 DEBUG get_current_class:")
+        print(f"  - Current day: {current_day}")
+        print(f"  - Current time: {current_time_str}")
         print(f"  - Found class: {bool(current_class)}")
         if current_class:
             print(f"  - schedule_id: {current_class.get('schedule_id')}")
-            print(f"  - subject_id: {current_class.get('subject_id')}")
             print(f"  - subject_code: {current_class.get('subject_code')}")
-            print(f"  - curriculum_year: {current_class.get('curriculum_year')}")
+            print(f"  - day_of_week: {current_class.get('day_of_week')}")
+            print(f"  - start_time: {current_class.get('start_time')}")
+            print(f"  - end_time: {current_class.get('end_time')}")
+        else:
+            print(f"  - No class found for {current_day} at {current_time_str}")
+            # Debug: Show what schedules exist for today
+            cursor.execute("""
+                SELECT schedule_id, subject_id, day_of_week, start_time, end_time 
+                FROM class_schedules 
+                WHERE day_of_week = %s AND status = 'active'
+            """, (current_day,))
+            all_today = cursor.fetchall()
+            print(f"  - All schedules for {current_day}: {len(all_today)}")
+            for sched in all_today:
+                print(f"    * {sched['schedule_id']}: {sched['subject_id']} ({sched['start_time']} - {sched['end_time']})")
         
         cursor.close()
         conn.close()
@@ -14907,12 +15130,15 @@ def get_current_class():
                 minutes = (total_seconds % 3600) // 60
                 seconds = total_seconds % 60
                 
+                print(f"  - Remaining time: {hours}h {minutes}m {seconds}s")
+                
             except Exception as time_error:
                 logger.warning(f"Error calculating remaining time: {time_error}")
+                print(f"  - Time calculation error: {time_error}")
                 # Fallback to default 1 hour if time calculation fails
                 hours, minutes, seconds = 1, 0, 0
             
-            # ✅ ADDED: Get units from subject if not already in result
+            #  ADDED: Get units from subject if not already in result
             units = current_class.get('units', 3)
             
             # Convert all datetime objects to strings
@@ -14961,7 +15187,8 @@ def get_current_class():
                     'current_time': current_time_str,
                     'remaining_minutes': f"{hours}h {minutes}m {seconds}s",
                     'curriculum': current_class.get('curriculum_year', 'N/A'),
-                    'units': units
+                    'units': units,
+                    'day_matched': current_day == current_class['day_of_week']
                 }
             }
             
@@ -14978,6 +15205,7 @@ def get_current_class():
         
     except Exception as e:
         logger.error(f"Error getting current class: {e}")
+        print(f" ERROR: {e}")
         return jsonify({'success': False, 'message': str(e)})
     
 @app.route('/api/get_assigned_faculty_schedules', methods=['GET'])
@@ -15769,7 +15997,101 @@ def get_sections_with_semester():
             'success': False, 
             'message': f'API error: {str(e)}'
         })
+
+@app.route('/api/get_current_academic_semester', methods=['GET'])
+def get_current_academic_semester():
+    """Get current academic year and semester"""
+    try:
+        # Get current date
+        current_date = datetime.now()
+        current_year = current_date.year
+        current_month = current_date.month
+        
+        # Determine academic year
+        if current_month >= 6:  # June to December
+            academic_year = f"{current_year}-{current_year + 1}"
+        else:  # January to May
+            academic_year = f"{current_year - 1}-{current_year}"
+        
+        # Determine semester based on month
+        if 6 <= current_month <= 10:  # June to October
+            semester = "1st Semester"
+        elif 11 <= current_month <= 12 or 1 <= current_month <= 3:  # November to March
+            semester = "2nd Semester"
+        else:  # April to May
+            semester = "Summer"
+        
+        return jsonify({
+            'success': True,
+            'academic_year': academic_year,
+            'semester': semester
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        })
     
+@app.route('/api/get_sections_for_student_edit', methods=['GET'])
+def get_sections_for_student_edit():
+    """Get ALL sections for student edit - SIMPLIFIED VERSION"""
+    try:
+        program_id = request.args.get('program_id')
+        year_level = request.args.get('year_level')
+        
+        print(f"=== get_sections_for_student_edit ===")
+        print(f"program_id: {program_id}, year_level: {year_level}")
+        
+        if not program_id or not year_level:
+            return jsonify({'success': False, 'message': 'Missing program_id or year_level'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # SIMPLE QUERY: Get ALL active sections for this program and year
+        query = """
+            SELECT 
+                section_id,
+                section_name,
+                year_level,
+                curriculum_id
+            FROM year_sections 
+            WHERE program_id = %s 
+            AND year_level = %s
+            AND status = 'active'
+            ORDER BY section_name
+        """
+        
+        cursor.execute(query, (program_id, year_level))
+        sections = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        print(f"Found {len(sections)} sections for {program_id} Year {year_level}:")
+        for section in sections:
+            print(f"  - {section['section_name']} (ID: {section['section_id']}, Curriculum: {section['curriculum_id']})")
+        
+        if sections:
+            return jsonify({
+                'success': True,
+                'sections': sections,
+                'count': len(sections)
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'sections': [],
+                'count': 0,
+                'message': f'No active sections found for {program_id} Year {year_level}'
+            })
+            
+    except Exception as e:
+        print(f"Error in get_sections_for_student_edit: {str(e)}")
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'})
+
+
 @app.route('/api/set_rtsp_url', methods=['POST'])
 @login_required
 def set_rtsp_url():
@@ -16827,6 +17149,49 @@ def debug_threshold():
             }
         }), 500
 
+@app.route('/api/get_program_year_levels', methods=['GET'])
+def get_program_year_levels():
+    """Get allowed year levels for a specific program"""
+    try:
+        program_id = request.args.get('program_id')
+        if not program_id:
+            return jsonify({'success': False, 'message': 'Program ID required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        if program_id == 'ACT':
+            # ACT only has 1st and 2nd year
+            allowed_years = ['1', '2']
+        else:
+            # For other programs, check what's available in the database
+            cursor.execute("""
+                SELECT DISTINCT year_level 
+                FROM year_sections 
+                WHERE program_id = %s 
+                AND status = 'active'
+                ORDER BY year_level
+            """, (program_id,))
+            
+            results = cursor.fetchall()
+            allowed_years = [str(row['year_level']) for row in results] if results else ['1', '2', '3', '4']
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'program_id': program_id,
+            'year_levels': allowed_years
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching program year levels: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Error loading year levels: {str(e)}'
+        })
+
 @app.route('/api/get_class_students', methods=['GET'])
 def get_class_students():
     """Get students for the current class including both regular and temporary students"""
@@ -17048,7 +17413,7 @@ def get_class_students():
                                 logger.debug(f"  ⏰ {record['student_id']} marked LATE: {time_diff_seconds}s >= {threshold_seconds}s")
                         else:
                             if DEBUG_MODE:
-                                logger.debug(f"  ✅ {record['student_id']} is PRESENT: {time_diff_seconds}s < {threshold_seconds}s")
+                                logger.debug(f"   {record['student_id']} is PRESENT: {time_diff_seconds}s < {threshold_seconds}s")
                     
                     status_map[record['student_id']] = current_status
             
@@ -21386,7 +21751,7 @@ def open_test_camera(rtsp_url):
                         ret, frame = test_camera_cap.read()
                         if ret and frame is not None:
                             success = True
-                            print(f"  ✅ Connected with attempt {i+1}")
+                            print(f"   Connected with attempt {i+1}")
                             break
                         else:
                             test_camera_cap.release()
@@ -21434,7 +21799,7 @@ def open_test_camera(rtsp_url):
             
             if success_count >= 3:
                 test_camera_active = True
-                print(f"✅ Camera ready ({success_count}/10 frames OK)")
+                print(f" Camera ready ({success_count}/10 frames OK)")
                 return True
             else:
                 test_camera_cap.release()
@@ -21729,7 +22094,7 @@ def generate_test_frames():
             except queue.Empty:
                 # Buffer empty, use last frame with warning
                 frame_bytes = last_valid_frame
-                print("⚠️ Buffer empty, using last frame")
+                print(" Buffer empty, using last frame")
                 time.sleep(0.05)  # Slow down when buffer is empty
                 continue
             
@@ -22029,7 +22394,7 @@ def test_camera():
             </div>
             
             <div class="latency-warning" id="latencyWarning">
-                ⚠️ High Latency Detected
+                 High Latency Detected
             </div>
             
             <!-- NEW: Stream Quality Display -->
@@ -22097,7 +22462,7 @@ def test_camera():
             // Show warning if buffer is low
             if (bufferHealth < 30 && bufferEstimate < 0.3) {{
                 latencyWarning.style.display = 'block';
-                latencyWarning.textContent = `⚠️ Low Buffer (${{bufferEstimate.toFixed(1)}}s)`;
+                latencyWarning.textContent = ` Low Buffer (${{bufferEstimate.toFixed(1)}}s)`;
                 latencyWarning.style.background = 'rgba(255, 50, 0, 0.9)';
             }} else {{
                 latencyWarning.style.display = 'none';
@@ -22156,7 +22521,7 @@ def test_camera():
                     highLatencyCount++;
                     if (highLatencyCount > 3) {{
                         latencyWarning.style.display = 'block';
-                        latencyWarning.textContent = `⚠️ High Latency: ${{latency}}ms`;
+                        latencyWarning.textContent = ` High Latency: ${{latency}}ms`;
                         latencyWarning.style.background = 'rgba(255, 100, 0, 0.9)';
                     }}
                 }} else {{
@@ -22734,17 +23099,17 @@ subjectAltName = @alt_names
                     
                     if cert_valid and key_valid:
                         # For offline use, accept existing certificates
-                        print(f"✅ Using existing SSL certificates")
+                        print(f" Using existing SSL certificates")
                         print(f"   (Offline mode - not validating against current network)")
                         return True
                     else:
-                        print("⚠️  Invalid certificate files found. Regenerating...")
+                        print("  Invalid certificate files found. Regenerating...")
                         os.remove(cert_file)
                         os.remove(key_file)
                         return generate_new_certificates(current_ip, ips)
                         
                 except Exception as e:
-                    print(f"⚠️  Error checking certificates: {e}")
+                    print(f"  Error checking certificates: {e}")
                     print("   Regenerating certificates...")
                     # Clean up and regenerate
                     for f in [cert_file, key_file]:
@@ -22775,9 +23140,9 @@ subjectAltName = @alt_names
                             'protocol=TCP', 'localport=5000'
                         ]
                         subprocess.run(add_cmd, capture_output=True, timeout=10)
-                        print("✅ Firewall rule added")
+                        print(" Firewall rule added")
                     else:
-                        print("✅ Firewall rule already exists")
+                        print(" Firewall rule already exists")
             except Exception as e:
                 print(f"ℹ️  Could not configure firewall: {e}")
         
@@ -22799,12 +23164,12 @@ subjectAltName = @alt_names
         if create_ssl_certificate_auto():
             if os.path.exists(cert_file) and os.path.exists(key_file):
                 ssl_context = (cert_file, key_file)
-                print("✅ HTTPS server ready")
+                print(" HTTPS server ready")
             else:
-                print("⚠️  Certificate files not found, using HTTP")
+                print("  Certificate files not found, using HTTP")
                 ssl_context = None
         else:
-            print("⚠️  Using HTTP (some features may not work)")
+            print("  Using HTTP (some features may not work)")
             ssl_context = None
         
         # Add firewall rule
@@ -22822,7 +23187,7 @@ subjectAltName = @alt_names
                     print(f"      → https://{ip}:5000")
             print(f"      → https://{hostname}.local:5000 (if supported by network)")
             print(f"      → https://localhost:5000 (on this computer only)")
-            print(f"\n⚠️  FIRST TIME ACCESS:")
+            print(f"\n  FIRST TIME ACCESS:")
             print(f"   1. You'll see 'Not Secure' warning (NORMAL for local certificates)")
             print(f"   2. Click 'Advanced' → 'Proceed to site' or 'Accept Risk'")
         else:
@@ -22832,7 +23197,7 @@ subjectAltName = @alt_names
                     print(f"      → http://{ip}:5000")
             print(f"      → http://{hostname}.local:5000 (if supported by network)")
             print(f"      → http://localhost:5000 (on this computer only)")
-            print(f"\n⚠️  IMPORTANT:")
+            print(f"\n  IMPORTANT:")
             print(f"   • Camera may not work over HTTP")
             print(f"   • Modern browsers may block HTTP camera access")
         
@@ -22853,7 +23218,7 @@ subjectAltName = @alt_names
     except OSError as e:
         if "10049" in str(e) or "not valid" in str(e) or "10048" in str(e):
             logger.error("Network address issue. Trying localhost only...")
-            print("\n⚠️  Network error, starting on localhost only...")
+            print("\n  Network error, starting on localhost only...")
             print("   You can only access from this computer at: http://localhost:5000")
             app.run(host="127.0.0.1", port=5000, debug=False, threaded=True, ssl_context=None)
         else:
@@ -22862,11 +23227,11 @@ subjectAltName = @alt_names
     except KeyboardInterrupt:
         if DEBUG_MODE: 
             logger.debug("Server stopped by user")
-        print("\n🛑 Server stopped by user")
+        print("\n Server stopped by user")
     
     except Exception as e:
         logger.error(f"Server error: {e}")
-        print(f"\n❌ Server error: {e}")
+        print(f"\n Server error: {e}")
         import traceback
         traceback.print_exc()
         print("\nPress Enter to exit...")

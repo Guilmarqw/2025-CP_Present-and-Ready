@@ -86,13 +86,13 @@
             </div>
         </div>
 
-       <div class="input-section">
+<div class="input-section">
     <div class="input-form-group">
         <h3 class="group-title">Class Details</h3>
         <div class="input-group">
             <input type="text" placeholder="Subject Instructor" id="subjectInstructor" readonly>
             
-            <!-- CHANGE: Add multiple selection for subjects -->
+            <!-- Add multiple selection for subjects -->
             <div class="multi-select-container">
                 <select id="subjectCode" multiple size="4" style="width: 100%; padding: 8px;">
                     <option value="" disabled>Select Subject Code(s)</option>
@@ -101,17 +101,27 @@
             </div>
         </div>
         
-        <!-- CHANGE: Add selected subjects display -->
+        <!-- Add selected subjects display -->
         <div class="selected-subjects" id="selectedSubjects" style="display: none;">
             <h4>Selected Subjects:</h4>
             <div id="selectedSubjectsList" class="selected-list"></div>
         </div>
         
         <div class="input-group">
-    <input type="text" placeholder="Year Level" id="yearLevel" readonly>
-    <input type="text" placeholder="Course" id="course" readonly>
-    <!-- REMOVED curriculum dropdown -->
-</div>
+            <input type="text" placeholder="Year Level" id="yearLevel" readonly>
+            <input type="text" placeholder="Course" id="course" readonly>
+            <!-- ADD DAY INPUT -->
+            <input type="text" placeholder="Day" id="classDay" readonly>
+        </div>
+        
+        <!-- ADD START AND END TIME INPUTS -->
+        <div class="input-group">
+            <input type="text" placeholder="Start Time" id="startTime" readonly>
+            <input type="text" placeholder="End Time" id="endTime" readonly>
+            <!-- ADD ROOM INPUT -->
+            <input type="text" placeholder="Room" id="room" readonly>
+        </div>
+        
         <div class="input-group">
             <select id="courseSection" disabled>
                 <option value="" selected disabled>Select Section</option>
@@ -180,20 +190,31 @@ let startTime;
 let isRunning = false;
 let sessionDuration;
 let lateThreshold;
+let currentTotalSeconds = 0;
+let liveTimerInterval = null;
+let totalSessionSeconds = 0; // Total seconds for the session
+let elapsedSeconds = 0; // Seconds that have passed
 
 document.addEventListener('DOMContentLoaded', async function() {
     const timerModeRadios = document.querySelectorAll('input[name="timerMode"]');
     
     // Handle mode switching
-    timerModeRadios.forEach(radio => {
-        radio.addEventListener('change', async function() {
-            if (this.value === 'default') {
-                await loadDefaultSettings();
-            } else {
-                await loadCustomSettings();
-            }
-        });
+timerModeRadios.forEach(radio => {
+    radio.addEventListener('change', async function() {
+        //  STOP any running timer when switching modes
+        if (liveTimerInterval) {
+            clearInterval(liveTimerInterval);
+            liveTimerInterval = null;
+            console.log('⏱️ Stopped timer for mode switch');
+        }
+        
+        if (this.value === 'default') {
+            await loadDefaultSettings();
+        } else {
+            await loadCustomSettings();
+        }
     });
+});
     
     // RTSP Test button
     document.getElementById('testRtspBtn').addEventListener('click', testRtspConnection);
@@ -204,6 +225,67 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Load default mode on startup
     await loadDefaultSettings();
 });
+
+function startLiveTimer() {
+    // Stop any existing timer first
+    if (liveTimerInterval) {
+        clearInterval(liveTimerInterval);
+        liveTimerInterval = null;
+    }
+    
+    // Get current timer values from inputs
+    const hours = parseInt(document.getElementById('sessionHours').value) || 0;
+    const minutes = parseInt(document.getElementById('sessionMinutes').value) || 0;
+    const seconds = parseInt(document.getElementById('sessionSeconds').value) || 0;
+    
+    // Calculate total seconds
+    currentTotalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+    
+    console.log('⏱️ Starting live timer:', {
+        hours: hours,
+        minutes: minutes,
+        seconds: seconds,
+        totalSeconds: currentTotalSeconds
+    });
+    
+    // Start updating every second
+    liveTimerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+// 2. Function to update timer display every second
+function updateTimerDisplay() {
+    if (currentTotalSeconds <= 0) {
+        // Timer finished
+        clearInterval(liveTimerInterval);
+        liveTimerInterval = null;
+        return;
+    }
+    
+    // Decrease by 1 second
+    currentTotalSeconds--;
+    
+    // Calculate new hours, minutes, seconds
+    const hours = Math.floor(currentTotalSeconds / 3600);
+    const minutes = Math.floor((currentTotalSeconds % 3600) / 60);
+    const seconds = currentTotalSeconds % 60;
+    
+    // Update the input fields
+    document.getElementById('sessionHours').value = String(hours).padStart(2, '0');
+    document.getElementById('sessionMinutes').value = String(minutes).padStart(2, '0');
+    document.getElementById('sessionSeconds').value = String(seconds).padStart(2, '0');
+    
+    // Also update the data-total-seconds attribute
+    document.getElementById('sessionHours').dataset.totalSeconds = currentTotalSeconds;
+}
+
+// 3. Function to stop the live timer
+function stopLiveTimer() {
+    if (liveTimerInterval) {
+        clearInterval(liveTimerInterval);
+        liveTimerInterval = null;
+        console.log('⏱️ Live timer stopped');
+    }
+}
 
 function detectBestCameraURL() {
     const baseURL = 'rtsp://admin:@101Pok3r5610@';
@@ -297,15 +379,26 @@ async function loadDefaultSettings() {
         const classInfo = data.class_info;
         const timer = data.timer;
         
-        // Calculate REAL-TIME remaining time based on current time vs schedule
-        let remainingHours = timer.session.hours;
-        let remainingMinutes = timer.session.minutes;
-        let remainingSeconds = timer.session.seconds;
+        //  DEBUG: Log what we get from backend
+        console.log('🔍 DEBUG: Timer from backend:', timer);
+        console.log('🔍 DEBUG: Class schedule:', {
+            start: classInfo.start_time,
+            end: classInfo.end_time,
+            day: classInfo.day_of_week,
+            room: classInfo.room,
+            current: new Date().toLocaleTimeString()
+        });
         
-        // If we have actual schedule times, calculate real remaining time
+        // Calculate REAL-TIME remaining time based on ACTUAL schedule times
+        let remainingHours = 0;
+        let remainingMinutes = 0;
+        let remainingSeconds = 0;
+        let totalDurationSeconds = 0;
+        
+        //  FIXED: Always calculate from schedule times, ignore backend timer
         if (classInfo.start_time && classInfo.end_time) {
             const now = new Date();
-            const today = now.toISOString().split('T')[0]; // Get today's date YYYY-MM-DD
+            const today = now.toISOString().split('T')[0];
             
             // Parse start and end times
             const startTimeStr = `${today}T${classInfo.start_time}`;
@@ -315,31 +408,93 @@ async function loadDefaultSettings() {
             const endTime = new Date(endTimeStr);
             const currentTime = now;
             
+            console.log('🔍 Time calculation:', {
+                startTime: startTime.toLocaleTimeString(),
+                endTime: endTime.toLocaleTimeString(),
+                currentTime: currentTime.toLocaleTimeString(),
+                isBeforeStart: currentTime < startTime,
+                isDuringClass: currentTime >= startTime && currentTime <= endTime,
+                isAfterEnd: currentTime > endTime
+            });
+            
             // Check if class is in progress
             if (currentTime >= startTime && currentTime <= endTime) {
                 // Calculate remaining time
                 const remainingMs = endTime - currentTime;
+                totalDurationSeconds = Math.floor(remainingMs / 1000);
                 
-                // Convert to hours, minutes, seconds
-                const totalSeconds = Math.floor(remainingMs / 1000);
-                remainingHours = Math.floor(totalSeconds / 3600);
-                remainingMinutes = Math.floor((totalSeconds % 3600) / 60);
-                remainingSeconds = totalSeconds % 60;
+                remainingHours = Math.floor(totalDurationSeconds / 3600);
+                remainingMinutes = Math.floor((totalDurationSeconds % 3600) / 60);
+                remainingSeconds = totalDurationSeconds % 60;
                 
-                console.log('Real-time calculation:', {
-                    now: currentTime.toLocaleTimeString(),
-                    start: startTime.toLocaleTimeString(),
-                    end: endTime.toLocaleTimeString(),
-                    remaining: `${remainingHours}h ${remainingMinutes}m ${remainingSeconds}s`
+                console.log(' Real-time calculation (class in progress):', {
+                    remainingMs: remainingMs,
+                    totalSeconds: totalDurationSeconds,
+                    hours: remainingHours,
+                    minutes: remainingMinutes,
+                    seconds: remainingSeconds
                 });
+                
             } else if (currentTime < startTime) {
                 // Class hasn't started yet - show full duration
-                console.log('Class starts later today');
+                const durationMs = endTime - startTime;
+                totalDurationSeconds = Math.floor(durationMs / 1000);
+                
+                remainingHours = Math.floor(totalDurationSeconds / 3600);
+                remainingMinutes = Math.floor((totalDurationSeconds % 3600) / 60);
+                remainingSeconds = totalDurationSeconds % 60;
+                
+                console.log(' Full duration calculation (class not started):', {
+                    durationMs: durationMs,
+                    totalSeconds: totalDurationSeconds,
+                    hours: remainingHours,
+                    minutes: remainingMinutes,
+                    seconds: remainingSeconds
+                });
+                
             } else {
-                // Class already ended
-                console.log('Class has already ended for today');
-                // Show 0:00:00 or full duration? Let's show full duration
+                // Class already ended - show 0:00:00
+                remainingHours = 0;
+                remainingMinutes = 0;
+                remainingSeconds = 0;
+                totalDurationSeconds = 0;
+                
+                console.log(' Class has ended, showing 0:00:00');
             }
+        } else {
+            // No schedule times - fallback to backend timer values
+            remainingHours = parseInt(timer.session.hours) || 1;
+            remainingMinutes = parseInt(timer.session.minutes) || 0;
+            remainingSeconds = parseInt(timer.session.seconds) || 0;
+            totalDurationSeconds = (remainingHours * 3600) + (remainingMinutes * 60) + remainingSeconds;
+            
+            console.log('⚠️ Using backend timer values (no schedule times):', {
+                hours: remainingHours,
+                minutes: remainingMinutes,
+                seconds: remainingSeconds
+            });
+        }
+        
+        //  Calculate actual duration from start_time to end_time
+        if (classInfo.start_time && classInfo.end_time) {
+            const startParts = classInfo.start_time.split(':');
+            const endParts = classInfo.end_time.split(':');
+            
+            const startHour = parseInt(startParts[0]) || 0;
+            const startMinute = parseInt(startParts[1]) || 0;
+            const endHour = parseInt(endParts[0]) || 0;
+            const endMinute = parseInt(endParts[1]) || 0;
+            
+            const actualDurationHours = endHour - startHour;
+            const actualDurationMinutes = endMinute - startMinute;
+            
+            console.log('🔍 ACTUAL CLASS DURATION:', {
+                start_time: classInfo.start_time,
+                end_time: classInfo.end_time,
+                duration_hours: actualDurationHours,
+                duration_minutes: actualDurationMinutes,
+                total_minutes: (actualDurationHours * 60) + actualDurationMinutes
+            });
         }
         
         // SAFELY populate class details with null checks
@@ -347,6 +502,10 @@ async function loadDefaultSettings() {
         const courseInput = document.getElementById('course');
         const subjectDropdown = document.getElementById('subjectCode');
         const sectionDropdown = document.getElementById('courseSection');
+        const dayInput = document.getElementById('classDay');
+        const startTimeInput = document.getElementById('startTime');
+        const endTimeInput = document.getElementById('endTime');
+        const roomInput = document.getElementById('room'); // NEW
         
         // Populate year level
         if (yearLevelInput) {
@@ -360,15 +519,36 @@ async function loadDefaultSettings() {
             courseInput.setAttribute('readonly', true);
         }
         
-        //  Handle the new multiple select structure
+        // Populate day and times
+        if (dayInput) {
+            dayInput.value = classInfo.day_of_week || 'N/A';
+            dayInput.setAttribute('readonly', true);
+        }
+        
+        if (startTimeInput) {
+            startTimeInput.value = formatTimeForDisplay(classInfo.start_time);
+            startTimeInput.setAttribute('readonly', true);
+        }
+        
+        if (endTimeInput) {
+            endTimeInput.value = formatTimeForDisplay(classInfo.end_time);
+            endTimeInput.setAttribute('readonly', true);
+        }
+        
+        // Populate room
+        if (roomInput) {
+            roomInput.value = classInfo.room || 'N/A';
+            roomInput.setAttribute('readonly', true);
+        }
+        
+        // Handle the dropdown
         if (subjectDropdown) {
             // Clear existing options
             subjectDropdown.innerHTML = '<option value="" disabled>Select Subject Code(s)</option>';
             
-            // Create the current class as a single selected option
             const option = document.createElement('option');
-            option.value = classInfo.schedule_id;
-            option.selected = true; // Make it selected
+            option.value = classInfo.subject_id || classInfo.schedule_id;
+            option.selected = true;
             
             let subjectDisplay = classInfo.subject_code;
             if (classInfo.class_type === 'lecture') {
@@ -379,11 +559,19 @@ async function loadDefaultSettings() {
             subjectDisplay += ` - ${classInfo.subject_name}`;
             subjectDisplay += ` [${classInfo.curriculum_year || 'Default'}]`;
             
+            // Add room, day and time info to display
+            if (classInfo.room) {
+                subjectDisplay += ` | Room: ${classInfo.room}`;
+            }
+            if (classInfo.day_of_week && classInfo.start_time && classInfo.end_time) {
+                subjectDisplay += ` | ${classInfo.day_of_week} ${formatTimeForDisplay(classInfo.start_time)}-${formatTimeForDisplay(classInfo.end_time)}`;
+            }
+            
             option.textContent = subjectDisplay;
             
-            // Store all data as JSON in dataset (matching custom mode format)
             option.dataset.subjectData = JSON.stringify({
                 schedule_id: classInfo.schedule_id,
+                subject_id: classInfo.subject_id || classInfo.schedule_id,
                 subject_code: classInfo.subject_code,
                 subject_name: classInfo.subject_name,
                 class_type: classInfo.class_type,
@@ -394,13 +582,14 @@ async function loadDefaultSettings() {
                 curriculum_id: classInfo.curriculum_id,
                 start_time: classInfo.start_time,
                 end_time: classInfo.end_time,
-                units: classInfo.units || 3 // Default to 3 units if not specified
+                day_of_week: classInfo.day_of_week,
+                room: classInfo.room, //  INCLUDED: Room information
+                units: classInfo.units || 3
             });
             
             subjectDropdown.appendChild(option);
-            subjectDropdown.disabled = true; // Disable since it's auto-populated
+            subjectDropdown.disabled = true;
             
-            // Also update the selected subjects display for consistency
             updateSelectedSubjects();
         }
         
@@ -416,6 +605,14 @@ async function loadDefaultSettings() {
         const sessionSeconds = document.getElementById('sessionSeconds');
         
         if (sessionHours && sessionMinutes && sessionSeconds) {
+            console.log(' SETTING TIMER VALUES:', {
+                hours: remainingHours,
+                minutes: remainingMinutes,
+                seconds: remainingSeconds,
+                display: `${String(remainingHours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`,
+                totalSeconds: totalDurationSeconds
+            });
+            
             sessionHours.value = String(remainingHours).padStart(2, '0');
             sessionMinutes.value = String(remainingMinutes).padStart(2, '0');
             sessionSeconds.value = String(remainingSeconds).padStart(2, '0');
@@ -424,8 +621,7 @@ async function loadDefaultSettings() {
             sessionSeconds.setAttribute('readonly', true);
             
             // Also calculate and store total seconds for session start
-            const totalSeconds = (remainingHours * 3600) + (remainingMinutes * 60) + remainingSeconds;
-            sessionHours.dataset.totalSeconds = totalSeconds;
+            sessionHours.dataset.totalSeconds = totalDurationSeconds;
         }
         
         // Threshold is editable
@@ -458,18 +654,25 @@ async function loadDefaultSettings() {
         // Also update class summary to show the selected subject
         updateClassSummary();
         
-        console.log('Current Class Loaded:', {
+        // Get current day
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const currentDay = days[new Date().getDay()];
+        
+        console.log(` Current Class Loaded (${currentDay}):`, {
             instructor: data.logged_in_user,
-            subject: classInfo.subject_with_type,
-            program: classInfo.program_name,
-            year: classInfo.year_level,
-            curriculum: classInfo.curriculum_year,
-            section: classInfo.section_name,
-            class_type: classInfo.class_type_display,
+            subject: classInfo.subject_code,
+            schedule_id: classInfo.schedule_id,
+            day: classInfo.day_of_week,
+            room: classInfo.room,
             time: `${classInfo.start_time} - ${classInfo.end_time}`,
-            units: classInfo.units,
-            duration: `${remainingHours}:${remainingMinutes}:${remainingSeconds}`
+            calculated_duration: `${remainingHours}h ${remainingMinutes}m ${remainingSeconds}s`,
+            total_seconds: totalDurationSeconds
         });
+        
+        //  ADDED: Start the live updating timer (counts down every second)
+        setTimeout(() => {
+            startLiveTimer();
+        }, 1000);
         
     } catch (error) {
         hideLoading();
@@ -481,6 +684,13 @@ async function loadDefaultSettings() {
 async function loadCustomSettings() {
     try {
         showLoading('Loading schedules...');
+        
+        //  STOP the live timer from Default Mode
+        if (liveTimerInterval) {
+            clearInterval(liveTimerInterval);
+            liveTimerInterval = null;
+            console.log('⏱️ Stopped default mode timer for custom mode');
+        }
         
         const response = await fetch('/api/get_faculty_schedules_for_timer');
         const data = await response.json();
@@ -509,7 +719,7 @@ async function loadCustomSettings() {
                 const option = document.createElement('option');
                 option.value = sched.schedule_id;
                 
-                // Enhanced display with class type and curriculum
+                // Enhanced display with class type, curriculum, room, day and time
                 let subjectDisplay = sched.subject_code;
                 if (sched.class_type === 'lecture') {
                     subjectDisplay += ' (Lecture)';
@@ -519,13 +729,21 @@ async function loadCustomSettings() {
                 subjectDisplay += ` - ${sched.subject_name}`;
                 subjectDisplay += ` [${sched.curriculum_year || 'Default'}]`;
                 
+                // Add room, day and time info
+                if (sched.room) {
+                    subjectDisplay += ` | Room: ${sched.room}`;
+                }
+                if (sched.day_of_week && sched.start_time && sched.end_time) {
+                    subjectDisplay += ` | ${sched.day_of_week} ${formatTimeForDisplay(sched.start_time)}-${formatTimeForDisplay(sched.end_time)}`;
+                }
+                
                 // Add units info
                 const units = sched.units || 3;
                 subjectDisplay += ` | ${units} unit${units > 1 ? 's' : ''}`;
                 
                 option.textContent = subjectDisplay;
                 
-                // Store all data as JSON in dataset
+                // Store all data as JSON in dataset (INCLUDING room and day_of_week)
                 option.dataset.subjectData = JSON.stringify({
                     schedule_id: sched.schedule_id,
                     subject_code: sched.subject_code,
@@ -538,7 +756,9 @@ async function loadCustomSettings() {
                     curriculum_id: sched.curriculum_id,
                     units: units,
                     start_time: sched.start_time,
-                    end_time: sched.end_time
+                    end_time: sched.end_time,
+                    day_of_week: sched.day_of_week,  //  INCLUDED: Day of week
+                    room: sched.room  //  INCLUDED: Room information
                 });
                 
                 subjectDropdown.appendChild(option);
@@ -561,6 +781,12 @@ async function loadCustomSettings() {
             input.removeAttribute('readonly');
         });
         
+        //  ADDED: Also make day, time, and room inputs editable in custom mode
+        document.getElementById('classDay').removeAttribute('readonly');
+        document.getElementById('startTime').removeAttribute('readonly');
+        document.getElementById('endTime').removeAttribute('readonly');
+        document.getElementById('room').removeAttribute('readonly');
+        
     } catch (error) {
         hideLoading();
         console.error('Error loading custom settings:', error);
@@ -569,6 +795,15 @@ async function loadCustomSettings() {
 }
 
 function updateDurationBasedOnUnits() {
+    // Check if we're in custom mode
+    const timerMode = document.querySelector('input[name="timerMode"]:checked');
+    
+    //  Only run in custom mode
+    if (!timerMode || timerMode.value !== 'custom') {
+        console.log('Not in custom mode, skipping unit-based duration calculation');
+        return;
+    }
+    
     const subjectDropdown = document.getElementById('subjectCode');
     const selectedOptions = Array.from(subjectDropdown.selectedOptions).filter(opt => opt.value);
     
@@ -587,20 +822,9 @@ function updateDurationBasedOnUnits() {
         totalUnits += parseInt(subjectData.units) || 3;
     });
     
-    // Convert units to hours (1 unit = 1 hour of lecture, 2-3 hours for lab)
-    // For simplicity, let's assume: 1 unit = 1 hour for lecture, 1 unit = 2 hours for lab
-    let totalHours = 0;
-    
-    selectedOptions.forEach(option => {
-        const subjectData = JSON.parse(option.dataset.subjectData);
-        if (subjectData.class_type === 'laboratory') {
-            // For lab: 1 unit = 2 hours
-            totalHours += (parseInt(subjectData.units) || 3) * 2;
-        } else {
-            // For lecture: 1 unit = 1 hour
-            totalHours += parseInt(subjectData.units) || 3;
-        }
-    });
+    //  FIXED: 1 unit = 1 hour for ALL class types
+    // Remove the multiplication by 2 for laboratory classes
+    let totalHours = totalUnits;
     
     // Round up to nearest 0.5 hour
     totalHours = Math.ceil(totalHours * 2) / 2;
@@ -723,6 +947,10 @@ function updateClassSummary() {
     const yearLevelInput = document.getElementById('yearLevel');
     const courseInput = document.getElementById('course');
     const sectionDropdown = document.getElementById('courseSection');
+    const dayInput = document.getElementById('classDay');
+    const startTimeInput = document.getElementById('startTime');
+    const endTimeInput = document.getElementById('endTime');
+    const roomInput = document.getElementById('room'); // NEW
     
     const selectedOptions = Array.from(subjectDropdown.selectedOptions).filter(opt => opt.value);
     
@@ -731,6 +959,10 @@ function updateClassSummary() {
         yearLevelInput.value = '';
         courseInput.value = '';
         sectionDropdown.innerHTML = '<option value="" selected disabled>Select Section</option>';
+        dayInput.value = '';
+        startTimeInput.value = '';
+        endTimeInput.value = '';
+        roomInput.value = ''; // NEW
         return;
     }
     
@@ -740,6 +972,27 @@ function updateClassSummary() {
         
         yearLevelInput.value = `${subjectData.year_level}${getOrdinalSuffix(subjectData.year_level)} Year`;
         courseInput.value = subjectData.program_name;
+        
+        // Set day, times, and room
+        dayInput.value = subjectData.day_of_week || 'N/A';
+        
+        // Format times nicely
+        if (subjectData.start_time) {
+            const startTime = formatTimeForDisplay(subjectData.start_time);
+            startTimeInput.value = startTime;
+        } else {
+            startTimeInput.value = 'N/A';
+        }
+        
+        if (subjectData.end_time) {
+            const endTime = formatTimeForDisplay(subjectData.end_time);
+            endTimeInput.value = endTime;
+        } else {
+            endTimeInput.value = 'N/A';
+        }
+        
+        // Set room
+        roomInput.value = subjectData.room || 'N/A';
         
         sectionDropdown.innerHTML = `<option value="${subjectData.section_name}" selected>Section ${subjectData.section_name}</option>`;
         sectionDropdown.disabled = false;
@@ -764,6 +1017,38 @@ function updateClassSummary() {
             courseInput.value = 'Mixed Programs';
         }
         
+        // Check if all subjects have same day
+        const days = [...new Set(subjectsData.map(s => s.day_of_week))];
+        if (days.length === 1) {
+            dayInput.value = days[0];
+        } else {
+            dayInput.value = 'Mixed Days';
+        }
+        
+        // Check if all subjects have same times
+        const startTimes = [...new Set(subjectsData.map(s => formatTimeForDisplay(s.start_time)))];
+        const endTimes = [...new Set(subjectsData.map(s => formatTimeForDisplay(s.end_time)))];
+        
+        if (startTimes.length === 1) {
+            startTimeInput.value = startTimes[0];
+        } else {
+            startTimeInput.value = 'Multiple Times';
+        }
+        
+        if (endTimes.length === 1) {
+            endTimeInput.value = endTimes[0];
+        } else {
+            endTimeInput.value = 'Multiple Times';
+        }
+        
+        // Check if all subjects have same room
+        const rooms = [...new Set(subjectsData.map(s => s.room))];
+        if (rooms.length === 1) {
+            roomInput.value = rooms[0];
+        } else {
+            roomInput.value = 'Multiple Rooms';
+        }
+        
         // Check if all subjects have same section
         const sections = [...new Set(subjectsData.map(s => s.section_name))];
         if (sections.length === 1) {
@@ -774,10 +1059,43 @@ function updateClassSummary() {
         sectionDropdown.disabled = false;
     }
     
-    // Update duration based on selected subjects' units
-    updateDurationBasedOnUnits();
+    //  FIX: Only update duration based on units in CUSTOM mode, not DEFAULT mode
+    const timerMode = document.querySelector('input[name="timerMode"]:checked').value;
+    
+    if (timerMode === 'custom') {
+        // Custom mode: Calculate duration based on units
+        updateDurationBasedOnUnits();
+    } else {
+        // Default mode: Keep the remaining time from schedule
+        console.log('Default mode - keeping schedule-based timer');
+    }
     
     console.log('Selected Subjects:', selectedOptions.map(opt => JSON.parse(opt.dataset.subjectData)));
+}
+
+function formatTimeForDisplay(timeStr) {
+    if (!timeStr) return 'N/A';
+    
+    // If already in 12-hour format, return as is
+    if (timeStr.includes('AM') || timeStr.includes('PM')) {
+        return timeStr;
+    }
+    
+    // Convert HH:MM:SS to 12-hour format
+    try {
+        const [hours, minutes, seconds] = timeStr.split(':');
+        const hour = parseInt(hours);
+        const ampm = hour >= 12 ? 'PM' : 'AM';
+        const hour12 = hour % 12 || 12;
+        
+        // Remove seconds if they're 00
+        if (seconds === '00') {
+            return `${hour12}:${minutes} ${ampm}`;
+        }
+        return `${hour12}:${minutes}:${seconds} ${ampm}`;
+    } catch (e) {
+        return timeStr; // Return original if parsing fails
+    }
 }
 
 function showLoginRequired() {
@@ -1019,7 +1337,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.success) {
                 if (streamType === 'main') {
                     showModal('Success', 
-                        '✅ Main Stream (4K) Connected\n\n' +
+                        ' Main Stream (4K) Connected\n\n' +
                         'Resolution: ' + (data.resolution || '3840x2160') + '\n' +
                         'FPS: ' + (data.fps ? data.fps.toFixed(1) : '30') + '\n\n' +
                         'Note: For face recognition, Sub-Stream is recommended for better performance.',
@@ -1027,7 +1345,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     );
                 } else {
                     showModal('Success', 
-                        '✅ Sub-Stream Connected\n\n' +
+                        ' Sub-Stream Connected\n\n' +
                         'Resolution: ' + (data.resolution || '640x360') + '\n' +
                         'FPS: ' + (data.fps ? data.fps.toFixed(1) : '30') + '\n\n' +
                         'Perfect for face recognition!',
@@ -1138,7 +1456,7 @@ async function startSession(event) {
                 'Sub-Stream (640x360) - Optimized for 60+ FPS';
             
             showModal('Success', 
-                `✅ ${rtspData.message}\n\n` +
+                ` ${rtspData.message}\n\n` +
                 `Resolution: ${rtspData.resolution || 'Unknown'}\n` +
                 `FPS: ${rtspData.fps ? rtspData.fps.toFixed(1) : 'Unknown'}\n` +
                 `Stream: ${streamInfo}`,
@@ -1223,7 +1541,7 @@ async function startSession(event) {
     const params = new URLSearchParams({
         schedule_ids: settings.scheduleIds.join(','), //   COMMA-SEPARATED SCHEDULE IDs
         instructor: settings.classDetails.instructor,
-        subjects: encodedSubjects, //   ✅ FIXED: URL-ENCODED SUBJECTS DATA
+        subjects: encodedSubjects, //    FIXED: URL-ENCODED SUBJECTS DATA
         year_level: settings.classDetails.yearLevel,
         program: settings.classDetails.course,
         section: settings.classDetails.section,
@@ -1233,7 +1551,7 @@ async function startSession(event) {
         mode: timerMode
     });
 
-    console.log('✅ REDIRECTING WITH MULTIPLE SUBJECTS:', {
+    console.log(' REDIRECTING WITH MULTIPLE SUBJECTS:', {
         scheduleIds: settings.scheduleIds,
         subjectsCount: selectedSubjects.length,
         firstSubject: selectedSubjects[0]?.subject_code || 'None',

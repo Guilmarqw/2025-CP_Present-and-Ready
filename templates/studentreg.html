@@ -150,6 +150,8 @@ By clicking "Accept", you give your full and informed consent to the collection,
   <option value="4">4th Year</option>
 </select>
 
+
+
 <select id="section_id" name="section_id" required>
   <option value="" disabled selected>Select your Section</option>
   </select>
@@ -210,11 +212,11 @@ By clicking "Accept", you give your full and informed consent to the collection,
         <div class="encoding-tips">
             <h3>Tips for Best Results:</h3>
             <ul>
-                <li id="tipLighting">✅ Ensure good, even lighting</li>
-                <li id="tipPosition">✅ Keep face centered in frame</li>
-                <li id="tipDistance">✅ Maintain 1-2 feet distance from camera</li>
-                <li id="tipExpression">✅ Use neutral expression, look straight ahead</li>
-                <li id="tipBackground">✅ Use plain, uncluttered background</li>
+                <li id="tipLighting"> Ensure good, even lighting</li>
+                <li id="tipPosition"> Keep face centered in frame</li>
+                <li id="tipDistance"> Maintain 1-2 feet distance from camera</li>
+                <li id="tipExpression"> Use neutral expression, look straight ahead</li>
+                <li id="tipBackground"> Use plain, uncluttered background</li>
             </ul>
         </div>
     </div>
@@ -1334,6 +1336,95 @@ function getSmartProgressMessage(progress, faceData) {
     }
 }
 
+async function updateYearLevelOptions() {
+    const programSelect = document.getElementById("program");
+    const yearLevelSelect = document.getElementById("year_level");
+    
+    if (!programSelect || !yearLevelSelect) return;
+    
+    const selectedProgram = programSelect.value;
+    const currentYearLevel = yearLevelSelect.value;
+    
+    if (!selectedProgram) {
+        // No program selected, show all year levels
+        resetYearLevelOptions();
+        return;
+    }
+    
+    // Show loading state
+    yearLevelSelect.innerHTML = '<option value="" disabled selected>Loading year levels...</option>';
+    yearLevelSelect.disabled = true;
+    
+    try {
+        // Fetch allowed year levels from backend
+        const allowedYearLevels = await fetchAllowedYearLevels(selectedProgram);
+        
+        // Clear and populate dropdown
+        yearLevelSelect.innerHTML = '<option value="" disabled selected>Select your Year Level</option>';
+        yearLevelSelect.disabled = false;
+        
+        const yearLevelNames = {
+            '1': '1st Year',
+            '2': '2nd Year', 
+            '3': '3rd Year',
+            '4': '4th Year'
+        };
+        
+        allowedYearLevels.forEach(year => {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = yearLevelNames[year];
+            yearLevelSelect.appendChild(option);
+        });
+        
+        // Restore previous selection if still valid
+        if (allowedYearLevels.includes(currentYearLevel)) {
+            yearLevelSelect.value = currentYearLevel;
+        }
+        
+        console.log(`Loaded year levels for ${selectedProgram}: ${allowedYearLevels.join(', ')}`);
+        
+        // Trigger sections fetch if year level is already selected
+        if (yearLevelSelect.value) {
+            setTimeout(fetchSections, 100);
+        }
+        
+    } catch (error) {
+        console.error("Error updating year levels:", error);
+        // Fallback to showing all year levels
+        resetYearLevelOptions();
+    }
+}
+
+function resetYearLevelOptions() {
+    const yearLevelSelect = document.getElementById("year_level");
+    if (!yearLevelSelect) return;
+    
+    yearLevelSelect.innerHTML = `
+        <option value="" disabled selected>Select your Year Level</option>
+        <option value="1">1st Year</option>
+        <option value="2">2nd Year</option>
+        <option value="3">3rd Year</option>
+        <option value="4">4th Year</option>
+    `;
+    yearLevelSelect.disabled = false;
+}
+
+function fetchAllowedYearLevels(programId) {
+    return fetch(`/api/get_program_year_levels?program_id=${programId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                return data.year_levels; // Should return array like ['1', '2']
+            }
+            return ['1', '2', '3', '4']; // Default to all if error
+        })
+        .catch(error => {
+            console.error("Error fetching year levels:", error);
+            return ['1', '2', '3', '4']; // Default to all if error
+        });
+}
+
 function updateTipsBasedOnQuality(faceData) {
     const tips = {
         tipLighting: document.getElementById('tipLighting'),
@@ -1352,10 +1443,10 @@ function updateTipsBasedOnQuality(faceData) {
     if (tips.tipLighting) {
         if (faceData.has_good_lighting) {
             tips.tipLighting.style.color = "#00aa00";
-            tips.tipLighting.innerHTML = "✅ Good lighting";
+            tips.tipLighting.innerHTML = " Good lighting";
         } else {
             tips.tipLighting.style.color = "#ff8800";
-            tips.tipLighting.innerHTML = "⚠️ Improve lighting";
+            tips.tipLighting.innerHTML = " Improve lighting";
         }
     }
     
@@ -1363,10 +1454,10 @@ function updateTipsBasedOnQuality(faceData) {
     if (tips.tipPosition) {
         if (faceData.is_centered) {
             tips.tipPosition.style.color = "#00aa00";
-            tips.tipPosition.innerHTML = "✅ Face centered";
+            tips.tipPosition.innerHTML = " Face centered";
         } else {
             tips.tipPosition.style.color = "#ff8800";
-            tips.tipPosition.innerHTML = "⚠️ Center your face";
+            tips.tipPosition.innerHTML = " Center your face";
         }
     }
     
@@ -1374,10 +1465,10 @@ function updateTipsBasedOnQuality(faceData) {
     if (tips.tipDistance) {
         if (faceData.is_optimal_size) {
             tips.tipDistance.style.color = "#00aa00";
-            tips.tipDistance.innerHTML = "✅ Good distance";
+            tips.tipDistance.innerHTML = " Good distance";
         } else {
             tips.tipDistance.style.color = "#ff8800";
-            tips.tipDistance.innerHTML = "⚠️ Adjust distance";
+            tips.tipDistance.innerHTML = " Adjust distance";
         }
     }
     
@@ -1385,7 +1476,7 @@ function updateTipsBasedOnQuality(faceData) {
     if (tips.tipExpression) {
         if (faceData.quality >= 0.7) {
             tips.tipExpression.style.color = "#00aa00";
-            tips.tipExpression.innerHTML = "✅ Good expression";
+            tips.tipExpression.innerHTML = " Good expression";
         } else {
             tips.tipExpression.style.color = "#666";
             tips.tipExpression.innerHTML = "○ Look straight ahead";
@@ -1396,7 +1487,7 @@ function updateTipsBasedOnQuality(faceData) {
     if (tips.tipBackground) {
         if (faceData.quality >= 0.6) {
             tips.tipBackground.style.color = "#00aa00";
-            tips.tipBackground.innerHTML = "✅ Clear background";
+            tips.tipBackground.innerHTML = " Clear background";
         } else {
             tips.tipBackground.style.color = "#666";
             tips.tipBackground.innerHTML = "○ Use plain background";
@@ -1468,7 +1559,7 @@ async function captureFaceAtAngle(angleName) {
         const data = await response.json();
         
         if (data.success && data.encoding) {
-            console.log(`✅ ${angleName} angle encoded successfully`);
+            console.log(` ${angleName} angle encoded successfully`);
             return data.encoding;
         } else {
             console.warn(`⚠ Failed to encode ${angleName} angle:`, data.message);
@@ -1542,7 +1633,7 @@ async function processFaceEncoding() {
                 const frontEncoding = await captureFaceAtAngle('front');
                 if (frontEncoding) {
                     multiAngleEncodings.push(frontEncoding);
-                    console.log(`✅ Front angle captured (${multiAngleEncodings.length}/3)`);
+                    console.log(` Front angle captured (${multiAngleEncodings.length}/3)`);
                     
                     // Give feedback
                     updateProgressUI(encodingProgress, "✓ Front captured! Preparing for left angle...");
@@ -1574,7 +1665,7 @@ async function processFaceEncoding() {
                 const leftEncoding = await captureFaceAtAngle('left');
                 if (leftEncoding) {
                     multiAngleEncodings.push(leftEncoding);
-                    console.log(`✅ Left angle captured (${multiAngleEncodings.length}/3)`);
+                    console.log(` Left angle captured (${multiAngleEncodings.length}/3)`);
                     
                     // Check if left angle is significantly different from front
                     if (multiAngleEncodings.length >= 2) {
@@ -1603,7 +1694,7 @@ async function processFaceEncoding() {
                 const rightEncoding = await captureFaceAtAngle('right');
                 if (rightEncoding) {
                     multiAngleEncodings.push(rightEncoding);
-                    console.log(`✅ Right angle captured (${multiAngleEncodings.length}/3)`);
+                    console.log(` Right angle captured (${multiAngleEncodings.length}/3)`);
                     
                     // Final angle captured - show success
                     updateProgressUI(encodingProgress, "✓ All angles captured! Finalizing...");
@@ -1616,7 +1707,7 @@ async function processFaceEncoding() {
                     if (result.quality >= 0.7 && result.is_centered) {
                         setTimeout(() => {
                             if (!isEncodingComplete) {
-                                console.log("✅ All angles captured - auto-completing...");
+                                console.log(" All angles captured - auto-completing...");
                                 completeFaceEncoding();
                             }
                         }, 2000);
@@ -1639,9 +1730,9 @@ async function processFaceEncoding() {
             if (qualityCheckCount >= REQUIRED_QUALITY_CHECKS) {
                 // Check if we have at least 2 angles for better recognition
                 if (multiAngleEncodings.length >= 2) {
-                    console.log(`✅ All conditions met with ${multiAngleEncodings.length} angles! Triggering final...`);
+                    console.log(` All conditions met with ${multiAngleEncodings.length} angles! Triggering final...`);
                 } else {
-                    console.log(`✅ Conditions met with ${multiAngleEncodings.length} angle(s).`);
+                    console.log(` Conditions met with ${multiAngleEncodings.length} angle(s).`);
                 }
                 completeFaceEncoding();
             } else {
@@ -1889,7 +1980,7 @@ function updateTipsUI() {
         const tipElement = document.getElementById(tipId);
         if (tipElement) {
             tipElement.style.color = "#666";
-            tipElement.innerHTML = tipElement.innerHTML.replace('✅', '○');
+            tipElement.innerHTML = tipElement.innerHTML.replace('', '○');
         }
     });
 }
@@ -2055,7 +2146,7 @@ async function completeFaceEncoding() {
             }
             
             if (similarity >= threshold) {
-                console.log(`✅ Faces match! Similarity: ${similarity.toFixed(2)} (Threshold: ${threshold})`);
+                console.log(` Faces match! Similarity: ${similarity.toFixed(2)} (Threshold: ${threshold})`);
                 
                 // Play success sound
                 const bellSound = document.getElementById('bellSound');
@@ -2079,7 +2170,7 @@ async function completeFaceEncoding() {
                 // Show success modal with angle info
                 let angleInfo = "";
                 if (multiAngleEncodings.length > 0) {
-                    angleInfo = `\n\n✅ Captured ${multiAngleEncodings.length} additional face angles for better recognition.`;
+                    angleInfo = `\n\n Captured ${multiAngleEncodings.length} additional face angles for better recognition.`;
                 }
                 
                 showModal("Success", 
@@ -2511,7 +2602,7 @@ async function previewUploadedImage(event) {
                          style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;">
                 `;
                 
-                console.log("✅ Photo uploaded and previewed successfully");
+                console.log(" Photo uploaded and previewed successfully");
                 
                 // ENCODE THE UPLOADED FACE
                 try {
@@ -2524,7 +2615,7 @@ async function previewUploadedImage(event) {
                     const encoding = await encodeImageFile(file);
                     if (encoding) {
                         uploadedFaceEncoding = Array.from(encoding);
-                        console.log("✅ Uploaded face encoded successfully");
+                        console.log(" Uploaded face encoded successfully");
                         console.log("Encoding length:", uploadedFaceEncoding.length);
                         console.log("First 5 values:", uploadedFaceEncoding.slice(0, 5));
                         
@@ -2605,7 +2696,7 @@ async function encodeImageBlob(blob, shouldFlip = false) {
             console.log("Encode response:", data);
             
             if (data.success && data.encoding) {
-                console.log("✅ Face encoded successfully");
+                console.log(" Face encoded successfully");
                 console.log("Encoding length:", data.encoding.length);
                 console.log("First 3 values:", data.encoding.slice(0, 3));
                 resolve(data.encoding);
@@ -2648,7 +2739,7 @@ async function encodeImageFile(file) {
             console.log("Upload photo encode response:", data);
             
             if (data.success && data.encoding) {
-                console.log("✅ Upload photo encoded successfully");
+                console.log(" Upload photo encoded successfully");
                 console.log("Encoding length:", data.encoding.length);
                 console.log("First 3 values:", data.encoding.slice(0, 3));
                 resolve(data.encoding);
@@ -2901,13 +2992,18 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // Set up event listeners - SIMPLIFIED
-    if (programDropdown) {
-        programDropdown.addEventListener('change', function() {
-            console.log("Program changed, fetching sections...");
-            setTimeout(fetchSections, 100);
-        });
-    }
+// Replace or modify this existing code:
+if (programDropdown) {
+    programDropdown.addEventListener('change', function() {
+        console.log("Program changed, updating year levels...");
+        
+        // Update year level options first
+        updateYearLevelOptions();
+        
+        // Then fetch sections (with a delay to ensure year levels are updated)
+        setTimeout(fetchSections, 100);
+    });
+}
     
     if (yearDropdown) {
         yearDropdown.addEventListener('change', function() {

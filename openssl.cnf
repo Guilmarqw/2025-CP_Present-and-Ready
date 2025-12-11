@@ -1818,7 +1818,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
                                 matched_name = known_face_names[best_match_index]
                         
                                 if DEBUG_MODE: 
-                                    logger.debug(f"  ✅ MATCH: {matched_name} ({matched_id}) - Type: {matched_type}")
+                                    logger.debug(f"   MATCH: {matched_name} ({matched_id}) - Type: {matched_type}")
                         
                                 if matched_type == 'faculty':
                                     name = f"Faculty: {matched_name}"
