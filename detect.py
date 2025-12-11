@@ -11211,8 +11211,66 @@ def summary_page():
     """Render the summary page with session data"""
     return render_template('Summary.html')
 
+def cleanup_duplicate_attendance(session_id):
+    """Clean up duplicate attendance records for a session"""
+    try:
+        with get_db_cursor() as cursor:
+            print(f"  🧹 Cleaning duplicates for session: {session_id}")
+            
+            # Find duplicates
+            cursor.execute("""
+                SELECT student_id, COUNT(*) as count
+                FROM attendance 
+                WHERE session_id = %s 
+                AND person_type = 'student'
+                AND student_id IS NOT NULL 
+                AND student_id != ''
+                GROUP BY student_id
+                HAVING COUNT(*) > 1
+            """, (session_id,))
+            
+            duplicates = cursor.fetchall()
+            
+            if duplicates:
+                print(f"  Found {len(duplicates)} students with duplicate records")
+                
+                for dup in duplicates:
+                    student_id = dup['student_id']
+                    count = dup['count']
+                    
+                    # Get all records for this student
+                    cursor.execute("""
+                        SELECT id, status, timestamp, remarks
+                        FROM attendance 
+                        WHERE session_id = %s 
+                        AND student_id = %s
+                        ORDER BY 
+                            CASE 
+                                WHEN status NOT IN ('', NULL) THEN 1
+                                ELSE 2
+                            END,
+                            timestamp DESC
+                    """, (session_id, student_id))
+                    
+                    records = cursor.fetchall()
+                    
+                    if len(records) > 1:
+                        # Keep the first valid record, delete the rest
+                        first_record = records[0]
+                        records_to_delete = records[1:]
+                        
+                        for record in records_to_delete:
+                            cursor.execute("DELETE FROM attendance WHERE id = %s", (record['id'],))
+                        
+                        print(f"    Student {student_id}: Kept record {first_record['id']} ({first_record['status']}), deleted {len(records_to_delete)} duplicates")
+
+                print(f"   Duplicate cleanup complete")
+            
+    except Exception as e:
+        print(f"  Error in cleanup_duplicate_attendance: {e}")                        
+                        
+
 @app.route('/api/summary_data')
-@login_required
 def get_summary_data():
     """Get complete summary data for the latest session - FIXED: Handles empty status and missing duplicates"""
     try:
@@ -11579,21 +11637,27 @@ def get_summary_data():
         }), 500
     
 @app.route('/api/update_attendance', methods=['POST'])
-@login_required
 def update_attendance():
-    """Update attendance status for students - PREVENTS empty status duplicates"""
+    """Update attendance status - FIXED: Handles temporary students without foreign key errors"""
     data = request.get_json()
     session_id = data.get('session_id')
     attendance_updates = data.get('attendance_updates', [])
     
+    print(f"📝 DEBUG update_attendance called")
+    print(f"  Session ID: {session_id}")
+    print(f"  Updates received: {len(attendance_updates)}")
+    
     if not session_id:
         return jsonify({'success': False, 'message': 'Missing session_id'}), 400
     
+    if not attendance_updates:
+        return jsonify({'success': False, 'message': 'No attendance data provided'}), 400
+    
     try:
         with get_db_cursor() as cursor:
-            # Get session info INCLUDING section_id
+            # Get session info
             cursor.execute("""
-                SELECT subject_code, subject_name, room, section_id 
+                SELECT subject_code, subject_name, room, section_id, class_name, ended_at
                 FROM attendance_sessions 
                 WHERE session_id = %s
             """, (session_id,))
@@ -11605,105 +11669,191 @@ def update_attendance():
             subject_code = session_info.get('subject_code', 'IT99')
             subject_name = session_info.get('subject_name', 'AMBUTT UY')
             room = session_info.get('room', 'Unknown Room')
-            section_id = session_info.get('section_id')  #  ADDED THIS LINE
+            section_id = session_info.get('section_id', 0)
+            class_name = session_info.get('class_name', '')
+            session_ended = session_info.get('ended_at')
             
-            if not section_id:
-                print(f"  WARNING: No section_id found for session {session_id}")
-                # Try to get section_id from attendance records as fallback
-                cursor.execute("""
-                    SELECT section_id FROM attendance 
-                    WHERE session_id = %s 
-                    AND section_id IS NOT NULL 
-                    LIMIT 1
-                """, (session_id,))
-                section_record = cursor.fetchone()
-                if section_record:
-                    section_id = section_record['section_id']
-                else:
-                    section_id = 0  # Default fallback
+            print(f"  Session: {class_name}")
+            print(f"  Subject: {subject_code} - {subject_name}")
             
-            print(f"  DEBUG update_attendance: Using section_id = {section_id}")
+            updated_count = 0
+            inserted_count = 0
+            skipped_count = 0
             
+            # Process each student update
             for update in attendance_updates:
-                student_id = update['student_id']
-                status = update['status']
+                student_id = update.get('student_id')
+                frontend_status = update.get('status', 'absent')
                 remarks = update.get('remarks', '')
+                student_name = update.get('student_name', '')
                 
-                #  CRITICAL: Don't allow empty status updates
-                if status == '' or status is None:
-                    status = 'absent'  # Convert empty to absent
+                if not student_id:
+                    print(f"  ⚠️ Skipping update without student_id")
+                    skipped_count += 1
+                    continue
                 
-                # Check if ANY record exists for this student
+                # Normalize status
+                frontend_status = str(frontend_status).lower().strip()
+                
+                # Map frontend status to database ENUM
+                if frontend_status == 'absent':
+                    db_status = 'missing'
+                elif frontend_status in ['present', 'late', 'excused', 'missing']:
+                    db_status = frontend_status
+                else:
+                    print(f"  ⚠️ Invalid status '{frontend_status}', defaulting to 'missing'")
+                    db_status = 'missing'
+                
+                print(f"  Processing: {student_id} -> '{frontend_status}' -> '{db_status}'")
+                
+                # Check if student exists in students table (NOT temporary)
                 cursor.execute("""
-                    SELECT id, status 
+                    SELECT student_id FROM students WHERE student_id = %s
+                """, (student_id,))
+                student_exists = cursor.fetchone()
+                
+                is_temporary = not student_exists
+                
+                if is_temporary:
+                    print(f"    ⚠️ Student {student_id} is TEMPORARY (not in students table)")
+                
+                # Check for existing attendance record
+                cursor.execute("""
+                    SELECT id, status, name, student_id
                     FROM attendance 
                     WHERE session_id = %s 
-                    AND student_id = %s
+                    AND (
+                        student_id = %s 
+                        OR (name LIKE %s AND student_id IS NULL)
+                        OR (name LIKE %s AND student_id = '')
+                    )
                     AND person_type = 'student'
-                    ORDER BY timestamp DESC 
                     LIMIT 1
-                """, (session_id, student_id))
+                """, (session_id, student_id, f"%{student_id}%", f"%{student_id}%"))
                 
-                existing_record = cursor.fetchone()
+                existing = cursor.fetchone()
                 
-                if existing_record:
-                    #  UPDATE existing record regardless of its status
+                if existing:
+                    # UPDATE existing record
+                    print(f"    Found existing record ID {existing['id']}")
+                    
                     cursor.execute("""
                         UPDATE attendance 
                         SET status = %s, 
                             remarks = %s,
-                            timestamp = NOW()
+                            timestamp = CASE 
+                                WHEN %s = 'missing' AND %s IS NOT NULL THEN %s 
+                                ELSE timestamp 
+                            END
                         WHERE id = %s
-                    """, (status, remarks, existing_record['id']))
+                    """, (db_status, remarks, db_status, session_ended, session_ended, existing['id']))
                     
-                    print(f"  UPDATED existing record {existing_record['id']}: {student_id} -> {status}")
+                    if cursor.rowcount > 0:
+                        updated_count += 1
+                        print(f"    ✅ Updated: {existing['status']} -> {db_status}")
+                    
                 else:
-                    # Get student name
-                    cursor.execute("""
-                        SELECT CONCAT(first_name, ' ', last_name) as student_name
-                        FROM students 
-                        WHERE student_id = %s
-                    """, (student_id,))
+                    # INSERT new record
+                    # For temporary students: Set student_id to NULL to avoid foreign key error
                     
-                    student = cursor.fetchone()
-                    if student:
-                        student_name = student['student_name']
+                    if not student_name:
+                        if is_temporary:
+                            student_name = f"Temporary Student {student_id}"
+                        else:
+                            cursor.execute("""
+                                SELECT CONCAT(first_name, ' ', last_name) as full_name
+                                FROM students WHERE student_id = %s
+                            """, (student_id,))
+                            student = cursor.fetchone()
+                            student_name = student['full_name'] if student else f"Student {student_id}"
+                    
+                    # CRITICAL FIX: Use NULL for temporary students to avoid foreign key constraint
+                    if is_temporary:
+                        # Temporary student: student_id = NULL, name includes ID
+                        insert_student_id = None
+                        insert_name = f"{student_name} (ID: {student_id})"
                     else:
-                        # Student not in database, use name from update if available
-                        student_name = update.get('student_name', f"Student {student_id}")
+                        # Regular student: student_id = actual ID
+                        insert_student_id = student_id
+                        insert_name = student_name
                     
-                    #  INSERT new record with section_id
-                    cursor.execute("""
-                        INSERT INTO attendance (
-                            session_id, student_id, name, status, 
-                            timestamp, subject_code, subject_name, room, 
-                            remarks, person_type, section_id
-                        ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s, 'student', %s)
-                    """, (
-                        session_id, student_id, student_name, status,
-                        subject_code, subject_name, room, remarks, section_id
-                    ))
+                    print(f"    Inserting: student_id={insert_student_id}, name={insert_name}")
                     
-                    print(f"  INSERTED new record: {student_id} -> {status}")
+                    # Set timestamp based on status
+                    if db_status == 'missing' and session_ended:
+                        cursor.execute("""
+                            INSERT INTO attendance (
+                                session_id, student_id, person_type, name, 
+                                status, timestamp, remarks, subject_code, 
+                                subject_name, room, section_id, faculty_id,
+                                missing_duration
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                        """, (
+                            session_id, insert_student_id, 'student', insert_name,
+                            db_status, session_ended, remarks, subject_code, subject_name,
+                            room, section_id, session.get('user_id')
+                        ))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO attendance (
+                                session_id, student_id, person_type, name, 
+                                status, timestamp, remarks, subject_code, 
+                                subject_name, room, section_id, faculty_id,
+                                missing_duration
+                            ) VALUES (%s, %s, %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, 0)
+                        """, (
+                            session_id, insert_student_id, 'student', insert_name,
+                            db_status, remarks, subject_code, subject_name,
+                            room, section_id, session.get('user_id')
+                        ))
+                    
+                    inserted_count += 1
+                    print(f"    ✅ Inserted new record")
             
             # Update session counts
             cursor.execute("""
                 UPDATE attendance_sessions 
                 SET 
-                    present_count = (SELECT COUNT(*) FROM attendance WHERE session_id = %s AND status = 'present'),
-                    late_count = (SELECT COUNT(*) FROM attendance WHERE session_id = %s AND status = 'late'),
-                    absent_count = (SELECT COUNT(*) FROM attendance WHERE session_id = %s AND status = 'absent'),
-                    excused_count = (SELECT COUNT(*) FROM attendance WHERE session_id = %s AND status = 'excused')
+                    present_count = (
+                        SELECT COUNT(*) FROM attendance 
+                        WHERE session_id = %s AND status = 'present' AND person_type = 'student'
+                    ),
+                    late_count = (
+                        SELECT COUNT(*) FROM attendance 
+                        WHERE session_id = %s AND status = 'late' AND person_type = 'student'
+                    ),
+                    absent_count = (
+                        SELECT COUNT(*) FROM attendance 
+                        WHERE session_id = %s AND status = 'missing' AND person_type = 'student'
+                    ),
+                    excused_count = (
+                        SELECT COUNT(*) FROM attendance 
+                        WHERE session_id = %s AND status = 'excused' AND person_type = 'student'
+                    )
                 WHERE session_id = %s
             """, (session_id, session_id, session_id, session_id, session_id))
             
+            total_processed = updated_count + inserted_count
+            
+            print(f"✅ Update complete:")
+            print(f"   - Updated: {updated_count}")
+            print(f"   - Inserted: {inserted_count}")
+            print(f"   - Skipped: {skipped_count}")
+            print(f"   - Total: {total_processed}")
+            
             return jsonify({
                 'success': True, 
-                'message': f'Attendance updated for {len(attendance_updates)} students'
+                'message': f'Attendance updated for {total_processed} students',
+                'stats': {
+                    'updated': updated_count,
+                    'inserted': inserted_count,
+                    'skipped': skipped_count,
+                    'total': total_processed
+                }
             })
-        
+            
     except Exception as e:
-        print(f"Error updating attendance: {e}")
+        print(f"❌ ERROR in update_attendance: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({
@@ -12020,65 +12170,6 @@ def export_csv():
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error exporting data: {str(e)}'}), 500
 
-def cleanup_duplicate_attendance(session_id):
-    """Clean up duplicate attendance records for a session"""
-    try:
-        with get_db_cursor() as cursor:
-            print(f"  🧹 Cleaning duplicates for session: {session_id}")
-            
-            # Find duplicates
-            cursor.execute("""
-                SELECT student_id, COUNT(*) as count
-                FROM attendance 
-                WHERE session_id = %s 
-                AND person_type = 'student'
-                AND student_id IS NOT NULL 
-                AND student_id != ''
-                GROUP BY student_id
-                HAVING COUNT(*) > 1
-            """, (session_id,))
-            
-            duplicates = cursor.fetchall()
-            
-            if duplicates:
-                print(f"  Found {len(duplicates)} students with duplicate records")
-                
-                for dup in duplicates:
-                    student_id = dup['student_id']
-                    count = dup['count']
-                    
-                    # Get all records for this student
-                    cursor.execute("""
-                        SELECT id, status, timestamp, remarks
-                        FROM attendance 
-                        WHERE session_id = %s 
-                        AND student_id = %s
-                        ORDER BY 
-                            CASE 
-                                WHEN status NOT IN ('', NULL) THEN 1
-                                ELSE 2
-                            END,
-                            timestamp DESC
-                    """, (session_id, student_id))
-                    
-                    records = cursor.fetchall()
-                    
-                    if len(records) > 1:
-                        # Keep the first valid record, delete the rest
-                        first_record = records[0]
-                        records_to_delete = records[1:]
-                        
-                        for record in records_to_delete:
-                            cursor.execute("DELETE FROM attendance WHERE id = %s", (record['id'],))
-                        
-                        print(f"    Student {student_id}: Kept record {first_record['id']} ({first_record['status']}), deleted {len(records_to_delete)} duplicates")
-                    
-                # Commit changes
-                cursor.connection.commit()
-                print(f"   Duplicate cleanup complete")
-            
-    except Exception as e:
-        print(f"  Error in cleanup_duplicate_attendance: {e}")
 
 @app.route('/schedule')
 @login_required
