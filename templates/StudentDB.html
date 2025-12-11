@@ -265,9 +265,7 @@
     <!-- Delete Confirmation Modal -->
     <div id="deleteStudentModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Delete Student</h2>
-            </div>
+
             <div class="modal-body">
                 <p>Are you sure you want to delete <strong id="deleteStudentName"></strong>? This action cannot be undone.</p>
             </div>
@@ -721,7 +719,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const alertMessage = document.getElementById('alertMessage');
         const alertIcon = document.getElementById('alertIcon');
 
-        function openModal(m) { if (m) m.style.display = "block"; }
+        function openModal(m) { if (m) m.style.display = "flex"; }
         function closeModal(m) { if (m) m.style.display = "none"; }
 
         function showAlert(message, isSuccess = true) {

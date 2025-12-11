@@ -254,7 +254,6 @@
 .btn-primary:hover,
 .btn-success:hover {
     background-color: #343b2b !important;
-    transform: translateY(-2px);
     box-shadow: 0 6px 16px rgba(111, 129, 92, 0.4) !important;
 }
 
@@ -265,7 +264,6 @@
 }
 .btn-secondary:hover {
     background-color: #dee2e6 !important;
-    transform: translateY(-1px);
 }
 
 /* Disabled state */
@@ -976,7 +974,6 @@
 .unified-table .action-buttons .btn:hover {
   background: #4a6fa9;
   color: white;
-  transform: translateY(-1px);
 }
 
 .unified-table .action-buttons .btn-danger:hover {

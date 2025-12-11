@@ -487,7 +487,7 @@
         }
 
         .back-button {
-            background: #6f815c;
+            background: #95a5a6;
             color: white;
             border: none;
             padding: 8px 15px;
@@ -499,7 +499,7 @@
         }
 
         .back-button:hover {
-            background: #343b2b;
+            background: #7f8c8d; 
         }
 
         .add-schedule-btn {

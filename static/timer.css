@@ -11,40 +11,44 @@
             line-height: 1.6;
         }
 
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background-color: white;
-            padding: 12px 24px;
-            color: white;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
+.header {
+    display: flex;
+    align-items: center;
+    /* Remove justify-content: space-between; */
+    background-color: white;
+    padding: 12px 24px;
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    gap: 16px; /* Adds consistent spacing between items */
+}
 
         .logo {
             width: 48px;
             height: 48px;
         }
 
-        .title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            text-align: center;
-            flex-grow: 1;
-            color: #2d3748;
-        }
+.title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    /* Remove text-align: center; */
+    /* Remove flex-grow: 1; */
+    color: #2d3748;
+    margin: 0; /* Ensures no extra margin pushes it */
+    white-space: nowrap; /* Prevents title from wrapping awkwardly */
+}
 
-        .header-btn {
-            background-color: #6f815c;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 6px;
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: background-color 0.3s ease;
-        }
+.header-btn {
+    margin-left: auto; /* This pushes the button to the right */
+    background-color: #6f815c;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.3s ease;
+}
 
         .header-btn:hover {
             background-color: #343b2b;
@@ -196,7 +200,6 @@
 
         #startBtn:hover {
             background-color: #343b2b;
-            transform: translateY(-2px);
         }
 
         .time-unit input::-webkit-inner-spin-button,

@@ -169,12 +169,13 @@ By clicking "Accept", you give your full and informed consent to the collection,
       </div>
     </div>
 
-<!-- Step 4 -->
-<div id="step4" class="hidden">
+<!-- Step 4 --><div id="step4" class="hidden">
     <div class="header">FACE SCAN</div>
     <div class="content">
         <h2>Facial Biometrics Encoding</h2>
         <div class="scan-instruction" id="scanInstruction">Position your face in the center of the frame</div>
+        
+        <!-- Face Scan Container - This is the key part -->
         <div class="face-scan">
             <video id="video" autoplay playsinline></video>
             <canvas id="canvas" style="display: none;"></canvas>
@@ -199,13 +200,6 @@ By clicking "Accept", you give your full and informed consent to the collection,
             <div id="feedbackText" class="feedback-text">
                 Move your face to the center of the frame
             </div>
-        </div>
-        
-        <!-- Face Comparison Status -->
-        <div id="faceComparisonStatus" class="face-comparison-status hidden">
-            <div class="comparison-icon">↻</div>
-            <div class="comparison-text">Comparing with uploaded photo...</div>
-            <div class="similarity-score" id="similarityScore">0%</div>
         </div>
         
         <!-- Tips for Better Encoding -->

@@ -436,28 +436,33 @@
         }
 
         .action-menu button:nth-child(1) {
-            background: #e3f2fd;
-            color: #1976d2;
+            background: #6f815c;
+            color: white;
         }
 
         .action-menu button:nth-child(2) {
-            background: #ffebee;
-            color: #d32f2f;
+            background: #6f815c;
+            color: white;
         }
 
         .action-menu button:nth-child(3) {
-            background: #e8f5e9;
-            color: #388e3c;
+            background: #e74c3c;
+            color: white;
         }
-
+.action-menu button:nth-child(3):hover {
+    background: #c0392b;  
+}
         .action-menu button:nth-child(4) {
-            background: #fff9c4;
-            color: brown;
+            background: #95a5a6;
+            color:  white;
         }
-
+.action-menu button:nth-child(4):hover {
+    background: #7f8c8d;
+}
         .action-menu button:hover {
             filter: brightness(0.95);
-            color: inherit;
+            color: white;
+            background-color: #343b2b;;
         }
 
         .avatar {

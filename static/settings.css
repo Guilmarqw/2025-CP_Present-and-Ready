@@ -51,16 +51,24 @@
             cursor: pointer; transition: all 0.3s ease; display: inline-flex;
             align-items: center; gap: 10px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .btn-edit { background: #6f815c; color: white; }
-        .btn-edit:hover { background: #343b2b; transform: translateY(-3px); }
+        .btn-edit:hover { background: #343b2b; }
         .btn-password { background: #445f20; color: white; }
-        .btn-password:hover { background: #218838; transform: translateY(-3px); }
+        .btn-password:hover { background: #215c30;  }
 
         .success-message {
             background: #d4edda; color: #155724; padding: 15px 25px; border-radius: 10px;
             margin: 20px 40px; border: 1px solid #c3e6cb; text-align: center; font-weight: 500;
             display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
-
+.modal-footer {
+    flex-shrink: 0;
+    padding: 20px;
+    border-top: 1px solid #eee;
+    background: #f9f9f9;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
         /* Modal styles (no transition/animation) */
         .modal { 
             display: none; 
@@ -108,7 +116,9 @@
         .form-group input:focus { outline: none; border-color: #6f815c; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
         .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
         .btn-save { background: #6f815c; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
-        .btn-cancel { background: #6c757d; color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-save:hover { background: #343b2b !important; }
+        .btn-cancel { background: #eee; color: #333; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-cancel:hover { background: #ddd !important; }
 
         .profile-avatar { position: relative; width: 150px; height: 150px; border-radius: 50%; overflow: hidden; background: #f0f2f5; border: 5px solid #ffffff; box-shadow: 0 6px 20px rgba(0,0,0,0.15); cursor: pointer; transition: all 0.3s ease; margin: 0 auto 20px; }
         .profile-avatar:hover { transform: scale(1.06); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
