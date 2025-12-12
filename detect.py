@@ -256,7 +256,7 @@ dummy_frame = None
 latest_frame = None
 stop_flag = False
 
-MAX_TRACKS = 15
+MAX_TRACKS = 10
 MAX_UNLOCKED_TRACKS = 3
 EXPAND_BOX_RATIO = 0.4
 
@@ -1922,7 +1922,7 @@ def initialize_faces_for_session():
     global known_face_encodings, known_face_names, known_face_ids, known_face_types
     
     try:
-        logger.info("🔄 Initializing faces for current session...")
+        logger.info(" Initializing faces for current session...")
         
         # Get current section students
         current_section_students = get_current_section_student_ids()
@@ -2206,13 +2206,13 @@ def grabber():
             ret = False
             frame = None
             
-            # 🔥 CRITICAL FIX: Check if camera needs restart
+            #  CRITICAL FIX: Check if camera needs restart
             current_time = time.time()
             
             if cap is None or not cap.isOpened():
                 # Camera is dead, attempt full restart
                 if current_rtsp_url and (current_time - last_reconnect_time) > reconnect_cooldown:
-                    logger.warning("🔥 Camera connection dead! FULL RESTART needed...")
+                    logger.warning(" Camera connection dead! FULL RESTART needed...")
                     
                     # Clear the queue
                     while not frame_queue.empty():
@@ -2271,13 +2271,13 @@ def grabber():
             else:
                 error_count += 1
                 
-                # 🔥 IMMEDIATE RECONNECTION ON ERROR
+                #  IMMEDIATE RECONNECTION ON ERROR
                 if error_count > 3:  # Just 3 failed reads
-                    logger.warning(f"🔥 Camera read failed {error_count} times")
+                    logger.warning(f" Camera read failed {error_count} times")
                     
                     # Close and restart if no success for 2 seconds
                     if current_time - last_success_time > 2.0:
-                        logger.error("🔥 Connection timeout! Closing camera...")
+                        logger.error(" Connection timeout! Closing camera...")
                         
                         # Close camera
                         with cap_lock:
@@ -2309,18 +2309,18 @@ def grabber():
                     fps = frame_counter / 2.0
                     queue_size = frame_queue.qsize()
                     
-                    status = "✅" if cap and cap.isOpened() else "🔥"
+                    status = "✅" if cap and cap.isOpened() else ""
                     logger.info(f"{status} Camera | {fps:.1f} FPS | Queue: {queue_size}")
                 
                 frame_counter = 0
                 last_log_time = current_time
                 
         except Exception as e:
-            logger.error(f"🔥 Grabber CRASH: {e}")
+            logger.error(f" Grabber CRASH: {e}")
             import traceback
             logger.error(traceback.format_exc())
             
-            # 🔥 FULL RECOVERY ON ANY ERROR
+            #  FULL RECOVERY ON ANY ERROR
             with cap_lock:
                 if cap is not None:
                     try:
@@ -2346,7 +2346,7 @@ def restart_camera_stream():
     """FULL RESTART of camera stream - called when video feed is dead"""
     global cap, camera_available, use_dummy_feed, current_rtsp_url
     
-    logger.warning("🔄 FULL CAMERA RESTART initiated...")
+    logger.warning(" FULL CAMERA RESTART initiated...")
     
     try:
         # Stop current stream
@@ -2373,7 +2373,7 @@ def restart_camera_stream():
         
         # Reconnect if we have URL
         if current_rtsp_url:
-            logger.info(f"🔄 Reconnecting to {current_rtsp_url[:80]}...")
+            logger.info(f" Reconnecting to {current_rtsp_url[:80]}...")
             
             # Try multiple reconnect attempts
             for attempt in range(3):
@@ -2398,7 +2398,7 @@ def restart_camera_stream():
             return False
             
     except Exception as e:
-        logger.error(f"🔥 Camera restart failed: {e}")
+        logger.error(f" Camera restart failed: {e}")
         return False    
     
 def start_grabber_thread():
@@ -2949,7 +2949,7 @@ def calculate_real_fps():
     frame_timestamps.append(now)
     
     # Keep only last 30 frames for calculation
-    if len(frame_timestamps) > 30:
+    if len(frame_timestamps) > 20:
         frame_timestamps.pop(0)
     
     # Calculate FPS based on actual timing
@@ -3295,7 +3295,7 @@ def refresh_with_detections(frame, rgb, frame_idx):
         logger.error(" CRITICAL: Face encodings STILL not loaded! Recognition impossible.")
         # Try one more aggressive reload
         if frame_idx % 50 == 0:  # Try more frequently
-            logger.warning("🔄 Attempting aggressive face reload...")
+            logger.warning(" Attempting aggressive face reload...")
             # Clear everything and try fresh
             known_face_encodings.clear()
             known_face_names.clear()
@@ -6663,14 +6663,14 @@ def video_feed():
                 start_time = time.time()
                 current_time = time.time()
                 
-                # 🔥 CHECK IF WE NEED FORCED RESTART
+                #  CHECK IF WE NEED FORCED RESTART
                 time_since_last_frame = current_time - last_frame_time
                 time_since_last_restart = current_time - last_restart_time
                 
                 # If no frames for 5 seconds, force restart
                 if time_since_last_frame > 5.0 and time_since_last_restart > restart_cooldown:
                     if camera_available and current_rtsp_url:
-                        logger.warning(f"🔥 NO FRAMES FOR {time_since_last_frame:.1f}s! Forcing restart...")
+                        logger.warning(f" NO FRAMES FOR {time_since_last_frame:.1f}s! Forcing restart...")
                         
                         # Call restart function
                         if restart_camera_stream():
@@ -6694,7 +6694,7 @@ def video_feed():
                 except queue.Empty:
                     consecutive_no_frames += 1
                 
-                # 🔥 HANDLE NO FRAMES SCENARIO
+                #  HANDLE NO FRAMES SCENARIO
                 if not got_frame:
                     if consecutive_no_frames > 10:  # 10 iterations without frame
                         # Use latest frame or black screen
@@ -6714,7 +6714,7 @@ def video_feed():
                 # Process frame
                 h, w = frame.shape[:2]
                 
-                # 🔥 ADD STATUS OVERLAY
+                #  ADD STATUS OVERLAY
                 status_text = ""
                 status_color = (0, 255, 0)  # Green for good
                 
@@ -6777,7 +6777,7 @@ def video_feed():
                 # Log periodically
                 if current_time - last_log_time >= 3.0:
                     queue_size = frame_queue.qsize()
-                    cam_status = "ONLINE ✅" if camera_available else "OFFLINE 🔥"
+                    cam_status = "ONLINE ✅" if camera_available else "OFFLINE "
                     
                     logger.info(f"📹 Stream | Status: {cam_status} | "
                                f"Frame: {frame_idx} | Queue: {queue_size} | "
@@ -11272,25 +11272,33 @@ def cleanup_duplicate_attendance(session_id):
 
 @app.route('/api/summary_data')
 def get_summary_data():
-    """Get complete summary data for the latest session - FIXED: Handles empty status and missing duplicates"""
+    """Get complete summary data for the latest session - WORKS FOR BOTH ADMIN AND FACULTY"""
     try:
         user_id = session.get('user_id')
+        print(f"🔍 DEBUG: Getting data for user_id: {user_id}")
         
         with get_db_cursor() as cursor:
-            # Get user info
+            # Check BOTH admins AND faculty tables
             cursor.execute("""
-                SELECT admin_id, first_name, last_name, role, photo_path
+                SELECT admin_id as user_id, first_name, last_name, role, photo_path, 'admin' as user_type
                 FROM admins WHERE admin_id = %s
-            """, (user_id,))
+                UNION ALL
+                SELECT faculty_id as user_id, first_name, last_name, role, photo_path, 'faculty' as user_type
+                FROM faculty WHERE faculty_id = %s
+            """, (user_id, user_id))
+            
             user = cursor.fetchone()
             
             if not user:
+                print(f"❌ ERROR: User {user_id} not found in admins OR faculty table")
                 return jsonify({
                     'success': False, 
                     'message': 'User not found'
                 }), 404
             
-            # Get the latest completed session
+            print(f"✅ User found: {user['first_name']} {user['last_name']} ({user['user_type']})")
+            
+            # Get the latest completed session (no faculty filter)
             cursor.execute("""
                 SELECT *, subject_code, subject_name, room 
                 FROM attendance_sessions 
@@ -11298,13 +11306,18 @@ def get_summary_data():
                 ORDER BY ended_at DESC 
                 LIMIT 1
             """)
+            
             session_data = cursor.fetchone()
             
             if not session_data:
+                print(f"❌ No completed sessions found in database")
                 return jsonify({
                     'success': False, 
                     'message': 'No completed sessions found'
                 }), 404
+            
+            print(f"✅ Session found: {session_data.get('class_name')}")
+            print(f"   Created by: {session_data.get('created_by')}")
             
             session_id = session_data['session_id']
             section_id = session_data['section_id']
@@ -11313,8 +11326,9 @@ def get_summary_data():
             
             print(f"  DEBUG Session: {session_id}")
             print(f"   - Section ID: {section_id}")
+            print(f"   - Class Name: {session_data.get('class_name')}")
             
-            #  FIRST: Clean up any existing duplicates in this session
+            # FIRST: Clean up any existing duplicates in this session
             cleanup_duplicate_attendance(session_id)
             
             # Duration calculation
@@ -11336,43 +11350,100 @@ def get_summary_data():
             room = session_data.get('room', 'Unknown Room')
             class_name = session_data['class_name']
             
-            # Get program and section
+            # ======================================================
+            # FIXED: IMPROVED PROGRAM AND SECTION EXTRACTION
+            # ======================================================
+            print(f"  DEBUG Parsing class_name: '{class_name}'")
+            
+            # Get program display
             program_display = "BSIT"
-            if 'Associate in Computer Technology' in class_name:
+            class_name_upper = class_name.upper()
+            
+            if 'ASSOCIATE IN COMPUTER TECHNOLOGY' in class_name_upper or 'ACT' in class_name_upper:
                 program_display = 'ACT'
-            elif 'Information Technology' in class_name:
+            elif 'INFORMATION TECHNOLOGY' in class_name_upper or 'BSIT' in class_name_upper or 'IT' in class_name_upper:
                 program_display = 'BSIT'
-            elif 'Computer Science' in class_name:
+            elif 'COMPUTER SCIENCE' in class_name_upper or 'BSCS' in class_name_upper or 'CS' in class_name_upper:
                 program_display = 'BSCS'
+            elif 'ACCOUNTANCY' in class_name_upper or 'BSA' in class_name_upper:
+                program_display = 'BSA'
+            elif 'EDUCATION' in class_name_upper or 'BSE' in class_name_upper:
+                program_display = 'BSE'
+            elif 'ENGINEERING' in class_name_upper:
+                program_display = 'BSE'
+            elif 'ARCHITECTURE' in class_name_upper:
+                program_display = 'BSARCH'
             
-            section_display = "4C"
-            if '4th Year' in class_name:
-                section_part = class_name.split('4th Year')[-1].strip()
-                if section_part:
-                    section_display = f"4{section_part[0]}"
-            elif '2nd Year' in class_name:
-                section_part = class_name.split('2nd Year')[-1].strip()
-                if section_part:
-                    section_display = f"2{section_part[0]}"
+            # Extract year and section using improved logic
+            import re
             
-            #  FIXED: COMPLETE QUERY THAT HANDLES EMPTY STATUS AND MISSING
+            # Pattern 1: "Information Technology 3rd YearC" → extract "3" and "C"
+            pattern1 = r'(\d+)(?:st|nd|rd|th)\s*Year\s*([A-Za-z]?)$'
+            # Pattern 2: "Information Technology 3rd Year C" → extract "3" and "C"
+            pattern2 = r'(\d+)(?:st|rd|th)\s*Year\s+([A-Za-z]+)'
+            # Pattern 3: "Information Technology 3rd Year Section C" → extract "3" and "C"
+            pattern3 = r'(\d+)(?:st|nd|rd|th)\s*Year\s+(?:Section\s+)?([A-Za-z]+)'
+            # Pattern 4: Just extract any number followed by any letter at the end
+            pattern4 = r'.*?(\d+)(?:st|nd|rd|th)?\s*([A-Za-z]+)$'
+            
+            year_num = None
+            section_letter = None
+            
+            # Try each pattern
+            for pattern in [pattern1, pattern2, pattern3, pattern4]:
+                match = re.search(pattern, class_name, re.IGNORECASE)
+                if match:
+                    year_num = match.group(1)
+                    if len(match.groups()) > 1:
+                        section_letter = match.group(2)
+                    print(f"  DEBUG Pattern matched: {pattern}")
+                    print(f"  DEBUG Extracted - Year: {year_num}, Section: {section_letter}")
+                    break
+            
+            # If no pattern matched, try simple extraction
+            if not year_num:
+                # Extract any number from the class name
+                numbers = re.findall(r'\d+', class_name)
+                if numbers:
+                    year_num = numbers[0]
+                    print(f"  DEBUG Extracted year from numbers: {year_num}")
+            
+            if not section_letter:
+                # Extract any letter at the end of the class name
+                letters = re.findall(r'[A-Za-z]+$', class_name)
+                if letters:
+                    section_letter = letters[0]
+                    print(f"  DEBUG Extracted section from letters: {section_letter}")
+            
+            # Format the final section display
+            if year_num and section_letter:
+                # Clean up section_letter (take only first character if multiple)
+                section_clean = section_letter[0].upper() if section_letter else 'C'
+                section_display = f"{year_num}{section_clean}"
+            elif year_num:
+                section_display = f"{year_num}C"  # Default section if year found
+            else:
+                section_display = "4C"  # Default if nothing found
+            
+            print(f"  DEBUG Final - Program: {program_display}, Section: {section_display}")
+            # ======================================================
+            # END OF FIXED SECTION
+            # ======================================================
+            
+            # FIXED: COMPLETE QUERY THAT HANDLES EMPTY STATUS AND MISSING
             cursor.execute("""
                 WITH cleaned_attendance AS (
-                    -- Get latest non-empty status for each student
-                    -- Removes empty string status records if other status exists
                     SELECT 
                         student_id,
                         MAX(timestamp) as latest_timestamp,
                         CASE 
                             WHEN COUNT(*) = 1 THEN 
-                                -- Single record
                                 CASE 
                                     WHEN MAX(status) IN ('', NULL) THEN 'absent'
                                     WHEN MAX(status) = 'missing' THEN 'absent'
                                     ELSE MAX(status)
                                 END
                             ELSE 
-                                -- Multiple records, prefer non-empty over empty
                                 COALESCE(
                                     MAX(CASE WHEN status NOT IN ('', NULL) THEN status END),
                                     'absent'
@@ -11392,7 +11463,6 @@ def get_summary_data():
                     GROUP BY student_id, session_id
                 ),
                 section_students AS (
-                    -- Get all regular students in the section
                     SELECT 
                         s.student_id,
                         CONCAT(s.first_name, ' ', s.last_name) as student_name,
@@ -11403,7 +11473,6 @@ def get_summary_data():
                     AND s.status = 'active'
                 ),
                 combined_data AS (
-                    -- Regular students with attendance or default to absent
                     SELECT 
                         ss.student_id,
                         ss.student_name,
@@ -11420,7 +11489,6 @@ def get_summary_data():
                     
                     UNION ALL
                     
-                    -- Temporary students
                     SELECT DISTINCT
                         CASE 
                             WHEN a.name LIKE '%(ID: %' THEN 
@@ -11484,35 +11552,24 @@ def get_summary_data():
             for record in all_student_records:
                 # Handle photo path
                 if record['is_temporary'] == 'Yes':
-                    # Temporary students get default avatar
                     photo_path = '/static/images/default-avatar.jpg'
                 else:
-                    # Regular students - get photo_path from database
                     photo_path = record['photo_path']
                     
-                    # Fix photo path based on your database entry
                     if not photo_path:
-                        # No photo path in database, use default
                         photo_path = f"/static/images/student_photos/{record['student_id']}.jpg"
                     else:
-                        # Clean and fix the photo path
                         photo_path = photo_path.strip()
                         
-                        # Fix common path issues
                         if photo_path.startswith('static/images/'):
-                            # Has 'static/images/' without leading slash
                             photo_path = '/' + photo_path
                         elif photo_path.startswith('images/'):
-                            # Has 'images/' without static
                             photo_path = '/static/' + photo_path
                         elif photo_path.startswith('student_photos/'):
-                            # Has only 'student_photos/'
                             photo_path = f"/static/images/{photo_path}"
                         elif '/' not in photo_path and '.' in photo_path:
-                            # Just a filename like "2022-01376.jpg"
                             photo_path = f"/static/images/student_photos/{photo_path}"
                         elif not photo_path.startswith('/') and not photo_path.startswith('http'):
-                            # Some other relative path, prepend /static
                             photo_path = f"/static/{photo_path}"
                 
                 # Handle timestamp
@@ -11525,13 +11582,9 @@ def get_summary_data():
                 # Get clean student ID for temporary students
                 student_id = record['student_id']
                 if record['is_temporary'] == 'Yes' and (not student_id or student_id.startswith('TEMP')):
-                    # Create a temporary ID based on name hash
                     import hashlib
                     name_hash = hashlib.md5(record['student_name'].encode()).hexdigest()[:8]
                     student_id = f"TEMP-{name_hash}"
-                
-                # Debug photo info
-                print(f"  DEBUG Photo for {student_id}: {photo_path}")
                 
                 complete_student_list.append({
                     'student_id': student_id,
@@ -11566,13 +11619,8 @@ def get_summary_data():
             print(f"   - Absent: {absent_count}")
             print(f"   - Excused: {excused_count}")
             
-            # Debug first few students
-            print(f"  DEBUG First 10 Students (Alphabetical):")
-            for i, student in enumerate(complete_student_list[:10]):
-                print(f"   {i+1}. {student['name']} ({student['student_id']}) - {student['status']} - Temp: {student['is_temporary']}")
-            
             # Format course display
-            course_section_display = f"{program_display}-{section_display}"
+            course_section_display = f"{program_display} {section_display}"
             
             # Format user photo
             user_photo = user['photo_path'] or '/static/images/default-avatar.jpg'
@@ -11583,7 +11631,11 @@ def get_summary_data():
                 elif user_photo.startswith('images/'):
                     user_photo = '/static/' + user_photo
                 elif '/' not in user_photo and '.' in user_photo:
-                    user_photo = f"/static/images/admin_photos/{user_photo}"
+                    # For faculty, use faculty_photos directory
+                    if user['user_type'] == 'faculty':
+                        user_photo = f"/static/images/faculty_photos/{user_photo}"
+                    else:
+                        user_photo = f"/static/images/admin_photos/{user_photo}"
                 elif not user_photo.startswith('/') and not user_photo.startswith('http'):
                     user_photo = f"/static/{user_photo}"
             
@@ -11610,8 +11662,9 @@ def get_summary_data():
                 'user': {
                     'name': f"{user['first_name']} {user['last_name']}",
                     'role': user['role'],
-                    'username': user['admin_id'],
-                    'photo_path': user_photo
+                    'username': user['user_id'],
+                    'photo_path': user_photo,
+                    'user_type': user['user_type']
                 },
                 'subject': {
                     'code': subject_code,
@@ -11623,6 +11676,7 @@ def get_summary_data():
             }
             
             print(f"   FINAL SUMMARY: {total_students} total students ({regular_count} regular, {temp_count} temporary)")
+            print(f"   Course Display: {course_section_display}")
             print(f"   Present: {present_count}, Late: {late_count}, Absent: {absent_count}, Excused: {excused_count}")
             
             return jsonify(summary_data)
@@ -14341,6 +14395,7 @@ def get_year_sections():
         academic_year = request.args.get('academic_year')
         semester = request.args.get('semester')
         curriculum_id = request.args.get('curriculum_id')
+        year_level = request.args.get('year_level')  # Optional filter
         
         if not all([program_id, academic_year, semester, curriculum_id]):
             return jsonify({'success': False, 'message': 'Program ID, academic year, semester, and curriculum are required'})
@@ -14348,23 +14403,26 @@ def get_year_sections():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Get academic_year_id
+        # Get academic_year_id for this program and year
         cursor.execute(
-            "SELECT academic_year_id FROM academic_years WHERE program_id = %s AND academic_year = %s",
+            """SELECT academic_year_id FROM academic_years 
+               WHERE program_id = %s AND academic_year = %s""",
             (program_id, academic_year)
         )
         result = cursor.fetchone()
         if not result:
             cursor.close()
             conn.close()
-            return jsonify({'success': False, 'message': 'Academic year not found'})
+            return jsonify({'success': False, 'message': 'Academic year not found for this program'})
         
         academic_year_id = result['academic_year_id']
         
         # Get semester_id with curriculum filter
         cursor.execute(
             """SELECT semester_id FROM semesters 
-               WHERE academic_year_id = %s AND semester_number = %s AND curriculum_id = %s""",
+               WHERE academic_year_id = %s 
+               AND semester_number = %s 
+               AND curriculum_id = %s""",
             (academic_year_id, semester, curriculum_id)
         )
         result = cursor.fetchone()
@@ -14375,15 +14433,13 @@ def get_year_sections():
         
         semester_id = result['semester_id']
         
-        # Get sections for this specific semester AND curriculum - FIXED QUERY
+        # Build query with proper filtering
         query = """
             SELECT 
                 ys.section_id,
                 ys.year_level,
                 ys.section_name,
                 ys.status,
-                ys.academic_year_id,
-                ys.curriculum_id,
                 COUNT(DISTINCT s.subject_id) as subject_count,
                 (SELECT COUNT(*) 
                  FROM students st 
@@ -14392,16 +14448,26 @@ def get_year_sections():
             FROM year_sections ys
             LEFT JOIN subjects s ON ys.section_id = s.section_id AND s.status = 'active'
             WHERE ys.program_id = %s 
-            AND ys.academic_year_id = %s  # Link to academic_years table
-            AND ys.semester_id = %s       # Link to semesters table  
-            AND ys.curriculum_id = %s     # Link to curricula table
+            AND ys.academic_year_id = %s
+            AND ys.semester_id = %s
+            AND ys.curriculum_id = %s
             AND ys.status = 'active'
-            GROUP BY ys.section_id, ys.year_level, ys.section_name, ys.status, 
-                     ys.academic_year_id, ys.curriculum_id
+        """
+        
+        params = [program_id, academic_year_id, semester_id, curriculum_id]
+        
+        # Add year_level filter if provided
+        if year_level:
+            query += " AND ys.year_level = %s"
+            params.append(year_level)
+        
+        # Add grouping and ordering
+        query += """
+            GROUP BY ys.section_id, ys.year_level, ys.section_name, ys.status
             ORDER BY ys.year_level, ys.section_name
         """
         
-        cursor.execute(query, (program_id, academic_year_id, semester_id, curriculum_id))
+        cursor.execute(query, params)
         sections = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -23251,7 +23317,7 @@ subjectAltName = @alt_names
         cert_file = 'cert.pem'
         key_file = 'key.pem'
         
-        print("\n🔄 Checking SSL certificates...")
+        print("\n Checking SSL certificates...")
         if create_ssl_certificate_auto():
             if os.path.exists(cert_file) and os.path.exists(key_file):
                 ssl_context = (cert_file, key_file)
