@@ -12415,6 +12415,12 @@ def faculty_db_page():
     user_data = get_template_user_data()
     return render_template('FacultyDB.html', **user_data)
 
+@app.route('/analytics')
+@login_required
+def analytics_page():
+    user_data = get_template_user_data()
+    return render_template('analytics.html', **user_data)
+
 @app.route('/settings')
 @login_required
 def settings_page():

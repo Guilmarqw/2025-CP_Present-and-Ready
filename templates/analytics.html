@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../static/sidebar.css">
+    <link rel="stylesheet" href="../static/AdminDB.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
+    <style>
+        /* ====================== ATTENDANCE SPREADSHEET STYLES ====================== */
+        .attendance-spreadsheet-section {
+            margin-top: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(102, 126, 234, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .attendance-spreadsheet-section::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: #677e49;
+            border-radius: 16px 16px 0 0;
+        }
+
+        .attendance-spreadsheet-section h3 {
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            background: #2c3e50;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 700;
+            font-size: 1.4rem;
+            position: relative;
+        }
+
+        .attendance-spreadsheet-section h3::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 60px;
+            height: 3px;
+            border-radius: 2px;
+        }
+
+        .spreadsheet-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+            padding: 25px;
+            background: rgba(102, 126, 234, 0.05);
+            border-radius: 12px;
+            border: 1px solid rgba(102, 126, 234, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .control-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid rgba(102, 126, 234, 0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .control-section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .control-section h4 {
+            color: #4a5568;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .search-section {
+            grid-column: 1 / -1;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .search-section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .search-section .control-group label {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .search-input-container {
+            position: relative;
+        }
+
+        .search-input-container input {
+            width: 100%;
+            padding: 12px 40px 12px 14px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #2c3e50;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+        }
+
+        .search-input-container input:focus {
+            border-color: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #f5576c;
+            font-size: 16px;
+            pointer-events: none;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #4a5568;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .control-group select, .control-group input {
+            padding: 10px 14px;
+            border: 2px solid rgba(102, 126, 234, 0.2);
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .control-group select:focus, .control-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .spreadsheet-container {
+            overflow-x: auto;
+            overflow-y: hidden;
+            margin-top: 20px;
+            max-width: 100%;
+            scrollbar-width: thin;
+            scrollbar-color: #ccc transparent;
+        }
+
+        .spreadsheet-container::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .spreadsheet-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .spreadsheet-container::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+
+        .spreadsheet-container::-webkit-scrollbar-thumb:hover {
+            background: #999;
+        }
+
+        #attendanceSpreadsheet {
+            min-width: 800px;
+            border-collapse: collapse;
+            font-size: 14px;
+            table-layout: fixed;
+            white-space: nowrap;
+        }
+
+        #attendanceSpreadsheet th {
+            background: #677e49;
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        /* Critical fix: all td are relative for absolute children */
+        #attendanceSpreadsheet td {
+            position: relative;
+            text-align: center;
+            border: 1px solid #e9ecef;
+            vertical-align: middle;
+        }
+
+        /* Date cells (not student info): remove padding so badge centers perfectly */
+        #attendanceSpreadsheet tbody td:not(.student-info-cell) {
+            padding: 0;
+        }
+
+        #attendanceSpreadsheet tbody tr {
+            height: 60px;
+        }
+
+        #attendanceSpreadsheet tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        #attendanceSpreadsheet tbody tr:hover {
+            background-color: #e3f2fd;
+            transition: background-color 0.2s ease;
+        }
+
+        .student-info-cell {
+            text-align: left;
+            padding-left: 15px !important;
+            font-weight: 600;
+            color: #2c3e50;
+            width: 260px;
+            min-width: 260px;
+        }
+
+        .student-info-cell .student-name {
+            font-size: 15px;
+            margin-bottom: 3px;
+            white-space: nowrap;
+        }
+
+        .student-info-cell .student-id,
+        .student-info-cell .student-section {
+            font-size: 12px;
+            color: #666;
+            font-weight: 400;
+        }
+
+        .status-cell {
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            margin: 0;
+        }
+
+        .status-cell:hover {
+            transform: translate(-50%, -50%) scale(1.05);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+
+        .status-cell.present { background-color: #28a745; color: white; }
+        .status-cell.late { background-color: #ffc107; color: #333; }
+        .status-cell.excused { background-color: #17a2b8; color: white; }
+        .status-cell.absent { background-color: #dc3545; color: white; }
+
+        .status-legend {
+            display: flex;
+            gap: 25px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 15px 20px;
+            background: rgba(248, 249, 250, 0.8);
+            border-radius: 12px;
+            border: 1px solid rgba(102, 126, 234, 0.1);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: #4a5568;
+            font-weight: 500;
+            padding: 8px 12px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .legend-color {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .legend-color.present { background-color: #28a745; }
+        .legend-color.late { background-color: #ffc107; }
+        .legend-color.excused { background-color: #17a2b8; }
+        .legend-color.absent { background-color: #dc3545; }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .spreadsheet-controls {
+                grid-template-columns: 1fr;
+                padding: 20px;
+            }
+            .search-section { order: -1; }
+            #attendanceSpreadsheet th,
+            #attendanceSpreadsheet td {
+                padding: 8px 4px;
+                font-size: 13px;
+            }
+            #attendanceSpreadsheet tbody td:not(.student-info-cell) {
+                padding: 0;
+            }
+            .status-cell {
+                width: 28px;
+                height: 28px;
+                font-size: 11px;
+            }
+            .student-info-cell {
+                width: 200px;
+                min-width: 200px;
+            }
+        }
+    </style>
+    <style>
+        /* ====================== ANALYTICS & OTHER STYLES ====================== */
+        .analytics-section {
+            margin: 30px 0;
+        }
+
+        .analytics-section h3 {
+            color: #4f5449;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #5c835c;
+            font-weight: 700;
+            font-size: 1.4rem;
+        }
+
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .analytics-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid rgba(79, 84, 73, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .analytics-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        }
+
+        .analytics-card h4 {
+            color: #4f5449;
+            margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .attendance-rate {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .rate-circle {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: #5c835c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 25px rgba(92, 131, 92, 0.3);
+            position: relative;
+        }
+
+        .rate-circle::before {
+            content: '';
+            position: absolute;
+            top: -5px;
+            left: -5px;
+            right: -5px;
+            bottom: -5px;
+            border-radius: 50%;
+            background: #5c835c;
+            z-index: -1;
+            opacity: 0.3;
+        }
+
+        .rate-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .rate-details {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .rate-item {
+            text-align: center;
+        }
+
+        .rate-label {
+            display: block;
+            font-size: 12px;
+            color: #738773;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .rate-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #4f5449;
+        }
+
+        .program-attendance {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .program-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+        }
+
+        .program-name {
+            width: 50px;
+            font-weight: bold;
+            color: #4f5449;
+            font-size: 14px;
+        }
+
+        .progress-bar {
+            flex: 1;
+            height: 10px;
+            background: #a5b198;
+            border-radius: 5px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #739b70;
+            border-radius: 5px;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, rgba(255,255,255,0.2), transparent);
+            border-radius: 5px;
+        }
+
+        .progress-text {
+            width: 35px;
+            text-align: right;
+            font-size: 13px;
+            color: #738773;
+            font-weight: 600;
+        }
+
+        .trend-chart {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            height: 120px;
+            margin-bottom: 15px;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .trend-bar {
+            width: 35px;
+            background: #5c835c;
+            border-radius: 4px 4px 0 0;
+            min-height: 20px;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(92, 131, 92, 0.3);
+        }
+
+        .trend-bar::after {
+            content: '';
+            position: absolute;
+            top: -3px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 4px 4px 0 0;
+        }
+
+        .trend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #738773;
+            padding: 0 20px;
+        }
+
+        .records-section {
+            margin-top: 40px;
+        }
+
+        .records-section h3 {
+            color: #4f5449;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #5c835c;
+            font-weight: 700;
+            font-size: 1.4rem;
+        }
+
+        .table-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .search-box {
+            position: relative;
+            flex: 1;
+            max-width: 300px;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #738773;
+            font-size: 14px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 10px 40px;
+            border: 2px solid #a5b198;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            transition: border-color 0.3s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #5c835c;
+            box-shadow: 0 0 0 3px rgba(92, 131, 92, 0.1);
+        }
+
+        .filter-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .filter-controls select {
+            padding: 10px 14px;
+            border: 2px solid #a5b198;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+        }
+
+        .filter-controls select:focus {
+            outline: none;
+            border-color: #5c835c;
+            box-shadow: 0 0 0 3px rgba(92, 131, 92, 0.1);
+        }
+
+        .table-container {
+            overflow-x: auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid rgba(79, 84, 73, 0.1);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 15px 20px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .data-table th {
+            background: #5c835c;
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .data-table tbody tr:hover {
+            background: rgba(165, 177, 152, 0.1);
+            transition: background-color 0.2s ease;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge.active {
+            background: #739b70;
+            color: white;
+            box-shadow: 0 2px 8px rgba(115, 155, 112, 0.3);
+        }
+
+        .status-badge.inactive {
+            background: #738773;
+            color: white;
+            box-shadow: 0 2px 8px rgba(115, 135, 115, 0.3);
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 25px;
+            gap: 8px;
+        }
+
+        .page-btn {
+            padding: 10px 14px;
+            border: 2px solid #a5b198;
+            background: white;
+            color: #738773;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .page-btn:hover:not(:disabled) {
+            background: #5c835c;
+            color: white;
+            border-color: #5c835c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(92, 131, 92, 0.3);
+        }
+
+        .page-btn.active {
+            background: #5c835c;
+            color: white;
+            border-color: #5c835c;
+            box-shadow: 0 2px 8px rgba(92, 131, 92, 0.3);
+        }
+
+        .page-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .detailed-analytics {
+            margin-top: 40px;
+        }
+
+        .detailed-analytics h3 {
+            color: #4f5449;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #5c835c;
+            font-weight: 700;
+            font-size: 1.4rem;
+        }
+
+        .analytics-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 25px;
+        }
+
+        .analytics-col {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid rgba(79, 84, 73, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .analytics-col:hover {
+            transform: translateY(-3px);
+        }
+
+        .analytics-col h4 {
+            color: #4f5449;
+            margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            text-align: center;
+            position: relative;
+            padding-bottom: 10px;
+        }
+
+        .analytics-col h4::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 2px;
+            background: #5c835c;
+            border-radius: 1px;
+        }
+
+        .distribution-chart {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .distribution-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .bar-fill {
+            height: 24px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            min-width: 50px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .bar-fill.excellent { background: #739b70; }
+        .bar-fill.good { background: #5c835c; }
+        .bar-fill.average { background: #738773; }
+        .bar-fill.poor { background: #4f5449; }
+
+        .distribution-bar span {
+            font-size: 13px;
+            color: #738773;
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .top-performers {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .performer-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(79, 84, 73, 0.1);
+        }
+
+        .rank {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #5c835c;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 8px rgba(92, 131, 92, 0.3);
+        }
+
+        .performer-info {
+            flex: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .performer-name {
+            font-weight: 600;
+            color: #4f5449;
+            font-size: 14px;
+        }
+
+        .performer-rate {
+            font-weight: bold;
+            color: #5c835c;
+            font-size: 16px;
+            background: rgba(92, 131, 92, 0.1);
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+
+        .insights-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .insight-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(79, 84, 73, 0.1);
+            transition: transform 0.2s ease;
+        }
+
+        .insight-item:hover {
+            transform: translateX(5px);
+            background: rgba(165, 177, 152, 0.8);
+        }
+
+        .insight-item i {
+            color: #5c835c;
+            font-size: 16px;
+            width: 20px;
+        }
+
+        .insight-text {
+            font-size: 13px;
+            color: #738773;
+            line-height: 1.4;
+        }
+
+        .insight-text strong {
+            color: #4f5449;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar-container"></div>
+
+    <main class="main-content">
+        <div class="header">
+            <h2><i class="fas fa-chart-line"></i> Analytics Dashboard</h2>
+            <p>Comprehensive overview of student records and attendance data</p>
+        </div>
+
+        <div class="dashboard-content">
+            <div class="active-year-header">
+                <div class="active-year-badge">
+                    <i class="fas fa-calendar-check"></i>
+                    <span id="active-year-display">Academic Year: 2025-2026</span>
+                </div>
+            </div>
+
+            <!-- ATTENDANCE SPREADSHEET -->
+            <div class="attendance-spreadsheet-section">
+                <h3>Attendance Spreadsheet</h3>
+
+                <div class="spreadsheet-controls">
+                    <!-- Filters -->
+                    <div class="control-section">
+                        <h4>Curriculum</h4>
+                        <div class="control-group">
+                            <label for="curriculumFilter">Select Curriculum</label>
+                            <select id="curriculumFilter" onchange="loadAttendanceData()">
+                                <option value="">All Curricula</option>
+                                <option value="BSCS">Bachelor of Science in Computer Science</option>
+                                <option value="BSIT">Bachelor of Science in Information Technology</option>
+                                <option value="ACT">Associate in Computer Technology</option>
+                                <option value="BSEMC">Bachelor of Science in Entertainment and Multimedia Computing</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h4>Programs</h4>
+                        <div class="control-group">
+                            <label for="programFilter">Select Program</label>
+                            <select id="programFilter" onchange="loadAttendanceData()">
+                                <option value="">All Programs</option>
+                                <option value="BSCS">BSCS</option>
+                                <option value="BSIT">BSIT</option>
+                                <option value="ACT">ACT</option>
+                                <option value="BSEMC">BSEMC</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h4>Sections</h4>
+                        <div class="control-group">
+                            <label for="sectionFilter">Select Section</label>
+                            <select id="sectionFilter" onchange="loadAttendanceData()">
+                                <option value="">All Sections</option>
+                                <option value="1A">1A</option><option value="1B">1B</option><option value="1C">1C</option>
+                                <option value="2A">2A</option><option value="2B">2B</option><option value="2C">2C</option>
+                                <option value="3A">3A</option><option value="3B">3B</option><option value="3C">3C</option>
+                                <option value="4A">4A</option><option value="4B">4B</option><option value="4C">4C</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h4>Subject</h4>
+                        <div class="control-group">
+                            <label for="subjectFilter">Select Subject</label>
+                            <select id="subjectFilter" onchange="loadAttendanceData()">
+                                <option value="">All Subjects</option>
+                                <option value="Programming">Programming</option>
+                                <option value="Database">Database Management</option>
+                                <option value="Web Development">Web Development</option>
+                                <option value="Networking">Computer Networking</option>
+                                <option value="Data Structures">Data Structures</option>
+                                <option value="Software Engineering">Software Engineering</option>
+                                <option value="Mobile Development">Mobile App Development</option>
+                                <option value="AI/ML">Artificial Intelligence & Machine Learning</option>
+                                <option value="Cybersecurity">Cybersecurity</option>
+                                <option value="Cloud Computing">Cloud Computing</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="search-section">
+                    <div class="control-group">
+                        <label style="color: black;">Search Student</label>
+                        <div class="search-input-container">
+                            <input type="text" id="classStudentSearch" placeholder="Enter name or ID..." onkeyup="searchStudentsInClass()">
+                            <i class="fas fa-search search-icon"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="spreadsheet-container">
+                    <table id="attendanceSpreadsheet">
+                        <thead>
+                            <tr>
+                                <th class="student-col">Student</th>
+                                <th>12/15/2025</th>
+                                <th>12/16/2025</th>
+                                <th>12/17/2025</th>
+                                <th>12/18/2025</th>
+                                <th>12/19/2025</th>
+                                <th>12/20/2025</th>
+                                <th>12/22/2025</th>
+                                <th>12/23/2025</th>
+                                <th>12/24/2025</th>
+                                <th>12/26/2025</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="student-info-cell">
+                                    <div class="student-name">Guilmar Acabo Quimba</div>
+                                    <div class="student-id">2022-02503</div>
+                                    <div class="student-section">BSIT 4C</div>
+                                </td>
+                                <td><div class="status-cell present" title="Present">P</div></td>
+                                <td><div class="status-cell present" title="Present">P</div></td>
+                                <!-- Add more as needed -->
+                            </tr>
+                            <tr>
+                                <td class="student-info-cell">
+                                    <div class="student-name">Lawrence Olivier Tilde</div>
+                                    <div class="student-id">2022-01376</div>
+                                    <div class="student-section">BSIT 4A</div>
+                                </td>
+                                <td><div class="status-cell present" title="Present">P</div></td>
+                                <td><div class="status-cell late" title="Late">L</div></td>
+                            </tr>
+                            <tr>
+                                <td class="student-info-cell">
+                                    <div class="student-name">Juan Carlos Reyes</div>
+                                    <div class="student-id">2023-07890</div>
+                                    <div class="student-section">ACT 2A</div>
+                                </td>
+                                <td><div class="status-cell present" title="Present">P</div></td>
+                                <td><div class="status-cell excused" title="Excused">E</div></td>
+                            </tr>
+                            <tr>
+                                <td class="student-info-cell">
+                                    <div class="student-name">Ana Maria Garcia</div>
+                                    <div class="student-id">2024-01234</div>
+                                    <div class="student-section">BSIT 1C</div>
+                                </td>
+                                <td><div class="status-cell present" title="Present">P</div></td>
+                                <td><div class="status-cell present" title="Present">P</div></td>
+                            </tr>
+                            <tr>
+                                <td class="student-info-cell">
+                                    <div class="student-name">Miguel Antonio Lopez</div>
+                                    <div class="student-id">2024-05678</div>
+                                    <div class="student-section">BSCS 1A</div>
+                                </td>
+                                <td><div class="status-cell absent" title="Absent">A</div></td>
+                                <td><div class="status-cell present" title="Present">P</div></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="status-legend">
+                    <div class="legend-item"><div class="legend-color present"></div><span>Present (P)</span></div>
+                    <div class="legend-item"><div class="legend-color late"></div><span>Late (L)</span></div>
+                    <div class="legend-item"><div class="legend-color excused"></div><span>Excused (E)</span></div>
+                    <div class="legend-item"><div class="legend-color absent"></div><span>Absent (A)</span></div>
+                </div>
+            </div>
+
+            <!-- ATTENDANCE ANALYTICS SECTION -->
+            <div class="analytics-section">
+                <h3>Attendance Analytics</h3>
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <h4>Overall Attendance Rate</h4>
+                        <div class="attendance-rate">
+                            <div class="rate-circle">
+                                <span class="rate-number">87.3%</span>
+                            </div>
+                        </div>
+                        <div class="rate-details">
+                            <div class="rate-item">
+                                <span class="rate-label">Present:</span>
+                                <span class="rate-value">89.2%</span>
+                            </div>
+                            <div class="rate-item">
+                                <span class="rate-label">Late:</span>
+                                <span class="rate-value">5.4%</span>    
+                            </div>
+                            <div class="rate-item">
+                                <span class="rate-label">Absent:</span>
+                                <span class="rate-value">5.4%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <h4>Program-wise Attendance</h4>
+                        <div class="program-attendance">
+                            <div class="program-bar">
+                                <div class="program-name">BSCS</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 92%;"></div>
+                                </div>
+                                <div class="progress-text">92%</div>
+                            </div>
+                            <div class="program-bar">
+                                <div class="program-name">BSIT</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 88%;"></div>
+                                </div>
+                                <div class="progress-text">88%</div>
+                            </div>
+                            <div class="program-bar">
+                                <div class="program-name">ACT</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 85%;"></div>
+                                </div>
+                                <div class="progress-text">85%</div>
+                            </div>
+                            <div class="program-bar">
+                                <div class="program-name">BSEMC</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: 90%;"></div>
+                                </div>
+                                <div class="progress-text">90%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <h4>Monthly Trends</h4>
+                        <div class="trend-chart">
+                            <div class="trend-bar" style="height: 60%;"></div>
+                            <div class="trend-bar" style="height: 75%;"></div>
+                            <div class="trend-bar" style="height: 85%;"></div>
+                            <div class="trend-bar" style="height: 70%;"></div>
+                            <div class="trend-bar" style="height: 90%;"></div>
+                            <div class="trend-bar" style="height: 80%;"></div>
+                        </div>
+                        <div class="trend-labels">
+                            <span>Sep</span>
+                            <span>Oct</span>
+                            <span>Nov</span>
+                            <span>Dec</span>
+                            <span>Jan</span>
+                            <span>Feb</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STUDENT RECORDS SECTION -->
+            <div class="records-section">
+                <h3>Student Records</h3>
+                <div class="table-controls">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search students..." id="studentSearch">
+                    </div>
+                    <div class="filter-controls">
+                        <select id="yearFilter">
+                            <option value="">All Years</option>
+                            <option value="1">1st Year</option>
+                            <option value="2">2nd Year</option>
+                            <option value="3">3rd Year</option>
+                            <option value="4">4th Year</option>
+                        </select>
+                        <select id="programFilterRecords">
+                            <option value="">All Programs</option>
+                            <option value="BSCS">BSCS</option>
+                            <option value="BSIT">BSIT</option>
+                            <option value="ACT">ACT</option>
+                            <option value="BSEMC">BSEMC</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="data-table" id="studentsTable">
+                        <thead>
+                            <tr>
+                                <th>Student ID</th>
+                                <th>Name</th>
+                                <th>Program</th>
+                                <th>Year/Section</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Attendance Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2022-02503</td>
+                                <td>Guilmar Acabo Quimba</td>
+                                <td>BSCS</td>
+                                <td>4C</td>
+                                <td>guilmar.quimba@email.com</td>
+                                <td><span class="status-badge active">Active</span></td>
+                                <td>92%</td>
+                            </tr>
+                            <tr>
+                                <td>2022-01376</td>
+                                <td>Lawrence Olivier Tilde</td>
+                                <td>BSIT</td>
+                                <td>4A</td>
+                                <td>lawrence.tilde@email.com</td>
+                                <td><span class="status-badge active">Active</span></td>
+                                <td>88%</td>
+                            </tr>
+                            <tr>
+                                <td>2023-07890</td>
+                                <td>Juan Carlos Reyes</td>
+                                <td>ACT</td>
+                                <td>2A</td>
+                                <td>juan.reyes@email.com</td>
+                                <td><span class="status-badge active">Active</span></td>
+                                <td>85%</td>
+                            </tr>
+                            <tr>
+                                <td>2024-01234</td>
+                                <td>Ana Maria Garcia</td>
+                                <td>BSIT</td>
+                                <td>1C</td>
+                                <td>ana.garcia@email.com</td>
+                                <td><span class="status-badge active">Active</span></td>
+                                <td>95%</td>
+                            </tr>
+                            <tr>
+                                <td>2024-05678</td>
+                                <td>Miguel Antonio Lopez</td>
+                                <td>BSCS</td>
+                                <td>1A</td>
+                                <td>miguel.lopez@email.com</td>
+                                <td><span class="status-badge inactive">Inactive</span></td>
+                                <td>45%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination">
+                    <button class="page-btn" disabled>&laquo;</button>
+                    <button class="page-btn active">1</button>
+                    <button class="page-btn">2</button>
+                    <button class="page-btn">3</button>
+                    <button class="page-btn">&raquo;</button>
+                </div>
+            </div>
+
+            <!-- DETAILED ANALYTICS SECTION -->
+            <div class="detailed-analytics">
+                <h3>Detailed Analytics</h3>
+                <div class="analytics-row">
+                    <div class="analytics-col">
+                        <h4>Attendance Distribution</h4>
+                        <div class="distribution-chart">
+                            <div class="distribution-bar">
+                                <div class="bar-fill excellent" style="width: 35%;">35%</div>
+                                <span>Excellent (90-100%)</span>
+                            </div>
+                            <div class="distribution-bar">
+                                <div class="bar-fill good" style="width: 45%;">45%</div>
+                                <span>Good (80-89%)</span>
+                            </div>
+                            <div class="distribution-bar">
+                                <div class="bar-fill average" style="width: 15%;">15%</div>
+                                <span>Average (70-79%)</span>
+                            </div>
+                            <div class="distribution-bar">
+                                <div class="bar-fill poor" style="width: 5%;">5%</div>
+                                <span>Poor (<70%)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-col">
+                        <h4>Top Performers</h4>
+                        <div class="top-performers">
+                            <div class="performer-item">
+                                <div class="rank">1</div>
+                                <div class="performer-info">
+                                    <div class="performer-name">Ana Maria Garcia</div>
+                                    <div class="performer-rate">95%</div>
+                                </div>
+                            </div>
+                            <div class="performer-item">
+                                <div class="rank">2</div>
+                                <div class="performer-info">
+                                    <div class="performer-name">Guilmar Acabo Quimba</div>
+                                    <div class="performer-rate">92%</div>
+                                </div>
+                            </div>
+                            <div class="performer-item">
+                                <div class="rank">3</div>
+                                <div class="performer-info">
+                                    <div class="performer-name">Lawrence Olivier Tilde</div>
+                                    <div class="performer-rate">88%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="analytics-col">
+                        <h4>Attendance Insights</h4>
+                        <div class="insights-list">
+                            <div class="insight-item">
+                                <i class="fas fa-calendar-check"></i>
+                                <div class="insight-text">
+                                    <strong>Best Day:</strong> Mondays (94% attendance)
+                                </div>
+                            </div>
+                            <div class="insight-item">
+                                <i class="fas fa-clock"></i>
+                                <div class="insight-text">
+                                    <strong>Peak Hours:</strong> 8:00-10:00 AM
+                                </div>
+                            </div>
+                            <div class="insight-item">
+                                <i class="fas fa-users"></i>
+                                <div class="insight-text">
+                                    <strong>Most Active Program:</strong> BSCS
+                                </div>
+                            </div>
+                            <div class="insight-item">
+                                <i class="fas fa-chart-line"></i>
+                                <div class="insight-text">
+                                    <strong>Improvement:</strong> +5% from last month
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        console.log('Starting sidebar fetch...');
+        
+        fetch('/sidebar')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+            })
+            .then(html => {
+                document.getElementById('sidebar-container').innerHTML = html;
+                
+                document.querySelectorAll(".dropdown-btn").forEach(btn => {
+                    btn.addEventListener("click", function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.classList.toggle("active");
+                        var dropdownContent = this.nextElementSibling;
+                        dropdownContent.style.display = dropdownContent.style.display === "block" ? "none" : "block";
+                    });
+                });
+                
+                document.addEventListener("click", function(e) {
+                    if (!e.target.matches('.dropdown-btn')) {
+                        document.querySelectorAll(".dropdown-content").forEach(dropdown => {
+                            if (dropdown.style.display === "block") {
+                                dropdown.style.display = "none";
+                            }
+                        });
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error loading sidebar:', error);
+                document.getElementById('sidebar-container').innerHTML = '<div style="color: red; padding: 20px;">Error loading sidebar: ' + error.message + '</div>';
+            });
+
+        function searchStudentsInClass() {
+            const input = document.getElementById("classStudentSearch").value.toLowerCase();
+            const rows = document.querySelectorAll("#attendanceSpreadsheet tbody tr");
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(input) ? "" : "none";
+            });
+        }
+    </script>
+</body>
+</html>
