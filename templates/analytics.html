@@ -10,9 +10,12 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
     <style>
-        /* ====================== ATTENDANCE SPREADSHEET STYLES ====================== */
-        .attendance-spreadsheet-section {
-            margin-top: 40px;
+.dashboard-content{
+    background: white;
+    border-radius: 8px;
+    padding: 25px 0;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}        .attendance-spreadsheet-section {
             padding: 30px;
             background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
             border-radius: 16px;
@@ -99,14 +102,6 @@
             transition: all 0.3s ease;
         }
 
-        .search-section:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-        }
-
-        .search-section .control-group label {
-            color: rgba(255, 255, 255, 0.9);
-        }
 
         .search-input-container {
             position: relative;
@@ -115,7 +110,6 @@
         .search-input-container input {
             width: 100%;
             padding: 12px 40px 12px 14px;
-            background: rgba(255, 255, 255, 0.95);
             color: #2c3e50;
             border: 2px solid rgba(255, 255, 255, 0.3);
             border-radius: 8px;
@@ -170,27 +164,40 @@
             overflow-x: auto;
             overflow-y: hidden;
             margin-top: 20px;
-            max-width: 100%;
+            width: 1170px;
+            margin-left: auto;
+            margin-right: auto;
             scrollbar-width: thin;
-            scrollbar-color: #ccc transparent;
+            scrollbar-color: #5c835c #a5b198;
+            border-radius: 8px;
+            border: 1px solid #a5b198;
+            background: rgba(165, 177, 152, 0.05);
+            padding: 15px;
+            box-sizing: border-box;
         }
 
         .spreadsheet-container::-webkit-scrollbar {
-            height: 8px;
+            height: 12px;
         }
 
         .spreadsheet-container::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 4px;
+            background: #a5b198;
+            border-radius: 6px;
+            margin: 0 10px;
         }
 
         .spreadsheet-container::-webkit-scrollbar-thumb {
-            background: #ccc;
-            border-radius: 4px;
+            background: #5c835c;
+            border-radius: 6px;
+            border: 2px solid #a5b198;
         }
 
         .spreadsheet-container::-webkit-scrollbar-thumb:hover {
-            background: #999;
+            background: #4f5449;
+        }
+
+        .spreadsheet-container::-webkit-scrollbar-corner {
+            background: transparent;
         }
 
         #attendanceSpreadsheet {
@@ -277,7 +284,6 @@
         }
 
         .status-cell:hover {
-            transform: translate(-50%, -50%) scale(1.05);
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
         }
 
@@ -916,12 +922,6 @@
         </div>
 
         <div class="dashboard-content">
-            <div class="active-year-header">
-                <div class="active-year-badge">
-                    <i class="fas fa-calendar-check"></i>
-                    <span id="active-year-display">Academic Year: 2025-2026</span>
-                </div>
-            </div>
 
             <!-- ATTENDANCE SPREADSHEET -->
             <div class="attendance-spreadsheet-section">
@@ -1016,7 +1016,11 @@
                                 <th>12/22/2025</th>
                                 <th>12/23/2025</th>
                                 <th>12/24/2025</th>
+                                <th>12/25/2025</th>
                                 <th>12/26/2025</th>
+                                <th>12/27/2025</th>
+                                <th>12/28/2025</th>
+                                <th>12/29/2025</th>
                             </tr>
                         </thead>
                         <tbody>
