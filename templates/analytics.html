@@ -9,906 +9,16 @@
     <link rel="stylesheet" href="../static/AdminDB.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
+      <link rel="stylesheet" href="../static/analytics.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='analytics.css') }}">
+  
     <style>
-.dashboard-content{
-    background: white;
-    border-radius: 8px;
-    padding: 25px 0;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}        .attendance-spreadsheet-section {
+        main.main-content {
+            margin-left: 250px;
+            flex: 1;
             padding: 30px;
-            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-            border-radius: 16px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-            border: 1px solid rgba(102, 126, 234, 0.1);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .attendance-spreadsheet-section::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 4px;
-            background: #677e49;
-            border-radius: 16px 16px 0 0;
-        }
-
-        .attendance-spreadsheet-section h3 {
-            margin-bottom: 25px;
-            padding-bottom: 20px;
-            background: #2c3e50;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            font-weight: 700;
-            font-size: 1.4rem;
-            position: relative;
-        }
-
-        .attendance-spreadsheet-section h3::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            width: 60px;
-            height: 3px;
-            border-radius: 2px;
-        }
-
-        .spreadsheet-controls {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 25px;
-            padding: 25px;
-            background: rgba(102, 126, 234, 0.05);
-            border-radius: 12px;
-            border: 1px solid rgba(102, 126, 234, 0.1);
-            backdrop-filter: blur(10px);
-        }
-
-        .control-section {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            border: 1px solid rgba(102, 126, 234, 0.1);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            transition: all 0.3s ease;
-        }
-
-        .control-section:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-        }
-
-        .control-section h4 {
-            color: #4a5568;
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 15px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid rgba(102, 126, 234, 0.2);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .search-section {
-            grid-column: 1 / -1;
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            transition: all 0.3s ease;
-        }
-
-
-        .search-input-container {
-            position: relative;
-        }
-
-        .search-input-container input {
-            width: 100%;
-            padding: 12px 40px 12px 14px;
-            color: #2c3e50;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 8px;
-        }
-
-        .search-input-container input:focus {
-            border-color: rgba(255, 255, 255, 0.8);
-            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
-        }
-
-        .search-icon {
-            position: absolute;
-            right: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #f5576c;
-            font-size: 16px;
-            pointer-events: none;
-        }
-
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .control-group label {
-            font-weight: 600;
-            color: #4a5568;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .control-group select, .control-group input {
-            padding: 10px 14px;
-            border: 2px solid rgba(102, 126, 234, 0.2);
-            border-radius: 8px;
-            font-size: 14px;
-            background: white;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            transition: all 0.3s ease;
-        }
-
-        .control-group select:focus, .control-group input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        .spreadsheet-container {
-            overflow-x: auto;
-            overflow-y: hidden;
-            margin-top: 20px;
-            width: 1170px;
-            margin-left: auto;
-            margin-right: auto;
-            scrollbar-width: thin;
-            scrollbar-color: #5c835c #a5b198;
-            border-radius: 8px;
-            border: 1px solid #a5b198;
-            background: rgba(165, 177, 152, 0.05);
-            padding: 15px;
-            box-sizing: border-box;
-        }
-
-        .spreadsheet-container::-webkit-scrollbar {
-            height: 12px;
-        }
-
-        .spreadsheet-container::-webkit-scrollbar-track {
-            background: #a5b198;
-            border-radius: 6px;
-            margin: 0 10px;
-        }
-
-        .spreadsheet-container::-webkit-scrollbar-thumb {
-            background: #5c835c;
-            border-radius: 6px;
-            border: 2px solid #a5b198;
-        }
-
-        .spreadsheet-container::-webkit-scrollbar-thumb:hover {
-            background: #4f5449;
-        }
-
-        .spreadsheet-container::-webkit-scrollbar-corner {
-            background: transparent;
-        }
-
-        #attendanceSpreadsheet {
-            min-width: 800px;
-            border-collapse: collapse;
-            font-size: 14px;
-            table-layout: fixed;
-            white-space: nowrap;
-        }
-
-        #attendanceSpreadsheet th {
-            background: #677e49;
-            color: white;
-            padding: 12px 8px;
-            text-align: center;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        /* Critical fix: all td are relative for absolute children */
-        #attendanceSpreadsheet td {
-            position: relative;
-            text-align: center;
-            border: 1px solid #e9ecef;
-            vertical-align: middle;
-        }
-
-        /* Date cells (not student info): remove padding so badge centers perfectly */
-        #attendanceSpreadsheet tbody td:not(.student-info-cell) {
-            padding: 0;
-        }
-
-        #attendanceSpreadsheet tbody tr {
-            height: 60px;
-        }
-
-        #attendanceSpreadsheet tbody tr:nth-child(even) {
-            background-color: #f8f9fa;
-        }
-
-        #attendanceSpreadsheet tbody tr:hover {
-            background-color: #e3f2fd;
-            transition: background-color 0.2s ease;
-        }
-
-        .student-info-cell {
-            text-align: left;
-            padding-left: 15px !important;
-            font-weight: 600;
-            color: #2c3e50;
-            width: 260px;
-            min-width: 260px;
-        }
-
-        .student-info-cell .student-name {
-            font-size: 15px;
-            margin-bottom: 3px;
-            white-space: nowrap;
-        }
-
-        .student-info-cell .student-id,
-        .student-info-cell .student-section {
-            font-size: 12px;
-            color: #666;
-            font-weight: 400;
-        }
-
-        .status-cell {
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            margin: 0;
-        }
-
-        .status-cell:hover {
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-        }
-
-        .status-cell.present { background-color: #28a745; color: white; }
-        .status-cell.late { background-color: #ffc107; color: #333; }
-        .status-cell.excused { background-color: #17a2b8; color: white; }
-        .status-cell.absent { background-color: #dc3545; color: white; }
-
-        .status-legend {
-            display: flex;
-            gap: 25px;
-            margin-top: 30px;
-            flex-wrap: wrap;
-            justify-content: center;
-            padding: 15px 20px;
-            background: rgba(248, 249, 250, 0.8);
-            border-radius: 12px;
-            border: 1px solid rgba(102, 126, 234, 0.1);
-        }
-
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 14px;
-            color: #4a5568;
-            font-weight: 500;
-            padding: 8px 12px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        }
-
-        .legend-color {
-            width: 18px;
-            height: 18px;
-            border-radius: 4px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-        }
-
-        .legend-color.present { background-color: #28a745; }
-        .legend-color.late { background-color: #ffc107; }
-        .legend-color.excused { background-color: #17a2b8; }
-        .legend-color.absent { background-color: #dc3545; }
-
-        /* Responsive adjustments */
-        @media (max-width: 768px) {
-            .spreadsheet-controls {
-                grid-template-columns: 1fr;
-                padding: 20px;
-            }
-            .search-section { order: -1; }
-            #attendanceSpreadsheet th,
-            #attendanceSpreadsheet td {
-                padding: 8px 4px;
-                font-size: 13px;
-            }
-            #attendanceSpreadsheet tbody td:not(.student-info-cell) {
-                padding: 0;
-            }
-            .status-cell {
-                width: 28px;
-                height: 28px;
-                font-size: 11px;
-            }
-            .student-info-cell {
-                width: 200px;
-                min-width: 200px;
-            }
-        }
-    </style>
-    <style>
-        /* ====================== ANALYTICS & OTHER STYLES ====================== */
-        .analytics-section {
-            margin: 30px 0;
-        }
-
-        .analytics-section h3 {
-            color: #4f5449;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 3px solid #5c835c;
-            font-weight: 700;
-            font-size: 1.4rem;
-        }
-
-        .analytics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .analytics-card {
-            background: white;
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-            border: 1px solid rgba(79, 84, 73, 0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .analytics-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
-        }
-
-        .analytics-card h4 {
-            color: #4f5449;
-            margin-bottom: 20px;
-            font-size: 16px;
-            font-weight: 600;
-            text-align: center;
-        }
-
-        .attendance-rate {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
-        }
-
-        .rate-circle {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            background: #5c835c;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 8px 25px rgba(92, 131, 92, 0.3);
-            position: relative;
-        }
-
-        .rate-circle::before {
-            content: '';
-            position: absolute;
-            top: -5px;
-            left: -5px;
-            right: -5px;
-            bottom: -5px;
-            border-radius: 50%;
-            background: #5c835c;
-            z-index: -1;
-            opacity: 0.3;
-        }
-
-        .rate-number {
-            font-size: 28px;
-            font-weight: bold;
-            color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-
-        .rate-details {
-            display: flex;
-            justify-content: space-around;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #e9ecef;
-        }
-
-        .rate-item {
-            text-align: center;
-        }
-
-        .rate-label {
-            display: block;
-            font-size: 12px;
-            color: #738773;
-            margin-bottom: 5px;
-            font-weight: 500;
-        }
-
-        .rate-value {
-            font-size: 16px;
-            font-weight: bold;
-            color: #4f5449;
-        }
-
-        .program-attendance {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .program-bar {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 8px 0;
-        }
-
-        .program-name {
-            width: 50px;
-            font-weight: bold;
-            color: #4f5449;
-            font-size: 14px;
-        }
-
-        .progress-bar {
-            flex: 1;
-            height: 10px;
-            background: #a5b198;
-            border-radius: 5px;
-            overflow: hidden;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: #739b70;
-            border-radius: 5px;
-            transition: width 0.3s ease;
-            position: relative;
-        }
-
-        .progress-fill::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(90deg, rgba(255,255,255,0.2), transparent);
-            border-radius: 5px;
-        }
-
-        .progress-text {
-            width: 35px;
-            text-align: right;
-            font-size: 13px;
-            color: #738773;
-            font-weight: 600;
-        }
-
-        .trend-chart {
-            display: flex;
-            align-items: end;
-            justify-content: space-between;
-            height: 120px;
-            margin-bottom: 15px;
-            padding: 20px;
-            border-radius: 8px;
-        }
-
-        .trend-bar {
-            width: 35px;
-            background: #5c835c;
-            border-radius: 4px 4px 0 0;
-            min-height: 20px;
-            position: relative;
-            box-shadow: 0 2px 8px rgba(92, 131, 92, 0.3);
-        }
-
-        .trend-bar::after {
-            content: '';
-            position: absolute;
-            top: -3px;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: rgba(255,255,255,0.3);
-            border-radius: 4px 4px 0 0;
-        }
-
-        .trend-labels {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            color: #738773;
-            padding: 0 20px;
-        }
-
-        .records-section {
-            margin-top: 40px;
-        }
-
-        .records-section h3 {
-            color: #4f5449;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 3px solid #5c835c;
-            font-weight: 700;
-            font-size: 1.4rem;
-        }
-
-        .table-controls {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-
-        .search-box {
-            position: relative;
-            flex: 1;
-            max-width: 300px;
-        }
-
-        .search-box i {
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #738773;
-            font-size: 14px;
-        }
-
-        .search-box input {
-            width: 100%;
-            padding: 10px 40px;
-            border: 2px solid #a5b198;
-            border-radius: 8px;
-            font-size: 14px;
-            background: white;
-            transition: border-color 0.3s ease;
-        }
-
-        .search-box input:focus {
-            outline: none;
-            border-color: #5c835c;
-            box-shadow: 0 0 0 3px rgba(92, 131, 92, 0.1);
-        }
-
-        .filter-controls {
-            display: flex;
-            gap: 10px;
-        }
-
-        .filter-controls select {
-            padding: 10px 14px;
-            border: 2px solid #a5b198;
-            border-radius: 8px;
-            font-size: 14px;
-            background: white;
-            cursor: pointer;
-            transition: border-color 0.3s ease;
-        }
-
-        .filter-controls select:focus {
-            outline: none;
-            border-color: #5c835c;
-            box-shadow: 0 0 0 3px rgba(92, 131, 92, 0.1);
-        }
-
-        .table-container {
-            overflow-x: auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-            border: 1px solid rgba(79, 84, 73, 0.1);
-        }
-
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
-
-        .data-table th,
-        .data-table td {
-            padding: 15px 20px;
-            text-align: left;
-            border-bottom: 1px solid #e9ecef;
-        }
-
-        .data-table th {
-            background: #5c835c;
-            color: white;
-            font-weight: 600;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-
-        .data-table tbody tr:hover {
-            background: rgba(165, 177, 152, 0.1);
-            transition: background-color 0.2s ease;
-        }
-
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .status-badge.active {
-            background: #739b70;
-            color: white;
-            box-shadow: 0 2px 8px rgba(115, 155, 112, 0.3);
-        }
-
-        .status-badge.inactive {
-            background: #738773;
-            color: white;
-            box-shadow: 0 2px 8px rgba(115, 135, 115, 0.3);
-        }
-
-        .pagination {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-top: 25px;
-            gap: 8px;
-        }
-
-        .page-btn {
-            padding: 10px 14px;
-            border: 2px solid #a5b198;
-            background: white;
-            color: #738773;
-            cursor: pointer;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            min-width: 40px;
-            text-align: center;
-        }
-
-        .page-btn:hover:not(:disabled) {
-            background: #5c835c;
-            color: white;
-            border-color: #5c835c;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(92, 131, 92, 0.3);
-        }
-
-        .page-btn.active {
-            background: #5c835c;
-            color: white;
-            border-color: #5c835c;
-            box-shadow: 0 2px 8px rgba(92, 131, 92, 0.3);
-        }
-
-        .page-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .detailed-analytics {
-            margin-top: 40px;
-        }
-
-        .detailed-analytics h3 {
-            color: #4f5449;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 3px solid #5c835c;
-            font-weight: 700;
-            font-size: 1.4rem;
-        }
-
-        .analytics-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 25px;
-        }
-
-        .analytics-col {
-            background: white;
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-            border: 1px solid rgba(79, 84, 73, 0.1);
-            transition: transform 0.3s ease;
-        }
-
-        .analytics-col:hover {
-            transform: translateY(-3px);
-        }
-
-        .analytics-col h4 {
-            color: #4f5449;
-            margin-bottom: 20px;
-            font-size: 16px;
-            font-weight: 600;
-            text-align: center;
-            position: relative;
-            padding-bottom: 10px;
-        }
-
-        .analytics-col h4::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 40px;
-            height: 2px;
-            background: #5c835c;
-            border-radius: 1px;
-        }
-
-        .distribution-chart {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .distribution-bar {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .bar-fill {
-            height: 24px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: bold;
-            color: white;
-            min-width: 50px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-
-        .bar-fill.excellent { background: #739b70; }
-        .bar-fill.good { background: #5c835c; }
-        .bar-fill.average { background: #738773; }
-        .bar-fill.poor { background: #4f5449; }
-
-        .distribution-bar span {
-            font-size: 13px;
-            color: #738773;
-            font-weight: 500;
-            flex: 1;
-        }
-
-        .top-performers {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .performer-item {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(79, 84, 73, 0.1);
-        }
-
-        .rank {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: #5c835c;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 14px;
-            box-shadow: 0 2px 8px rgba(92, 131, 92, 0.3);
-        }
-
-        .performer-info {
-            flex: 1;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .performer-name {
-            font-weight: 600;
-            color: #4f5449;
-            font-size: 14px;
-        }
-
-        .performer-rate {
-            font-weight: bold;
-            color: #5c835c;
-            font-size: 16px;
-            background: rgba(92, 131, 92, 0.1);
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        .insights-list {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .insight-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(79, 84, 73, 0.1);
-            transition: transform 0.2s ease;
-        }
-
-        .insight-item:hover {
-            transform: translateX(5px);
-            background: rgba(165, 177, 152, 0.8);
-        }
-
-        .insight-item i {
-            color: #5c835c;
-            font-size: 16px;
-            width: 20px;
-        }
-
-        .insight-text {
-            font-size: 13px;
-            color: #738773;
-            line-height: 1.4;
-        }
-
-        .insight-text strong {
-            color: #4f5449;
+            background-color: #f5f7f9;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -995,9 +105,15 @@
                 <div class="search-section">
                     <div class="control-group">
                         <label style="color: black;">Search Student</label>
-                        <div class="search-input-container">
-                            <input type="text" id="classStudentSearch" placeholder="Enter name or ID..." onkeyup="searchStudentsInClass()">
-                            <i class="fas fa-search search-icon"></i>
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <div class="search-input-container" style="flex: 1;">
+                                <input type="text" id="classStudentSearch" placeholder="Enter name or ID..." onkeyup="searchStudentsInClass()">
+                                <i class="fas fa-search search-icon"></i>
+                            </div>
+                            <button id="downloadCsvBtn" style="padding: 12px 20px; background: #238e5a; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; transition: all 0.3s ease;">
+                                <i class="fas fa-download"></i>
+                                Download CSV
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1084,82 +200,70 @@
 
             <!-- ATTENDANCE ANALYTICS SECTION -->
             <div class="analytics-section">
-                <h3>Attendance Analytics</h3>
+                <h3>Section Attendance Analytics</h3>
+                
+                <!-- Date Range and Section Filters -->
+                <div class="attendance-spreadsheet-section" style="margin-bottom: 30px;">
+                    <div class="spreadsheet-controls">
+
+                        <div class="control-section">
+                            <h4>From Date</h4>
+                            <input type="date" id="fromDateFilter" onchange="updateSectionAnalytics()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div class="control-section">
+                            <h4>To Date</h4>
+                            <input type="date" id="toDateFilter" onchange="updateSectionAnalytics()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analytics Cards -->
                 <div class="analytics-grid">
                     <div class="analytics-card">
-                        <h4>Overall Attendance Rate</h4>
+                        <h4>Present</h4>
                         <div class="attendance-rate">
-                            <div class="rate-circle">
-                                <span class="rate-number">87.3%</span>
+                            <div class="rate-circle" style="background: linear-gradient(135deg, #2eb774 0%, #238e5a 100%);">
+                                <span class="rate-number" id="presentCount">0</span>
                             </div>
                         </div>
-                        <div class="rate-details">
-                            <div class="rate-item">
-                                <span class="rate-label">Present:</span>
-                                <span class="rate-value">89.2%</span>
-                            </div>
-                            <div class="rate-item">
-                                <span class="rate-label">Late:</span>
-                                <span class="rate-value">5.4%</span>    
-                            </div>
-                            <div class="rate-item">
-                                <span class="rate-label">Absent:</span>
-                                <span class="rate-value">5.4%</span>
-                            </div>
+                        <div class="rate-details" style="text-align: center; margin-top: 10px;">
+                            <span style="color: #2eb774; font-size: 12px; font-weight: 600;">Students Present</span>
                         </div>
                     </div>
 
                     <div class="analytics-card">
-                        <h4>Program-wise Attendance</h4>
-                        <div class="program-attendance">
-                            <div class="program-bar">
-                                <div class="program-name">BSCS</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: 92%;"></div>
-                                </div>
-                                <div class="progress-text">92%</div>
+                        <h4>Late</h4>
+                        <div class="attendance-rate">
+                            <div class="rate-circle" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                                <span class="rate-number" id="lateCount">0</span>
                             </div>
-                            <div class="program-bar">
-                                <div class="program-name">BSIT</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: 88%;"></div>
-                                </div>
-                                <div class="progress-text">88%</div>
-                            </div>
-                            <div class="program-bar">
-                                <div class="program-name">ACT</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: 85%;"></div>
-                                </div>
-                                <div class="progress-text">85%</div>
-                            </div>
-                            <div class="program-bar">
-                                <div class="program-name">BSEMC</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: 90%;"></div>
-                                </div>
-                                <div class="progress-text">90%</div>
-                            </div>
+                        </div>
+                        <div class="rate-details" style="text-align: center; margin-top: 10px;">
+                            <span style="color: #f59e0b; font-size: 12px; font-weight: 600;">Students Late</span>
                         </div>
                     </div>
 
                     <div class="analytics-card">
-                        <h4>Monthly Trends</h4>
-                        <div class="trend-chart">
-                            <div class="trend-bar" style="height: 60%;"></div>
-                            <div class="trend-bar" style="height: 75%;"></div>
-                            <div class="trend-bar" style="height: 85%;"></div>
-                            <div class="trend-bar" style="height: 70%;"></div>
-                            <div class="trend-bar" style="height: 90%;"></div>
-                            <div class="trend-bar" style="height: 80%;"></div>
+                        <h4>Excused</h4>
+                        <div class="attendance-rate">
+                            <div class="rate-circle" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">
+                                <span class="rate-number" id="excusedCount">0</span>
+                            </div>
                         </div>
-                        <div class="trend-labels">
-                            <span>Sep</span>
-                            <span>Oct</span>
-                            <span>Nov</span>
-                            <span>Dec</span>
-                            <span>Jan</span>
-                            <span>Feb</span>
+                        <div class="rate-details" style="text-align: center; margin-top: 10px;">
+                            <span style="color: #3b82f6; font-size: 12px; font-weight: 600;">Students Excused</span>
+                        </div>
+                    </div>
+
+                    <div class="analytics-card">
+                        <h4>Absent</h4>
+                        <div class="attendance-rate">
+                            <div class="rate-circle" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">
+                                <span class="rate-number" id="absentCount">0</span>
+                            </div>
+                        </div>
+                        <div class="rate-details" style="text-align: center; margin-top: 10px;">
+                            <span style="color: #ef4444; font-size: 12px; font-weight: 600;">Students Absent</span>
                         </div>
                     </div>
                 </div>
@@ -1396,6 +500,93 @@
                 const text = row.textContent.toLowerCase();
                 row.style.display = text.includes(input) ? "" : "none";
             });
+        }
+
+        function downloadAttendanceCSV() {
+            const table = document.getElementById("attendanceSpreadsheet");
+            let csv = [];
+            const rows = table.querySelectorAll("tr");
+            
+            rows.forEach(row => {
+                if (row.style.display !== "none") {
+                    const cells = row.querySelectorAll("td, th");
+                    const rowData = Array.from(cells).map(cell => {
+                        const text = cell.textContent.trim();
+                        return '"' + text.replace(/"/g, '""') + '"';
+                    });
+                    csv.push(rowData.join(","));
+                }
+            });
+            
+            const csvContent = "data:text/csv;charset=utf-8," + csv.join("\n");
+            const link = document.createElement("a");
+            link.setAttribute("href", encodeURI(csvContent));
+            link.setAttribute("download", "attendance_" + new Date().toISOString().split('T')[0] + ".csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        document.getElementById("downloadCsvBtn").addEventListener("click", downloadAttendanceCSV);
+
+        // Section Analytics Update Function
+        function updateSectionAnalytics() {
+            const section = document.getElementById("sectionFilterAnalytics").value;
+            const fromDate = document.getElementById("fromDateFilter").value;
+            const toDate = document.getElementById("toDateFilter").value;
+            
+            // Reset counts
+            let presentCount = 0;
+            let lateCount = 0;
+            let excusedCount = 0;
+            let absentCount = 0;
+            
+            if (!section || !fromDate || !toDate) {
+                // Show message if filters not selected
+                document.getElementById("presentCount").textContent = "0";
+                document.getElementById("lateCount").textContent = "0";
+                document.getElementById("excusedCount").textContent = "0";
+                document.getElementById("absentCount").textContent = "0";
+                return;
+            }
+            
+            // Get attendance data from the spreadsheet
+            const table = document.getElementById("attendanceSpreadsheet");
+            if (!table) return;
+            
+            const rows = table.querySelectorAll("tbody tr");
+            const dateColumns = Array.from(table.querySelectorAll("thead th")).slice(1); // Skip student column
+            
+            rows.forEach(row => {
+                const cells = Array.from(row.querySelectorAll("td"));
+                if (cells.length === 0) return;
+                
+                // Check attendance status in date range
+                dateColumns.forEach((dateHeader, index) => {
+                    const dateText = dateHeader.textContent.trim();
+                    const cellDate = new Date(dateText).toISOString().split('T')[0];
+                    
+                    if (cellDate >= fromDate && cellDate <= toDate && cells[index + 1]) {
+                        const status = cells[index + 1].textContent.trim().toLowerCase();
+                        
+                        if (status.includes('present') || status === 'p') {
+                            presentCount++;
+                        } else if (status.includes('late') || status === 'l') {
+                            lateCount++;
+                        } else if (status.includes('excused') || status === 'e') {
+                            excusedCount++;
+                        } else if (status.includes('absent') || status === 'a') {
+                            absentCount++;
+                        }
+                    }
+                });
+            });
+            
+            // Update the display
+            document.getElementById("presentCount").textContent = presentCount;
+            document.getElementById("lateCount").textContent = lateCount;
+            document.getElementById("excusedCount").textContent = excusedCount;
+            document.getElementById("absentCount").textContent = absentCount;
         }
     </script>
 </body>

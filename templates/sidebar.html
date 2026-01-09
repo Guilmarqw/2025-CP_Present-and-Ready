@@ -58,6 +58,8 @@
         .nav-items a i { margin-right: 10px; font-size: 18px; width: 24px; text-align: center; }
         .nav-items .timer-item a { background-color: #445f20; color: white; font-weight: 600; }
         .nav-items .timer-item a:hover { background-color: #2c3d16; }
+        .nav-items .student-records-item a { background-color: #6f815c; color: white; font-weight: 600; }
+        .nav-items .student-records-item a:hover { background-color: #47523b; }
         .dropdown .dropdown-btn { display: flex; align-items: center; padding: 12px 15px; color: black; text-decoration: none; border-radius: 5px; cursor: pointer; transition: all 0.3s ease; }
         .dropdown .dropdown-btn:hover { background-color: rgba(0,0,0,0.05); }
         .dropdown .dropdown-btn.active { background-color: #6f815c; color: white; font-weight: 600; }
@@ -127,7 +129,7 @@
             {% endif %}
             
             <li><a href="/StudentDB"><i class="fas fa-user-graduate"></i> <span>Students List</span></a></li>
-            <li><a href="/analytics"><i class="fas fa-user-graduate"></i> <span>Student Records</span></a></li>
+            <li class="student-records-item"><a href="/analytics"><i class="fas fa-user-graduate"></i> <span>Student Records</span></a></li>
             <li><a href="/settings"><i class="fas fa-cog"></i> <span>Settings</span></a></li>
             <li><a href="/logout" id="signout-btn"><i class="fas fa-sign-out-alt"></i> <span>Sign out</span></a></li>
         </ul>
