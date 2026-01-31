@@ -17,7 +17,7 @@
             margin-left: 250px;
             flex: 1;
             padding: 30px;
-            background-color: #f5f7f9;
+            background-color: none;
             overflow-y: auto;
         }
     </style>
@@ -31,7 +31,6 @@
             <p>Comprehensive overview of student records and attendance data</p>
         </div>
 
-        <div class="dashboard-content">
 
             <!-- ATTENDANCE SPREADSHEET -->
             <div class="attendance-spreadsheet-section">
@@ -68,7 +67,7 @@
                     </div>
 
                     <div class="control-section">
-                        <h4>Sections</h4>
+                        <h4>Year and Section</h4>
                         <div class="control-group">
                             <label for="sectionFilter">Select Section</label>
                             <select id="sectionFilter" onchange="loadAttendanceData()">
@@ -465,7 +464,6 @@
                 </div>
             </div>
 
-        </div>
     </main>
 
     <script>

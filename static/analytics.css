@@ -1,5 +1,5 @@
 .dashboard-content{
-    background: white;
+    background: transparent;
     border-radius: 8px;
     padding: 0;
 }        .attendance-spreadsheet-section {
@@ -10,6 +10,7 @@
             border: 1px solid rgba(102, 126, 234, 0.1);
             position: relative;
             overflow: hidden;
+            margin-bottom: 30px;
         }
 
         .attendance-spreadsheet-section::before {
@@ -17,12 +18,12 @@
             position: absolute;
             top: 0; left: 0; right: 0;
             height: 4px;
-            background: #677e49;
+            background: #5c835c;
             border-radius: 16px 16px 0 0;
         }
 
         .attendance-spreadsheet-section h3 {
-            margin-bottom: 25px;
+            margin-bottom: 5px;
             padding-bottom: 20px;
             background: #2c3e50;
             -webkit-background-clip: text;
@@ -49,9 +50,9 @@
             gap: 20px;
             margin-bottom: 25px;
             padding: 25px;
-            background: rgba(102, 126, 234, 0.05);
+            background: #238e5a27;
             border-radius: 12px;
-            border: 1px solid rgba(102, 126, 234, 0.1);
+            border: 1px solid #238e5a83;
             backdrop-filter: blur(10px);
         }
 
@@ -59,7 +60,7 @@
             background: white;
             padding: 20px;
             border-radius: 10px;
-            border: 1px solid rgba(102, 126, 234, 0.1);
+            border: 1px solid #238e5a82;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
             transition: all 0.3s ease;
         }
@@ -75,7 +76,7 @@
             font-weight: 600;
             margin-bottom: 15px;
             padding-bottom: 8px;
-            border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+            border-bottom: 2px solid #238e5aa9;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
@@ -133,7 +134,7 @@
 
         .control-group select, .control-group input {
             padding: 10px 14px;
-            border: 2px solid rgba(102, 126, 234, 0.2);
+            border: 2px solid #238e5a44;
             border-radius: 8px;
             font-size: 14px;
             background: white;
@@ -196,7 +197,7 @@
         }
 
         #attendanceSpreadsheet th {
-            background: #677e49;
+            background: #5c835c;
             color: white;
             padding: 12px 8px;
             text-align: center;
@@ -341,18 +342,22 @@
                 min-width: 200px;
             }
         }
-    </style>
-    <style>
-        /* ====================== ANALYTICS & OTHER STYLES ====================== */
+
         .analytics-section {
-            margin: 30px 0;
+            padding: 30px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(102, 126, 234, 0.1);
+            position: relative;
+            margin-bottom: 30px;
+            overflow: hidden;
         }
 
         .analytics-section h3 {
-            color: #4f5449;
-            margin-bottom: 25px;
+            color: #2c3e50;
+            margin-bottom: 5px;
             padding-bottom: 15px;
-            border-bottom: 3px solid #5c835c;
             font-weight: 700;
             font-size: 1.4rem;
         }
@@ -545,14 +550,20 @@
         }
 
         .records-section {
-            margin-top: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(102, 126, 234, 0.1);
+            position: relative;
+            margin-bottom: 30px;
+            overflow: hidden;
         }
 
         .records-section h3 {
-            color: #4f5449;
-            margin-bottom: 25px;
+            color: #2c3e50;
+            margin-bottom:5px;
             padding-bottom: 15px;
-            border-bottom: 3px solid #5c835c;
             font-weight: 700;
             font-size: 1.4rem;
         }
@@ -707,6 +718,8 @@
             box-shadow: 0 4px 12px rgba(92, 131, 92, 0.3);
         }
 
+        .nav-items .student-records-item a { background-color: #6f815c; color: white; font-weight: 600; }
+        .nav-items .student-records-item a:hover { background-color: #47523b; color: white; }
         .page-btn.active {
             background: #5c835c;
             color: white;
@@ -719,13 +732,18 @@
             cursor: not-allowed;
         }
 
-        .detailed-analytics {
-            margin-top: 40px;
+        .detailed-analytics {            padding: 30px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(102, 126, 234, 0.1);
+            position: relative;
+            overflow: hidden;
         }
 
         .detailed-analytics h3 {
-            color: #4f5449;
-            margin-bottom: 25px;
+            color: #2c3e50;
+            margin-bottom: 5px;
             padding-bottom: 15px;
             border-bottom: 3px solid #5c835c;
             font-weight: 700;
