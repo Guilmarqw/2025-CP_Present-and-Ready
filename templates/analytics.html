@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
       <link rel="stylesheet" href="../static/analytics.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='analytics.css') }}">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
     <style>
         main.main-content {
@@ -39,20 +40,6 @@
                 <div class="spreadsheet-controls">
                     <!-- Filters -->
                     <div class="control-section">
-                        <h4>Curriculum</h4>
-                        <div class="control-group">
-                            <label for="curriculumFilter">Select Curriculum</label>
-                            <select id="curriculumFilter" onchange="loadAttendanceData()">
-                                <option value="">All Curricula</option>
-                                <option value="BSCS">Bachelor of Science in Computer Science</option>
-                                <option value="BSIT">Bachelor of Science in Information Technology</option>
-                                <option value="ACT">Associate in Computer Technology</option>
-                                <option value="BSEMC">Bachelor of Science in Entertainment and Multimedia Computing</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="control-section">
                         <h4>Programs</h4>
                         <div class="control-group">
                             <label for="programFilter">Select Program</label>
@@ -67,15 +54,15 @@
                     </div>
 
                     <div class="control-section">
-                        <h4>Year and Section</h4>
+                        <h4>Academic Year</h4>
                         <div class="control-group">
-                            <label for="sectionFilter">Select Section</label>
-                            <select id="sectionFilter" onchange="loadAttendanceData()">
-                                <option value="">All Sections</option>
-                                <option value="1A">1A</option><option value="1B">1B</option><option value="1C">1C</option>
-                                <option value="2A">2A</option><option value="2B">2B</option><option value="2C">2C</option>
-                                <option value="3A">3A</option><option value="3B">3B</option><option value="3C">3C</option>
-                                <option value="4A">4A</option><option value="4B">4B</option><option value="4C">4C</option>
+                            <label for="academicYearFilter">Select Academic Year</label>
+                            <select id="academicYearFilter" onchange="loadAttendanceData()">
+                                <option value="">All Academic Years</option>
+                                <option value="2022-2023">2022-2023</option>
+                                <option value="2023-2024">2023-2024</option>
+                                <option value="2024-2025">2024-2025</option>
+                                <option value="2025-2026">2025-2026</option>
                             </select>
                         </div>
                     </div>
@@ -89,6 +76,20 @@
                                 <option value="1st">1st Semester</option>
                                 <option value="2nd">2nd Semester</option>
                                 <option value="summer">Summer</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h4>Year and Section</h4>
+                        <div class="control-group">
+                            <label for="sectionFilter">Select Section</label>
+                            <select id="sectionFilter" onchange="loadAttendanceData()">
+                                <option value="">All Sections</option>
+                                <option value="1A">1A</option><option value="1B">1B</option><option value="1C">1C</option>
+                                <option value="2A">2A</option><option value="2B">2B</option><option value="2C">2C</option>
+                                <option value="3A">3A</option><option value="3B">3B</option><option value="3C">3C</option>
+                                <option value="4A">4A</option><option value="4B">4B</option><option value="4C">4C</option>
                             </select>
                         </div>
                     </div>
@@ -214,20 +215,7 @@
             <div class="analytics-section">
                 <h3>Section Attendance Analytics</h3>
                 
-                <!-- Date Range and Section Filters -->
-                <div class="attendance-spreadsheet-section" style="margin-bottom: 30px;">
-                    <div class="spreadsheet-controls">
 
-                        <div class="control-section">
-                            <h4>From Date</h4>
-                            <input type="date" id="fromDateFilter" onchange="updateSectionAnalytics()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
-                        </div>
-                        <div class="control-section">
-                            <h4>To Date</h4>
-                            <input type="date" id="toDateFilter" onchange="updateSectionAnalytics()" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Analytics Cards -->
                 <div class="analytics-grid">
@@ -515,27 +503,66 @@
 
         function downloadAttendanceCSV() {
             const table = document.getElementById("attendanceSpreadsheet");
-            let csv = [];
             const rows = table.querySelectorAll("tr");
+            const data = [];
+            
+            // Color mapping for status
+            const colorMap = {
+                "present": { bg: "C6EFCE", text: "006100" },    // Green
+                "late": { bg: "FFEB9C", text: "9C6500" },       // Yellow
+                "excused": { bg: "BDD7EE", text: "002060" },    // Blue
+                "absent": { bg: "F4CCCC", text: "9C0006" }      // Red
+            };
             
             rows.forEach(row => {
                 if (row.style.display !== "none") {
+                    const rowData = [];
                     const cells = row.querySelectorAll("td, th");
-                    const rowData = Array.from(cells).map(cell => {
-                        const text = cell.textContent.trim();
-                        return '"' + text.replace(/"/g, '""') + '"';
+                    cells.forEach(cell => {
+                        rowData.push(cell.textContent.trim());
                     });
-                    csv.push(rowData.join(","));
+                    data.push(rowData);
                 }
             });
             
-            const csvContent = "data:text/csv;charset=utf-8," + csv.join("\n");
-            const link = document.createElement("a");
-            link.setAttribute("href", encodeURI(csvContent));
-            link.setAttribute("download", "attendance_" + new Date().toISOString().split('T')[0] + ".csv");
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // Create workbook and worksheet
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+            
+            // Apply colors to status cells
+            const rowOffset = 1; // Header is row 1
+            table.querySelectorAll("tbody tr").forEach((row, rowIdx) => {
+                if (row.style.display !== "none") {
+                    const cells = row.querySelectorAll("td");
+                    cells.forEach((cell, cellIdx) => {
+                        const statusCell = cell.querySelector(".status-cell");
+                        if (statusCell) {
+                            let color = colorMap["present"];
+                            
+                            if (statusCell.classList.contains("present")) {
+                                color = colorMap["present"];
+                            } else if (statusCell.classList.contains("late")) {
+                                color = colorMap["late"];
+                            } else if (statusCell.classList.contains("excused")) {
+                                color = colorMap["excused"];
+                            } else if (statusCell.classList.contains("absent")) {
+                                color = colorMap["absent"];
+                            }
+                            
+                            const cellRef = XLSX.utils.encode_col(cellIdx + 1) + (rowIdx + rowOffset + 1);
+                            if (!ws[cellRef]) ws[cellRef] = {};
+                            ws[cellRef].fill = { patternType: "solid", fgColor: { rgb: color.bg } };
+                            ws[cellRef].font = { bold: true, color: { rgb: color.text } };
+                        }
+                    });
+                }
+            });
+            
+            // Set column widths
+            ws["!cols"] = [{ wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+            
+            XLSX.writeFile(wb, "attendance_" + new Date().toISOString().split('T')[0] + ".xlsx");
         }
 
         document.getElementById("downloadCsvBtn").addEventListener("click", downloadAttendanceCSV);
