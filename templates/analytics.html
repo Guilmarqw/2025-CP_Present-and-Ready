@@ -20,25 +20,6 @@
             background-color: none;
             overflow-y: auto;
         }
-
-        .regularity-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-            text-align: center;
-        }
-
-        .regularity-badge.regular {
-            background-color: #d1e7dd;
-            color: #0f5132;
-        }
-
-        .regularity-badge.irregular {
-            background-color: #f8d7da;
-            color: #842029;
-        }
     </style>
 </head>
 <body>
@@ -234,7 +215,6 @@
                             <th>Email</th>
                             <th>Status</th>
                             <th>Attendance Rate</th>
-                            <th>Regularity</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -676,7 +656,7 @@
             const tbody = document.querySelector('#studentsTable tbody');
             
             if (!students || students.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #666;">No student records found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">No student records found</td></tr>';
                 return;
             }
             
@@ -684,10 +664,6 @@
             students.forEach(student => {
                 const statusClass = student.student_status === 'active' ? 'active' : 'inactive';
                 const statusText = student.student_status === 'active' ? 'Active' : 'Inactive';
-                
-                const attendanceRate = parseFloat(student.attendance_rate) || 0;
-                const regularity = attendanceRate >= 75 ? 'regular' : 'irregular';
-                const regularityText = regularity === 'regular' ? 'Regular' : 'Irregular';
                 
                 html += `<tr>
                     <td>${student.student_id}</td>
@@ -697,7 +673,6 @@
                     <td>${student.email || 'N/A'}</td>
                     <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                     <td>${student.attendance_rate || '0'}%</td>
-                    <td><span class="regularity-badge ${regularity}">${regularityText}</span></td>
                 </tr>`;
             });
             
@@ -706,7 +681,7 @@
 
         function clearStudentRecordsTable() {
             const tbody = document.querySelector('#studentsTable tbody');
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #666;">Select a section to view student records</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">Select a section to view student records</td></tr>';
             
             const pagination = document.getElementById('studentRecordsPagination');
             pagination.innerHTML = '<button class="page-btn" disabled>&laquo;</button><button class="page-btn active">1</button><button class="page-btn">&raquo;</button>';

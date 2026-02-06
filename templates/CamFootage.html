@@ -2354,7 +2354,7 @@ async function loadClassSettings() {
 function startFaceScan() {
     fetch('/api/start_face_scan', {method: 'POST'})
         .then(response => response.json())
-        .then data => {
+        .then(data => {
             if (data.success) {
                 showScanTimer();
             }
@@ -2398,11 +2398,6 @@ function updateStudentList(students) {
                 statusText = 'Absent';
         }
         
-        // Calculate regularity based on attendance rate
-        const attendanceRate = parseFloat(student.attendance_rate) || 0;
-        const regularity = attendanceRate >= 75 ? 'regular' : 'irregular';
-        const regularityText = regularity === 'regular' ? 'Regular' : 'Irregular';
-        
         // Handle both regular and temporary students
         let avatarSrc = '/static/images/default-avatar.jpg';
         let displayName = student.name;
@@ -2425,10 +2420,7 @@ function updateStudentList(students) {
                         <div class="student-id">ID: ${displayId}</div>
                     </div>
                 </div>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <span class="regularity-badge ${regularity}" title="Attendance Rate: ${attendanceRate}%">${regularityText}</span>
-                    <span class="status ${statusClass}">${statusText}</span>
-                </div>
+                <span class="status ${statusClass}">${statusText}</span>
             </div>
         `;
     }).join('');
@@ -2442,8 +2434,6 @@ function updateStudentList(students) {
     updateStudentCount();
 }
 
-// ...existing code...
-
 function addTemporaryStudentToFrontend(studentData) {
     const studentList = document.getElementById('studentList');
     
@@ -2455,11 +2445,6 @@ function addTemporaryStudentToFrontend(studentData) {
     const status = studentData.status || 'present';
     const statusClass = getStatusClass(status);
     const statusText = getStatusText(status);
-    
-    // Calculate regularity (temporary students default to irregular)
-    const attendanceRate = parseFloat(studentData.attendance_rate) || 0;
-    const regularity = attendanceRate >= 75 ? 'regular' : 'irregular';
-    const regularityText = regularity === 'regular' ? 'Regular' : 'Irregular';
     
     const studentItem = document.createElement('div');
     studentItem.className = 'student-row';
@@ -2477,10 +2462,7 @@ function addTemporaryStudentToFrontend(studentData) {
                 <div class="student-id">ID: ${studentData.id}</div>
             </div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-            <span class="regularity-badge ${regularity}">${regularityText}</span>
-            <span class="status ${statusClass}">${statusText}</span>
-        </div>
+        <span class="status ${statusClass}">${statusText}</span>
     `;
     
     // Add to the beginning of the list
@@ -3675,7 +3657,7 @@ async function openEnrollmentModal(faceId, tempEncoding, faceImgSrc) {
     
     if (!currentSessionId) {
         console.error('  CRITICAL: Missing currentSessionId');
-        showModalNotification('Session not properly initialized. Please refresh the page.', 'error', 5000);
+        showAlertModal('error', 'Session not properly initialized. Please refresh the page.', 'Session Error');
         return;
     }
     
@@ -3789,4 +3771,57 @@ async function confirmEnrollment() {
         openModal('enrollStudentModal');
     }
 }
+
+    // Initialize the face count on load for the demo
+    window.onload = function() {
+        console.log("App ready. Two placeholder unrecognized faces exist.");
+    };
+
+function handleVideoError(img) {
+    console.error('Video feed error');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    
+    if (videoRetryCount < MAX_VIDEO_RETRIES) {
+        videoRetryCount++;
+        console.log(`Retrying video feed... Attempt ${videoRetryCount}`);
+        
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'block';
+        }
+        
+        setTimeout(() => {
+            img.src = '/video_feed?t=' + new Date().getTime();
+        }, 2000);
+    } else {
+        console.error('Max video retries reached');
+        if (loadingOverlay) {
+            loadingOverlay.innerHTML = '<p style="color: #ff6b6b;">Camera feed unavailable</p>';
+            loadingOverlay.style.display = 'block';
+        }
+    }
+}
+
+function handleVideoLoad(img) {
+    console.log('Video feed loaded successfully');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+    }
+    videoRetryCount = 0;
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'block';
+    }
+    
+    setTimeout(() => {
+        if (loadingOverlay && loadingOverlay.style.display === 'block') {
+            loadingOverlay.style.display = 'none';
+        }
+    }, 5000);
+});
+
+
 </script>

@@ -6,24 +6,6 @@
     <title>Admin Dashboard - Students</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='StudentDB.css') }}">
-    <style>
-        /* Regularity badge styles */
-        .regularity-badge {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-            color: white;
-            text-align: center;
-        }
-        .regularity {
-            background-color: #28a745; /* Green for regular */
-        }
-        .irregular {
-            background-color: #dc3545; /* Red for irregular */
-        }
-    </style>
 </head>
 <body>
     <!-- Sidebar -->
@@ -90,7 +72,6 @@
                         <th>Name</th>
                         <th>ID Number</th>
                         <th>Course & Section</th>
-                        <th>Regularity</th>
                         <th style="width: 120px;">Actions</th>
                     </tr>
                 </thead>
@@ -642,17 +623,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!tbody) return;
             tbody.innerHTML = '';
             if (students.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;"><i class="fas fa-users"></i><br>No students found</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;"><i class="fas fa-users"></i><br>No students found</td></tr>`;
                 return;
             }
             students.forEach(student => {
                 const row = document.createElement('tr');
-                
-                // Calculate regularity based on attendance rate
-                const attendanceRate = parseFloat(student.attendance_rate) || 0;
-                const regularity = attendanceRate >= 75 ? 'regular' : 'irregular';
-                const regularityText = regularity === 'regular' ? 'Regular' : 'Irregular';
-                
                 row.innerHTML = `
                     <td style="width: 60px;">
                         <img src="${student.photo}" class="student-photo" alt="Student Photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(student.name)}&background=random'">
@@ -660,7 +635,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     <td style="width: 180px;">${student.name}</td>
                     <td style="width: 110px;">${student.idNumber}</td>
                     <td style="width: 180px;">${student.course} ${student.yearSection}</td>
-                    <td style="width: 120px;"><span class="regularity-badge ${regularity}">${regularityText}</span></td>
                     <td style="width: 120px; text-align: center;">
                         <div style="display: flex; gap: 40px; justify-content: left; align-items: center;">
                             <button class="action-btn edit-btn" data-id="${student.id}"><i class="fas fa-edit"></i></button>
@@ -792,7 +766,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 const currentMonth = currentDate.getMonth();
                 
                 // Academic year logic: if month is June or later, use currentYear-nextYear
-                // If month is Jan-May, use currentYear-1-currentYear
                 if (currentMonth >= 5) { // June-December
                     academicYear = `${currentYear}-${currentYear + 1}`;
                 } else { // January-May
