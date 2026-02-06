@@ -8,7 +8,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='sidebar.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='AdminDB.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='analytics.css') }}">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Replaced with xlsx-js-style to support cell background colors -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
     
     <style>
         main.main-content {
@@ -94,9 +96,9 @@
                             <input type="text" id="classStudentSearch" placeholder="Enter name or ID..." onkeyup="searchStudentsInClass()">
                             <i class="fas fa-search search-icon"></i>
                         </div>
-                        <button id="downloadCsvBtn" style="padding: 12px 20px; background: #238e5a; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; transition: all 0.3s ease;">
+                        <button id="downloadXlsxBtn" style="padding: 12px 20px; background: #238e5a; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; transition: all 0.3s ease;">
                             <i class="fas fa-download"></i>
-                            Download CSV
+                            Download Excel (with colors)
                         </button>
                     </div>
                 </div>
@@ -473,8 +475,8 @@
                 }
             });
             
-            // Download CSV button
-            document.getElementById('downloadCsvBtn').addEventListener('click', downloadAttendanceCSV);
+            // Download button
+            document.getElementById('downloadXlsxBtn').addEventListener('click', downloadAttendanceXLSX);
         }
 
         async function loadProgramsForStudentRecords() {
@@ -497,13 +499,11 @@
             }
         }
 
-        // Update the existing loadAttendanceData function to use backend
         async function loadAttendanceData() {
             const sectionId = document.getElementById('sectionFilter').value;
             const subjectCode = document.getElementById('subjectFilter').value;
             
             if (!sectionId || !subjectCode) {
-                // Clear table if filters not complete
                 document.getElementById('attendanceSpreadsheet').innerHTML = '<thead><tr><th class="student-col">Student</th></tr></thead><tbody></tbody>';
                 return;
             }
@@ -538,17 +538,14 @@
                 return;
             }
             
-            // Build header row
             let thead = '<thead><tr><th class="student-col">Student</th>';
             dates.forEach(date => {
-                // Format date from YYYY-MM-DD to MM/DD/YYYY
                 const dateObj = new Date(date);
                 const formattedDate = `${(dateObj.getMonth() + 1).toString().padStart(2, '0')}/${dateObj.getDate().toString().padStart(2, '0')}/${dateObj.getFullYear()}`;
                 thead += `<th>${formattedDate}</th>`;
             });
             thead += '</tr></thead>';
             
-            // Build body rows
             let tbody = '<tbody>';
             students.forEach(student => {
                 tbody += `<tr>
@@ -595,7 +592,6 @@
             return classMap[status] || 'absent';
         }
 
-        // Load attendance counts for analytics cards
         async function loadAttendanceCounts() {
             const sectionId = document.getElementById('sectionFilter').value;
             const subjectCode = document.getElementById('subjectFilter').value;
@@ -630,7 +626,6 @@
             document.getElementById('absentCount').textContent = '0';
         }
 
-        // Load student records table
         async function loadStudentRecords(page = 1) {
             const sectionId = document.getElementById('sectionFilter').value;
             
@@ -688,7 +683,6 @@
             const tbody = document.querySelector('#studentsTable tbody');
             tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px; color: #666;">Select a section to view student records</td></tr>';
             
-            // Clear pagination
             const pagination = document.getElementById('studentRecordsPagination');
             pagination.innerHTML = '<button class="page-btn" disabled>&laquo;</button><button class="page-btn active">1</button><button class="page-btn">&raquo;</button>';
         }
@@ -699,14 +693,12 @@
             
             let html = '';
             
-            // Previous button
             if (currentStudentPage > 1) {
                 html += `<button class="page-btn" onclick="changeStudentPage('prev')">&laquo;</button>`;
             } else {
                 html += `<button class="page-btn" disabled>&laquo;</button>`;
             }
             
-            // Page numbers
             for (let i = 1; i <= totalPages; i++) {
                 if (i === currentStudentPage) {
                     html += `<button class="page-btn active">${i}</button>`;
@@ -715,7 +707,6 @@
                 }
             }
             
-            // Next button
             if (currentStudentPage < totalPages) {
                 html += `<button class="page-btn" onclick="changeStudentPage('next')">&raquo;</button>`;
             } else {
@@ -750,7 +741,6 @@
             
             let filtered = allStudentRecords;
             
-            // Apply search filter
             if (searchTerm) {
                 filtered = filtered.filter(student => 
                     student.full_name.toLowerCase().includes(searchTerm) ||
@@ -759,7 +749,6 @@
                 );
             }
             
-            // Apply year filter
             if (yearFilter) {
                 filtered = filtered.filter(student => {
                     const yearLevel = student.section_label ? student.section_label.charAt(0) : '';
@@ -767,7 +756,6 @@
                 });
             }
             
-            // Apply program filter
             if (programFilter) {
                 filtered = filtered.filter(student => student.program_id === programFilter);
             }
@@ -779,40 +767,36 @@
             searchStudentRecords();
         }
 
-async function updateDetailedAnalytics(spreadsheetStudents) {
-    const sectionId = document.getElementById('sectionFilter').value;
-    const subjectCode = document.getElementById('subjectFilter').value;
-    
-    if (!spreadsheetStudents || spreadsheetStudents.length === 0 || !sectionId || !subjectCode) {
-        clearDetailedAnalytics();
-        return;
-    }
-    
-    try {
-        // Fetch student records with attendance rates
-        const res = await fetch(`/api/analytics/student_records?section_id=${sectionId}&subject_code=${subjectCode}&limit=100`);
-        const data = await res.json();
-        
-        if (data.success && data.students) {
-            // Calculate attendance distribution from spreadsheet data
-            const distribution = calculateAttendanceDistribution(spreadsheetStudents);
-            renderDistributionChart(distribution);
+        async function updateDetailedAnalytics(spreadsheetStudents) {
+            const sectionId = document.getElementById('sectionFilter').value;
+            const subjectCode = document.getElementById('subjectFilter').value;
             
-            // Get top performers from student records (which have attendance_rate)
-            const topPerformers = getTopPerformers(data.students);
-            renderTopPerformers(topPerformers);
+            if (!spreadsheetStudents || spreadsheetStudents.length === 0 || !sectionId || !subjectCode) {
+                clearDetailedAnalytics();
+                return;
+            }
             
-            // Generate insights from student records
-            const insights = generateInsights(data.students);
-            renderInsights(insights);
-        } else {
-            clearDetailedAnalytics();
+            try {
+                const res = await fetch(`/api/analytics/student_records?section_id=${sectionId}&subject_code=${subjectCode}&limit=100`);
+                const data = await res.json();
+                
+                if (data.success && data.students) {
+                    const distribution = calculateAttendanceDistribution(spreadsheetStudents);
+                    renderDistributionChart(distribution);
+                    
+                    const topPerformers = getTopPerformers(data.students);
+                    renderTopPerformers(topPerformers);
+                    
+                    const insights = generateInsights(data.students);
+                    renderInsights(insights);
+                } else {
+                    clearDetailedAnalytics();
+                }
+            } catch (error) {
+                console.error('Error updating detailed analytics:', error);
+                clearDetailedAnalytics();
+            }
         }
-    } catch (error) {
-        console.error('Error updating detailed analytics:', error);
-        clearDetailedAnalytics();
-    }
-}
 
         function clearDetailedAnalytics() {
             document.getElementById('distributionChart').innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No data available</div>';
@@ -821,10 +805,9 @@ async function updateDetailedAnalytics(spreadsheetStudents) {
         }
 
         function calculateAttendanceDistribution(students) {
-            // This is a simplified calculation - in a real app, you'd calculate actual attendance rates
-            const excellent = Math.floor(Math.random() * 30) + 30; // 30-60%
-            const good = Math.floor(Math.random() * 30) + 20; // 20-50%
-            const average = Math.floor(Math.random() * 20) + 10; // 10-30%
+            const excellent = Math.floor(Math.random() * 30) + 30;
+            const good = Math.floor(Math.random() * 30) + 20;
+            const average = Math.floor(Math.random() * 20) + 10;
             const poor = 100 - excellent - good - average;
             
             return {
@@ -861,14 +844,12 @@ async function updateDetailedAnalytics(spreadsheetStudents) {
         }
 
         function getTopPerformers(students) {
-            // Sort by attendance rate (highest first)
             const sorted = [...students].sort((a, b) => {
                 const rateA = parseFloat(a.attendance_rate) || 0;
                 const rateB = parseFloat(b.attendance_rate) || 0;
                 return rateB - rateA;
             });
             
-            // Return top 3
             return sorted.slice(0, 3);
         }
 
@@ -897,7 +878,6 @@ async function updateDetailedAnalytics(spreadsheetStudents) {
         }
 
         function generateInsights(students) {
-            // This is mock data - in a real app, you'd analyze the actual data
             return [
                 { icon: 'fas fa-calendar-check', text: '<strong>Best Day:</strong> Mondays (94% attendance)' },
                 { icon: 'fas fa-clock', text: '<strong>Peak Hours:</strong> 8:00-10:00 AM' },
@@ -922,7 +902,6 @@ async function updateDetailedAnalytics(spreadsheetStudents) {
             container.innerHTML = html;
         }
 
-        // Search function for attendance spreadsheet
         function searchStudentsInClass() {
             const input = document.getElementById("classStudentSearch").value.toLowerCase();
             const rows = document.querySelectorAll("#attendanceSpreadsheet tbody tr");
@@ -932,71 +911,96 @@ async function updateDetailedAnalytics(spreadsheetStudents) {
             });
         }
 
-        function downloadAttendanceCSV() {
+        function downloadAttendanceXLSX() {
             const table = document.getElementById("attendanceSpreadsheet");
-            const rows = table.querySelectorAll("tr");
+            if (!table) return;
+
             const data = [];
-            
-            // Color mapping for status
-            const colorMap = {
-                "present": { bg: "C6EFCE", text: "006100" },    // Green
-                "late": { bg: "FFEB9C", text: "9C6500" },       // Yellow
-                "excused": { bg: "BDD7EE", text: "002060" },    // Blue
-                "absent": { bg: "F4CCCC", text: "9C0006" }      // Red
-            };
-            
+            const rows = table.querySelectorAll("tr");
+
             rows.forEach(row => {
                 if (row.style.display !== "none") {
                     const rowData = [];
                     const cells = row.querySelectorAll("td, th");
+
                     cells.forEach(cell => {
-                        rowData.push(cell.textContent.trim());
+                        const statusDiv = cell.querySelector(".status-cell");
+                        if (statusDiv) {
+                            rowData.push(statusDiv.textContent.trim()); // P, L, E, A
+                        } else {
+                            rowData.push(cell.textContent.trim());
+                        }
                     });
                     data.push(rowData);
                 }
             });
-            
-            // Create workbook and worksheet
+
+            if (data.length < 1) {
+                alert("No visible attendance data to export.");
+                return;
+            }
+
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet(data);
-            XLSX.utils.book_append_sheet(wb, ws, "Attendance");
-            
-            // Apply colors to status cells
-            const rowOffset = 1; // Header is row 1
-            table.querySelectorAll("tbody tr").forEach((row, rowIdx) => {
-                if (row.style.display !== "none") {
-                    const cells = row.querySelectorAll("td");
-                    cells.forEach((cell, cellIdx) => {
-                        const statusCell = cell.querySelector(".status-cell");
-                        if (statusCell) {
-                            let color = colorMap["present"];
-                            
-                            if (statusCell.classList.contains("present")) {
-                                color = colorMap["present"];
-                            } else if (statusCell.classList.contains("late")) {
-                                color = colorMap["late"];
-                            } else if (statusCell.classList.contains("excused")) {
-                                color = colorMap["excused"];
-                            } else if (statusCell.classList.contains("absent")) {
-                                color = colorMap["absent"];
+
+            // Color definitions (RGB hex without #)
+            const statusColors = {
+                "P": { bg: "C6EFCE", font: "006100" },   // Present
+                "L": { bg: "FFEB9C", font: "9C6500" },   // Late
+                "E": { bg: "BDD7EE", font: "002060" },   // Excused
+                "A": { bg: "F4CCCC", font: "9C0006" }    // Absent
+            };
+
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            const firstDateColumn = 1; // column index after "Student"
+
+            for (let r = range.s.r + 1; r <= range.e.r; ++r) { // skip header
+                for (let c = firstDateColumn; c <= range.e.c; ++c) {
+                    const cell_address = XLSX.utils.encode_cell({ r: r, c: c });
+                    const cell = ws[cell_address];
+                    if (!cell) continue;
+
+                    const status = String(cell.v || "").trim().toUpperCase();
+
+                    if (statusColors[status]) {
+                        const color = statusColors[status];
+                        cell.s = {
+                            fill: {
+                                patternType: "solid",
+                                fgColor: { rgb: color.bg }
+                            },
+                            font: {
+                                name: "Calibri",
+                                sz: 11,
+                                color: { rgb: color.font },
+                                bold: true
+                            },
+                            alignment: {
+                                horizontal: "center",
+                                vertical: "center"
                             }
-                            
-                            const cellRef = XLSX.utils.encode_col(cellIdx + 1) + (rowIdx + rowOffset + 1);
-                            if (!ws[cellRef]) ws[cellRef] = {};
-                            ws[cellRef].fill = { patternType: "solid", fgColor: { rgb: color.bg } };
-                            ws[cellRef].font = { bold: true, color: { rgb: color.text } };
-                        }
-                    });
+                        };
+                    }
                 }
-            });
-            
+            }
+
             // Set column widths
-            ws["!cols"] = [{ wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
-            
-            // Generate filename with current date
-            const today = new Date();
-            const dateStr = today.toISOString().split('T')[0];
-            XLSX.writeFile(wb, `attendance_${dateStr}.xlsx`);
+            ws['!cols'] = [
+                { wch: 35 }, // Student column
+                ...Array(range.e.c).fill({ wch: 10 }) // date columns
+            ];
+
+            XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+
+            // Better filename
+            const today = new Date().toISOString().slice(0, 10);
+            let filename = `Attendance_${today}.xlsx`;
+            const sectionText = document.getElementById('sectionFilter')?.selectedOptions[0]?.textContent || '';
+            if (sectionText && sectionText !== 'All Sections') {
+                filename = `Attendance_${sectionText.replace(/\s+/g, '_')}_${today}.xlsx`;
+            }
+
+            XLSX.writeFile(wb, filename);
         }
     </script>
 </body>
