@@ -143,18 +143,14 @@ By clicking "Accept", you give your full and informed consent to the collection,
   </select>
 
 <select id="year_level" required>
-  <option value="" disabled selected>Select your Year Level</option>
-  <option value="1">1st Year</option>
-  <option value="2">2nd Year</option>
-  <option value="3">3rd Year</option>
-  <option value="4">4th Year</option>
+  <option value="" disabled selected>Loading year levels...</option>
 </select>
 
 
 
 <select id="section_id" name="section_id" required>
   <option value="" disabled selected>Select your Section</option>
-  </select>
+</select>
         <label class="password-label">Create Password</label>
         <input type="password" id="password" placeholder="Enter password" oninput="validatePassword()">
         <div id="passwordStrength" class="password-strength">
@@ -442,8 +438,20 @@ function fetchSections() {
 
     const sectionDropdown = document.getElementById("section_id");
     const programDropdown = document.getElementById("program");
+
+    // Reset dropdown
     resetDropdown(sectionDropdown, 'Select your Section');
     sectionDropdown.disabled = true;
+
+    // Validate required fields
+    if (!programId || !yearLevel) {
+        let message = 'Select Program';
+        if (!programId && !yearLevel)  message = 'Select Program and Year Level first';
+        else if (!programId)           message = 'Select Program first';
+        else if (!yearLevel)           message = 'Select Year Level first';
+        resetDropdown(sectionDropdown, message);
+        return;
+    }
 
     // Extract curriculum year from student ID
     const curriculumYear = extractCurriculumYear(studentId);
@@ -455,130 +463,199 @@ function fetchSections() {
 
     console.log("Extracted curriculum year:", curriculumYear);
 
-    // Get academic info FIRST
-    const { academicYear, semester, curriculumYear: academicCurriculumYear } = getCurrentAcademicInfo();
-    
-    console.log("Academic info:", { academicYear, semester, curriculumYear: academicCurriculumYear });
+    // ── NEW: check curriculum exists BEFORE hitting the sections API ──
+    const academicYear = window.currentActiveAcademicYear || "2025-2026";
 
-    if (programId && yearLevel && academicYear) {
-        resetDropdown(sectionDropdown, 'Loading sections...');
-        
-        console.log("Searching sections with:", {
-            programId,
-            yearLevel, 
-            academicYear,
-            semester,
-            curriculumYear,
-            hasCurriculumYear: !!curriculumYear
-        });
-        
-        // Build API URL with optional curriculum_year parameter
-        let apiUrl = `/api/get_sections_with_semester?program_id=${programId}&year_level=${yearLevel}&academic_year=${academicYear}&semester=${semester}`;
-        if (curriculumYear) {
-            apiUrl += `&curriculum_year=${curriculumYear}`;
-        }
-        
-        console.log("Full API URL:", apiUrl);
-        
-        fetch(apiUrl)
-            .then(response => {
-                console.log("Response status:", response.status, response.statusText);
-                
-                // Check if we got redirected to login page (HTML response)
-                const contentType = response.headers.get('content-type');
-                if (contentType && contentType.includes('text/html')) {
-                    return response.text().then(html => {
-                        // Check if this is a login page
-                        if (html.includes('login') || html.includes('Login') || response.status === 401 || response.status === 403) {
-                            throw new Error('Authentication required. Please ensure the API allows public access for registration.');
+    fetch(`/api/check_curriculum_exists?program_id=${programId}&curriculum_year=${curriculumYear}&academic_year=${academicYear}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && !data.exists) {
+                // Curriculum doesn't exist — show clear message and stop
+                const programName = programDropdown.options[programDropdown.selectedIndex]?.text || programId;
+
+                let availableText = "None configured.";
+                if (data.available_curricula && data.available_curricula.length > 0) {
+                    availableText = data.available_curricula
+                        .map(c => c.curriculum_year + " (" + c.curriculum_name + ")")
+                        .join(", ");
+                }
+
+                resetDropdown(sectionDropdown, 'No curriculum available');
+
+                showModal(
+                    "Curriculum Not Available",
+                    "There is no curriculum for year " + curriculumYear + " under " + programName + " for academic year " + academicYear + ".\n\n" +
+                    "Available curricula: " + availableText + "\n\n" +
+                    "Please contact your department administrator to have this curriculum added."
+                );
+                return; // stop — do not fetch sections
+            }
+
+            // Curriculum exists (or check failed gracefully) — proceed to fetch sections
+            return getActiveAcademicYearForProgram(programId).then(({ academicYear: activeAY, semester }) => {
+                console.log("Using academic info for sections fetch:", { academicYear: activeAY, semester, curriculumYear });
+
+                if (!activeAY) {
+                    resetDropdown(sectionDropdown, 'No active academic year found');
+                    showModal("Info", "No active academic year found for the selected program. Please contact administration.");
+                    return;
+                }
+
+                // Build API URL
+                let apiUrl = `/api/get_sections_with_semester?program_id=${programId}&year_level=${yearLevel}`;
+                apiUrl += `&academic_year=${encodeURIComponent(activeAY)}`;
+                apiUrl += `&semester=${encodeURIComponent(semester)}`;
+                if (curriculumYear) {
+                    apiUrl += `&curriculum_year=${curriculumYear}`;
+                }
+
+                console.log("Full API URL:", apiUrl);
+
+                // Fetch sections
+                return fetch(apiUrl)
+                    .then(response => {
+                        console.log("Response status:", response.status, response.statusText);
+
+                        const contentType = response.headers.get('content-type');
+                        if (contentType && contentType.includes('text/html')) {
+                            return response.text().then(html => {
+                                if (html.includes('login') || html.includes('Login') || response.status === 401 || response.status === 403) {
+                                    throw new Error('Authentication required');
+                                }
+                                throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
+                            });
                         }
-                        throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
-                    });
-                }
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
-                }
-                
-                return response.json();
-            })
-            .then(data => {
-                // Handle both HTML text (if any) and JSON data
-                if (typeof data === 'string') {
-                    // This should not happen with the above check, but just in case
-                    throw new Error('Server returned HTML instead of JSON data');
-                }
-                
-                console.log("Sections API response:", data);
-                
-                if (data.success && data.sections) {
-                    resetDropdown(sectionDropdown, 'Select your Section');
-                    
-                    if (data.sections.length === 0) {
-                        resetDropdown(sectionDropdown, 'No sections available');
-                        showModal("Info", 
-                            `No sections found for:\n` +
-                            `- Program: ${programDropdown.options[programDropdown.selectedIndex]?.text}\n` +
-                            `- Year: ${yearLevel}\n` +
-                            `- Academic Year: ${academicYear}\n` +
-                            `- Semester: ${semester}\n` +
-                            (curriculumYear ? `- Curriculum: ${curriculumYear}\n\n` : '\n') +
-                            `Please contact your department.`
-                        );
-                        return;
-                    }
 
-                    data.sections.forEach(section => {
-                        const option = document.createElement('option');
-                        option.value = section.section_id;
-                        option.textContent = section.section_name;
-                        sectionDropdown.appendChild(option);
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+                        }
+
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log("Sections API response:", data);
+
+                        if (data.success && data.sections) {
+                            resetDropdown(sectionDropdown, 'Select your Section');
+
+                            if (data.sections.length === 0) {
+                                resetDropdown(sectionDropdown, 'No sections available');
+
+                                const programName = programDropdown.options[programDropdown.selectedIndex]?.text;
+                                const errorMessage =
+                                    `No sections found for:\n\n` +
+                                    `• Program: ${programName}\n` +
+                                    `• Year Level: ${yearLevel}\n` +
+                                    `• Academic Year: ${activeAY}\n` +
+                                    `• Semester: ${semester}\n` +
+                                    (curriculumYear ? `• Curriculum: ${curriculumYear}\n\n` : '\n') +
+                                    `Please contact your department administrator.`;
+
+                                showModal("No Sections Available", errorMessage);
+                                return;
+                            }
+
+                            // Populate sections
+                            data.sections.forEach(section => {
+                                const option = document.createElement('option');
+                                option.value   = section.section_id;
+                                option.textContent = section.section_name;
+                                sectionDropdown.appendChild(option);
+                            });
+
+                            sectionDropdown.disabled = false;
+                            console.log(`Successfully loaded ${data.sections.length} sections`);
+
+                        } else {
+                            resetDropdown(sectionDropdown, 'No sections available');
+                            const errorMsg = data.message || 'No sections found for the selected criteria';
+                            console.error('API returned error:', errorMsg);
+                            showModal("Info", errorMsg);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching sections:', error);
+                        resetDropdown(sectionDropdown, 'Error loading sections');
+
+                        let errorMessage = "Failed to load sections. ";
+                        if (error.message.includes('Authentication required'))  errorMessage = "API authentication error. Please contact administrator.";
+                        else if (error.message.includes('404'))                 errorMessage = "API endpoint not found. Please contact administrator.";
+                        else if (error.message.includes('500'))                 errorMessage = "Server error. Please try again later.";
+                        else if (error.message.includes('HTML instead of JSON')) errorMessage = "Server configuration error. Please contact administrator.";
+                        else                                                     errorMessage += error.message;
+
+                        showModal("Error", errorMessage);
                     });
-                    sectionDropdown.disabled = false;
-                    console.log(`Successfully loaded ${data.sections.length} sections`);
+            });
+        })
+        .catch(error => {
+            // If the curriculum check itself fails, don't block — fall through to sections fetch
+            console.warn("Curriculum check failed, proceeding anyway:", error);
+
+            getActiveAcademicYearForProgram(programId).then(({ academicYear: activeAY, semester }) => {
+                if (!activeAY) {
+                    resetDropdown(sectionDropdown, 'No active academic year found');
+                    showModal("Info", "No active academic year found. Please contact administration.");
+                    return;
+                }
+
+                let apiUrl = `/api/get_sections_with_semester?program_id=${programId}&year_level=${yearLevel}`;
+                apiUrl += `&academic_year=${encodeURIComponent(activeAY)}`;
+                apiUrl += `&semester=${encodeURIComponent(semester)}`;
+                if (curriculumYear) apiUrl += `&curriculum_year=${curriculumYear}`;
+
+                fetch(apiUrl)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.sections && data.sections.length > 0) {
+                            resetDropdown(sectionDropdown, 'Select your Section');
+                            data.sections.forEach(section => {
+                                const option = document.createElement('option');
+                                option.value       = section.section_id;
+                                option.textContent = section.section_name;
+                                sectionDropdown.appendChild(option);
+                            });
+                            sectionDropdown.disabled = false;
+                        } else {
+                            resetDropdown(sectionDropdown, 'No sections available');
+                            showModal("Info", data.message || "No sections found. Please contact administration.");
+                        }
+                    })
+                    .catch(err => {
+                        resetDropdown(sectionDropdown, 'Error loading sections');
+                        showModal("Error", "Failed to load sections: " + err.message);
+                    });
+            });
+        });
+}
+
+async function getActiveAcademicYearForProgram(programId) {
+    return new Promise((resolve, reject) => {
+        fetch(`/api/get_active_academic_year_for_program?program_id=${programId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    resolve({
+                        academicYear: data.academic_year,
+                        semester: data.semester || '1st Semester'
+                    });
                 } else {
-                    resetDropdown(sectionDropdown, 'No sections available');
-                    const errorMsg = data.message || 'No sections found for the selected criteria';
-                    console.error('API returned error:', errorMsg);
-                    showModal("Info", errorMsg);
+                    // Fallback to global active year
+                    resolve({
+                        academicYear: window.currentActiveAcademicYear || "2025-2026",
+                        semester: '1st Semester'
+                    });
                 }
             })
             .catch(error => {
-                console.error('Network error fetching sections:', error);
-                resetDropdown(sectionDropdown, 'Error loading sections');
-                
-                let errorMessage = "Failed to load sections. ";
-                
-                if (error.message.includes('Authentication required')) {
-                    errorMessage = "API requires authentication. This route needs to be accessible without login for registration. Please contact administrator.";
-                } else if (error.message.includes('404')) {
-                    errorMessage += "API endpoint not found.";
-                } else if (error.message.includes('500')) {
-                    errorMessage += "Server error.";
-                } else if (error.message.includes('HTML instead of JSON')) {
-                    errorMessage += "Server returned HTML page instead of data. This might be a login redirect.";
-                } else if (error.message.includes('Academic year not found')) {
-                    errorMessage = `Academic year ${academicYear} not found in the system. Please try a different program or contact administration.`;
-                } else if (error.message.includes('Semester not found')) {
-                    errorMessage = `Semester ${semester} not found for academic year ${academicYear}. Please contact administration.`;
-                } else if (error.message.includes('curriculum')) {
-                    errorMessage = `Curriculum ${curriculumYear} not found. Please check your Student ID format (e.g., 2022-01376).`;
-                } else {
-                    errorMessage += "Please try again later.";
-                }
-                
-                showModal("Error", errorMessage);
+                console.error("Error fetching program academic year:", error);
+                // Fallback
+                resolve({
+                    academicYear: window.currentActiveAcademicYear || "2025-2026",
+                    semester: '1st Semester'
+                });
             });
-    } else {
-        let missing = [];
-        if (!programId) missing.push("Course");
-        if (!yearLevel) missing.push("Year Level");
-        if (!academicYear) missing.push("Academic Year");
-        if (!curriculumYear) missing.push("valid Student ID");
-        
-        const message = missing.length === 0 ? 'Select your Section' : `Select ${missing.join(' and ')} first`;
-        resetDropdown(sectionDropdown, message);
-    }
+    });
 }
 
 function showSectionLoadStatus(message, isError = false) {
@@ -1337,11 +1414,10 @@ async function updateYearLevelOptions() {
     if (!programSelect || !yearLevelSelect) return;
     
     const selectedProgram = programSelect.value;
-    const currentYearLevel = yearLevelSelect.value;
     
     if (!selectedProgram) {
-        // No program selected, show all year levels
-        resetYearLevelOptions();
+        // No program selected
+        resetYearLevelOptions('Select your Year Level');
         return;
     }
     
@@ -1350,59 +1426,67 @@ async function updateYearLevelOptions() {
     yearLevelSelect.disabled = true;
     
     try {
-        // Fetch allowed year levels from backend
-        const allowedYearLevels = await fetchAllowedYearLevels(selectedProgram);
+        // First, fetch available year levels for the selected program based on existing sections
+        const response = await fetch(`/api/get_available_year_levels?program_id=${selectedProgram}`);
+        const data = await response.json();
         
-        // Clear and populate dropdown
-        yearLevelSelect.innerHTML = '<option value="" disabled selected>Select your Year Level</option>';
-        yearLevelSelect.disabled = false;
-        
-        const yearLevelNames = {
-            '1': '1st Year',
-            '2': '2nd Year', 
-            '3': '3rd Year',
-            '4': '4th Year'
-        };
-        
-        allowedYearLevels.forEach(year => {
-            const option = document.createElement('option');
-            option.value = year;
-            option.textContent = yearLevelNames[year];
-            yearLevelSelect.appendChild(option);
-        });
-        
-        // Restore previous selection if still valid
-        if (allowedYearLevels.includes(currentYearLevel)) {
-            yearLevelSelect.value = currentYearLevel;
-        }
-        
-        console.log(`Loaded year levels for ${selectedProgram}: ${allowedYearLevels.join(', ')}`);
-        
-        // Trigger sections fetch if year level is already selected
-        if (yearLevelSelect.value) {
-            setTimeout(fetchSections, 100);
+        if (data.success && data.year_levels && data.year_levels.length > 0) {
+            // Sort year levels numerically
+            const sortedYearLevels = data.year_levels.sort((a, b) => a - b);
+            
+            // Clear and populate dropdown
+            yearLevelSelect.innerHTML = '<option value="" disabled selected>Select your Year Level</option>';
+            
+            sortedYearLevels.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year;
+                
+                // Convert numeric year to text representation
+                const yearText = getYearLevelText(year);
+                option.textContent = yearText;
+                
+                yearLevelSelect.appendChild(option);
+            });
+            
+            yearLevelSelect.disabled = false;
+            console.log(`Loaded ${sortedYearLevels.length} year levels for program ${selectedProgram}:`, sortedYearLevels);
+            
+        } else {
+            // If no specific year levels found, show all possible years (1-4) as fallback
+            console.warn(`No year levels found for program ${selectedProgram}, using default options`);
+            resetYearLevelOptions('No year levels available');
         }
         
     } catch (error) {
-        console.error("Error updating year levels:", error);
-        // Fallback to showing all year levels
-        resetYearLevelOptions();
+        console.error("Error fetching year levels:", error);
+        // Fallback to default year levels on error
+        resetYearLevelOptions('Error loading year levels');
     }
 }
 
-function resetYearLevelOptions() {
+// Helper function to convert numeric year to text
+function getYearLevelText(year) {
+    const yearMap = {
+        '1': '1st Year',
+        '2': '2nd Year',
+        '3': '3rd Year',
+        '4': '4th Year',
+        '5': '5th Year',
+        '6': '6th Year'
+    };
+    return yearMap[year] || `Year ${year}`;
+}
+
+// Update resetYearLevelOptions function
+function resetYearLevelOptions(defaultText = 'Select your Year Level') {
     const yearLevelSelect = document.getElementById("year_level");
     if (!yearLevelSelect) return;
     
-    yearLevelSelect.innerHTML = `
-        <option value="" disabled selected>Select your Year Level</option>
-        <option value="1">1st Year</option>
-        <option value="2">2nd Year</option>
-        <option value="3">3rd Year</option>
-        <option value="4">4th Year</option>
-    `;
+    yearLevelSelect.innerHTML = `<option value="" disabled selected>${defaultText}</option>`;
     yearLevelSelect.disabled = false;
 }
+
+
 
 function fetchAllowedYearLevels(programId) {
     return fetch(`/api/get_program_year_levels?program_id=${programId}`)
@@ -2989,13 +3073,23 @@ document.addEventListener("DOMContentLoaded", function () {
 // Replace or modify this existing code:
 if (programDropdown) {
     programDropdown.addEventListener('change', function() {
-        console.log("Program changed, updating year levels...");
+        console.log("Program changed, updating year levels and sections...");
         
-        // Update year level options first
+        // Reset and update year levels
         updateYearLevelOptions();
         
-        // Then fetch sections (with a delay to ensure year levels are updated)
-        setTimeout(fetchSections, 100);
+        // Reset sections dropdown
+        const sectionDropdown = document.getElementById("section_id");
+        if (sectionDropdown) {
+            sectionDropdown.innerHTML = '<option value="" disabled selected>Select your Section</option>';
+            sectionDropdown.disabled = true;
+        }
+        
+        // Reset year level to trigger sections fetch later
+        const yearDropdown = document.getElementById("year_level");
+        if (yearDropdown) {
+            yearDropdown.value = '';
+        }
     });
 }
     
