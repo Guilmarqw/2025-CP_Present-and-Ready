@@ -445,11 +445,7 @@ function fetchSections() {
 
     // Validate required fields
     if (!programId || !yearLevel) {
-        let message = 'Select Program';
-        if (!programId && !yearLevel)  message = 'Select Program and Year Level first';
-        else if (!programId)           message = 'Select Program first';
-        else if (!yearLevel)           message = 'Select Year Level first';
-        resetDropdown(sectionDropdown, message);
+        resetDropdown(sectionDropdown, 'Select Program and Year Level first');
         return;
     }
 
@@ -463,169 +459,102 @@ function fetchSections() {
 
     console.log("Extracted curriculum year:", curriculumYear);
 
-    // ── NEW: check curriculum exists BEFORE hitting the sections API ──
-    const academicYear = window.currentActiveAcademicYear || "2025-2026";
+    // Use the academic year from the year levels API (stored in window.programAcademicYear)
+    const academicYear = window.programAcademicYear || window.currentActiveAcademicYear || "2025-2026";
+    const semester = "1st Semester"; // Default
+    
+    console.log("Using academic info:", { academicYear, semester, curriculumYear });
 
-    fetch(`/api/check_curriculum_exists?program_id=${programId}&curriculum_year=${curriculumYear}&academic_year=${academicYear}`)
-        .then(res => res.json())
-        .then(data => {
-            if (data.success && !data.exists) {
-                // Curriculum doesn't exist — show clear message and stop
-                const programName = programDropdown.options[programDropdown.selectedIndex]?.text || programId;
+    // Build API URL
+    let apiUrl = `/api/get_sections_with_semester?program_id=${programId}&year_level=${yearLevel}`;
+    apiUrl += `&academic_year=${encodeURIComponent(academicYear)}`;
+    apiUrl += `&semester=${encodeURIComponent(semester)}`;
+    if (curriculumYear) {
+        apiUrl += `&curriculum_year=${curriculumYear}`;
+    }
 
-                let availableText = "None configured.";
-                if (data.available_curricula && data.available_curricula.length > 0) {
-                    availableText = data.available_curricula
-                        .map(c => c.curriculum_year + " (" + c.curriculum_name + ")")
-                        .join(", ");
-                }
+    console.log("Full API URL:", apiUrl);
 
-                resetDropdown(sectionDropdown, 'No curriculum available');
+    // Fetch sections
+    fetch(apiUrl)
+        .then(response => {
+            console.log("Response status:", response.status, response.statusText);
 
-                showModal(
-                    "Curriculum Not Available",
-                    "There is no curriculum for year " + curriculumYear + " under " + programName + " for academic year " + academicYear + ".\n\n" +
-                    "Available curricula: " + availableText + "\n\n" +
-                    "Please contact your department administrator to have this curriculum added."
-                );
-                return; // stop — do not fetch sections
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('text/html')) {
+                return response.text().then(html => {
+                    if (html.includes('login') || html.includes('Login') || response.status === 401 || response.status === 403) {
+                        throw new Error('Authentication required');
+                    }
+                    throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
+                });
             }
 
-            // Curriculum exists (or check failed gracefully) — proceed to fetch sections
-            return getActiveAcademicYearForProgram(programId).then(({ academicYear: activeAY, semester }) => {
-                console.log("Using academic info for sections fetch:", { academicYear: activeAY, semester, curriculumYear });
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+            }
 
-                if (!activeAY) {
-                    resetDropdown(sectionDropdown, 'No active academic year found');
-                    showModal("Info", "No active academic year found for the selected program. Please contact administration.");
+            return response.json();
+        })
+        .then(data => {
+            console.log("Sections API response:", data);
+
+            if (data.success && data.sections) {
+                resetDropdown(sectionDropdown, 'Select your Section');
+
+                if (data.sections.length === 0) {
+                    resetDropdown(sectionDropdown, 'No sections available');
+
+                    const programName = programDropdown.options[programDropdown.selectedIndex]?.text || programId;
+                    const errorMessage = 
+                        `No sections found for:\n\n` +
+                        `• Program: ${programName}\n` +
+                        `• Year Level: ${yearLevel}\n` +
+                        `• Academic Year: ${academicYear}\n` +
+                        `• Semester: ${semester}\n` +
+                        (curriculumYear ? `• Curriculum: ${curriculumYear}\n\n` : '\n') +
+                        `Please contact your department administrator.`;
+
+                    showModal("No Sections Available", errorMessage);
                     return;
                 }
 
-                // Build API URL
-                let apiUrl = `/api/get_sections_with_semester?program_id=${programId}&year_level=${yearLevel}`;
-                apiUrl += `&academic_year=${encodeURIComponent(activeAY)}`;
-                apiUrl += `&semester=${encodeURIComponent(semester)}`;
-                if (curriculumYear) {
-                    apiUrl += `&curriculum_year=${curriculumYear}`;
-                }
+                // Populate sections
+                data.sections.forEach(section => {
+                    const option = document.createElement('option');
+                    option.value = section.section_id;
+                    option.textContent = section.section_name;
+                    sectionDropdown.appendChild(option);
+                });
 
-                console.log("Full API URL:", apiUrl);
+                sectionDropdown.disabled = false;
+                console.log(`Successfully loaded ${data.sections.length} sections`);
 
-                // Fetch sections
-                return fetch(apiUrl)
-                    .then(response => {
-                        console.log("Response status:", response.status, response.statusText);
-
-                        const contentType = response.headers.get('content-type');
-                        if (contentType && contentType.includes('text/html')) {
-                            return response.text().then(html => {
-                                if (html.includes('login') || html.includes('Login') || response.status === 401 || response.status === 403) {
-                                    throw new Error('Authentication required');
-                                }
-                                throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}`);
-                            });
-                        }
-
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
-                        }
-
-                        return response.json();
-                    })
-                    .then(data => {
-                        console.log("Sections API response:", data);
-
-                        if (data.success && data.sections) {
-                            resetDropdown(sectionDropdown, 'Select your Section');
-
-                            if (data.sections.length === 0) {
-                                resetDropdown(sectionDropdown, 'No sections available');
-
-                                const programName = programDropdown.options[programDropdown.selectedIndex]?.text;
-                                const errorMessage =
-                                    `No sections found for:\n\n` +
-                                    `• Program: ${programName}\n` +
-                                    `• Year Level: ${yearLevel}\n` +
-                                    `• Academic Year: ${activeAY}\n` +
-                                    `• Semester: ${semester}\n` +
-                                    (curriculumYear ? `• Curriculum: ${curriculumYear}\n\n` : '\n') +
-                                    `Please contact your department administrator.`;
-
-                                showModal("No Sections Available", errorMessage);
-                                return;
-                            }
-
-                            // Populate sections
-                            data.sections.forEach(section => {
-                                const option = document.createElement('option');
-                                option.value   = section.section_id;
-                                option.textContent = section.section_name;
-                                sectionDropdown.appendChild(option);
-                            });
-
-                            sectionDropdown.disabled = false;
-                            console.log(`Successfully loaded ${data.sections.length} sections`);
-
-                        } else {
-                            resetDropdown(sectionDropdown, 'No sections available');
-                            const errorMsg = data.message || 'No sections found for the selected criteria';
-                            console.error('API returned error:', errorMsg);
-                            showModal("Info", errorMsg);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching sections:', error);
-                        resetDropdown(sectionDropdown, 'Error loading sections');
-
-                        let errorMessage = "Failed to load sections. ";
-                        if (error.message.includes('Authentication required'))  errorMessage = "API authentication error. Please contact administrator.";
-                        else if (error.message.includes('404'))                 errorMessage = "API endpoint not found. Please contact administrator.";
-                        else if (error.message.includes('500'))                 errorMessage = "Server error. Please try again later.";
-                        else if (error.message.includes('HTML instead of JSON')) errorMessage = "Server configuration error. Please contact administrator.";
-                        else                                                     errorMessage += error.message;
-
-                        showModal("Error", errorMessage);
-                    });
-            });
+            } else {
+                resetDropdown(sectionDropdown, 'No sections available');
+                const errorMsg = data.message || 'No sections found for the selected criteria';
+                console.error('API returned error:', errorMsg);
+                showModal("Info", errorMsg);
+            }
         })
         .catch(error => {
-            // If the curriculum check itself fails, don't block — fall through to sections fetch
-            console.warn("Curriculum check failed, proceeding anyway:", error);
+            console.error('Error fetching sections:', error);
+            resetDropdown(sectionDropdown, 'Error loading sections');
 
-            getActiveAcademicYearForProgram(programId).then(({ academicYear: activeAY, semester }) => {
-                if (!activeAY) {
-                    resetDropdown(sectionDropdown, 'No active academic year found');
-                    showModal("Info", "No active academic year found. Please contact administration.");
-                    return;
-                }
+            let errorMessage = "Failed to load sections. ";
+            if (error.message.includes('Authentication required')) {
+                errorMessage = "API authentication error. Please contact administrator.";
+            } else if (error.message.includes('404')) {
+                errorMessage = "API endpoint not found. Please contact administrator.";
+            } else if (error.message.includes('500')) {
+                errorMessage = "Server error. Please try again later.";
+            } else if (error.message.includes('HTML instead of JSON')) {
+                errorMessage = "Server configuration error. Please contact administrator.";
+            } else {
+                errorMessage += error.message;
+            }
 
-                let apiUrl = `/api/get_sections_with_semester?program_id=${programId}&year_level=${yearLevel}`;
-                apiUrl += `&academic_year=${encodeURIComponent(activeAY)}`;
-                apiUrl += `&semester=${encodeURIComponent(semester)}`;
-                if (curriculumYear) apiUrl += `&curriculum_year=${curriculumYear}`;
-
-                fetch(apiUrl)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success && data.sections && data.sections.length > 0) {
-                            resetDropdown(sectionDropdown, 'Select your Section');
-                            data.sections.forEach(section => {
-                                const option = document.createElement('option');
-                                option.value       = section.section_id;
-                                option.textContent = section.section_name;
-                                sectionDropdown.appendChild(option);
-                            });
-                            sectionDropdown.disabled = false;
-                        } else {
-                            resetDropdown(sectionDropdown, 'No sections available');
-                            showModal("Info", data.message || "No sections found. Please contact administration.");
-                        }
-                    })
-                    .catch(err => {
-                        resetDropdown(sectionDropdown, 'Error loading sections');
-                        showModal("Error", "Failed to load sections: " + err.message);
-                    });
-            });
+            showModal("Error", errorMessage);
         });
 }
 
@@ -1416,7 +1345,6 @@ async function updateYearLevelOptions() {
     const selectedProgram = programSelect.value;
     
     if (!selectedProgram) {
-        // No program selected
         resetYearLevelOptions('Select your Year Level');
         return;
     }
@@ -1426,41 +1354,46 @@ async function updateYearLevelOptions() {
     yearLevelSelect.disabled = true;
     
     try {
-        // First, fetch available year levels for the selected program based on existing sections
+        console.log(`Fetching year levels for program: ${selectedProgram}`);
+        
         const response = await fetch(`/api/get_available_year_levels?program_id=${selectedProgram}`);
         const data = await response.json();
         
+        console.log("Year levels response:", data);
+        
         if (data.success && data.year_levels && data.year_levels.length > 0) {
-            // Sort year levels numerically
-            const sortedYearLevels = data.year_levels.sort((a, b) => a - b);
-            
             // Clear and populate dropdown
             yearLevelSelect.innerHTML = '<option value="" disabled selected>Select your Year Level</option>';
             
-            sortedYearLevels.forEach(year => {
+            // Sort numerically
+            data.year_levels.sort((a, b) => parseInt(a) - parseInt(b));
+            
+            data.year_levels.forEach(year => {
                 const option = document.createElement('option');
                 option.value = year;
-                
-                // Convert numeric year to text representation
-                const yearText = getYearLevelText(year);
-                option.textContent = yearText;
-                
+                option.textContent = getYearLevelText(year); // "1st Year", "2nd Year", etc.
                 yearLevelSelect.appendChild(option);
             });
             
             yearLevelSelect.disabled = false;
-            console.log(`Loaded ${sortedYearLevels.length} year levels for program ${selectedProgram}:`, sortedYearLevels);
+            console.log(`Loaded ${data.year_levels.length} year levels for program ${selectedProgram}`);
+            
+            // Store the academic year for section fetching
+            if (data.academic_year) {
+                window.programAcademicYear = data.academic_year;
+                console.log(`Program academic year: ${data.academic_year}`);
+            }
             
         } else {
-            // If no specific year levels found, show all possible years (1-4) as fallback
-            console.warn(`No year levels found for program ${selectedProgram}, using default options`);
             resetYearLevelOptions('No year levels available');
+            console.warn(`No year levels found for program ${selectedProgram}`);
+            showModal("Info", `No year levels available for the selected program.`);
         }
         
     } catch (error) {
         console.error("Error fetching year levels:", error);
-        // Fallback to default year levels on error
         resetYearLevelOptions('Error loading year levels');
+        showModal("Error", "Failed to load year levels. Please try again.");
     }
 }
 
@@ -1474,10 +1407,10 @@ function getYearLevelText(year) {
         '5': '5th Year',
         '6': '6th Year'
     };
-    return yearMap[year] || `Year ${year}`;
+    return yearMap[year.toString()] || `Year ${year}`;
 }
 
-// Update resetYearLevelOptions function
+// Reset function
 function resetYearLevelOptions(defaultText = 'Select your Year Level') {
     const yearLevelSelect = document.getElementById("year_level");
     if (!yearLevelSelect) return;
@@ -2978,7 +2911,7 @@ function registerStudent() {
 }
 
 function fetchActiveAcademicYear() {
-    fetch('/api/get_active_academic_year')
+    fetch('/api/get_active_academic_year_for_program')
         .then(response => response.json())
         .then(data => {
             if (data.success && data.academic_year) {
