@@ -571,26 +571,26 @@
         }
 
         function getStatusText(status) {
-            const statusMap = {
-                'present': 'Present',
-                'late': 'Late',
-                'excused': 'Excused',
-                'missing': 'Missing',
-                'absent': 'Absent'
-            };
-            return statusMap[status] || 'Absent';
-        }
+    const statusMap = {
+        'present': 'Present',
+        'late': 'Late',
+        'excused': 'Excused',
+        'missing': 'Absent',  // Changed from 'Missing' to 'Absent'
+        'absent': 'Absent'    // Both show as 'Absent'
+    };
+    return statusMap[status] || 'Absent';
+}
 
         function getStatusClass(status) {
-            const classMap = {
-                'present': 'present',
-                'late': 'late',
-                'excused': 'excused',
-                'missing': 'absent',
-                'absent': 'absent'
-            };
-            return classMap[status] || 'absent';
-        }
+    const classMap = {
+        'present': 'present',
+        'late': 'late',
+        'excused': 'excused',
+        'missing': 'absent',  // Maps to 'absent' class (red)
+        'absent': 'absent'    // Also 'absent' class
+    };
+    return classMap[status] || 'absent';
+}
 
         async function loadAttendanceCounts() {
             const sectionId = document.getElementById('sectionFilter').value;
