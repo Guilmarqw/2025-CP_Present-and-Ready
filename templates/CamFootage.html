@@ -1000,17 +1000,24 @@ window.addEventListener('load', () => {
 
 
     // This function shows loading animation
-    function showLoading() {
-        const studentList = document.getElementById('studentList');
-        
-        // Show loading animation
-        studentList.innerHTML = `
-            <div class="loading-container">
-                <div class="loading-spinner"></div>
-                <div class="loading-text">Loading students...</div>
-            </div>
-        `;
-    }
+function showLoading() {
+    const studentList = document.getElementById('studentList');
+    
+    if (!studentList) return;
+    
+    studentList.innerHTML = `
+        <div class="loading-container" style="text-align: center; padding: 40px 20px;">
+            <div class="loading-spinner" style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; margin: 0 auto 20px; animation: spin 1s linear infinite;"></div>
+            <div class="loading-text" style="color: #666; font-size: 16px;">Loading students...</div>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+        </div>
+    `;
+}
     
     // Show loading when page loads
     document.addEventListener('DOMContentLoaded', showLoading);
@@ -2199,124 +2206,218 @@ function closeModal(modalId) {
 }
 
 function loadClassStudents(program, yearLevel, section) {
-    console.log('🎯🔴 loadClassStudents CALLED with:', { program, yearLevel, section });
+    console.log('🎯 loadClassStudents CALLED with:', { program, yearLevel, section });
     
     if (!program || !yearLevel || !section) {
         console.error('  Missing parameters for loading students');
+        showAlertModal('error', 'Missing class information. Cannot load students.', 'Load Error');
         return;
     }
     
-    // Use fallback if currentSessionId is null
-    const sessionIdToUse = currentSessionId || window._sessionData?.session_id || 'fallback';
-    console.log(' Using session ID:', sessionIdToUse);
+    // Show loading animation
+    showLoading();
     
-    const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&session_id=${encodeURIComponent(sessionIdToUse)}`;
+    // Get current session ID - CRITICAL FIX
+    const sessionId = window._sessionData?.session_id;
+    console.log('  Using session ID:', sessionId);
+    
+    if (!sessionId) {
+        console.error('  No session ID found! Check session initialization.');
+        showAlertModal('warning', 'Session not properly initialized. Using fallback mode.', 'Session Warning');
+        
+        // Fallback: Load without session ID
+        loadStudentsFallback(program, yearLevel, section);
+        return;
+    }
+    
+    // Construct URL with ALL necessary parameters
+    const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}&session_id=${encodeURIComponent(sessionId)}`;
     
     console.log('📡 Fetching students from:', url);
     
     fetch(url)
         .then(res => {
-            console.log('🔴 get_class_students Response status:', res.status);
+            console.log('  Response status:', res.status);
+            
             if (!res.ok) {
+                // If 404 or 500, try fallback
+                if (res.status === 404 || res.status === 500) {
+                    console.log('  API error, trying fallback...');
+                    return loadStudentsFallback(program, yearLevel, section);
+                }
+                
                 return res.text().then(text => {
-                    console.error('🔴 get_class_students Error response:', text);
-                    
-                    // Try to parse JSON error
-                    let errorMsg = `HTTP ${res.status}`;
-                    try {
-                        const errorData = JSON.parse(text);
-                        errorMsg = errorData.message || text;
-                    } catch {
-                        errorMsg = text.substring(0, 100) + '...';
-                    }
-                    
-                    // If 500 error, try fallback without session_id
-                    if (res.status === 500) {
-                        console.log('  Trying fallback due to 500 error');
-                        return loadStudentsFallback(program, yearLevel, section);
-                    }
-                    
-                    throw new Error(errorMsg);
+                    console.error('  Error response:', text.substring(0, 200));
+                    throw new Error(`HTTP ${res.status}`);
                 });
             }
             return res.json();
         })
         .then(data => {
-            console.log('🔴 get_class_students Response data:', data);
+            console.log('  API Response data:', data);
             
             if (data && data.success) {
-                console.log(`  Loaded ${data.students?.length || 0} students for session ${sessionIdToUse}`);
-                updateStudentList(data.students || []);
-                updateStudentCount();
+                console.log(`✅ Loaded ${data.students?.length || 0} students`);
+                
+                if (data.students && data.students.length > 0) {
+                    // Update the student list with real data
+                    updateStudentList(data.students);
+                    
+                    // Update counts
+                    const detectedElement = document.getElementById('detected-count');
+                    const totalElement = document.getElementById('total-count');
+                    
+                    if (detectedElement) {
+                        detectedElement.textContent = data.detected_count || '0';
+                    }
+                    if (totalElement) {
+                        totalElement.textContent = data.total_count || data.students.length;
+                    }
+                    
+                    console.log(`  📊 Counts: Detected=${data.detected_count || '0'}, Total=${data.total_count || data.students.length}`);
+                } else {
+                    console.warn('  No students found for this class');
+                    showNoStudentsMessage(program, yearLevel, section);
+                }
+                
+                // Store session info if provided
+                if (data.section_id) {
+                    window._sessionData.section_id = data.section_id;
+                }
+                
             } else {
-                console.error('Error loading students:', data?.message || 'Unknown error');
-                // Try fallback
+                console.error('  API returned failure:', data?.message || 'Unknown error');
+                showAlertModal('warning', 'Could not load student list. Using limited mode.', 'Load Warning');
                 loadStudentsFallback(program, yearLevel, section);
             }
         })
         .catch(err => {
-            console.error('Error fetching students:', err);
-            // Try fallback on any error
+            console.error('❌ Error fetching students:', err);
+            showAlertModal('error', `Error loading students: ${err.message}`, 'Load Error');
             loadStudentsFallback(program, yearLevel, section);
         });
 }
 
 function loadStudentsFallback(program, yearLevel, section) {
-    const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`;
+    console.log('🔄 Using fallback student loading');
     
-    console.log('  Using fallback student loading (no session ID)');
+    // Construct URL without session_id for fallback
+    const url = `/api/get_class_students?program=${encodeURIComponent(program)}&year_level=${encodeURIComponent(yearLevel)}&section=${encodeURIComponent(section)}`;
     
     fetch(url)
         .then(res => {
             if (!res.ok) {
-                return res.text().then(text => {
-                    console.error('Fallback error:', text);
-                    throw new Error(`Fallback HTTP ${res.status}`);
-                });
+                throw new Error(`Fallback HTTP ${res.status}`);
             }
             return res.json();
         })
         .then(data => {
-            if (data && data.success) {
-                console.log('   Fallback student loading successful');
-                // Force all students to be absent for fallback
-                const studentsWithAbsentStatus = data.students.map(student => ({
-                    ...student,
-                    status: 'absent'
-                }));
-                updateStudentList(studentsWithAbsentStatus || []);
-                updateStudentCount();
+            if (data && data.success && data.students) {
+                console.log('✅ Fallback student loading successful');
+                updateStudentList(data.students);
+                
+                // Update counts
+                const detectedElement = document.getElementById('detected-count');
+                const totalElement = document.getElementById('total-count');
+                
+                if (detectedElement) detectedElement.textContent = data.detected_count || '0';
+                if (totalElement) totalElement.textContent = data.total_count || data.students.length;
+                
             } else {
                 console.error('Fallback failed:', data?.message);
                 showPlaceholderStudents(program, yearLevel, section);
             }
         })
         .catch(err => {
-            console.error('Error in fallback student loading:', err);
+            console.error('❌ Error in fallback student loading:', err);
             showPlaceholderStudents(program, yearLevel, section);
         });
 }
 
-function showPlaceholderStudents(program, yearLevel, section) {
-    console.log('  Showing placeholder students');
+function showNoStudentsMessage(program, yearLevel, section) {
+    const studentList = document.getElementById('studentList');
     
-    // Create some placeholder student data
+    if (!studentList) return;
+    
+    studentList.innerHTML = `
+        <div class="no-students-message">
+            <div style="text-align: center; padding: 40px 20px;">
+                <span class="material-icons" style="font-size: 48px; color: #ccc; margin-bottom: 15px;">
+                    group_off
+                </span>
+                <h3 style="margin-bottom: 10px; color: #666;">No Students Found</h3>
+                <p style="color: #888; margin-bottom: 20px;">
+                    No students are registered for:<br>
+                    <strong>${program} ${yearLevel}${section}</strong>
+                </p>
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #0d6efd;">
+                    <p style="margin: 0; color: #666; font-size: 14px;">
+                        <strong>Note:</strong> Students may need to be enrolled in this section.
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Update counts to 0
+    const detectedElement = document.getElementById('detected-count');
+    const totalElement = document.getElementById('total-count');
+    
+    if (detectedElement) detectedElement.textContent = '0';
+    if (totalElement) totalElement.textContent = '0';
+}
+
+
+function showPlaceholderStudents(program, yearLevel, section) {
+    console.log('🔄 Showing placeholder students');
+    
+    const studentList = document.getElementById('studentList');
+    if (!studentList) return;
+    
+    // Create placeholder student data
     const placeholderStudents = [
-        { id: 'S001', name: 'John Doe', status: 'present', type: 'regular', program: program },
-        { id: 'S002', name: 'Jane Smith', status: 'absent', type: 'regular', program: program },
-        { id: 'S003', name: 'Alex Johnson', status: 'late', type: 'regular', program: program }
+        { 
+            id: 'S001', 
+            name: 'John Doe', 
+            status: 'present', 
+            type: 'regular', 
+            program: program,
+            photo_path: '/static/images/default-avatar.jpg'
+        },
+        { 
+            id: 'S002', 
+            name: 'Jane Smith', 
+            status: 'absent', 
+            type: 'regular', 
+            program: program,
+            photo_path: '/static/images/default-avatar.jpg'
+        },
+        { 
+            id: 'S003', 
+            name: 'Alex Johnson', 
+            status: 'late', 
+            type: 'regular', 
+            program: program,
+            photo_path: '/static/images/default-avatar.jpg'
+        }
     ];
     
+    // Update the list
     updateStudentList(placeholderStudents);
     
     // Update counts
     const detectedElement = document.getElementById('detected-count');
     const totalElement = document.getElementById('total-count');
-    if (detectedElement) detectedElement.textContent = '1';
-    if (totalElement) totalElement.textContent = placeholderStudents.length.toString();
+    
+    if (detectedElement) detectedElement.textContent = '1'; // John Doe is present
+    if (totalElement) totalElement.textContent = '3';
     
     // Show warning to user
-    showAlertModal('warning', 'Using limited student data. Some features may not work properly.', 'Limited Functionality');
+    setTimeout(() => {
+        showAlertModal('warning', 
+            'Using limited student data. Real students may not be loaded due to configuration issues.', 
+            'Limited Functionality');
+    }, 1000);
 }
 
 async function loadClassSettings() {
@@ -2363,16 +2464,25 @@ function startFaceScan() {
 
 function updateStudentList(students) {
     const studentList = document.getElementById('studentList');
-    const searchInput = document.querySelector('.search-bar input');
-    const currentSearch = searchInput ? searchInput.value.toLowerCase().trim() : '';
     
-    if (!studentList) return;
-
-    if (students.length === 0) {
-        studentList.innerHTML = '<div class="no-students">No students found for this class</div>';
+    if (!studentList) {
+        console.error('Student list element not found!');
         return;
     }
-
+    
+    if (!students || students.length === 0) {
+        studentList.innerHTML = `
+            <div class="no-students">
+                <div style="text-align: center; padding: 40px 20px; color: #666;">
+                    <span class="material-icons" style="font-size: 48px; opacity: 0.5;">group_off</span>
+                    <p style="margin-top: 15px; font-size: 16px;">No students in this class</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Build HTML for each student
     studentList.innerHTML = students.map(student => {
         // Determine status class and text
         let statusClass, statusText;
@@ -2398,20 +2508,23 @@ function updateStudentList(students) {
                 statusText = 'Absent';
         }
         
-        // Handle both regular and temporary students
-        let avatarSrc = '/static/images/default-avatar.jpg';
-        let displayName = student.name;
-        let displayId = student.id;
-        
-        if (student.type === 'regular') {
-            avatarSrc = `/static/images/student_photos/${student.id}.jpg`;
-        } else if (student.type === 'temporary') {
-            // Temporary students might have different name format
-            displayName = student.name.replace(/ \(ID: \d+\)/, ''); // Clean up name if needed
+        // Handle photo path
+        let avatarSrc = student.photo_path || '/static/images/default-avatar.jpg';
+        if (!avatarSrc.startsWith('/') && !avatarSrc.startsWith('http')) {
+            avatarSrc = '/static/images/default-avatar.jpg';
         }
         
+        // Clean name display
+        let displayName = student.name || 'Unknown Student';
+        if (student.firstName && student.lastName) {
+            displayName = `${student.firstName} ${student.lastName}`;
+        }
+        
+        // Clean ID display
+        let displayId = student.id || 'N/A';
+        
         return `
-            <div class="student-row" data-student-id="${student.id}">
+            <div class="student-row" data-student-id="${student.id}" data-type="${student.type || 'regular'}">
                 <div class="student-info">
                     <img src="${avatarSrc}" alt="${displayName}" 
                          class="avatar" onerror="this.src='/static/images/default-avatar.jpg'">
@@ -2424,14 +2537,8 @@ function updateStudentList(students) {
             </div>
         `;
     }).join('');
-
-    // Re-apply search filter after updating the list
-    if (currentSearch) {
-        filterStudents(currentSearch);
-    }
     
-    //  UPDATE STUDENT COUNTS
-    updateStudentCount();
+    console.log(`✅ Updated student list with ${students.length} students`);
 }
 
 function addTemporaryStudentToFrontend(studentData) {
