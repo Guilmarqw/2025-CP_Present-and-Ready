@@ -58,6 +58,16 @@
                 </div>
 
                 <div class="control-section">
+                    <h4>Curriculum</h4>
+                    <div class="control-group">
+                        <label for="curriculumFilter">Select Curriculum</label>
+                        <select id="curriculumFilter">
+                            <option value="">All Curriculums</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="control-section">
                     <h4>Semester</h4>
                     <div class="control-group">
                         <label for="semesterFilter">Select Semester</label>
@@ -108,7 +118,11 @@
                 <table id="attendanceSpreadsheet">
                     <thead>
                         <tr>
-                            <th class="student-col">Student</th>
+                            <th>Student ID</th>
+                            <th>First Name</th>
+                            <th>Last Name</th>
+                            <th>Middle Name</th>
+                            <th>Year & Section</th>
                             <!-- Dates will be dynamically loaded here -->
                         </tr>
                     </thead>
@@ -332,152 +346,191 @@
             }
         }
 
-        function setupEventListeners() {
-            // Program filter change - load academic years
-            document.getElementById('programFilter').addEventListener('change', async function() {
-                const programId = this.value;
+function setupEventListeners() {
+    // Program filter change - load academic years
+    document.getElementById('programFilter').addEventListener('change', async function() {
+        const programId = this.value;
+        
+        if (programId) {
+            try {
+                const res = await fetch(`/api/analytics/academic_years?program_id=${programId}`);
+                const data = await res.json();
                 
-                if (programId) {
-                    try {
-                        const res = await fetch(`/api/analytics/academic_years?program_id=${programId}`);
-                        const data = await res.json();
-                        
-                        const yearFilter = document.getElementById('academicYearFilter');
-                        yearFilter.innerHTML = '<option value="">All Academic Years</option>';
-                        
-                        if (data.success) {
-                            data.academic_years.forEach(year => {
-                                const option = document.createElement('option');
-                                option.value = year.academic_year_id;
-                                option.textContent = year.academic_year;
-                                yearFilter.appendChild(option);
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Error loading academic years:', error);
-                    }
+                const yearFilter = document.getElementById('academicYearFilter');
+                yearFilter.innerHTML = '<option value="">All Academic Years</option>';
+                
+                if (data.success) {
+                    data.academic_years.forEach(year => {
+                        const option = document.createElement('option');
+                        option.value = year.academic_year_id;
+                        option.textContent = year.academic_year;
+                        yearFilter.appendChild(option);
+                    });
                 }
-                
-                // Reset dependent dropdowns
-                document.getElementById('semesterFilter').innerHTML = '<option value="">All Semesters</option>';
-                document.getElementById('sectionFilter').innerHTML = '<option value="">All Sections</option>';
-                document.getElementById('subjectFilter').innerHTML = '<option value="">All Subjects</option>';
-            });
-            
-            // Academic year filter change - load semesters
-            document.getElementById('academicYearFilter').addEventListener('change', async function() {
-                const academicYearId = this.value;
-                
-                if (academicYearId) {
-                    try {
-                        const res = await fetch(`/api/analytics/semesters?academic_year_id=${academicYearId}`);
-                        const data = await res.json();
-                        
-                        const semesterFilter = document.getElementById('semesterFilter');
-                        semesterFilter.innerHTML = '<option value="">All Semesters</option>';
-                        
-                        if (data.success) {
-                            data.semesters.forEach(semester => {
-                                const option = document.createElement('option');
-                                option.value = semester.semester_id;
-                                option.textContent = semester.semester_number;
-                                semesterFilter.appendChild(option);
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Error loading semesters:', error);
-                    }
-                }
-                
-                // Reset dependent dropdowns
-                document.getElementById('sectionFilter').innerHTML = '<option value="">All Sections</option>';
-                document.getElementById('subjectFilter').innerHTML = '<option value="">All Subjects</option>';
-            });
-            
-            // Semester filter change - load sections
-            document.getElementById('semesterFilter').addEventListener('change', async function() {
-                const semesterId = this.value;
-                
-                if (semesterId) {
-                    try {
-                        const res = await fetch(`/api/analytics/sections?semester_id=${semesterId}`);
-                        const data = await res.json();
-                        
-                        const sectionFilter = document.getElementById('sectionFilter');
-                        sectionFilter.innerHTML = '<option value="">All Sections</option>';
-                        
-                        if (data.success) {
-                            data.sections.forEach(section => {
-                                const option = document.createElement('option');
-                                option.value = section.section_id;
-                                option.textContent = section.display_name;
-                                sectionFilter.appendChild(option);
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Error loading sections:', error);
-                    }
-                }
-                
-                // Reset subjects
-                document.getElementById('subjectFilter').innerHTML = '<option value="">All Subjects</option>';
-            });
-            
-            // Section filter change - load subjects
-            document.getElementById('sectionFilter').addEventListener('change', async function() {
-                const sectionId = this.value;
-                
-                if (sectionId) {
-                    try {
-                        const res = await fetch(`/api/analytics/subjects?section_id=${sectionId}`);
-                        const data = await res.json();
-                        
-                        const subjectFilter = document.getElementById('subjectFilter');
-                        subjectFilter.innerHTML = '<option value="">All Subjects</option>';
-                        
-                        if (data.success) {
-                            data.subjects.forEach(subject => {
-                                const option = document.createElement('option');
-                                option.value = subject.subject_code;
-                                option.textContent = subject.display_name || subject.subject_name;
-                                subjectFilter.appendChild(option);
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Error loading subjects:', error);
-                    }
-                }
-            });
-            
-            // Section filter change - also load attendance data when section is selected
-            document.getElementById('sectionFilter').addEventListener('change', function() {
-                const sectionId = this.value;
-                const subjectCode = document.getElementById('subjectFilter').value;
-                
-                if (sectionId && subjectCode) {
-                    loadAttendanceData();
-                    loadAttendanceCounts();
-                    loadStudentRecords(1);
-                } else if (sectionId) {
-                    // Only section selected, load student records
-                    loadStudentRecords(1);
-                }
-            });
-            
-            // Subject filter change - load attendance data
-            document.getElementById('subjectFilter').addEventListener('change', function() {
-                const sectionId = document.getElementById('sectionFilter').value;
-                const subjectCode = this.value;
-                
-                if (sectionId && subjectCode) {
-                    loadAttendanceData();
-                    loadAttendanceCounts();
-                }
-            });
-            
-            // Download button
-            document.getElementById('downloadXlsxBtn').addEventListener('click', downloadAttendanceXLSX);
+            } catch (error) {
+                console.error('Error loading academic years:', error);
+            }
         }
+        
+        // Reset dependent dropdowns
+        document.getElementById('curriculumFilter').innerHTML = '<option value="">All Curriculums</option>';
+        document.getElementById('semesterFilter').innerHTML = '<option value="">All Semesters</option>';
+        document.getElementById('sectionFilter').innerHTML = '<option value="">All Sections</option>';
+        document.getElementById('subjectFilter').innerHTML = '<option value="">All Subjects</option>';
+    });
+    
+    // Academic year filter change - load curriculums
+    document.getElementById('academicYearFilter').addEventListener('change', async function() {
+        const academicYearId = this.value;
+        
+        if (academicYearId) {
+            try {
+                const res = await fetch(`/api/analytics/curriculums?academic_year_id=${academicYearId}`);
+                const data = await res.json();
+                console.log('Curriculum API Response:', data); // Debugging
+                
+                const curriculumFilter = document.getElementById('curriculumFilter');
+                curriculumFilter.innerHTML = '<option value="">All Curriculums</option>';
+                
+                if (data.success && data.curriculums && data.curriculums.length > 0) {
+                    data.curriculums.forEach(curriculum => {
+                        const option = document.createElement('option');
+                        option.value = curriculum.curriculum_id;
+                        // Use curriculum_name or fallback to curriculum_year
+                        const displayName = curriculum.curriculum_name || 
+                                          `Curriculum ${curriculum.curriculum_year}`;
+                        option.textContent = displayName;
+                        curriculumFilter.appendChild(option);
+                    });
+                } else {
+                    console.log('No curriculums found for this academic year');
+                }
+            } catch (error) {
+                console.error('Error loading curriculums:', error);
+            }
+        }
+        
+        // Reset dependent dropdowns (but NOT curriculum - it was just loaded)
+        document.getElementById('semesterFilter').innerHTML = '<option value="">All Semesters</option>';
+        document.getElementById('sectionFilter').innerHTML = '<option value="">All Sections</option>';
+        document.getElementById('subjectFilter').innerHTML = '<option value="">All Subjects</option>';
+    });
+    
+    // Curriculum filter change - load semesters
+    document.getElementById('curriculumFilter').addEventListener('change', async function() {
+        const academicYearId = document.getElementById('academicYearFilter').value;
+        const curriculumId = this.value;
+        
+        if (academicYearId && curriculumId) {
+            try {
+                const res = await fetch(`/api/analytics/semesters?academic_year_id=${academicYearId}&curriculum_id=${curriculumId}`);
+                const data = await res.json();
+                
+                const semesterFilter = document.getElementById('semesterFilter');
+                semesterFilter.innerHTML = '<option value="">All Semesters</option>';
+                
+                if (data.success) {
+                    data.semesters.forEach(semester => {
+                        const option = document.createElement('option');
+                        option.value = semester.semester_id;
+                        option.textContent = semester.semester_number;
+                        semesterFilter.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading semesters:', error);
+            }
+        }
+        
+        // Reset dependent dropdowns
+        document.getElementById('sectionFilter').innerHTML = '<option value="">All Sections</option>';
+        document.getElementById('subjectFilter').innerHTML = '<option value="">All Subjects</option>';
+    });
+    
+    // Semester filter change - load sections
+    document.getElementById('semesterFilter').addEventListener('change', async function() {
+        const semesterId = this.value;
+        
+        if (semesterId) {
+            try {
+                const res = await fetch(`/api/analytics/sections?semester_id=${semesterId}`);
+                const data = await res.json();
+                
+                const sectionFilter = document.getElementById('sectionFilter');
+                sectionFilter.innerHTML = '<option value="">All Sections</option>';
+                
+                if (data.success) {
+                    data.sections.forEach(section => {
+                        const option = document.createElement('option');
+                        option.value = section.section_id;
+                        option.textContent = section.display_name;
+                        sectionFilter.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading sections:', error);
+            }
+        }
+        
+        // Reset subjects
+        document.getElementById('subjectFilter').innerHTML = '<option value="">All Subjects</option>';
+    });
+    
+    // Section filter change - load subjects
+    document.getElementById('sectionFilter').addEventListener('change', async function() {
+        const sectionId = this.value;
+        
+        if (sectionId) {
+            try {
+                const res = await fetch(`/api/analytics/subjects?section_id=${sectionId}`);
+                const data = await res.json();
+                
+                const subjectFilter = document.getElementById('subjectFilter');
+                subjectFilter.innerHTML = '<option value="">All Subjects</option>';
+                
+                if (data.success) {
+                    data.subjects.forEach(subject => {
+                        const option = document.createElement('option');
+                        option.value = subject.subject_code;
+                        option.textContent = subject.display_name || subject.subject_name;
+                        subjectFilter.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading subjects:', error);
+            }
+        }
+    });
+    
+    // Section filter change - also load attendance data when section is selected
+    document.getElementById('sectionFilter').addEventListener('change', function() {
+        const sectionId = this.value;
+        const subjectCode = document.getElementById('subjectFilter').value;
+        
+        if (sectionId && subjectCode) {
+            loadAttendanceData();
+            loadAttendanceCounts();
+            loadStudentRecords(1);
+        } else if (sectionId) {
+            // Only section selected, load student records
+            loadStudentRecords(1);
+        }
+    });
+    
+    // Subject filter change - load attendance data
+    document.getElementById('subjectFilter').addEventListener('change', function() {
+        const sectionId = document.getElementById('sectionFilter').value;
+        const subjectCode = this.value;
+        
+        if (sectionId && subjectCode) {
+            loadAttendanceData();
+            loadAttendanceCounts();
+        }
+    });
+    
+    // Download button
+    document.getElementById('downloadXlsxBtn').addEventListener('click', downloadAttendanceXLSX);
+}
 
         async function loadProgramsForStudentRecords() {
             try {
@@ -504,7 +557,7 @@
             const subjectCode = document.getElementById('subjectFilter').value;
             
             if (!sectionId || !subjectCode) {
-                document.getElementById('attendanceSpreadsheet').innerHTML = '<thead><tr><th class="student-col">Student</th></tr></thead><tbody></tbody>';
+                document.getElementById('attendanceSpreadsheet').innerHTML = '<thead><tr><th>Student ID</th><th>First Name</th><th>Last Name</th><th>Middle Name</th><th>Year & Section</th></tr></thead><tbody></tbody>';
                 return;
             }
             
@@ -527,18 +580,19 @@
 
         function clearAttendanceTable() {
             const table = document.getElementById('attendanceSpreadsheet');
-            table.innerHTML = '<thead><tr><th class="student-col">Student</th></tr></thead><tbody><tr><td colspan="100" style="text-align: center; padding: 40px; color: #666;">No attendance data available for the selected filters</td></tr></tbody>';
+            table.innerHTML = '<thead><tr><th>Student ID</th><th>First Name</th><th>Last Name</th><th>Middle Name</th><th>Year & Section</th></tr></thead><tbody><tr><td colspan="100" style="text-align: center; padding: 40px; color: #666;">No attendance data available for the selected filters</td></tr></tbody>';
         }
 
         function renderAttendanceSpreadsheet(dates, students) {
             const table = document.getElementById('attendanceSpreadsheet');
             
             if (!dates.length || !students.length) {
-                table.innerHTML = '<thead><tr><th class="student-col">Student</th></tr></thead><tbody><tr><td colspan="100" style="text-align: center; padding: 40px; color: #666;">No attendance data available</td></tr></tbody>';
+                table.innerHTML = '<thead><tr><th>Student ID</th><th>First Name</th><th>Last Name</th><th>Middle Name</th><th>Year & Section</th></tr></thead><tbody><tr><td colspan="100" style="text-align: center; padding: 40px; color: #666;">No attendance data available</td></tr></tbody>';
                 return;
             }
             
-            let thead = '<thead><tr><th class="student-col">Student</th>';
+            // Separate columns for student info
+            let thead = '<thead><tr><th>Student ID</th><th>First Name</th><th>Last Name</th><th>Middle Name</th><th>Year & Section</th>';
             dates.forEach(date => {
                 const dateObj = new Date(date);
                 const formattedDate = `${(dateObj.getMonth() + 1).toString().padStart(2, '0')}/${dateObj.getDate().toString().padStart(2, '0')}/${dateObj.getFullYear()}`;
@@ -548,19 +602,46 @@
             
             let tbody = '<tbody>';
             students.forEach(student => {
+                // Use the separate name fields from the backend
+                const firstName = student.first_name || '';
+                const middleName = student.middle_name || '';
+                const lastName = student.last_name || '';
+                
+                // ROW 1: Student info + Status
                 tbody += `<tr>
-                    <td class="student-info-cell">
-                        <div class="student-name">${student.name}</div>
-                        <div class="student-id">${student.student_id}</div>
-                        <div class="student-section">${student.section_label}</div>
-                    </td>`;
+                    <td>${student.student_id}</td>
+                    <td>${firstName}</td>
+                    <td>${lastName}</td>
+                    <td>${middleName}</td>
+                    <td>${student.section_label}</td>`;
                 
                 dates.forEach(date => {
-                    const status = student.attendance[date] || 'absent';
+                    const attData = student.attendance[date] || { status: 'absent', missing_duration: 0 };
+                    const status = attData.status || 'absent';
                     const statusText = getStatusText(status);
                     const statusClass = getStatusClass(status);
                     
                     tbody += `<td><div class="status-cell ${statusClass}" title="${statusText}">${statusText.charAt(0).toUpperCase()}</div></td>`;
+                });
+                
+                tbody += '</tr>';
+                
+                // ROW 2: Missing Duration (below each student)
+                tbody += `<tr style="background-color: #f9f9f9;">
+                    <td colspan="5" style="text-align: right; padding-right: 10px; font-size: 11px; color: #666; font-style: italic;">Missing Duration:</td>`;
+                
+                dates.forEach(date => {
+                    const attData = student.attendance[date] || { status: 'absent', missing_duration: 0 };
+                    const missingSeconds = attData.missing_duration || 0;
+                    
+                    let missingText = '-';
+                    if (missingSeconds > 0) {
+                        const minutes = Math.floor(missingSeconds / 60);
+                        const seconds = missingSeconds % 60;
+                        missingText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+                    }
+                    
+                    tbody += `<td style="text-align: center; font-size: 11px; color: #666; font-style: italic;">${missingText}</td>`;
                 });
                 
                 tbody += '</tr>';
@@ -590,6 +671,18 @@
         'absent': 'absent'    // Also 'absent' class
     };
     return classMap[status] || 'absent';
+}
+
+function exportAnalytics() {
+    const sectionId = document.getElementById('section').value;
+    const subjectCode = document.getElementById('subject').value;
+    
+    if (!sectionId || !subjectCode) {
+        alert('Please select a section and subject first');
+        return;
+    }
+    
+    window.location.href = `/api/analytics/export_spreadsheet?section_id=${sectionId}&subject_code=${subjectCode}`;
 }
 
         async function loadAttendanceCounts() {
@@ -952,7 +1045,7 @@
             };
 
             const range = XLSX.utils.decode_range(ws['!ref']);
-            const firstDateColumn = 1; // column index after "Student"
+            const firstDateColumn = 5; // column index after student info columns (Student ID, First, Last, Middle, Section)
 
             for (let r = range.s.r + 1; r <= range.e.r; ++r) { // skip header
                 for (let c = firstDateColumn; c <= range.e.c; ++c) {
@@ -986,8 +1079,12 @@
 
             // Set column widths
             ws['!cols'] = [
-                { wch: 35 }, // Student column
-                ...Array(range.e.c).fill({ wch: 10 }) // date columns
+                { wch: 15 }, // Student ID
+                { wch: 18 }, // First Name
+                { wch: 18 }, // Last Name
+                { wch: 15 }, // Middle Name
+                { wch: 15 }, // Year & Section
+                ...Array(range.e.c - 4).fill({ wch: 10 }) // date columns
             ];
 
             XLSX.utils.book_append_sheet(wb, ws, "Attendance");

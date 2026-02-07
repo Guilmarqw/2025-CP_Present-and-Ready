@@ -23247,419 +23247,791 @@ def _pick_worse(existing, new):
     # Return the status with higher severity (worse)
     return new if new_severity > existing_severity else existing
 
-# ──────────────────────────────────────────────────────────────
-# 1. GET /api/analytics/programs
-#    Called on page load. Populates the Programs dropdown.
-# ──────────────────────────────────────────────────────────────
+
+# ══════════════════════════════════════════════════════════════
+# NEW EXPORT ENDPOINT - FIXED WITH PROPER COLUMNS AND COLORS
+# ══════════════════════════════════════════════════════════════
+@app.route('/api/analytics/export_spreadsheet', methods=['GET'])
+def export_analytics_spreadsheet():
+    """Export analytics as XLSX with separate columns, colors, and missing duration"""
+    try:
+        section_id = request.args.get('section_id')
+        subject_code = request.args.get('subject_code')
+        
+        if not section_id or not subject_code:
+            return jsonify({'success': False, 'message': 'section_id and subject_code required'}), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get section info
+        cursor.execute("""
+            SELECT 
+                ys.program_id,
+                ys.year_level,
+                ys.section_name,
+                p.program_name,
+                s.subject_name
+            FROM year_sections ys
+            JOIN programs p ON ys.program_id = p.program_id
+            LEFT JOIN subjects s ON s.subject_code = %s AND s.section_id = ys.section_id
+            WHERE ys.section_id = %s
+            LIMIT 1
+        """, (subject_code, section_id))
+        
+        section_info = cursor.fetchone()
+        if not section_info:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Section not found'}), 404
+        
+        program_name = section_info['program_name']
+        year_level = section_info['year_level']
+        section_name = section_info['section_name']
+        subject_name = section_info.get('subject_name', 'Unknown')
+        
+        # Get students with SEPARATE name columns
+        cursor.execute("""
+            SELECT 
+                s.student_id,
+                s.first_name,
+                s.middle_name,
+                s.last_name,
+                ys.program_id,
+                CONCAT(ys.year_level, ys.section_name) AS section_label
+            FROM students s
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            WHERE s.section_id = %s AND s.status = 'active'
+            ORDER BY s.last_name ASC, s.first_name ASC
+        """, (section_id,))
+        
+        students = cursor.fetchall()
+        if not students:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'No students found'}), 404
+        
+        student_ids = [st['student_id'] for st in students]
+        
+        # Get sessions with IDs
+        cursor.execute("""
+            SELECT 
+                session_id,
+                DATE(started_at) AS session_date,
+                started_at,
+                ended_at
+            FROM attendance_sessions
+            WHERE section_id = %s
+              AND subject_code = %s
+              AND status IN ('completed', 'active')
+            ORDER BY started_at ASC
+        """, (section_id, subject_code))
+        
+        session_rows = cursor.fetchall()
+        if not session_rows:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'No sessions found'}), 404
+        
+        sessions = []
+        for row in session_rows:
+            d = row['session_date']
+            date_str = d.strftime('%m/%d/%Y') if hasattr(d, 'strftime') else str(d)
+            sessions.append({
+                'session_id': row['session_id'],
+                'date': date_str
+            })
+        
+        # Get attendance with missing duration
+        placeholders = ','.join(['%s'] * len(student_ids))
+        session_placeholders = ','.join(['%s'] * len(sessions))
+        session_ids = [s['session_id'] for s in sessions]
+        
+        cursor.execute(f"""
+            SELECT 
+                student_id,
+                session_id,
+                status,
+                COALESCE(missing_duration, 0) as missing_duration
+            FROM attendance
+            WHERE student_id IN ({placeholders})
+              AND session_id IN ({session_placeholders})
+              AND person_type = 'student'
+        """, student_ids + session_ids)
+        
+        att_rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Build pivot
+        pivot = {}
+        for row in att_rows:
+            sid = row['student_id']
+            sess_id = row['session_id']
+            status = row['status']
+            missing_dur = row['missing_duration'] or 0
+            
+            if sid not in pivot:
+                pivot[sid] = {}
+            
+            if sess_id in pivot[sid]:
+                existing = pivot[sid][sess_id]['status']
+                pivot[sid][sess_id] = {
+                    'status': _pick_worse(existing, status),
+                    'missing_duration': max(pivot[sid][sess_id]['missing_duration'], missing_dur)
+                }
+            else:
+                pivot[sid][sess_id] = {'status': status, 'missing_duration': missing_dur}
+        
+        # Create Excel
+        from openpyxl import Workbook
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+        from datetime import datetime
+        import io
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Attendance"
+        
+        # Colors matching summary export
+        status_colors = {
+            'present': PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid'),
+            'late': PatternFill(start_color='FFEB9C', end_color='FFEB9C', fill_type='solid'),
+            'absent': PatternFill(start_color='F4CCCC', end_color='F4CCCC', fill_type='solid'),
+            'missing': PatternFill(start_color='F4CCCC', end_color='F4CCCC', fill_type='solid'),
+            'excused': PatternFill(start_color='BDD7EE', end_color='BDD7EE', fill_type='solid')
+        }
+        
+        header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+        header_font = Font(bold=True, color='FFFFFF', size=11)
+        header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        
+        thin_border = Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')
+        )
+        
+        # Headers - SEPARATE COLUMNS
+        headers = ['Student ID', 'First Name', 'Last Name', 'Middle Name', 'Year & Section']
+        for session in sessions:
+            headers.append(session['date'])
+        headers.extend(['Total Present', 'Total Late', 'Total Absent', 'Total Excused', 'Attendance %'])
+        
+        # Write headers
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_num, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # Write data
+        current_row = 2
+        
+        for student in students:
+            sid = student['student_id']
+            
+            # Row 1: Student info + status
+            row_data = [
+                sid,
+                student.get('first_name', ''),
+                student.get('last_name', ''),
+                student.get('middle_name', ''),
+                student.get('section_label', '')
+            ]
+            
+            total_present = 0
+            total_late = 0
+            total_absent = 0
+            total_excused = 0
+            
+            # Add status for each session
+            for session in sessions:
+                sess_id = session['session_id']
+                
+                if sid in pivot and sess_id in pivot[sid]:
+                    status = pivot[sid][sess_id]['status']
+                else:
+                    status = 'absent'
+                
+                status_letter = status[0].upper() if status else 'A'
+                row_data.append(status_letter)
+                
+                if status == 'present':
+                    total_present += 1
+                elif status == 'late':
+                    total_late += 1
+                elif status == 'excused':
+                    total_excused += 1
+                else:
+                    total_absent += 1
+            
+            # Summary
+            total_sessions = len(sessions)
+            attendance_pct = round((total_present + total_late) / total_sessions * 100, 1) if total_sessions > 0 else 0
+            row_data.extend([total_present, total_late, total_absent, total_excused, f"{attendance_pct}%"])
+            
+            # Write status row
+            for col_num, value in enumerate(row_data, 1):
+                cell = ws.cell(row=current_row, column=col_num, value=value)
+                cell.border = thin_border
+                cell.alignment = Alignment(vertical='center', horizontal='left' if col_num <= 5 else 'center')
+                
+                # Apply colors to status columns
+                if col_num > 5 and col_num <= 5 + len(sessions):
+                    status_index = col_num - 6
+                    sess_id = sessions[status_index]['session_id']
+                    
+                    if sid in pivot and sess_id in pivot[sid]:
+                        status = pivot[sid][sess_id]['status']
+                    else:
+                        status = 'absent'
+                    
+                    if status in status_colors:
+                        cell.fill = status_colors[status]
+                        cell.font = Font(bold=True)
+            
+            current_row += 1
+            
+            # Row 2: Missing duration
+            missing_row = ['', '', '', '', '']
+            
+            for session in sessions:
+                sess_id = session['session_id']
+                
+                if sid in pivot and sess_id in pivot[sid]:
+                    missing_sec = pivot[sid][sess_id]['missing_duration']
+                    if missing_sec > 0:
+                        minutes = missing_sec // 60
+                        seconds = missing_sec % 60
+                        missing_time = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+                    else:
+                        missing_time = "-"
+                else:
+                    missing_time = "-"
+                
+                missing_row.append(missing_time)
+            
+            missing_row.extend(['', '', '', '', ''])
+            
+            # Write missing duration row
+            for col_num, value in enumerate(missing_row, 1):
+                cell = ws.cell(row=current_row, column=col_num, value=value)
+                cell.border = thin_border
+                cell.alignment = Alignment(vertical='center', horizontal='center')
+                cell.font = Font(size=9, italic=True, color='666666')
+            
+            current_row += 1
+        
+        # Column widths
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 18
+        ws.column_dimensions['C'].width = 18
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 15
+        
+        for i in range(len(sessions)):
+            ws.column_dimensions[get_column_letter(6 + i)].width = 12
+        
+        summary_start = 6 + len(sessions)
+        for i in range(5):
+            ws.column_dimensions[get_column_letter(summary_start + i)].width = 14
+        
+        ws.freeze_panes = 'F2'
+        
+        # Save
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"Analytics_{subject_code}_{program_name}_{year_level}{section_name}_{timestamp}.xlsx"
+        
+        from flask import Response
+        return Response(
+            output.getvalue(),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename=\"{filename}\"",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Export error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════════════
+# ALL OTHER ANALYTICS ENDPOINTS (NO CHANGES)
+# ══════════════════════════════════════════════════════════════
+
 @app.route('/api/analytics/programs', methods=['GET'])
 def get_analytics_programs():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
         cursor.execute("""
             SELECT program_id, program_name
             FROM programs
-            WHERE status = 'active'  # Keep this for programs - only show active programs
+            WHERE status = 'active'
             ORDER BY program_name ASC
         """)
         programs = cursor.fetchall()
-
         cursor.close()
         conn.close()
-
         return jsonify({'success': True, 'programs': programs})
-
     except Exception as e:
         logger.error(f"Error getting analytics programs: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
 
-# ──────────────────────────────────────────────────────────────
-# 2. GET /api/analytics/academic_years?program_id=IT
-#    Called when user picks a program.
-#    Populates the Academic Year dropdown.
-#    REMOVED status filter to show ALL years
-# ──────────────────────────────────────────────────────────────
 @app.route('/api/analytics/academic_years', methods=['GET'])
 def get_analytics_academic_years():
     try:
         program_id = request.args.get('program_id')
-
         if not program_id:
             return jsonify({'success': False, 'message': 'program_id is required'})
-
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
         cursor.execute("""
             SELECT academic_year_id, academic_year
             FROM academic_years
             WHERE program_id = %s
-            ORDER BY academic_year DESC  # Show newest first
+            ORDER BY academic_year DESC
         """, (program_id,))
         rows = cursor.fetchall()
-
         cursor.close()
         conn.close()
-
         return jsonify({'success': True, 'academic_years': rows})
-
     except Exception as e:
         logger.error(f"Error getting analytics academic years: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
 
-# ──────────────────────────────────────────────────────────────
-# 3. GET /api/analytics/semesters?academic_year_id=5
-#    Called when user picks an academic year.
-#    Populates the Semester dropdown.
-#    REMOVED status filter to show ALL semesters
-# ──────────────────────────────────────────────────────────────
 @app.route('/api/analytics/semesters', methods=['GET'])
 def get_analytics_semesters():
+    """
+    Get semesters filtered by academic year AND curriculum
+    """
     try:
         academic_year_id = request.args.get('academic_year_id')
-
+        curriculum_id = request.args.get('curriculum_id')
+        
         if not academic_year_id:
             return jsonify({'success': False, 'message': 'academic_year_id is required'})
-
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
-        cursor.execute("""
-            SELECT semester_id, semester_number
-            FROM semesters
-            WHERE academic_year_id = %s
-            ORDER BY
-                CASE semester_number
-                    WHEN '1st Semester' THEN 1
-                    WHEN '2nd Semester' THEN 2
-                    WHEN 'Summer' THEN 3
-                    ELSE 4
-                END
-        """, (academic_year_id,))
+        
+        # If curriculum_id is provided, filter by it
+        if curriculum_id:
+            cursor.execute("""
+                SELECT DISTINCT s.semester_id, s.semester_number
+                FROM semesters s
+                INNER JOIN year_sections ys ON s.semester_id = ys.semester_id
+                WHERE s.academic_year_id = %s 
+                  AND ys.curriculum_id = %s
+                ORDER BY
+                    CASE s.semester_number
+                        WHEN '1st Semester' THEN 1
+                        WHEN '2nd Semester' THEN 2
+                        WHEN 'Summer' THEN 3
+                        ELSE 4
+                    END
+            """, (academic_year_id, curriculum_id))
+        else:
+            # No curriculum filter - show all semesters for this academic year
+            cursor.execute("""
+                SELECT semester_id, semester_number
+                FROM semesters
+                WHERE academic_year_id = %s
+                ORDER BY
+                    CASE semester_number
+                        WHEN '1st Semester' THEN 1
+                        WHEN '2nd Semester' THEN 2
+                        WHEN 'Summer' THEN 3
+                        ELSE 4
+                    END
+            """, (academic_year_id,))
+        
         rows = cursor.fetchall()
-
         cursor.close()
         conn.close()
-
+        
         return jsonify({'success': True, 'semesters': rows})
-
+        
     except Exception as e:
         logger.error(f"Error getting analytics semesters: {e}")
         return jsonify({'success': False, 'message': str(e)})
-
-
-# ──────────────────────────────────────────────────────────────
-# 4. GET /api/analytics/sections?semester_id=3
-#    Called when user picks a semester.
-#    Populates the Year and Section dropdown.
-#    Returns section_id + display like "4C".
-#    REMOVED status filter to show ALL sections
-# ──────────────────────────────────────────────────────────────
+    
 @app.route('/api/analytics/sections', methods=['GET'])
 def get_analytics_sections():
     try:
         semester_id = request.args.get('semester_id')
-
         if not semester_id:
             return jsonify({'success': False, 'message': 'semester_id is required'})
-
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
         cursor.execute("""
-            SELECT section_id,
-                   year_level,
-                   section_name,
+            SELECT section_id, year_level, section_name,
                    CONCAT(year_level, section_name) AS display_name
             FROM year_sections
             WHERE semester_id = %s
             ORDER BY year_level ASC, section_name ASC
         """, (semester_id,))
         rows = cursor.fetchall()
-
         cursor.close()
         conn.close()
-
         return jsonify({'success': True, 'sections': rows})
-
     except Exception as e:
         logger.error(f"Error getting analytics sections: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
 
-# ──────────────────────────────────────────────────────────────
-# 5. GET /api/analytics/subjects?section_id=12
-#    Called when user picks a section.
-#    Populates the Subject dropdown.
-#    REMOVED status filter to show ALL subjects
-# ──────────────────────────────────────────────────────────────
 @app.route('/api/analytics/subjects', methods=['GET'])
 def get_analytics_subjects():
     try:
         section_id = request.args.get('section_id')
-
         if not section_id:
             return jsonify({'success': False, 'message': 'section_id is required'})
-
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
         cursor.execute("""
-            SELECT subject_id,
-                   subject_code,
-                   subject_name,
+            SELECT subject_id, subject_code, subject_name,
                    CONCAT(subject_code, ' - ', subject_name) AS display_name
             FROM subjects
             WHERE section_id = %s
             ORDER BY subject_code ASC
         """, (section_id,))
         rows = cursor.fetchall()
-
         cursor.close()
         conn.close()
-
         return jsonify({'success': True, 'subjects': rows})
-
     except Exception as e:
         logger.error(f"Error getting analytics subjects: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
 
-# ──────────────────────────────────────────────────────────────
-# 6. GET /api/analytics/spreadsheet?section_id=12&subject_code=CS101
-#    THE MAIN ONE. Builds the attendance spreadsheet grid.
-#    NO CHANGE NEEDED - Already shows all attendance regardless of status
-# ──────────────────────────────────────────────────────────────
 @app.route('/api/analytics/spreadsheet', methods=['GET'])
 def get_analytics_spreadsheet():
+    """
+    Returns attendance data with MISSING DURATION included
+    """
     try:
-        section_id   = request.args.get('section_id')
+        section_id = request.args.get('section_id')
         subject_code = request.args.get('subject_code')
-
+        
         if not section_id or not subject_code:
             return jsonify({'success': False, 'message': 'section_id and subject_code are required'})
-
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
-        # a) all active students in this section (keep active filter for students)
+        
+        # Get students with separate name fields
         cursor.execute("""
             SELECT s.student_id,
-                   CONCAT(s.first_name, ' ',
-                          CASE WHEN s.middle_name IS NOT NULL AND s.middle_name != ''
-                               THEN CONCAT(s.middle_name, ' ')
-                               ELSE ''
-                          END,
-                          s.last_name) AS full_name,
+                   s.first_name,
+                   s.middle_name,
+                   s.last_name,
                    ys.program_id,
                    CONCAT(ys.year_level, ys.section_name) AS section_label
             FROM students s
             JOIN year_sections ys ON s.section_id = ys.section_id
-            WHERE s.section_id = %s
-              AND s.status = 'active'  # Keep active for students
+            WHERE s.section_id = %s AND s.status = 'active'
             ORDER BY s.last_name ASC, s.first_name ASC
         """, (section_id,))
         students = cursor.fetchall()
-
+        
         if not students:
             cursor.close()
             conn.close()
             return jsonify({'success': True, 'dates': [], 'students': []})
-
+        
         student_ids = [st['student_id'] for st in students]
-
-        # b) distinct dates that had a session for this section + subject
+        
+        # Get sessions with session_id (needed to fetch missing_duration)
         cursor.execute("""
-            SELECT DISTINCT DATE(started_at) AS session_date
+            SELECT session_id,
+                   DATE(started_at) AS session_date
             FROM attendance_sessions
-            WHERE section_id   = %s
-              AND subject_code = %s
-              AND status IN ('completed', 'active')  # Keep this to show only actual sessions
-            ORDER BY session_date ASC
+            WHERE section_id = %s AND subject_code = %s
+              AND status IN ('completed', 'active')
+            ORDER BY started_at ASC
         """, (section_id, subject_code))
-        date_rows = cursor.fetchall()
-
-        dates = []
-        for row in date_rows:
-            d = row['session_date']
-            dates.append(d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d))
-
-        if not dates:
-            # sessions exist but no dates yet — return students with empty attendance
+        session_rows = cursor.fetchall()
+        
+        if not session_rows:
             cursor.close()
             conn.close()
-            result = []
+            empty_students = []
             for st in students:
-                result.append({
-                    'student_id':    st['student_id'],
-                    'name':          st['full_name'],
-                    'program_id':    st['program_id'],
+                empty_students.append({
+                    'student_id': st['student_id'],
+                    'first_name': st.get('first_name', ''),
+                    'middle_name': st.get('middle_name', ''),
+                    'last_name': st.get('last_name', ''),
+                    'program_id': st['program_id'],
                     'section_label': st['section_label'],
-                    'attendance':    {}
+                    'attendance': {}
                 })
-            return jsonify({'success': True, 'dates': [], 'students': result})
-
-        # c) all attendance rows for these students + this subject
-        placeholders = ','.join(['%s'] * len(student_ids))
+            return jsonify({'success': True, 'dates': [], 'students': empty_students})
+        
+        # Build date list and session_id mapping
+        dates = []
+        session_map = {}  # date -> session_id
+        for row in session_rows:
+            d = row['session_date']
+            date_str = d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)
+            dates.append(date_str)
+            session_map[date_str] = row['session_id']
+        
+        # Get attendance WITH missing_duration using session_id
+        session_ids = [row['session_id'] for row in session_rows]
+        placeholders_students = ','.join(['%s'] * len(student_ids))
+        placeholders_sessions = ','.join(['%s'] * len(session_ids))
+        
         cursor.execute(f"""
-            SELECT student_id,
-                   DATE(timestamp) AS att_date,
-                   status
+            SELECT student_id, 
+                   session_id,
+                   status,
+                   COALESCE(missing_duration, 0) as missing_duration
             FROM attendance
-            WHERE student_id IN ({placeholders})
-              AND subject_code = %s
-              AND person_type  = 'student'
-            ORDER BY att_date ASC
-        """, student_ids + [subject_code])
+            WHERE student_id IN ({placeholders_students})
+              AND session_id IN ({placeholders_sessions})
+              AND person_type = 'student'
+        """, student_ids + session_ids)
         att_rows = cursor.fetchall()
-
+        
         cursor.close()
         conn.close()
-
-        # d) pivot  →  { student_id: { date_str: status } }
+        
+        # Build pivot with BOTH status and missing_duration
         pivot = {}
         for row in att_rows:
-            sid  = row['student_id']
-            d    = row['att_date']
-            date_str = d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)
-            status   = row['status']
-
+            sid = row['student_id']
+            sess_id = row['session_id']
+            status = row['status']
+            missing_dur = row['missing_duration'] or 0
+            
             if sid not in pivot:
                 pivot[sid] = {}
-
-            # if multiple rows same student same date keep the worst one
-            # order: present < excused < late < missing
-            existing = pivot[sid].get(date_str)
-            pivot[sid][date_str] = _pick_worse(existing, status)
-
-        # e) build final list, fill blanks with "absent"
+            
+            if sess_id in pivot[sid]:
+                # If duplicate, pick worse status and max duration
+                existing = pivot[sid][sess_id]['status']
+                pivot[sid][sess_id] = {
+                    'status': _pick_worse(existing, status),
+                    'missing_duration': max(pivot[sid][sess_id]['missing_duration'], missing_dur)
+                }
+            else:
+                pivot[sid][sess_id] = {
+                    'status': status,
+                    'missing_duration': missing_dur
+                }
+        
+        # Build result with missing_duration included
         result_students = []
         for st in students:
-            sid        = st['student_id']
+            sid = st['student_id']
+            
             attendance = {}
-            for d in dates:
-                attendance[d] = pivot.get(sid, {}).get(d, 'absent')
+            for date_str in dates:
+                sess_id = session_map[date_str]
+                
+                if sid in pivot and sess_id in pivot[sid]:
+                    attendance[date_str] = {
+                        'status': pivot[sid][sess_id]['status'],
+                        'missing_duration': pivot[sid][sess_id]['missing_duration']
+                    }
+                else:
+                    attendance[date_str] = {
+                        'status': 'absent',
+                        'missing_duration': 0
+                    }
+            
             result_students.append({
-                'student_id':    sid,
-                'name':          st['full_name'],
-                'program_id':    st['program_id'],
+                'student_id': sid,
+                'first_name': st.get('first_name', ''),
+                'middle_name': st.get('middle_name', ''),
+                'last_name': st.get('last_name', ''),
+                'program_id': st['program_id'],
                 'section_label': st['section_label'],
-                'attendance':    attendance
+                'attendance': attendance
             })
-
+        
         return jsonify({'success': True, 'dates': dates, 'students': result_students})
-
+        
     except Exception as e:
         logger.error(f"Error getting analytics spreadsheet: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-
-# ──────────────────────────────────────────────────────────────
-# 7. GET /api/analytics/attendance_counts?section_id=12&subject_code=CS101
-#    NO CHANGE NEEDED - Already calculates based on all sessions
-# ──────────────────────────────────────────────────────────────
 @app.route('/api/analytics/attendance_counts', methods=['GET'])
 def get_analytics_attendance_counts():
+    """
+    Correctly counts attendance including 'missing' records as 'absent'
+    
+    Your database has:
+    - status enum: 'present', 'late', 'missing', 'excused'
+    - NO 'absent' in the enum!
+    
+    The fix:
+    - Count 'missing' records from database
+    - Calculate implicit absences (no record = absent)
+    - Return combined total as 'absent'
+    """
     try:
-        section_id   = request.args.get('section_id')
+        section_id = request.args.get('section_id')
         subject_code = request.args.get('subject_code')
-
+        
         if not section_id or not subject_code:
             return jsonify({'success': False, 'message': 'section_id and subject_code are required'})
-
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
-        # how many active students in this section (keep active for students)
+        
+        # Get total students
         cursor.execute("""
-            SELECT COUNT(*) AS student_count
-            FROM students
-            WHERE section_id = %s
-              AND status = 'active'
+            SELECT COUNT(*) AS student_count 
+            FROM students 
+            WHERE section_id = %s AND status = 'active'
         """, (section_id,))
         student_count = cursor.fetchone()['student_count']
-
-        # how many unique session-dates exist for section + subject
+        
+        # Get total sessions
         cursor.execute("""
             SELECT COUNT(DISTINCT DATE(started_at)) AS session_days
             FROM attendance_sessions
-            WHERE section_id   = %s
-              AND subject_code = %s
+            WHERE section_id = %s AND subject_code = %s 
               AND status IN ('completed', 'active')
         """, (section_id, subject_code))
         session_days = cursor.fetchone()['session_days']
-
-        # count each status from attendance
+        
+        # CRITICAL FIX: Count all statuses including 'missing'
         cursor.execute("""
-            SELECT status, COUNT(*) AS cnt
+            SELECT 
+                COALESCE(SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END), 0) as present_count,
+                COALESCE(SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END), 0) as late_count,
+                COALESCE(SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END), 0) as excused_count,
+                COALESCE(SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END), 0) as missing_count
             FROM attendance
-            WHERE section_id   = %s
-              AND subject_code = %s
-              AND person_type  = 'student'
-            GROUP BY status
+            WHERE section_id = %s 
+              AND subject_code = %s 
+              AND person_type = 'student'
         """, (section_id, subject_code))
-        status_rows = cursor.fetchall()
-
+        
+        result = cursor.fetchone()
         cursor.close()
         conn.close()
-
-        counts = {'present': 0, 'late': 0, 'excused': 0, 'missing': 0}
-        for row in status_rows:
-            if row['status'] in counts:
-                counts[row['status']] = row['cnt']
-
-        # absent = total possible attendance slots − every slot that has any row
+        
+        present = int(result['present_count'])
+        late = int(result['late_count'])
+        excused = int(result['excused_count'])
+        missing = int(result['missing_count'])
+        
+        # Calculate total possible attendance records
         total_possible = student_count * session_days
-        total_recorded = sum(counts.values())
-        absent_count   = max(total_possible - total_recorded, 0)
-
+        
+        # Calculate total recorded
+        total_recorded = present + late + excused + missing
+        
+        # Implicit absences = students who have NO attendance record at all
+        implicit_absent = max(total_possible - total_recorded, 0)
+        
+        # CRITICAL: Combine 'missing' from DB + implicit absences = total absent
+        total_absent = missing + implicit_absent
+        
+        print(f"""
+        DEBUG Attendance Counts:
+        - Students: {student_count}
+        - Sessions: {session_days}
+        - Total possible: {total_possible}
+        - Present: {present}
+        - Late: {late}
+        - Excused: {excused}
+        - Missing (from DB): {missing}
+        - Implicit absent: {implicit_absent}
+        - TOTAL ABSENT: {total_absent}
+        """)
+        
         return jsonify({
-            'success':  True,
-            'present':  counts['present'],
-            'late':     counts['late'],
-            'excused':  counts['excused'],
-            'missing':  counts['missing'],
-            'absent':   absent_count
+            'success': True,
+            'present': present,
+            'late': late,
+            'excused': excused,
+            'missing': missing,  # For backwards compatibility if needed
+            'absent': total_absent  # THIS IS THE KEY FIX
         })
-
+        
     except Exception as e:
         logger.error(f"Error getting analytics attendance counts: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)})
 
-
-# ──────────────────────────────────────────────────────────────
-# 8. GET /api/analytics/student_records?section_id=12&page=1&limit=20
-#    Feeds the "Student Records" table below the spreadsheet.
-#    NO CHANGE NEEDED - Already shows active students for the section
-# ──────────────────────────────────────────────────────────────
+@app.route('/api/analytics/curriculums', methods=['GET'])
+def get_analytics_curriculums():
+    """
+    Get curriculums for a specific academic year
+    This helps filter down the semester options
+    """
+    try:
+        academic_year_id = request.args.get('academic_year_id')
+        if not academic_year_id:
+            return jsonify({'success': False, 'message': 'academic_year_id is required'})
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        # Using fields that actually exist in your curricula table
+        cursor.execute("""
+            SELECT DISTINCT 
+                c.curriculum_id, 
+                c.curriculum_name, 
+                c.curriculum_year,
+                c.program_id
+            FROM curricula c
+            INNER JOIN year_sections ys ON c.curriculum_id = ys.curriculum_id
+            INNER JOIN semesters s ON ys.semester_id = s.semester_id
+            WHERE s.academic_year_id = %s
+            ORDER BY c.curriculum_year DESC, c.curriculum_name ASC
+        """, (academic_year_id,))
+        
+        curriculums = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({'success': True, 'curriculums': curriculums})
+        
+    except Exception as e:
+        logger.error(f"Error getting analytics curriculums: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    
 @app.route('/api/analytics/student_records', methods=['GET'])
 def get_analytics_student_records():
     try:
         section_id = request.args.get('section_id')
-        page       = int(request.args.get('page', 1))
-        limit      = int(request.args.get('limit', 20))
-        offset     = (page - 1) * limit
-
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        offset = (page - 1) * limit
+        
         if not section_id:
             return jsonify({'success': False, 'message': 'section_id is required'})
-
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
-        # total row count for pagination
-        cursor.execute("""
-            SELECT COUNT(*) AS total
-            FROM students
-            WHERE section_id = %s
-              AND status = 'active'  # Keep active for students
-        """, (section_id,))
+        
+        cursor.execute("SELECT COUNT(*) AS total FROM students WHERE section_id = %s AND status = 'active'", (section_id,))
         total = cursor.fetchone()['total']
-
-        # main query — LEFT JOIN a subquery that calculates
-        # attendance_rate per student from the attendance table
+        
         cursor.execute("""
             SELECT s.student_id,
                    CONCAT(s.first_name, ' ',
@@ -23668,67 +24040,64 @@ def get_analytics_student_records():
                                ELSE ''
                           END,
                           s.last_name) AS full_name,
-                   p.program_id,
-                   p.program_name,
+                   p.program_id, p.program_name,
                    CONCAT(ys.year_level, ys.section_name) AS section_label,
-                   s.email,
-                   s.status AS student_status,
+                   s.email, s.status AS student_status,
                    COALESCE(att.total_records, 0) AS total_records,
-                   COALESCE(att.attended, 0)      AS attended,
+                   COALESCE(att.attended, 0) AS attended,
                    CASE
                        WHEN COALESCE(att.total_records, 0) = 0 THEN 0
                        ELSE ROUND(att.attended / att.total_records * 100, 1)
                    END AS attendance_rate
             FROM students s
-            JOIN year_sections ys ON s.section_id  = ys.section_id
-            JOIN programs      p  ON ys.program_id = p.program_id
+            JOIN year_sections ys ON s.section_id = ys.section_id
+            JOIN programs p ON ys.program_id = p.program_id
             LEFT JOIN (
                 SELECT student_id,
-                       COUNT(*)                                                     AS total_records,
+                       COUNT(*) AS total_records,
                        SUM(CASE WHEN status IN ('present', 'late') THEN 1 ELSE 0 END) AS attended
                 FROM attendance
                 WHERE person_type = 'student'
                 GROUP BY student_id
             ) att ON s.student_id = att.student_id
-            WHERE s.section_id = %s
-              AND s.status     = 'active'
+            WHERE s.section_id = %s AND s.status = 'active'
             ORDER BY s.last_name ASC, s.first_name ASC
             LIMIT %s OFFSET %s
         """, (section_id, limit, offset))
         students = cursor.fetchall()
-
+        
         cursor.close()
         conn.close()
-
+        
         return jsonify({
-            'success':  True,
+            'success': True,
             'students': students,
             'pagination': {
-                'total':       total,
-                'page':        page,
-                'limit':       limit,
+                'total': total,
+                'page': page,
+                'limit': limit,
                 'total_pages': (total + limit - 1) // limit
             }
         })
-
+        
     except Exception as e:
         logger.error(f"Error getting analytics student records: {e}")
         return jsonify({'success': False, 'message': str(e)})
-    
+
+
 @app.route('/api/analytics/top_performers', methods=['GET'])
 def get_analytics_top_performers():
     try:
         section_id = request.args.get('section_id')
         subject_code = request.args.get('subject_code')
         limit = int(request.args.get('limit', 3))
-
+        
         if not section_id or not subject_code:
             return jsonify({'success': False, 'message': 'section_id and subject_code are required'})
-
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-
-        # Get top performers for this specific subject
+        
         cursor.execute("""
             SELECT s.student_id,
                    CONCAT(s.first_name, ' ',
@@ -23750,30 +24119,24 @@ def get_analytics_top_performers():
                        SUM(CASE WHEN status IN ('present', 'late') THEN 1 ELSE 0 END) AS attended
                 FROM attendance
                 WHERE person_type = 'student'
-                  AND subject_code = %s
-                  AND section_id = %s
+                  AND subject_code = %s AND section_id = %s
                 GROUP BY student_id
             ) att ON s.student_id = att.student_id
-            WHERE s.section_id = %s
-              AND s.status = 'active'
+            WHERE s.section_id = %s AND s.status = 'active'
               AND COALESCE(att.total_records, 0) > 0
             ORDER BY attendance_rate DESC, s.last_name ASC
             LIMIT %s
         """, (subject_code, section_id, section_id, limit))
         
         top_performers = cursor.fetchall()
-
         cursor.close()
         conn.close()
-
-        return jsonify({
-            'success': True,
-            'top_performers': top_performers
-        })
-
+        
+        return jsonify({'success': True, 'top_performers': top_performers})
+        
     except Exception as e:
         logger.error(f"Error getting top performers: {e}")
-        return jsonify({'success': False, 'message': str(e)})    
+        return jsonify({'success': False, 'message': str(e)})
 
 if __name__ == "__main__":
     latest_frame = None
