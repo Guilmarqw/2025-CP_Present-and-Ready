@@ -16016,13 +16016,93 @@ def check_curriculum_exists():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/get_active_academic_year', methods=['GET'])
+def get_active_academic_year():
+    """
+    Get the most recent active academic year (global - no program needed)
+    Used for initial page load before program is selected
+    """
+    try:
+        with get_db_cursor() as cursor:
+            # Get the most recent active academic year across all programs
+            query = """
+            SELECT academic_year, status, created_at
+            FROM academic_years
+            WHERE status = 'active'
+            ORDER BY 
+                CASE 
+                    WHEN academic_year LIKE '%-%' THEN 
+                        CAST(SUBSTRING_INDEX(academic_year, '-', 1) AS UNSIGNED)
+                    ELSE 0 
+                END DESC,
+                created_at DESC
+            LIMIT 1
+            """
+            
+            cursor.execute(query)
+            result = cursor.fetchone()
+            
+            if result:
+                logger.info(f"✓ Active academic year: {result['academic_year']}")
+                return jsonify({
+                    'success': True,
+                    'academic_year': result['academic_year']
+                })
+            else:
+                logger.warning("⚠ No active academic year found in database")
+                return jsonify({
+                    'success': False,
+                    'message': 'No active academic year found'
+                })
+                
+    except Exception as e:
+        logger.error(f"Error in get_active_academic_year: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        })
+
 @app.route('/api/get_active_academic_year_for_program', methods=['GET'])
 def get_active_academic_year_for_program():
     """Get active academic year for a specific program"""
     program_id = request.args.get('program_id')
     
+    # If no program_id, return global active academic year
     if not program_id:
-        return jsonify({'success': False, 'message': 'Program ID is required'})
+        try:
+            with get_db_cursor() as cursor:
+                query = """
+                SELECT academic_year
+                FROM academic_years
+                WHERE status = 'active'
+                ORDER BY 
+                    CASE 
+                        WHEN academic_year LIKE '%-%' THEN 
+                            CAST(SUBSTRING_INDEX(academic_year, '-', 1) AS UNSIGNED)
+                        ELSE 0 
+                    END DESC
+                LIMIT 1
+                """
+                cursor.execute(query)
+                result = cursor.fetchone()
+                
+                if result:
+                    return jsonify({
+                        'success': True,
+                        'academic_year': result['academic_year'],
+                        'semester': '1st Semester'
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No active academic year found'
+                    })
+        except Exception as e:
+            logger.error(f"Error fetching global active academic year: {e}")
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            })
     
     try:
         with get_db_cursor() as cursor:
@@ -16067,6 +16147,8 @@ def get_active_academic_year_for_program():
                 })
             else:
                 # Fallback to finding any academic year with sections for this program
+                logger.warning(f"No active academic year for {program_id}, checking for any year with sections...")
+                
                 fallback_query = """
                 SELECT DISTINCT ay.academic_year
                 FROM academic_years ay
@@ -16086,6 +16168,7 @@ def get_active_academic_year_for_program():
                 fallback_result = cursor.fetchone()
                 
                 if fallback_result:
+                    logger.info(f"Found academic year with sections: {fallback_result['academic_year']}")
                     return jsonify({
                         'success': True,
                         'academic_year': fallback_result['academic_year'],
@@ -16093,6 +16176,8 @@ def get_active_academic_year_for_program():
                     })
                 else:
                     # Last resort: get the most recent academic year for this program
+                    logger.warning(f"No sections found, getting latest academic year for {program_id}...")
+                    
                     last_resort_query = """
                     SELECT academic_year
                     FROM academic_years 
@@ -16109,19 +16194,25 @@ def get_active_academic_year_for_program():
                     cursor.execute(last_resort_query, (program_id,))
                     last_resort_result = cursor.fetchone()
                     
-                    return jsonify({
-                        'success': True,
-                        'academic_year': last_resort_result['academic_year'] if last_resort_result else '2025-2026',
-                        'semester': '1st Semester'
-                    })
+                    if last_resort_result:
+                        return jsonify({
+                            'success': True,
+                            'academic_year': last_resort_result['academic_year'],
+                            'semester': '1st Semester'
+                        })
+                    else:
+                        # Absolutely no data found
+                        logger.error(f"No academic years found at all for program {program_id}")
+                        return jsonify({
+                            'success': False,
+                            'message': f'No academic years found for program {program_id}'
+                        })
                 
     except Exception as e:
         logger.error(f"Error fetching active academic year for program {program_id}: {e}")
         return jsonify({
             'success': False, 
-            'message': str(e),
-            'academic_year': '2025-2026',
-            'semester': '1st Semester'
+            'message': str(e)
         })
 
 @app.route('/api/get_active_period', methods=['GET'])

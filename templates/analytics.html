@@ -1003,101 +1003,235 @@ function exportAnalytics() {
             });
         }
 
-        function downloadAttendanceXLSX() {
-            const table = document.getElementById("attendanceSpreadsheet");
-            if (!table) return;
+function downloadAttendanceXLSX() {
+    const table = document.getElementById("attendanceSpreadsheet");
+    if (!table) return;
 
-            const data = [];
-            const rows = table.querySelectorAll("tr");
+    const data = [];
+    const headers = [];
+    const rows = table.querySelectorAll("tr");
+    
+    // Get headers from thead
+    const headerRow = table.querySelector("thead tr");
+    if (headerRow) {
+        headerRow.querySelectorAll("th").forEach(th => {
+            headers.push(th.textContent.trim());
+        });
+    }
+    
+    // Add headers to data
+    if (headers.length > 0) {
+        data.push(headers);
+    }
 
-            rows.forEach(row => {
-                if (row.style.display !== "none") {
-                    const rowData = [];
-                    const cells = row.querySelectorAll("td, th");
-
-                    cells.forEach(cell => {
-                        const statusDiv = cell.querySelector(".status-cell");
-                        if (statusDiv) {
-                            rowData.push(statusDiv.textContent.trim()); // P, L, E, A
-                        } else {
-                            rowData.push(cell.textContent.trim());
-                        }
-                    });
-                    data.push(rowData);
+    // Process rows - group by pairs (student row + missing duration row)
+    const allRows = Array.from(table.querySelectorAll("tbody tr"));
+    console.log("Total rows found:", allRows.length);
+    
+    for (let i = 0; i < allRows.length; i += 2) {
+        // Student data row (row 1)
+        const studentRow = allRows[i];
+        // Missing duration row (row 2)
+        const missingRow = allRows[i + 1];
+        
+        if (studentRow && studentRow.style.display !== "none") {
+            const studentRowData = [];
+            const studentCells = studentRow.querySelectorAll("td");
+            
+            // Process student data cells
+            studentCells.forEach((cell, index) => {
+                const statusDiv = cell.querySelector(".status-cell");
+                if (statusDiv) {
+                    // This is a status column - get the letter (P, L, E, A)
+                    studentRowData.push(statusDiv.textContent.trim());
+                } else {
+                    // This is a student info column
+                    studentRowData.push(cell.textContent.trim());
                 }
             });
-
-            if (data.length < 1) {
-                alert("No visible attendance data to export.");
-                return;
-            }
-
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet(data);
-
-            // Color definitions (RGB hex without #)
-            const statusColors = {
-                "P": { bg: "C6EFCE", font: "006100" },   // Present
-                "L": { bg: "FFEB9C", font: "9C6500" },   // Late
-                "E": { bg: "BDD7EE", font: "002060" },   // Excused
-                "A": { bg: "F4CCCC", font: "9C0006" }    // Absent
-            };
-
-            const range = XLSX.utils.decode_range(ws['!ref']);
-            const firstDateColumn = 5; // column index after student info columns (Student ID, First, Last, Middle, Section)
-
-            for (let r = range.s.r + 1; r <= range.e.r; ++r) { // skip header
-                for (let c = firstDateColumn; c <= range.e.c; ++c) {
-                    const cell_address = XLSX.utils.encode_cell({ r: r, c: c });
-                    const cell = ws[cell_address];
-                    if (!cell) continue;
-
-                    const status = String(cell.v || "").trim().toUpperCase();
-
-                    if (statusColors[status]) {
-                        const color = statusColors[status];
-                        cell.s = {
-                            fill: {
-                                patternType: "solid",
-                                fgColor: { rgb: color.bg }
-                            },
-                            font: {
-                                name: "Calibri",
-                                sz: 11,
-                                color: { rgb: color.font },
-                                bold: true
-                            },
-                            alignment: {
-                                horizontal: "center",
-                                vertical: "center"
-                            }
-                        };
+            
+            // Add student row to data
+            data.push(studentRowData);
+            
+            // Process missing duration row if it exists
+            if (missingRow && missingRow.style.display !== "none") {
+                const missingRowData = [];
+                const missingCells = missingRow.querySelectorAll("td");
+                
+                // The first cell has colspan="5" - it contains "Missing Duration:"
+                // The remaining cells are the duration values in the same columns as status
+                
+                let colIndex = 0;
+                
+                missingCells.forEach((cell, index) => {
+                    const cellText = cell.textContent.trim();
+                    const colspan = cell.getAttribute('colspan');
+                    
+                    if (colspan === "5") {
+                        // This is the "Missing Duration:" cell that spans 5 columns
+                        missingRowData.push(cellText); // Column 0: Student ID
+                        missingRowData.push("");       // Column 1: First Name
+                        missingRowData.push("");       // Column 2: Last Name
+                        missingRowData.push("");       // Column 3: Middle Name
+                        missingRowData.push("");       // Column 4: Year & Section
+                        colIndex = 5;
+                    } else {
+                        // This is a duration cell - should be placed at current colIndex
+                        if (cellText && cellText !== "-") {
+                            missingRowData.push(cellText);
+                            console.log(`Found duration: ${cellText} at column ${colIndex}`);
+                        } else {
+                            missingRowData.push("");
+                        }
+                        colIndex++;
                     }
+                });
+                
+                // Ensure the missing row has the same number of columns as the student row
+                while (missingRowData.length < studentRowData.length) {
+                    missingRowData.push("");
                 }
+                
+                data.push(missingRowData);
             }
-
-            // Set column widths
-            ws['!cols'] = [
-                { wch: 15 }, // Student ID
-                { wch: 18 }, // First Name
-                { wch: 18 }, // Last Name
-                { wch: 15 }, // Middle Name
-                { wch: 15 }, // Year & Section
-                ...Array(range.e.c - 4).fill({ wch: 10 }) // date columns
-            ];
-
-            XLSX.utils.book_append_sheet(wb, ws, "Attendance");
-
-            // Better filename
-            const today = new Date().toISOString().slice(0, 10);
-            let filename = `Attendance_${today}.xlsx`;
-            const sectionText = document.getElementById('sectionFilter')?.selectedOptions[0]?.textContent || '';
-            if (sectionText && sectionText !== 'All Sections') {
-                filename = `Attendance_${sectionText.replace(/\s+/g, '_')}_${today}.xlsx`;
-            }
-
-            XLSX.writeFile(wb, filename);
         }
+    }
+
+    console.log("Final data:", data);
+
+    if (data.length < 2) {
+        alert("No visible attendance data to export.");
+        return;
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(data);
+
+    // Color definitions
+    const statusColors = {
+        "P": { bg: "C6EFCE", font: "006100" },
+        "L": { bg: "FFEB9C", font: "9C6500" },
+        "E": { bg: "BDD7EE", font: "002060" },
+        "A": { bg: "F4CCCC", font: "9C0006" }
+    };
+
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const firstDateColumn = 5;
+
+    // Apply colors to status cells
+    for (let r = range.s.r + 1; r <= range.e.r; r += 2) { // Only student rows (odd rows)
+        for (let c = firstDateColumn; c <= range.e.c; ++c) {
+            const cell_address = XLSX.utils.encode_cell({ r: r, c: c });
+            const cell = ws[cell_address];
+            if (!cell) continue;
+
+            const value = String(cell.v || "").trim();
+            
+            if (value.length === 1 && statusColors[value]) {
+                const color = statusColors[value];
+                cell.s = {
+                    fill: {
+                        patternType: "solid",
+                        fgColor: { rgb: color.bg }
+                    },
+                    font: {
+                        name: "Calibri",
+                        sz: 11,
+                        color: { rgb: color.font },
+                        bold: true
+                    },
+                    alignment: {
+                        horizontal: "center",
+                        vertical: "center"
+                    }
+                };
+            }
+        }
+    }
+
+    // Style the missing duration rows (even rows)
+    for (let r = range.s.r + 2; r <= range.e.r; r += 2) {
+        // Style the first cell with "Missing Duration:"
+        const label_address = XLSX.utils.encode_cell({ r: r, c: 0 });
+        const label_cell = ws[label_address];
+        if (label_cell) {
+            label_cell.s = {
+                font: {
+                    name: "Calibri",
+                    sz: 10,
+                    color: { rgb: "666666" },
+                    italic: true,
+                    bold: true
+                },
+                alignment: {
+                    horizontal: "right",
+                    vertical: "center"
+                }
+            };
+        }
+        
+        // Clear columns 1-4
+        for (let c = 1; c < 5; c++) {
+            const cell_address = XLSX.utils.encode_cell({ r: r, c: c });
+            ws[cell_address] = { t: 's', v: '' };
+        }
+        
+        // Style the duration values (same columns as status)
+        for (let c = firstDateColumn; c <= range.e.c; ++c) {
+            const cell_address = XLSX.utils.encode_cell({ r: r, c: c });
+            const cell = ws[cell_address];
+            if (cell && cell.v) {
+                cell.s = {
+                    font: {
+                        name: "Calibri",
+                        sz: 10,
+                        color: { rgb: "666666" },
+                        italic: true
+                    },
+                    alignment: {
+                        horizontal: "center",
+                        vertical: "center"
+                    }
+                };
+            }
+        }
+    }
+
+    // Set column widths
+    ws['!cols'] = [
+        { wch: 18 }, // Student ID / Missing Duration label
+        { wch: 15 }, // First Name
+        { wch: 15 }, // Last Name
+        { wch: 15 }, // Middle Name
+        { wch: 15 }, // Year & Section
+        ...Array(range.e.c - 4).fill({ wch: 12 }) // date columns
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+
+    // Generate filename
+    const today = new Date().toISOString().slice(0, 10);
+    let filename = `Attendance_${today}.xlsx`;
+    const sectionSelect = document.getElementById('sectionFilter');
+    const subjectSelect = document.getElementById('subjectFilter');
+    
+    if (sectionSelect && sectionSelect.selectedOptions[0]) {
+        const sectionText = sectionSelect.selectedOptions[0].textContent || '';
+        if (sectionText && sectionText !== 'All Sections') {
+            filename = `Attendance_${sectionText.replace(/\s+/g, '_')}_${today}.xlsx`;
+        }
+    }
+    
+    if (subjectSelect && subjectSelect.selectedOptions[0]) {
+        const subjectText = subjectSelect.selectedOptions[0].textContent || '';
+        if (subjectText && subjectText !== 'All Subjects') {
+            const subjectCode = subjectText.split(' ')[0];
+            filename = filename.replace('.xlsx', `_${subjectCode}.xlsx`);
+        }
+    }
+
+    XLSX.writeFile(wb, filename);
+}
     </script>
 </body>
 </html>

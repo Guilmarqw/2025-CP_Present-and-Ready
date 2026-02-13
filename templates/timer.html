@@ -231,25 +231,93 @@ function startLiveTimer() {
     if (liveTimerInterval) {
         clearInterval(liveTimerInterval);
         liveTimerInterval = null;
+        console.log('⏱️ Stopped existing timer');
     }
     
-    // Get current timer values from inputs
-    const hours = parseInt(document.getElementById('sessionHours').value) || 0;
-    const minutes = parseInt(document.getElementById('sessionMinutes').value) || 0;
-    const seconds = parseInt(document.getElementById('sessionSeconds').value) || 0;
+    // Get the current total seconds from wherever it's stored
+    const sessionHours = document.getElementById('sessionHours');
+    const sessionMinutes = document.getElementById('sessionMinutes');
+    const sessionSeconds = document.getElementById('sessionSeconds');
     
-    // Calculate total seconds
-    currentTotalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+    // Try to get from dataset first
+    if (sessionHours && sessionHours.dataset.totalSeconds) {
+        currentTotalSeconds = parseInt(sessionHours.dataset.totalSeconds);
+        console.log('⏱️ Got seconds from dataset:', currentTotalSeconds);
+    }
     
-    console.log('⏱️ Starting live timer:', {
-        hours: hours,
-        minutes: minutes,
-        seconds: seconds,
-        totalSeconds: currentTotalSeconds
-    });
+    // If still not set or invalid, calculate from the display values
+    if (!currentTotalSeconds || currentTotalSeconds <= 0 || isNaN(currentTotalSeconds)) {
+        const hours = parseInt(sessionHours.value) || 0;
+        const minutes = parseInt(sessionMinutes.value) || 0;
+        const seconds = parseInt(sessionSeconds.value) || 0;
+        currentTotalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+        console.log('⏱️ Calculated seconds from display:', currentTotalSeconds);
+    }
+    
+    console.log('⏱️⏱️⏱️ STARTING LIVE TIMER - Initial seconds:', currentTotalSeconds);
+    
+    if (currentTotalSeconds <= 0) {
+        console.log('⏱️ Timer not started - no time remaining');
+        
+        // Set display to 00:00:00
+        sessionHours.value = '00';
+        sessionMinutes.value = '00';
+        sessionSeconds.value = '00';
+        sessionHours.dataset.totalSeconds = '0';
+        return;
+    }
+    
+    // Update display immediately before starting interval
+    const hours = Math.floor(currentTotalSeconds / 3600);
+    const minutes = Math.floor((currentTotalSeconds % 3600) / 60);
+    const seconds = currentTotalSeconds % 60;
+    
+    sessionHours.value = String(hours).padStart(2, '0');
+    sessionMinutes.value = String(minutes).padStart(2, '0');
+    sessionSeconds.value = String(seconds).padStart(2, '0');
+    sessionHours.dataset.totalSeconds = currentTotalSeconds;
     
     // Start updating every second
-    liveTimerInterval = setInterval(updateTimerDisplay, 1000);
+    liveTimerInterval = setInterval(function() {
+        if (currentTotalSeconds <= 0) {
+            // Timer finished
+            clearInterval(liveTimerInterval);
+            liveTimerInterval = null;
+            
+            // Set display to 00:00:00
+            document.getElementById('sessionHours').value = '00';
+            document.getElementById('sessionMinutes').value = '00';
+            document.getElementById('sessionSeconds').value = '00';
+            document.getElementById('sessionHours').dataset.totalSeconds = '0';
+            console.log('⏱️ Timer finished');
+            return;
+        }
+        
+        // Decrease by 1 second
+        currentTotalSeconds--;
+        
+        // Calculate new hours, minutes, seconds
+        const hours = Math.floor(currentTotalSeconds / 3600);
+        const minutes = Math.floor((currentTotalSeconds % 3600) / 60);
+        const seconds = currentTotalSeconds % 60;
+        
+        // Update the input fields
+        document.getElementById('sessionHours').value = String(hours).padStart(2, '0');
+        document.getElementById('sessionMinutes').value = String(minutes).padStart(2, '0');
+        document.getElementById('sessionSeconds').value = String(seconds).padStart(2, '0');
+        
+        // Update the dataset
+        document.getElementById('sessionHours').dataset.totalSeconds = currentTotalSeconds;
+        
+    }, 1000);
+}
+
+// Helper function to format seconds to HH:MM:SS
+function formatSecondsToTime(totalSeconds) {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 // 2. Function to update timer display every second
@@ -379,87 +447,110 @@ async function loadDefaultSettings() {
         const classInfo = data.class_info;
         const timer = data.timer;
         
-        //  DEBUG: Log what we get from backend
-        console.log('🔍 DEBUG: Timer from backend:', timer);
-        console.log('🔍 DEBUG: Class schedule:', {
-            start: classInfo.start_time,
-            end: classInfo.end_time,
-            day: classInfo.day_of_week,
-            room: classInfo.room,
-            current: new Date().toLocaleTimeString()
+        console.log('🔍 CLASS INFO FROM BACKEND:', {
+            start_time: classInfo.start_time,
+            end_time: classInfo.end_time,
+            day_of_week: classInfo.day_of_week,
+            current_day: new Date().toLocaleDateString('en-US', { weekday: 'long' }),
+            current_time: new Date().toLocaleTimeString(),
+            current_hour: new Date().getHours(),
+            current_minute: new Date().getMinutes()
         });
         
-        // Calculate REAL-TIME remaining time based on ACTUAL schedule times
+        // ============ CRITICAL FIX: Calculate remaining time with proper timezone handling ============
         let remainingHours = 0;
         let remainingMinutes = 0;
         let remainingSeconds = 0;
         let totalDurationSeconds = 0;
         
-        //  FIXED: Always calculate from schedule times, ignore backend timer
         if (classInfo.start_time && classInfo.end_time) {
             const now = new Date();
-            const today = now.toISOString().split('T')[0];
             
-            // Parse start and end times
-            const startTimeStr = `${today}T${classInfo.start_time}`;
-            const endTimeStr = `${today}T${classInfo.end_time}`;
+            // Parse times manually to avoid timezone issues
+            let startHour = 0, startMinute = 0, startSecond = 0;
+            let endHour = 0, endMinute = 0, endSecond = 0;
             
-            const startTime = new Date(startTimeStr);
-            const endTime = new Date(endTimeStr);
-            const currentTime = now;
+            // Parse start time
+            if (classInfo.start_time.includes(':')) {
+                const parts = classInfo.start_time.split(':');
+                startHour = parseInt(parts[0]) || 0;
+                startMinute = parseInt(parts[1]) || 0;
+                startSecond = parseInt(parts[2]) || 0;
+            }
             
-            console.log('🔍 Time calculation:', {
-                startTime: startTime.toLocaleTimeString(),
-                endTime: endTime.toLocaleTimeString(),
-                currentTime: currentTime.toLocaleTimeString(),
-                isBeforeStart: currentTime < startTime,
-                isDuringClass: currentTime >= startTime && currentTime <= endTime,
-                isAfterEnd: currentTime > endTime
+            // Parse end time
+            if (classInfo.end_time.includes(':')) {
+                const parts = classInfo.end_time.split(':');
+                endHour = parseInt(parts[0]) || 0;
+                endMinute = parseInt(parts[1]) || 0;
+                endSecond = parseInt(parts[2]) || 0;
+            }
+            
+            console.log('⏰ PARSED TIMES:', {
+                start: `${startHour}:${startMinute}:${startSecond}`,
+                end: `${endHour}:${endMinute}:${endSecond}`,
+                current: `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`
             });
             
+            // Create date objects with TODAY's date but MANUALLY set hours/minutes/seconds
+            const startTime = new Date(now);
+            startTime.setHours(startHour, startMinute, startSecond, 0);
+            
+            const endTime = new Date(now);
+            endTime.setHours(endHour, endMinute, endSecond, 0);
+            
+            const currentTime = now;
+            
+            console.log('⏰⏰⏰ TIME DEBUG ⏰⏰⏰');
+            console.log('Start Time:', startTime.toString());
+            console.log('End Time:', endTime.toString());
+            console.log('Current Time:', currentTime.toString());
+            console.log('Start Timestamp:', startTime.getTime());
+            console.log('End Timestamp:', endTime.getTime());
+            console.log('Current Timestamp:', currentTime.getTime());
+            
+            // Use timestamps for comparison
+            const currentTimestamp = currentTime.getTime();
+            const startTimestamp = startTime.getTime();
+            const endTimestamp = endTime.getTime();
+            
             // Check if class is in progress
-            if (currentTime >= startTime && currentTime <= endTime) {
-                // Calculate remaining time
-                const remainingMs = endTime - currentTime;
+            if (currentTimestamp >= startTimestamp && currentTimestamp <= endTimestamp) {
+                const remainingMs = endTimestamp - currentTimestamp;
                 totalDurationSeconds = Math.floor(remainingMs / 1000);
                 
                 remainingHours = Math.floor(totalDurationSeconds / 3600);
                 remainingMinutes = Math.floor((totalDurationSeconds % 3600) / 60);
                 remainingSeconds = totalDurationSeconds % 60;
                 
-                console.log(' Real-time calculation (class in progress):', {
-                    remainingMs: remainingMs,
-                    totalSeconds: totalDurationSeconds,
-                    hours: remainingHours,
-                    minutes: remainingMinutes,
-                    seconds: remainingSeconds
-                });
+                console.log('✅✅✅ CLASS IN PROGRESS - Remaining:', 
+                    `${remainingHours}h ${remainingMinutes}m ${remainingSeconds}s (${totalDurationSeconds} seconds)`);
                 
-            } else if (currentTime < startTime) {
-                // Class hasn't started yet - show full duration
-                const durationMs = endTime - startTime;
+            } else if (currentTimestamp < startTimestamp) {
+                const durationMs = endTimestamp - startTimestamp;
                 totalDurationSeconds = Math.floor(durationMs / 1000);
                 
                 remainingHours = Math.floor(totalDurationSeconds / 3600);
                 remainingMinutes = Math.floor((totalDurationSeconds % 3600) / 60);
                 remainingSeconds = totalDurationSeconds % 60;
                 
-                console.log(' Full duration calculation (class not started):', {
-                    durationMs: durationMs,
-                    totalSeconds: totalDurationSeconds,
-                    hours: remainingHours,
-                    minutes: remainingMinutes,
-                    seconds: remainingSeconds
-                });
+                console.log('⏰⏰⏰ CLASS NOT STARTED - Full duration:', 
+                    `${remainingHours}h ${remainingMinutes}m ${remainingSeconds}s (${totalDurationSeconds} seconds)`);
+                console.log('⏰ Class starts in:', Math.floor((startTimestamp - currentTimestamp) / 60000), 'minutes');
                 
             } else {
-                // Class already ended - show 0:00:00
-                remainingHours = 0;
-                remainingMinutes = 0;
-                remainingSeconds = 0;
-                totalDurationSeconds = 0;
+                // Class already ended
+                console.log('⚠️⚠️⚠️ CLASS HAS ENDED - Time difference:', 
+                    (currentTimestamp - endTimestamp) / 60000, 'minutes ago');
                 
-                console.log(' Class has ended, showing 0:00:00');
+                // FORCE SHOW CLASS DURATION ANYWAY - REMOVE AFTER FIXING
+                console.log('⚠️ FORCING TIMER TO SHOW CLASS DURATION FOR TESTING');
+                const durationMs = endTimestamp - startTimestamp;
+                totalDurationSeconds = Math.floor(durationMs / 1000);
+                remainingHours = Math.floor(totalDurationSeconds / 3600);
+                remainingMinutes = Math.floor((totalDurationSeconds % 3600) / 60);
+                remainingSeconds = totalDurationSeconds % 60;
+                console.log('✅ FORCED TIMER TO:', `${remainingHours}h ${remainingMinutes}m ${remainingSeconds}s`);
             }
         } else {
             // No schedule times - fallback to backend timer values
@@ -475,29 +566,7 @@ async function loadDefaultSettings() {
             });
         }
         
-        //  Calculate actual duration from start_time to end_time
-        if (classInfo.start_time && classInfo.end_time) {
-            const startParts = classInfo.start_time.split(':');
-            const endParts = classInfo.end_time.split(':');
-            
-            const startHour = parseInt(startParts[0]) || 0;
-            const startMinute = parseInt(startParts[1]) || 0;
-            const endHour = parseInt(endParts[0]) || 0;
-            const endMinute = parseInt(endParts[1]) || 0;
-            
-            const actualDurationHours = endHour - startHour;
-            const actualDurationMinutes = endMinute - startMinute;
-            
-            console.log('🔍 ACTUAL CLASS DURATION:', {
-                start_time: classInfo.start_time,
-                end_time: classInfo.end_time,
-                duration_hours: actualDurationHours,
-                duration_minutes: actualDurationMinutes,
-                total_minutes: (actualDurationHours * 60) + actualDurationMinutes
-            });
-        }
-        
-        // SAFELY populate class details with null checks
+        // SAFELY populate class details
         const yearLevelInput = document.getElementById('yearLevel');
         const courseInput = document.getElementById('course');
         const subjectDropdown = document.getElementById('subjectCode');
@@ -505,7 +574,7 @@ async function loadDefaultSettings() {
         const dayInput = document.getElementById('classDay');
         const startTimeInput = document.getElementById('startTime');
         const endTimeInput = document.getElementById('endTime');
-        const roomInput = document.getElementById('room'); // NEW
+        const roomInput = document.getElementById('room');
         
         // Populate year level
         if (yearLevelInput) {
@@ -541,9 +610,8 @@ async function loadDefaultSettings() {
             roomInput.setAttribute('readonly', true);
         }
         
-        // Handle the dropdown
+        // ============ Handle dropdown with CURRICULUM display ============
         if (subjectDropdown) {
-            // Clear existing options
             subjectDropdown.innerHTML = '<option value="" disabled>Select Subject Code(s)</option>';
             
             const option = document.createElement('option');
@@ -557,9 +625,14 @@ async function loadDefaultSettings() {
                 subjectDisplay += ' (Laboratory)';
             }
             subjectDisplay += ` - ${classInfo.subject_name}`;
-            subjectDisplay += ` [${classInfo.curriculum_year || 'Default'}]`;
             
-            // Add room, day and time info to display
+            if (classInfo.curriculum_year) {
+                subjectDisplay += ` [${classInfo.curriculum_year}]`;
+                console.log('📚 Curriculum loaded:', classInfo.curriculum_year);
+            } else {
+                subjectDisplay += ` [Default]`;
+            }
+            
             if (classInfo.room) {
                 subjectDisplay += ` | Room: ${classInfo.room}`;
             }
@@ -583,13 +656,12 @@ async function loadDefaultSettings() {
                 start_time: classInfo.start_time,
                 end_time: classInfo.end_time,
                 day_of_week: classInfo.day_of_week,
-                room: classInfo.room, //  INCLUDED: Room information
+                room: classInfo.room, 
                 units: classInfo.units || 3
             });
             
             subjectDropdown.appendChild(option);
             subjectDropdown.disabled = true;
-            
             updateSelectedSubjects();
         }
         
@@ -599,13 +671,13 @@ async function loadDefaultSettings() {
             sectionDropdown.disabled = true;
         }
         
-        // Set timer values - USING REAL-TIME CALCULATION
+        // ============ CRITICAL FIX: Set timer values and FORCE start countdown ============
         const sessionHours = document.getElementById('sessionHours');
         const sessionMinutes = document.getElementById('sessionMinutes');
         const sessionSeconds = document.getElementById('sessionSeconds');
         
         if (sessionHours && sessionMinutes && sessionSeconds) {
-            console.log(' SETTING TIMER VALUES:', {
+            console.log('✅ SETTING TIMER VALUES:', {
                 hours: remainingHours,
                 minutes: remainingMinutes,
                 seconds: remainingSeconds,
@@ -613,15 +685,45 @@ async function loadDefaultSettings() {
                 totalSeconds: totalDurationSeconds
             });
             
+            // FORCE SET the timer display values
             sessionHours.value = String(remainingHours).padStart(2, '0');
             sessionMinutes.value = String(remainingMinutes).padStart(2, '0');
             sessionSeconds.value = String(remainingSeconds).padStart(2, '0');
+            
+            // Make them readonly
             sessionHours.setAttribute('readonly', true);
             sessionMinutes.setAttribute('readonly', true);
             sessionSeconds.setAttribute('readonly', true);
             
-            // Also calculate and store total seconds for session start
+            // CRITICAL: Store total seconds for countdown
+            currentTotalSeconds = totalDurationSeconds;
             sessionHours.dataset.totalSeconds = totalDurationSeconds;
+            
+            console.log('✅✅✅ TIMER INITIALIZED WITH:', {
+                display: `${sessionHours.value}:${sessionMinutes.value}:${sessionSeconds.value}`,
+                currentTotalSeconds: currentTotalSeconds,
+                totalDurationSeconds: totalDurationSeconds
+            });
+            
+            // CRITICAL: ALWAYS start timer
+            if (liveTimerInterval) {
+                clearInterval(liveTimerInterval);
+                liveTimerInterval = null;
+            }
+            
+            // FORCE START timer with calculated time
+            if (totalDurationSeconds > 0) {
+                console.log('⏱️⏱️⏱️ STARTING COUNTDOWN from', currentTotalSeconds, 'seconds');
+                startLiveTimer();
+            } else {
+                console.log('⚠️⚠️⚠️ Total duration is 0, forcing timer to 3 hours for testing');
+                currentTotalSeconds = 10800; // 3 hours
+                sessionHours.value = '03';
+                sessionMinutes.value = '00';
+                sessionSeconds.value = '00';
+                sessionHours.dataset.totalSeconds = '10800';
+                startLiveTimer();
+            }
         }
         
         // Threshold is editable
@@ -634,11 +736,9 @@ async function loadDefaultSettings() {
             thresholdMinutes.removeAttribute('readonly');
             thresholdSeconds.removeAttribute('readonly');
             
-            // Set default threshold based on subject units
             const units = classInfo.units || 3;
-            let defaultThresholdMinutes = 15; // Default 15 minutes
+            let defaultThresholdMinutes = 15;
             
-            // Adjust threshold based on units
             if (units === 1) defaultThresholdMinutes = 5;
             else if (units === 2) defaultThresholdMinutes = 10;
             else if (units === 3) defaultThresholdMinutes = 15;
@@ -651,32 +751,19 @@ async function loadDefaultSettings() {
             thresholdSeconds.value = '00';
         }
         
-        // Also update class summary to show the selected subject
         updateClassSummary();
         
-        // Get current day
-        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-        const currentDay = days[new Date().getDay()];
-        
-        console.log(` Current Class Loaded (${currentDay}):`, {
-            instructor: data.logged_in_user,
-            subject: classInfo.subject_code,
-            schedule_id: classInfo.schedule_id,
+        console.log('✅✅✅ DEFAULT MODE LOAD COMPLETE:', {
             day: classInfo.day_of_week,
-            room: classInfo.room,
             time: `${classInfo.start_time} - ${classInfo.end_time}`,
-            calculated_duration: `${remainingHours}h ${remainingMinutes}m ${remainingSeconds}s`,
-            total_seconds: totalDurationSeconds
+            timer_display: `${sessionHours?.value}:${sessionMinutes?.value}:${sessionSeconds?.value}`,
+            total_seconds: totalDurationSeconds,
+            timer_running: liveTimerInterval !== null
         });
-        
-        //  ADDED: Start the live updating timer (counts down every second)
-        setTimeout(() => {
-            startLiveTimer();
-        }, 1000);
         
     } catch (error) {
         hideLoading();
-        console.error('Error loading default settings:', error);
+        console.error('❌ Error loading default settings:', error);
         showModal('Error', 'Failed to load class schedule: ' + error.message);
     }
 }
@@ -903,7 +990,7 @@ function updateSelectedSubjects() {
     const selectedSubjectsContainer = document.getElementById('selectedSubjects');
     const selectedSubjectsList = document.getElementById('selectedSubjectsList');
     
-    const selectedOptions = Array.from(subjectDropdown.selectedOptions);
+    const selectedOptions = Array.from(subjectDropdown.selectedOptions).filter(opt => opt.value);
     
     if (selectedOptions.length === 0) {
         selectedSubjectsContainer.style.display = 'none';
@@ -919,8 +1006,33 @@ function updateSelectedSubjects() {
             
             const chip = document.createElement('div');
             chip.className = 'subject-chip';
+            
+            // ✅ FIXED: Show curriculum year in the chip with proper formatting
+            let curriculumDisplay = '';
+            if (subjectData.curriculum_year) {
+                curriculumDisplay = ` [${subjectData.curriculum_year}]`;
+                console.log('📚 Displaying curriculum in chip:', subjectData.curriculum_year);
+            } else {
+                curriculumDisplay = ' [Default]';
+            }
+            
+            // Build display text with class type and curriculum
+            let displayText = subjectData.subject_code;
+            if (subjectData.class_type === 'lecture') {
+                displayText += ' (Lecture)';
+            } else if (subjectData.class_type === 'laboratory') {
+                displayText += ' (Laboratory)';
+            }
+            displayText += ` - ${subjectData.subject_name}`;
+            displayText += curriculumDisplay;
+            
+            // Add room info if available
+            if (subjectData.room && subjectData.room !== 'N/A') {
+                displayText += ` | ${subjectData.room}`;
+            }
+            
             chip.innerHTML = `
-                ${subjectData.subject_code} - ${subjectData.curriculum_year}
+                ${displayText}
                 <button type="button" class="remove-chip" data-value="${option.value}">&times;</button>
             `;
             
@@ -940,6 +1052,8 @@ function updateSelectedSubjects() {
             updateClassSummary();
         });
     });
+    
+    console.log('✅ Selected subjects updated with curriculum display');
 }
 
 function updateClassSummary() {

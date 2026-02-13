@@ -406,7 +406,11 @@ function getCurrentAcademicInfo() {
     console.log("Extracted curriculum year:", curriculumYear);
     
     // Ensure currentActiveAcademicYear is always set
-    const academicYear = window.currentActiveAcademicYear || "2026-2027";
+    const academicYear = window.currentActiveAcademicYear || (() => {
+        const year = new Date().getFullYear();
+        console.warn(`⚠️ Using calculated fallback: ${year}-${year + 1}`);
+        return `${year}-${year + 1}`;
+    })();
     const semester = 1; // Default to first semester
     
     console.log("Using active academic year:", academicYear);
@@ -460,7 +464,11 @@ function fetchSections() {
     console.log("Extracted curriculum year:", curriculumYear);
 
     // Use the academic year from the year levels API (stored in window.programAcademicYear)
-    const academicYear = window.programAcademicYear || window.currentActiveAcademicYear || "2026-2027";
+    const academicYear = window.programAcademicYear || window.currentActiveAcademicYear || (() => {
+        const year = new Date().getFullYear();
+        console.warn(`⚠️ Using calculated fallback: ${year}-${year + 1}`);
+        return `${year}-${year + 1}`;
+    })();
     const semester = "1st Semester"; // Default
     
     console.log("Using academic info:", { academicYear, semester, curriculumYear });
@@ -570,8 +578,12 @@ async function getActiveAcademicYearForProgram(programId) {
                     });
                 } else {
                     // Fallback to global active year
+                    const fallbackYear = window.currentActiveAcademicYear || (() => {
+                        const year = new Date().getFullYear();
+                        return `${year}-${year + 1}`;
+                    })();
                     resolve({
-                        academicYear: window.currentActiveAcademicYear || "2026-2027",
+                        academicYear: fallbackYear,
                         semester: '1st Semester'
                     });
                 }
@@ -579,8 +591,12 @@ async function getActiveAcademicYearForProgram(programId) {
             .catch(error => {
                 console.error("Error fetching program academic year:", error);
                 // Fallback
+                const fallbackYear = window.currentActiveAcademicYear || (() => {
+                    const year = new Date().getFullYear();
+                    return `${year}-${year + 1}`;
+                })();
                 resolve({
-                    academicYear: window.currentActiveAcademicYear || "2026-2027",
+                    academicYear: fallbackYear,
                     semester: '1st Semester'
                 });
             });
@@ -2911,21 +2927,30 @@ function registerStudent() {
 }
 
 function fetchActiveAcademicYear() {
-    fetch('/api/get_active_academic_year_for_program')
+    console.log("🔄 Fetching active academic year from database...");
+    
+    fetch('/api/get_active_academic_year')
         .then(response => response.json())
         .then(data => {
             if (data.success && data.academic_year) {
                 window.currentActiveAcademicYear = data.academic_year;
-                console.log("Active academic year set to:", window.currentActiveAcademicYear);
+                console.log("✅ Active academic year loaded from database:", window.currentActiveAcademicYear);
             } else {
-                console.log("Using default academic year: 2026-2027");
-                window.currentActiveAcademicYear = "2026-2027";
+                console.error("❌ API returned error - No active academic year in database!");
+                console.warn("⚠️ USING EMERGENCY FALLBACK - Please set an active academic year in the database!");
+                // Emergency fallback - should never be used in production
+                const currentYear = new Date().getFullYear();
+                window.currentActiveAcademicYear = `${currentYear}-${currentYear + 1}`;
+                console.warn(`⚠️ Fallback academic year: ${window.currentActiveAcademicYear}`);
             }
         })
         .catch(error => {
-            console.error("Error fetching active academic year:", error);
-            window.currentActiveAcademicYear = "2026-2027";
-            console.log("Using fallback academic year: 2026-2027");
+            console.error("❌ Error connecting to backend API:", error);
+            console.warn("⚠️ USING EMERGENCY FALLBACK - Please check backend API!");
+            // Emergency fallback - should never be used in production
+            const currentYear = new Date().getFullYear();
+            window.currentActiveAcademicYear = `${currentYear}-${currentYear + 1}`;
+            console.warn(`⚠️ Fallback academic year: ${window.currentActiveAcademicYear}`);
         });
 }
 
@@ -2934,8 +2959,9 @@ function fetchActiveAcademicYear() {
 document.addEventListener("DOMContentLoaded", function () {
     console.log("DOM loaded, initializing registration form...");
     
-    // Set the current active academic year
-    window.currentActiveAcademicYear = "2026-2027"; 
+    // Fetch the current active academic year from database (NO HARDCODING!)
+    window.currentActiveAcademicYear = null; // Will be set by fetchActiveAcademicYear()
+    fetchActiveAcademicYear(); // Load from database
     
     // Initialize terms modal first
     const termsModal = document.getElementById("termsModal");
