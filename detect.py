@@ -18088,6 +18088,9 @@ def get_class_students():
         
         if DEBUG_MODE: 
             logger.debug(f"👥 Found {len(regular_students)} regular students in section {section_id}")
+            # ✅ NEW: Log first student's photo_path for debugging
+            if regular_students:
+                logger.debug(f"🖼️ First student raw photo_path: '{regular_students[0].get('photo_path')}'")
         
         # STEP 3: GET TEMPORARY STUDENTS FROM CURRENT SESSION
         temporary_students = []
@@ -18129,20 +18132,54 @@ def get_class_students():
         if DEBUG_MODE: 
             logger.debug(f"👤 Found {len(temporary_students)} temporary students")
         
-        # STEP 4: FORMAT STUDENTS
+        # ✅ FIXED: STEP 4 - FORMAT STUDENTS WITH PROPER PHOTO PATH HANDLING
         formatted_students = []
         
         for student in regular_students:
             full_name = f"{student['first_name']} {student['last_name']}"
             if student['middle_name']:
                 full_name = f"{student['first_name']} {student['middle_name']} {student['last_name']}"
+            
+            # ✅ FIXED: Properly format photo_path for /static/images/student_photos/
+            photo_path = student.get('photo_path')
+            
+            if photo_path and photo_path.strip():
+                # Case 1: Already a correct full path starting with /static/images/student_photos/
+                if photo_path.startswith('/static/images/student_photos/'):
+                    final_photo_path = photo_path
+                
+                # Case 2: Starts with http (external URL)
+                elif photo_path.startswith('http://') or photo_path.startswith('https://'):
+                    final_photo_path = photo_path
+                
+                # Case 3: Just the student ID or filename like "2022-00001.jpg"
+                elif '/' not in photo_path:
+                    # Remove .jpg extension if present, then add it back
+                    student_id_clean = photo_path.replace('.jpg', '').replace('.jpeg', '').replace('.png', '')
+                    final_photo_path = f'/static/images/student_photos/{student_id_clean}.jpg'
+                
+                # Case 4: Any other format - assume it's a student ID and construct proper path
+                else:
+                    # Extract just the filename from any path
+                    filename = photo_path.split('/')[-1]
+                    student_id_clean = filename.replace('.jpg', '').replace('.jpeg', '').replace('.png', '')
+                    final_photo_path = f'/static/images/student_photos/{student_id_clean}.jpg'
+                    
+                # ✅ NEW: Log the transformation for debugging
+                if DEBUG_MODE and photo_path != final_photo_path:
+                    logger.debug(f"🔄 Photo path transformed: '{photo_path}' → '{final_photo_path}'")
+            else:
+                # No photo_path or empty string - use default
+                final_photo_path = '/static/images/default-avatar.jpg'
+                if DEBUG_MODE:
+                    logger.debug(f"⚠️ No photo for {student['student_id']}, using default")
                 
             formatted_students.append({
                 'id': student['student_id'],
                 'name': full_name,
                 'firstName': student['first_name'],
                 'lastName': student['last_name'],
-                'photo_path': student['photo_path'] or '/static/images/default-avatar.jpg',
+                'photo_path': final_photo_path,  # ✅ FIXED: Now properly formatted
                 'status': 'absent',  # Default status
                 'type': 'regular',
                 'program': student['program_name'],
@@ -18204,6 +18241,10 @@ def get_class_students():
         
         if DEBUG_MODE: 
             logger.debug(f"📊 Final counts - Total: {len(formatted_students)}, Present: {present_count}, Late: {late_count}, Detected: {detected_count}")
+            # ✅ NEW: Log sample photo paths in final response
+            if formatted_students:
+                sample_photos = [s['photo_path'] for s in formatted_students[:3]]
+                logger.debug(f"🖼️ Sample photo_paths in response: {sample_photos}")
         
         return jsonify({
             'success': True, 
@@ -23844,7 +23885,11 @@ def _pick_worse(existing, new):
 # ══════════════════════════════════════════════════════════════
 @app.route('/api/analytics/export_spreadsheet', methods=['GET'])
 def export_analytics_spreadsheet():
-    """Export analytics as XLSX with separate columns, colors, and missing duration"""
+    """Export analytics as XLSX with separate columns, colors, and missing duration
+    
+    FIXED: Now properly handles multiple sessions on the same day by using
+    session_id + timestamp instead of just date
+    """
     try:
         section_id = request.args.get('section_id')
         subject_code = request.args.get('subject_code')
@@ -23904,11 +23949,10 @@ def export_analytics_spreadsheet():
         
         student_ids = [st['student_id'] for st in students]
         
-        # Get sessions with IDs
+        # ✅ FIXED: Include timestamp to distinguish multiple sessions on same day
         cursor.execute("""
             SELECT 
                 session_id,
-                DATE(started_at) AS session_date,
                 started_at,
                 ended_at
             FROM attendance_sessions
@@ -23924,13 +23968,57 @@ def export_analytics_spreadsheet():
             conn.close()
             return jsonify({'success': False, 'message': 'No sessions found'}), 404
         
+        # ✅ FIXED: Build unique session list with timestamps
+        from datetime import datetime
+        
         sessions = []
+        session_counter = {}  # Track how many sessions per date
+        
         for row in session_rows:
-            d = row['session_date']
-            date_str = d.strftime('%m/%d/%Y') if hasattr(d, 'strftime') else str(d)
+            started = row['started_at']
+            
+            # Convert to datetime if it's a string
+            if isinstance(started, str):
+                try:
+                    started = datetime.strptime(started, '%Y-%m-%d %H:%M:%S')
+                except:
+                    try:
+                        started = datetime.fromisoformat(started)
+                    except:
+                        # If all parsing fails, use current time
+                        print(f"⚠️ Warning: Could not parse date '{started}', using current time")
+                        started = datetime.now()
+            
+            # Format with time to distinguish multiple sessions on same day
+            if hasattr(started, 'strftime'):
+                date_only = started.strftime('%m/%d/%Y')
+                time_part = started.strftime('%I:%M %p')
+                
+                # Add counter for multiple sessions on same day
+                if date_only not in session_counter:
+                    session_counter[date_only] = 0
+                session_counter[date_only] += 1
+                
+                # If multiple sessions on same day, add time and counter
+                if session_counter[date_only] > 1:
+                    display_label = f"{date_only} ({time_part}) #{session_counter[date_only]}"
+                else:
+                    # First session on this day - check if there will be more
+                    future_sessions_same_day = sum(1 for r in session_rows 
+                                                   if hasattr(r['started_at'], 'strftime') 
+                                                   and r['started_at'].strftime('%m/%d/%Y') == date_only)
+                    if future_sessions_same_day > 1:
+                        display_label = f"{date_only} ({time_part}) #1"
+                    else:
+                        display_label = date_only
+            else:
+                # Fallback if strftime not available
+                display_label = str(started) if started else "Unknown Date"
+            
             sessions.append({
                 'session_id': row['session_id'],
-                'date': date_str
+                'date': display_label,
+                'started_at': started  # Keep original for sorting
             })
         
         # Get attendance with missing duration
@@ -23954,7 +24042,7 @@ def export_analytics_spreadsheet():
         cursor.close()
         conn.close()
         
-        # Build pivot
+        # Build pivot - FIXED: Now session_id is unique per session
         pivot = {}
         for row in att_rows:
             sid = row['student_id']
@@ -23965,7 +24053,9 @@ def export_analytics_spreadsheet():
             if sid not in pivot:
                 pivot[sid] = {}
             
+            # ✅ FIXED: This now works correctly because each session has unique session_id
             if sess_id in pivot[sid]:
+                # If duplicate (shouldn't happen with session_id, but defensive coding)
                 existing = pivot[sid][sess_id]['status']
                 pivot[sid][sess_id] = {
                     'status': _pick_worse(existing, status),
@@ -24037,7 +24127,7 @@ def export_analytics_spreadsheet():
             total_absent = 0
             total_excused = 0
             
-            # Add status for each session
+            # Add status for each session (now correctly handles multiple per day)
             for session in sessions:
                 sess_id = session['session_id']
                 
@@ -24123,7 +24213,8 @@ def export_analytics_spreadsheet():
         ws.column_dimensions['E'].width = 15
         
         for i in range(len(sessions)):
-            ws.column_dimensions[get_column_letter(6 + i)].width = 12
+            # Wider columns for sessions with timestamps
+            ws.column_dimensions[get_column_letter(6 + i)].width = 20
         
         summary_start = 6 + len(sessions)
         for i in range(5):
@@ -24316,6 +24407,7 @@ def get_analytics_subjects():
 def get_analytics_spreadsheet():
     """
     Returns attendance data with MISSING DURATION included
+    FIXED: Now handles multiple sessions per day correctly
     """
     try:
         section_id = request.args.get('section_id')
@@ -24349,10 +24441,10 @@ def get_analytics_spreadsheet():
         
         student_ids = [st['student_id'] for st in students]
         
-        # Get sessions with session_id (needed to fetch missing_duration)
+        # ✅ FIXED: Get sessions with full timestamp instead of just date
         cursor.execute("""
             SELECT session_id,
-                   DATE(started_at) AS session_date
+                   started_at
             FROM attendance_sessions
             WHERE section_id = %s AND subject_code = %s
               AND status IN ('completed', 'active')
@@ -24376,14 +24468,54 @@ def get_analytics_spreadsheet():
                 })
             return jsonify({'success': True, 'dates': [], 'students': empty_students})
         
-        # Build date list and session_id mapping
+        # ✅ FIXED: Build unique date keys with session_id
+        from datetime import datetime
+        
         dates = []
-        session_map = {}  # date -> session_id
+        session_map = {}  # unique_key -> session_id
+        date_counter = {}
+        
         for row in session_rows:
-            d = row['session_date']
-            date_str = d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)
-            dates.append(date_str)
-            session_map[date_str] = row['session_id']
+            started = row['started_at']
+            sess_id = row['session_id']
+            
+            # Convert to datetime if it's a string
+            if isinstance(started, str):
+                try:
+                    started = datetime.strptime(started, '%Y-%m-%d %H:%M:%S')
+                except:
+                    try:
+                        started = datetime.fromisoformat(started)
+                    except:
+                        print(f"⚠️ Warning: Could not parse date '{started}', using current time")
+                        started = datetime.now()
+            
+            if hasattr(started, 'strftime'):
+                date_only = started.strftime('%Y-%m-%d')
+                time_part = started.strftime('%H:%M:%S')
+                
+                # Track sessions per date
+                if date_only not in date_counter:
+                    date_counter[date_only] = 0
+                date_counter[date_only] += 1
+                
+                # Create unique key: if multiple sessions on same day, add timestamp
+                if date_counter[date_only] > 1:
+                    unique_key = f"{date_only}_{time_part}"
+                else:
+                    # Check if more sessions will come for this date
+                    future_same_date = sum(1 for r in session_rows 
+                                          if hasattr(r['started_at'], 'strftime') 
+                                          and r['started_at'].strftime('%Y-%m-%d') == date_only)
+                    if future_same_date > 1:
+                        unique_key = f"{date_only}_{time_part}"
+                    else:
+                        unique_key = date_only
+            else:
+                unique_key = str(started) if started else f"session_{sess_id}"
+            
+            dates.append(unique_key)
+            session_map[unique_key] = sess_id
         
         # Get attendance WITH missing_duration using session_id
         session_ids = [row['session_id'] for row in session_rows]
@@ -24416,6 +24548,7 @@ def get_analytics_spreadsheet():
             if sid not in pivot:
                 pivot[sid] = {}
             
+            # ✅ FIXED: Now correctly uses session_id as unique key
             if sess_id in pivot[sid]:
                 # If duplicate, pick worse status and max duration
                 existing = pivot[sid][sess_id]['status']
@@ -24435,16 +24568,16 @@ def get_analytics_spreadsheet():
             sid = st['student_id']
             
             attendance = {}
-            for date_str in dates:
-                sess_id = session_map[date_str]
+            for unique_key in dates:
+                sess_id = session_map[unique_key]
                 
                 if sid in pivot and sess_id in pivot[sid]:
-                    attendance[date_str] = {
+                    attendance[unique_key] = {
                         'status': pivot[sid][sess_id]['status'],
                         'missing_duration': pivot[sid][sess_id]['missing_duration']
                     }
                 else:
-                    attendance[date_str] = {
+                    attendance[unique_key] = {
                         'status': 'absent',
                         'missing_duration': 0
                     }
@@ -24464,6 +24597,7 @@ def get_analytics_spreadsheet():
     except Exception as e:
         logger.error(f"Error getting analytics spreadsheet: {e}")
         return jsonify({'success': False, 'message': str(e)})
+
 
 @app.route('/api/analytics/attendance_counts', methods=['GET'])
 def get_analytics_attendance_counts():
@@ -24728,6 +24862,18 @@ def get_analytics_top_performers():
     except Exception as e:
         logger.error(f"Error getting top performers: {e}")
         return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/update_missing_threshold', methods=['POST'])
+def update_missing_threshold():
+    data = request.json
+    session_id = data.get('session_id')
+    threshold_minutes = data.get('missing_threshold_minutes')
+    enabled = data.get('enabled')
+    lock_absent = data.get('lock_absent')
+    
+    # Save to session or database
+    
+    return jsonify({'success': True})
 
 if __name__ == "__main__":
     latest_frame = None

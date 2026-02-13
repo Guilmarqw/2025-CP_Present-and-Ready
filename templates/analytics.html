@@ -592,9 +592,63 @@ function setupEventListeners() {
             
             // Separate columns for student info
             let thead = '<thead><tr><th>Student ID</th><th>First Name</th><th>Last Name</th><th>Middle Name</th><th>Year & Section</th>';
+            
+            // FIXED: Better date parsing to handle various formats
             dates.forEach(date => {
-                const dateObj = new Date(date);
-                const formattedDate = `${(dateObj.getMonth() + 1).toString().padStart(2, '0')}/${dateObj.getDate().toString().padStart(2, '0')}/${dateObj.getFullYear()}`;
+                let formattedDate;
+                
+                // Handle dates with timestamps (format: "YYYY-MM-DD_HH:MM:SS" or "YYYY-MM-DD")
+                if (typeof date === 'string') {
+                    // Replace underscore with space to make it parseable
+                    const normalizedDate = date.replace('_', ' ');
+                    const dateObj = new Date(normalizedDate);
+                    
+                    // Check if date is valid
+                    if (!isNaN(dateObj.getTime())) {
+                        const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+                        const day = dateObj.getDate().toString().padStart(2, '0');
+                        const year = dateObj.getFullYear();
+                        
+                        // If the original date contained a timestamp, include time
+                        if (date.includes('_') || date.includes(':')) {
+                            const hours = dateObj.getHours().toString().padStart(2, '0');
+                            const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+                            const ampm = dateObj.getHours() >= 12 ? 'PM' : 'AM';
+                            const displayHours = dateObj.getHours() % 12 || 12;
+                            formattedDate = `${month}/${day}/${year} ${displayHours}:${minutes} ${ampm}`;
+                        } else {
+                            formattedDate = `${month}/${day}/${year}`;
+                        }
+                    } else {
+                        // If parsing failed, try to extract date manually
+                        const parts = date.split(/[_\-\s:]/);
+                        if (parts.length >= 3) {
+                            const year = parts[0];
+                            const month = parts[1];
+                            const day = parts[2];
+                            formattedDate = `${month}/${day}/${year}`;
+                            
+                            // Add time if available
+                            if (parts.length >= 6) {
+                                const hour = parseInt(parts[3]);
+                                const minute = parts[4];
+                                const ampm = hour >= 12 ? 'PM' : 'AM';
+                                const displayHour = hour % 12 || 12;
+                                formattedDate += ` ${displayHour}:${minute} ${ampm}`;
+                            }
+                        } else {
+                            formattedDate = date; // Fallback to original
+                        }
+                    }
+                } else {
+                    // If it's already a Date object
+                    const dateObj = new Date(date);
+                    const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+                    const day = dateObj.getDate().toString().padStart(2, '0');
+                    const year = dateObj.getFullYear();
+                    formattedDate = `${month}/${day}/${year}`;
+                }
+                
                 thead += `<th>${formattedDate}</th>`;
             });
             thead += '</tr></thead>';
