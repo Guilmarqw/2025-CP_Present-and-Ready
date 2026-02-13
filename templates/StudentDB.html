@@ -555,7 +555,7 @@ async function loadAvailableYearLevels(programId, curriculumId = '') {
     const yearLevelSelect = document.getElementById('year_level');
     
     try {
-        let url = `/api/get_available_year_levels?program_id=${programId}`;
+        let url = `/api/get_available_year_levelsss?program_id=${programId}`;
         if (curriculumId) {
             url += `&curriculum_id=${curriculumId}`;
         }
