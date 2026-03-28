@@ -11410,7 +11410,9 @@ def cleanup_duplicate_attendance(session_id):
 @app.route('/api/export_csv')
 @login_required
 def export_csv():
-    """Export attendance data as CSV with colored cells - Uses openpyxl for XLSX format"""
+    """Export attendance data as CSV with colored cells - Uses openpyxl for XLSX format
+    UPDATED: Respects is_locked — locked-absent students always export as ABSENT
+    """
     session_id = request.args.get('session_id')
     
     if not session_id:
@@ -11429,19 +11431,19 @@ def export_csv():
             if not session_data:
                 return jsonify({'success': False, 'message': 'Session not found'}), 404
             
-            class_name = session_data['class_name']
+            class_name   = session_data['class_name']
             subject_code = session_data.get('subject_code', 'IT99')
-            subject_name = session_data.get('subject_name', 'AMBUTT UY')
-            room = session_data.get('room', 'Unknown Room')
-            section_id = session_data.get('section_id')
+            subject_name = session_data.get('subject_name', 'Unknown Subject')
+            room         = session_data.get('room', 'Unknown Room')
+            section_id   = session_data.get('section_id')
             
             print(f"📊 DEBUG CSV Export for Session: {session_id}")
             print(f"   - Subject: {subject_code} - {subject_name}")
             print(f"   - Room: {room}")
             print(f"   - Section ID: {section_id}")
             
-            # Get program and section from session
-            program_display = "BSIT"  # Default
+            # Parse program/section from class_name
+            program_display = "BSIT"
             if 'Associate in Computer Technology' in class_name:
                 program_display = 'ACT'
             elif 'Information Technology' in class_name:
@@ -11449,7 +11451,7 @@ def export_csv():
             elif 'Computer Science' in class_name:
                 program_display = 'BSCS'
             
-            section_display = "4C"  # Default
+            section_display = "4C"
             if '4th Year' in class_name:
                 section_part = class_name.split('4th Year')[-1].strip()
                 if section_part:
@@ -11459,17 +11461,21 @@ def export_csv():
                 if section_part:
                     section_display = f"2{section_part[0]}"
             
-            # FIXED: SINGLE RECORD PER STUDENT WITH MISSING DURATION
+            # UPDATED: Include is_locked in cleaned_attendance so export always shows
+            # locked-absent students correctly regardless of any status aggregation
             cursor.execute("""
                 WITH cleaned_attendance AS (
                     SELECT 
                         student_id,
                         MAX(timestamp) as latest_timestamp,
-                        CASE 
+                        -- UPDATED: If is_locked=1 and status=absent, always use absent
+                        CASE
+                            WHEN MAX(is_locked) = 1 AND MAX(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) = 1
+                                THEN 'absent'
                             WHEN COUNT(*) = 1 THEN 
                                 CASE 
                                     WHEN MAX(status) IN ('', NULL) THEN 'absent'
-                                    WHEN MAX(status) = 'missing' THEN 'absent'
+                                    WHEN MAX(status) = 'missing'  THEN 'absent'
                                     ELSE MAX(status)
                                 END
                             ELSE 
@@ -11483,7 +11489,8 @@ def export_csv():
                         MAX(subject_name) as subject_name,
                         MAX(room) as room,
                         MAX(remarks) as remarks,
-                        COALESCE(MAX(missing_duration), 0) as missing_duration
+                        COALESCE(MAX(missing_duration), 0) as missing_duration,
+                        MAX(is_locked) as is_locked
                     FROM attendance
                     WHERE session_id = %s
                     AND person_type = 'student'
@@ -11512,7 +11519,8 @@ def export_csv():
                         COALESCE(ca.subject_name, %s) as subject_name,
                         COALESCE(ca.room, %s) as room,
                         COALESCE(ca.remarks, '') as remarks,
-                        COALESCE(ca.missing_duration, 0) as missing_duration
+                        COALESCE(ca.missing_duration, 0) as missing_duration,
+                        COALESCE(ca.is_locked, 0) as is_locked
                     FROM section_students ss
                     LEFT JOIN cleaned_attendance ca ON ss.student_id = ca.student_id
                     
@@ -11535,7 +11543,8 @@ def export_csv():
                         END as student_name,
                         %s as year_section,
                         CASE 
-                            WHEN a.status IN ('', NULL, 'missing') THEN 'absent'
+                            WHEN a.is_locked = 1 AND a.status = 'absent' THEN 'absent'
+                            WHEN a.status IN ('', NULL, 'missing')        THEN 'absent'
                             ELSE a.status
                         END as status,
                         a.timestamp as attendance_timestamp,
@@ -11544,7 +11553,8 @@ def export_csv():
                         COALESCE(a.subject_name, %s) as subject_name,
                         COALESCE(a.room, %s) as room,
                         COALESCE(a.remarks, '') as remarks,
-                        COALESCE(a.missing_duration, 0) as missing_duration
+                        COALESCE(a.missing_duration, 0) as missing_duration,
+                        COALESCE(a.is_locked, 0) as is_locked
                     FROM attendance a
                     WHERE a.session_id = %s
                     AND a.person_type = 'student'
@@ -11571,7 +11581,7 @@ def export_csv():
             
             # Remove duplicates
             student_ids = [r['student_id'] for r in records]
-            unique_ids = set(student_ids)
+            unique_ids  = set(student_ids)
             
             if len(student_ids) != len(unique_ids):
                 print(f"⚠️ WARNING: Found duplicates in export!")
@@ -11585,7 +11595,7 @@ def export_csv():
             
             print(f"✅ CSV Export: {len(records)} unique students")
             
-            # Create XLSX with colored cells using openpyxl
+            # Build XLSX
             from openpyxl import Workbook
             from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
             from datetime import datetime
@@ -11595,56 +11605,37 @@ def export_csv():
             ws = wb.active
             ws.title = "Attendance"
             
-            # Define color fills for status
             status_colors = {
-                'present': PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid'),  # Light green
-                'late': PatternFill(start_color='FFFF99', end_color='FFFF99', fill_type='solid'),     # Light yellow
-                'absent': PatternFill(start_color='FFB6C1', end_color='FFB6C1', fill_type='solid'),   # Light red/pink
-                'excused': PatternFill(start_color='ADD8E6', end_color='ADD8E6', fill_type='solid')   # Light blue
+                'present': PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid'),
+                'late':    PatternFill(start_color='FFFF99', end_color='FFFF99', fill_type='solid'),
+                'absent':  PatternFill(start_color='FFB6C1', end_color='FFB6C1', fill_type='solid'),
+                'excused': PatternFill(start_color='ADD8E6', end_color='ADD8E6', fill_type='solid')
             }
             
-            # Header style
-            header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
-            header_font = Font(bold=True, color='FFFFFF', size=11)
+            header_fill      = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+            header_font      = Font(bold=True, color='FFFFFF', size=11)
             header_alignment = Alignment(horizontal='center', vertical='center')
-            
-            # Border style
-            thin_border = Border(
-                left=Side(style='thin'),
-                right=Side(style='thin'),
-                top=Side(style='thin'),
-                bottom=Side(style='thin')
+            thin_border      = Border(
+                left=Side(style='thin'), right=Side(style='thin'),
+                top=Side(style='thin'),  bottom=Side(style='thin')
             )
             
-            # Headers
             headers = [
-                'Student ID', 
-                'Student Name', 
-                'Status', 
-                'Time Recorded',
-                'Missing Time',
-                'Subject Code', 
-                'Subject Name', 
-                'Room',
-                'Program', 
-                'Section', 
-                'Temporary Student',
-                'Remarks'
+                'Student ID', 'Student Name', 'Status', 'Time Recorded',
+                'Missing Time', 'Subject Code', 'Subject Name', 'Room',
+                'Program', 'Section', 'Temporary Student', 'Remarks', 'Auto-Locked'
             ]
             
-            # Write headers
             for col_num, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col_num, value=header)
-                cell.fill = header_fill
-                cell.font = header_font
+                cell.fill      = header_fill
+                cell.font      = header_font
                 cell.alignment = header_alignment
-                cell.border = thin_border
+                cell.border    = thin_border
             
-            # Write data
             for row_num, record in enumerate(records, 2):
                 timestamp = record['attendance_timestamp']
                 
-                # Format timestamp
                 if record['status'] == 'absent' and not timestamp:
                     time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')
                 elif timestamp:
@@ -11659,30 +11650,27 @@ def export_csv():
                 else:
                     time_recorded = session_data['ended_at'].strftime('%Y-%m-%d %I:%M:%S %p')
                 
-                # Clean up student ID for temporary students
                 student_id = record['student_id']
                 if record['is_temporary'] == 'Yes' and (not student_id or student_id.startswith('TEMP')):
                     import hashlib
-                    name_hash = hashlib.md5(record['student_name'].encode()).hexdigest()[:8]
+                    name_hash  = hashlib.md5(record['student_name'].encode()).hexdigest()[:8]
                     student_id = f"TEMP-{name_hash}"
                 
-                # Format status
-                status = record['status'].upper() if record['status'] else 'ABSENT'
+                status       = record['status'].upper() if record['status'] else 'ABSENT'
                 status_lower = status.lower()
                 
-                # Format missing duration
                 missing_duration_seconds = record.get('missing_duration', 0) or 0
                 if missing_duration_seconds > 0:
-                    minutes = missing_duration_seconds // 60
-                    seconds = missing_duration_seconds % 60
-                    if minutes > 0:
-                        missing_time = f"{minutes}m {seconds}s"
-                    else:
-                        missing_time = f"{seconds}s"
+                    mins = missing_duration_seconds // 60
+                    secs = missing_duration_seconds % 60
+                    missing_time = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
                 else:
                     missing_time = "-"
                 
-                # Write row data
+                # UPDATED: Show lock status in export
+                is_locked_val = record.get('is_locked', 0) or 0
+                auto_locked   = "Yes (Missing Threshold)" if is_locked_val == 1 and status_lower == 'absent' else "No"
+                
                 row_data = [
                     student_id,
                     record['student_name'],
@@ -11695,52 +11683,38 @@ def export_csv():
                     program_display,
                     section_display,
                     record['is_temporary'],
-                    record.get('remarks', '')
+                    record.get('remarks', ''),
+                    auto_locked
                 ]
                 
                 for col_num, value in enumerate(row_data, 1):
-                    cell = ws.cell(row=row_num, column=col_num, value=value)
-                    cell.border = thin_border
+                    cell           = ws.cell(row=row_num, column=col_num, value=value)
+                    cell.border    = thin_border
                     cell.alignment = Alignment(vertical='center')
                     
-                    # Apply color to status column (column 3)
                     if col_num == 3 and status_lower in status_colors:
-                        cell.fill = status_colors[status_lower]
-                        cell.font = Font(bold=True)
+                        cell.fill      = status_colors[status_lower]
+                        cell.font      = Font(bold=True)
                         cell.alignment = Alignment(horizontal='center', vertical='center')
             
-            # Adjust column widths
             column_widths = {
-                'A': 15,  # Student ID
-                'B': 30,  # Student Name
-                'C': 12,  # Status
-                'D': 22,  # Time Recorded
-                'E': 15,  # Missing Time
-                'F': 15,  # Subject Code
-                'G': 35,  # Subject Name
-                'H': 15,  # Room
-                'I': 12,  # Program
-                'J': 10,  # Section
-                'K': 18,  # Temporary Student
-                'L': 30   # Remarks
+                'A': 15, 'B': 30, 'C': 12, 'D': 22, 'E': 15,
+                'F': 15, 'G': 35, 'H': 15, 'I': 12, 'J': 10,
+                'K': 18, 'L': 30, 'M': 22
             }
-            
             for col, width in column_widths.items():
                 ws.column_dimensions[col].width = width
             
-            # Save to bytes
             output = io.BytesIO()
             wb.save(output)
             output.seek(0)
             
-            # Create filename
             clean_subject_name = subject_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
-            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{subject_code}_{clean_subject_name}_{program_display}-{section_display}_attendance_{timestamp_str}.xlsx"
+            timestamp_str      = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename           = f"{subject_code}_{clean_subject_name}_{program_display}-{section_display}_attendance_{timestamp_str}.xlsx"
             
             print(f"✅ EXPORT SUCCESS: {len(records)} students")
             
-            # Create response
             from flask import Response
             response = Response(
                 output.getvalue(),
@@ -11752,7 +11726,6 @@ def export_csv():
                     "Expires": "0"
                 }
             )
-            
             return response
             
     except Exception as e:
@@ -11764,13 +11737,14 @@ def export_csv():
 
 @app.route('/api/summary_data')
 def get_summary_data():
-    """Get complete summary data for the latest session - WITH MISSING DURATION"""
+    """Get complete summary data for the latest session
+    UPDATED: Returns is_locked per student so frontend can show lock indicator
+    """
     try:
         user_id = session.get('user_id')
         print(f"🔍 DEBUG: Getting data for user_id: {user_id}")
         
         with get_db_cursor() as cursor:
-            # Check BOTH admins AND faculty tables
             cursor.execute("""
                 SELECT admin_id as user_id, first_name, last_name, role, photo_path, 'admin' as user_type
                 FROM admins WHERE admin_id = %s
@@ -11783,14 +11757,10 @@ def get_summary_data():
             
             if not user:
                 print(f"❌ ERROR: User {user_id} not found")
-                return jsonify({
-                    'success': False, 
-                    'message': 'User not found'
-                }), 404
+                return jsonify({'success': False, 'message': 'User not found'}), 404
             
             print(f"✅ User found: {user['first_name']} {user['last_name']} ({user['user_type']})")
             
-            # Get the latest completed session
             cursor.execute("""
                 SELECT *, subject_code, subject_name, room 
                 FROM attendance_sessions 
@@ -11803,23 +11773,19 @@ def get_summary_data():
             
             if not session_data:
                 print(f"❌ No completed sessions found")
-                return jsonify({
-                    'success': False, 
-                    'message': 'No completed sessions found'
-                }), 404
+                return jsonify({'success': False, 'message': 'No completed sessions found'}), 404
             
             print(f"✅ Session found: {session_data.get('class_name')}")
             
             session_id = session_data['session_id']
             section_id = session_data['section_id']
             started_at = session_data['created_at']
-            ended_at = session_data['ended_at']
+            ended_at   = session_data['ended_at']
             
-            # Clean up duplicates
             cleanup_duplicate_attendance(session_id)
             
             # Duration calculation
-            duration_time = session_data.get('duration_time', '00:00:00')
+            duration_time    = session_data.get('duration_time', '00:00:00')
             duration_seconds = 0
             if duration_time and isinstance(duration_time, str):
                 try:
@@ -11833,15 +11799,14 @@ def get_summary_data():
                     duration_seconds = int((ended_at - started_at).total_seconds())
             
             subject_code = session_data.get('subject_code', 'IT99')
-            subject_name = session_data.get('subject_name', 'AMBUTT UY')
-            room = session_data.get('room', 'Unknown Room')
-            class_name = session_data['class_name']
+            subject_name = session_data.get('subject_name', 'Unknown Subject')
+            room         = session_data.get('room', 'Unknown Room')
+            class_name   = session_data['class_name']
             
-            # Parse program and section
             print(f"📋 DEBUG Parsing class_name: '{class_name}'")
             
-            program_display = "BSIT"
-            class_name_upper = class_name.upper()
+            program_display   = "BSIT"
+            class_name_upper  = class_name.upper()
             
             if 'ASSOCIATE IN COMPUTER TECHNOLOGY' in class_name_upper or 'ACT' in class_name_upper:
                 program_display = 'ACT'
@@ -11850,15 +11815,13 @@ def get_summary_data():
             elif 'COMPUTER SCIENCE' in class_name_upper or 'BSCS' in class_name_upper or 'CS' in class_name_upper:
                 program_display = 'BSCS'
             
-            # Extract year and section
             import re
-            
             pattern1 = r'(\d+)(?:st|nd|rd|th)\s*Year\s*([A-Za-z]?)$'
             pattern2 = r'(\d+)(?:st|rd|th)\s*Year\s+([A-Za-z]+)'
             pattern3 = r'(\d+)(?:st|nd|rd|th)\s*Year\s+(?:Section\s+)?([A-Za-z]+)'
             pattern4 = r'.*?(\d+)(?:st|nd|rd|th)?\s*([A-Za-z]+)$'
             
-            year_num = None
+            year_num       = None
             section_letter = None
             
             for pattern in [pattern1, pattern2, pattern3, pattern4]:
@@ -11880,7 +11843,7 @@ def get_summary_data():
                     section_letter = letters[0]
             
             if year_num and section_letter:
-                section_clean = section_letter[0].upper() if section_letter else 'C'
+                section_clean   = section_letter[0].upper() if section_letter else 'C'
                 section_display = f"{year_num}{section_clean}"
             elif year_num:
                 section_display = f"{year_num}C"
@@ -11889,17 +11852,21 @@ def get_summary_data():
             
             print(f"📊 DEBUG Final - Program: {program_display}, Section: {section_display}")
             
-            # GET STUDENT DATA WITH MISSING DURATION
+            # UPDATED: Include is_locked in both CTEs so the frontend knows
+            # which students are locked-absent (auto-marked by missing threshold)
             cursor.execute("""
                 WITH cleaned_attendance AS (
                     SELECT 
                         student_id,
                         MAX(timestamp) as latest_timestamp,
-                        CASE 
+                        -- UPDATED: Locked-absent always stays absent
+                        CASE
+                            WHEN MAX(is_locked) = 1 AND MAX(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) = 1
+                                THEN 'absent'
                             WHEN COUNT(*) = 1 THEN 
                                 CASE 
                                     WHEN MAX(status) IN ('', NULL) THEN 'absent'
-                                    WHEN MAX(status) = 'missing' THEN 'absent'
+                                    WHEN MAX(status) = 'missing'  THEN 'absent'
                                     ELSE MAX(status)
                                 END
                             ELSE 
@@ -11914,7 +11881,8 @@ def get_summary_data():
                         MAX(room) as room,
                         MAX(remarks) as remarks,
                         MAX(id) as latest_id,
-                        COALESCE(MAX(missing_duration), 0) as missing_duration
+                        COALESCE(MAX(missing_duration), 0) as missing_duration,
+                        MAX(is_locked) as is_locked
                     FROM attendance
                     WHERE session_id = %s
                     AND person_type = 'student'
@@ -11944,7 +11912,8 @@ def get_summary_data():
                         COALESCE(ca.subject_name, %s) as subject_name,
                         COALESCE(ca.room, %s) as room,
                         COALESCE(ca.remarks, '') as remarks,
-                        COALESCE(ca.missing_duration, 0) as missing_duration
+                        COALESCE(ca.missing_duration, 0) as missing_duration,
+                        COALESCE(ca.is_locked, 0) as is_locked
                     FROM section_students ss
                     LEFT JOIN cleaned_attendance ca ON ss.student_id = ca.student_id
                     
@@ -11968,7 +11937,8 @@ def get_summary_data():
                         'Yes' as is_temporary,
                         NULL as photo_path,
                         CASE 
-                            WHEN a.status IN ('', NULL, 'missing') THEN 'absent'
+                            WHEN a.is_locked = 1 AND a.status = 'absent' THEN 'absent'
+                            WHEN a.status IN ('', NULL, 'missing')        THEN 'absent'
                             ELSE a.status
                         END as status,
                         a.timestamp as attendance_timestamp,
@@ -11976,7 +11946,8 @@ def get_summary_data():
                         COALESCE(a.subject_name, %s) as subject_name,
                         COALESCE(a.room, %s) as room,
                         COALESCE(a.remarks, '') as remarks,
-                        COALESCE(a.missing_duration, 0) as missing_duration
+                        COALESCE(a.missing_duration, 0) as missing_duration,
+                        COALESCE(a.is_locked, 0) as is_locked
                     FROM attendance a
                     WHERE a.session_id = %s
                     AND a.person_type = 'student'
@@ -11994,7 +11965,8 @@ def get_summary_data():
                     subject_name,
                     room,
                     remarks,
-                    missing_duration
+                    missing_duration,
+                    is_locked
                 FROM combined_data
                 ORDER BY student_name ASC
             """, (
@@ -12010,20 +11982,17 @@ def get_summary_data():
             
             print(f"📊 DEBUG SUMMARY: Found {len(all_student_records)} unique students")
             
-            # Convert to proper format with photo handling and missing duration
             complete_student_list = []
             for record in all_student_records:
-                # Handle photo path
+                # Photo handling
                 if record['is_temporary'] == 'Yes':
                     photo_path = '/static/images/default-avatar.jpg'
                 else:
                     photo_path = record['photo_path']
-                    
                     if not photo_path:
                         photo_path = f"/static/images/student_photos/{record['student_id']}.jpg"
                     else:
                         photo_path = photo_path.strip()
-                        
                         if photo_path.startswith('static/images/'):
                             photo_path = '/' + photo_path
                         elif photo_path.startswith('images/'):
@@ -12035,56 +12004,58 @@ def get_summary_data():
                         elif not photo_path.startswith('/') and not photo_path.startswith('http'):
                             photo_path = f"/static/{photo_path}"
                 
-                # Handle timestamp
+                # Timestamp handling
                 timestamp = record['attendance_timestamp']
                 if record['status'] == 'absent' and not timestamp:
                     display_timestamp = ended_at
                 else:
                     display_timestamp = timestamp or ended_at
                 
-                # Get clean student ID for temporary students
+                # Temp student ID
                 student_id = record['student_id']
                 if record['is_temporary'] == 'Yes' and (not student_id or student_id.startswith('TEMP')):
                     import hashlib
-                    name_hash = hashlib.md5(record['student_name'].encode()).hexdigest()[:8]
+                    name_hash  = hashlib.md5(record['student_name'].encode()).hexdigest()[:8]
                     student_id = f"TEMP-{name_hash}"
                 
-                # Format missing duration
+                # Missing duration format
                 missing_duration_seconds = record.get('missing_duration', 0) or 0
                 if missing_duration_seconds > 0:
-                    minutes = missing_duration_seconds // 60
-                    seconds = missing_duration_seconds % 60
-                    if minutes > 0:
-                        missing_time_display = f"{minutes}m {seconds}s"
-                    else:
-                        missing_time_display = f"{seconds}s"
+                    mins = missing_duration_seconds // 60
+                    secs = missing_duration_seconds % 60
+                    missing_time_display = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
                 else:
                     missing_time_display = None
                 
+                # UPDATED: Pass is_locked to frontend
+                is_locked_val = record.get('is_locked', 0) or 0
+
                 complete_student_list.append({
-                    'student_id': student_id,
-                    'name': record['student_name'],
-                    'status': record['status'],
-                    'timestamp': display_timestamp,
-                    'photo': photo_path or '/static/images/default-avatar.jpg',
-                    'is_temporary': record['is_temporary'] == 'Yes',
-                    'subject_code': record['subject_code'] or subject_code,
-                    'subject_name': record['subject_name'] or subject_name,
-                    'room': record['room'] or room,
-                    'remarks': record.get('remarks', ''),
-                    'missing_duration': missing_duration_seconds,
-                    'missing_time_display': missing_time_display
+                    'student_id':           student_id,
+                    'name':                 record['student_name'],
+                    'status':               record['status'],
+                    'timestamp':            display_timestamp,
+                    'photo':                photo_path or '/static/images/default-avatar.jpg',
+                    'is_temporary':         record['is_temporary'] == 'Yes',
+                    'subject_code':         record['subject_code'] or subject_code,
+                    'subject_name':         record['subject_name'] or subject_name,
+                    'room':                 record['room'] or room,
+                    'remarks':              record.get('remarks', ''),
+                    'missing_duration':     missing_duration_seconds,
+                    'missing_time_display': missing_time_display,
+                    'is_locked':            bool(is_locked_val)   # UPDATED: frontend uses this
                 })
             
-            # Calculate counts
             present_count = len([s for s in complete_student_list if s['status'] == 'present'])
-            late_count = len([s for s in complete_student_list if s['status'] == 'late'])
-            absent_count = len([s for s in complete_student_list if s['status'] == 'absent'])
+            late_count    = len([s for s in complete_student_list if s['status'] == 'late'])
+            absent_count  = len([s for s in complete_student_list if s['status'] == 'absent'])
             excused_count = len([s for s in complete_student_list if s['status'] == 'excused'])
             total_students = len(complete_student_list)
             
-            # Count temporary vs regular
-            temp_count = len([s for s in complete_student_list if s['is_temporary']])
+            # UPDATED: also count how many were auto-locked absent
+            locked_absent_count = len([s for s in complete_student_list if s['is_locked'] and s['status'] == 'absent'])
+            
+            temp_count    = len([s for s in complete_student_list if s['is_temporary']])
             regular_count = total_students - temp_count
             
             print(f"📊 DEBUG FINAL SUMMARY BREAKDOWN:")
@@ -12095,11 +12066,10 @@ def get_summary_data():
             print(f"   - Late: {late_count}")
             print(f"   - Absent: {absent_count}")
             print(f"   - Excused: {excused_count}")
+            print(f"   - Auto-locked Absent (missing threshold): {locked_absent_count}")
             
-            # Format course display
             course_section_display = f"{program_display} {section_display}"
             
-            # Format user photo
             user_photo = user['photo_path'] or '/static/images/default-avatar.jpg'
             if user_photo:
                 user_photo = user_photo.strip()
@@ -12118,27 +12088,28 @@ def get_summary_data():
             summary_data = {
                 'success': True,
                 'session': {
-                    'session_id': session_id,
-                    'class_name': class_name,
-                    'started_at': started_at.strftime('%Y-%m-%d %I:%M%p') if started_at else '',
-                    'ended_at': ended_at.strftime('%Y-%m-%d %I:%M%p') if ended_at else '',
-                    'duration_seconds': duration_seconds,
+                    'session_id':             session_id,
+                    'class_name':             class_name,
+                    'started_at':             started_at.strftime('%Y-%m-%d %I:%M%p') if started_at else '',
+                    'ended_at':               ended_at.strftime('%Y-%m-%d %I:%M%p') if ended_at else '',
+                    'duration_seconds':       duration_seconds,
                     'late_threshold_minutes': session_data.get('late_threshold_minutes', 20) or 20,
-                    'total_students': total_students,
-                    'present_count': present_count,
-                    'late_count': late_count,
-                    'absent_count': absent_count,
-                    'excused_count': excused_count,
-                    'subject_code': subject_code,
-                    'subject_name': subject_name,
-                    'room': room,
-                    'regular_students': regular_count,
-                    'temporary_students': temp_count
+                    'total_students':         total_students,
+                    'present_count':          present_count,
+                    'late_count':             late_count,
+                    'absent_count':           absent_count,
+                    'excused_count':          excused_count,
+                    'subject_code':           subject_code,
+                    'subject_name':           subject_name,
+                    'room':                   room,
+                    'regular_students':       regular_count,
+                    'temporary_students':     temp_count,
+                    'locked_absent_count':    locked_absent_count  # UPDATED: new field
                 },
                 'user': {
-                    'name': f"{user['first_name']} {user['last_name']}",
-                    'role': user['role'],
-                    'username': user['user_id'],
+                    'name':      f"{user['first_name']} {user['last_name']}",
+                    'role':      user['role'],
+                    'username':  user['user_id'],
                     'photo_path': user_photo,
                     'user_type': user['user_type']
                 },
@@ -12148,12 +12119,15 @@ def get_summary_data():
                     'room': room
                 },
                 'course_section': course_section_display,
-                'attendance': complete_student_list
+                'attendance':     complete_student_list
             }
             
-            print(f"✅ FINAL SUMMARY: {total_students} total students ({regular_count} regular, {temp_count} temporary)")
+            print(f"✅ FINAL SUMMARY: {total_students} total students "
+                  f"({regular_count} regular, {temp_count} temporary)")
             print(f"   Course Display: {course_section_display}")
-            print(f"   Present: {present_count}, Late: {late_count}, Absent: {absent_count}, Excused: {excused_count}")
+            print(f"   Present: {present_count}, Late: {late_count}, "
+                  f"Absent: {absent_count}, Excused: {excused_count}, "
+                  f"Locked-Absent: {locked_absent_count}")
             
             return jsonify(summary_data)
             
@@ -12169,10 +12143,13 @@ def get_summary_data():
 
 @app.route('/api/update_attendance', methods=['POST'])
 def update_attendance():
-    """Update attendance status - PRESERVES MISSING DURATION"""
-    data = request.get_json()
-    session_id = data.get('session_id')
-    attendance_updates = data.get('attendance_updates', [])
+    """Update attendance status - PRESERVES MISSING DURATION
+    UPDATED: Respects is_locked — will NOT unlock a locked-absent student
+             unless the update explicitly passes is_locked=0 (manual override)
+    """
+    data                = request.get_json()
+    session_id          = data.get('session_id')
+    attendance_updates  = data.get('attendance_updates', [])
     
     print(f"📝 DEBUG update_attendance called")
     print(f"  Session ID: {session_id}")
@@ -12186,7 +12163,6 @@ def update_attendance():
     
     try:
         with get_db_cursor() as cursor:
-            # Get session info
             cursor.execute("""
                 SELECT subject_code, subject_name, room, section_id, class_name, ended_at
                 FROM attendance_sessions 
@@ -12197,36 +12173,37 @@ def update_attendance():
             if not session_info:
                 return jsonify({'success': False, 'message': 'Session not found'}), 404
             
-            subject_code = session_info.get('subject_code', 'IT99')
-            subject_name = session_info.get('subject_name', 'AMBUTT UY')
-            room = session_info.get('room', 'Unknown Room')
-            section_id = session_info.get('section_id', 0)
-            class_name = session_info.get('class_name', '')
+            subject_code  = session_info.get('subject_code', 'IT99')
+            subject_name  = session_info.get('subject_name', 'Unknown Subject')
+            room          = session_info.get('room', 'Unknown Room')
+            section_id    = session_info.get('section_id', 0)
+            class_name    = session_info.get('class_name', '')
             session_ended = session_info.get('ended_at')
             
             print(f"  Session: {class_name}")
             print(f"  Subject: {subject_code} - {subject_name}")
             
-            updated_count = 0
+            updated_count  = 0
             inserted_count = 0
-            skipped_count = 0
+            skipped_count  = 0
+            locked_skipped = 0
             
-            # Process each student update
             for update in attendance_updates:
-                student_id = update.get('student_id')
+                student_id      = update.get('student_id')
                 frontend_status = update.get('status', 'absent')
-                remarks = update.get('remarks', '')
-                student_name = update.get('student_name', '')
+                remarks         = update.get('remarks', '')
+                student_name    = update.get('student_name', '')
+                # UPDATED: caller can pass is_locked=0 to force-unlock (manual override)
+                #          if not passed, we preserve the existing lock
+                requested_lock  = update.get('is_locked', None)  # None = don't change lock state
                 
                 if not student_id:
                     print(f"  ⚠️ Skipping update without student_id")
                     skipped_count += 1
                     continue
                 
-                # Normalize status
                 frontend_status = str(frontend_status).lower().strip()
                 
-                # Map frontend status to database ENUM
                 if frontend_status == 'absent':
                     db_status = 'missing'
                 elif frontend_status in ['present', 'late', 'excused', 'missing']:
@@ -12237,20 +12214,17 @@ def update_attendance():
                 
                 print(f"  Processing: {student_id} -> '{frontend_status}' -> '{db_status}'")
                 
-                # Check if student exists in students table (NOT temporary)
                 cursor.execute("""
                     SELECT student_id FROM students WHERE student_id = %s
                 """, (student_id,))
                 student_exists = cursor.fetchone()
-                
-                is_temporary = not student_exists
+                is_temporary   = not student_exists
                 
                 if is_temporary:
-                    print(f"    ⚠️ Student {student_id} is TEMPORARY (not in students table)")
+                    print(f"    ⚠️ Student {student_id} is TEMPORARY")
                 
-                # Check for existing attendance record
                 cursor.execute("""
-                    SELECT id, status, name, student_id, missing_duration
+                    SELECT id, status, name, student_id, missing_duration, is_locked
                     FROM attendance 
                     WHERE session_id = %s 
                     AND (
@@ -12265,24 +12239,43 @@ def update_attendance():
                 existing = cursor.fetchone()
                 
                 if existing:
-                    # UPDATE existing record - PRESERVE MISSING DURATION
-                    print(f"    Found existing record ID {existing['id']}, missing_duration: {existing.get('missing_duration', 0)}s")
+                    existing_locked = int(existing.get('is_locked', 0) or 0)
+
+                    # UPDATED: If the record is locked and the caller did NOT explicitly
+                    # request an unlock (is_locked=0), skip the update entirely.
+                    if existing_locked == 1 and requested_lock != 0:
+                        print(f"    🔒 SKIPPED: Student {student_id} is locked-absent. "
+                              f"Pass is_locked=0 to override.")
+                        locked_skipped += 1
+                        continue
+
+                    # Determine what to write for is_locked:
+                    # - If caller passed requested_lock explicitly, use that value
+                    # - Otherwise preserve the existing lock state
+                    new_lock = existing_locked if requested_lock is None else int(requested_lock)
+
+                    print(f"    Found existing record ID {existing['id']}, "
+                          f"missing_duration: {existing.get('missing_duration', 0)}s, "
+                          f"is_locked: {existing_locked} -> {new_lock}")
                     
-                    # Only update status, remarks, and timestamp - KEEP missing_duration
                     cursor.execute("""
                         UPDATE attendance 
                         SET status = %s, 
                             remarks = %s,
+                            is_locked = %s,
                             timestamp = CASE 
                                 WHEN %s = 'missing' AND %s IS NOT NULL THEN %s 
                                 ELSE timestamp 
                             END
                         WHERE id = %s
-                    """, (db_status, remarks, db_status, session_ended, session_ended, existing['id']))
+                    """, (db_status, remarks, new_lock,
+                          db_status, session_ended, session_ended,
+                          existing['id']))
                     
                     if cursor.rowcount > 0:
                         updated_count += 1
-                        print(f"    ✅ Updated: {existing['status']} -> {db_status}, missing_duration preserved")
+                        print(f"    ✅ Updated: {existing['status']} -> {db_status}, "
+                              f"is_locked={new_lock}, missing_duration preserved")
                     
                 else:
                     # INSERT new record
@@ -12294,32 +12287,33 @@ def update_attendance():
                                 SELECT CONCAT(first_name, ' ', last_name) as full_name
                                 FROM students WHERE student_id = %s
                             """, (student_id,))
-                            student = cursor.fetchone()
+                            student     = cursor.fetchone()
                             student_name = student['full_name'] if student else f"Student {student_id}"
                     
-                    # CRITICAL FIX: Use NULL for temporary students
                     if is_temporary:
                         insert_student_id = None
-                        insert_name = f"{student_name} (ID: {student_id})"
+                        insert_name       = f"{student_name} (ID: {student_id})"
                     else:
                         insert_student_id = student_id
-                        insert_name = student_name
+                        insert_name       = student_name
                     
-                    print(f"    Inserting: student_id={insert_student_id}, name={insert_name}")
+                    # New records default to is_locked=0 unless explicitly set
+                    new_lock = 0 if requested_lock is None else int(requested_lock)
                     
-                    # Set timestamp based on status
+                    print(f"    Inserting: student_id={insert_student_id}, name={insert_name}, is_locked={new_lock}")
+                    
                     if db_status == 'missing' and session_ended:
                         cursor.execute("""
                             INSERT INTO attendance (
                                 session_id, student_id, person_type, name, 
                                 status, timestamp, remarks, subject_code, 
                                 subject_name, room, section_id, faculty_id,
-                                missing_duration
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                                missing_duration, is_locked
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, %s)
                         """, (
                             session_id, insert_student_id, 'student', insert_name,
                             db_status, session_ended, remarks, subject_code, subject_name,
-                            room, section_id, session.get('user_id')
+                            room, section_id, session.get('user_id'), new_lock
                         ))
                     else:
                         cursor.execute("""
@@ -12327,12 +12321,12 @@ def update_attendance():
                                 session_id, student_id, person_type, name, 
                                 status, timestamp, remarks, subject_code, 
                                 subject_name, room, section_id, faculty_id,
-                                missing_duration
-                            ) VALUES (%s, %s, %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, 0)
+                                missing_duration, is_locked
+                            ) VALUES (%s, %s, %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, 0, %s)
                         """, (
                             session_id, insert_student_id, 'student', insert_name,
                             db_status, remarks, subject_code, subject_name,
-                            room, section_id, session.get('user_id')
+                            room, section_id, session.get('user_id'), new_lock
                         ))
                     
                     inserted_count += 1
@@ -12366,17 +12360,19 @@ def update_attendance():
             print(f"✅ Update complete:")
             print(f"   - Updated: {updated_count}")
             print(f"   - Inserted: {inserted_count}")
-            print(f"   - Skipped: {skipped_count}")
+            print(f"   - Skipped (no ID): {skipped_count}")
+            print(f"   - Skipped (locked): {locked_skipped}")
             print(f"   - Total: {total_processed}")
             
             return jsonify({
                 'success': True, 
                 'message': f'Attendance updated for {total_processed} students',
                 'stats': {
-                    'updated': updated_count,
-                    'inserted': inserted_count,
-                    'skipped': skipped_count,
-                    'total': total_processed
+                    'updated':        updated_count,
+                    'inserted':       inserted_count,
+                    'skipped':        skipped_count,
+                    'locked_skipped': locked_skipped,
+                    'total':          total_processed
                 }
             })
             
@@ -18283,7 +18279,7 @@ def get_class_students():
 
 @app.route('/api/get_student_status')
 def get_student_status():
-    """Get current status of all students - FIXED VERSION"""
+    """Get current status of all students - FIXED VERSION with is_locked support"""
     global session_start_time, session_threshold_seconds, current_session_id, student_presence_tracker
     global locked_tracks
     
@@ -18304,7 +18300,6 @@ def get_student_status():
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True, buffered=True)
         
-        # First, check if session exists with a simple query
         cursor.execute("""
             SELECT 
                 section_id,
@@ -18336,7 +18331,6 @@ def get_student_status():
         section_name = section
         
         if section_id:
-            # Get students using section_id
             cursor.execute("""
                 SELECT 
                     s.student_id, 
@@ -18356,7 +18350,6 @@ def get_student_status():
             
             students = cursor.fetchall()
             
-            # Get section info for later use
             cursor.execute("""
                 SELECT p.program_name, ys.year_level, ys.section_name 
                 FROM year_sections ys
@@ -18370,18 +18363,15 @@ def get_student_status():
                 year_level_num = section_info.get('year_level')
                 section_name = section_info.get('section_name', section)
         else:
-            # If no section_id, try to get students using program/year/section
             logger.warning(f"⚠️ No section_id found for session {session_id}, using fallback lookup")
             
             if not all([program, year_level, section]):
                 logger.error("❌ Missing program/year/section for fallback lookup")
                 students = []
             else:
-                # Extract numeric year level
                 year_level_clean = ''.join(filter(str.isdigit, year_level))
                 year_level_num = int(year_level_clean) if year_level_clean else None
                 
-                # Map program names to program_ids
                 program_map = {
                     'Information Technology': 'IT',
                     'Computer Science': 'CS', 
@@ -18393,7 +18383,6 @@ def get_student_status():
                 program_id_to_search = program_map.get(program, program)
                 section_to_search = section.upper() if section else None
                 
-                # 🔧 FIXED: Find section_id WITH STUDENT COUNT CHECK
                 cursor.execute("""
                     SELECT 
                         ys.section_id,
@@ -18417,7 +18406,6 @@ def get_student_status():
                     if DEBUG_MODE:
                         logger.debug(f"✅ Fallback found section with {section_result['student_count']} students: section_id={section_id}")
                     
-                    # Now get students with found section_id
                     cursor.execute("""
                         SELECT 
                             s.student_id, 
@@ -18437,7 +18425,6 @@ def get_student_status():
                     
                     students = cursor.fetchall()
                 else:
-                    # Try to get any active section
                     logger.warning(f"⚠️ No section with students, trying any active section")
                     cursor.execute("""
                         SELECT section_id
@@ -18483,7 +18470,7 @@ def get_student_status():
         # STEP 3: GET TEMPORARY STUDENTS FROM CURRENT SESSION
         cursor = conn.cursor(dictionary=True, buffered=True)
         cursor.execute("""
-            SELECT name, timestamp, status, remarks, session_id
+            SELECT name, timestamp, status, remarks, session_id, is_locked
             FROM attendance 
             WHERE student_id IS NULL 
             AND session_id = %s
@@ -18493,7 +18480,6 @@ def get_student_status():
         cursor.close()
         
         # STEP 4: CHECK MISSING STUDENTS
-        missing_student_ids = []
         cursor = conn.cursor(dictionary=True, buffered=True)
         cursor.execute("""
             SELECT student_id FROM missing_periods 
@@ -18533,10 +18519,11 @@ def get_student_status():
             student_id = student['student_id']
             student_name = f"{student['first_name']} {student['last_name']}"
             
-            # Check attendance record
+            # Fetch attendance record — now includes is_locked
             cursor = conn.cursor(dictionary=True, buffered=True)
             cursor.execute("""
-                SELECT status, session_id, remarks, timestamp FROM attendance 
+                SELECT status, session_id, remarks, timestamp, is_locked
+                FROM attendance 
                 WHERE student_id = %s AND session_id = %s
                 ORDER BY timestamp DESC LIMIT 1
             """, (student_id, session_id))
@@ -18546,13 +18533,15 @@ def get_student_status():
             
             is_manual_status = False
             current_status = None
-            
+            is_locked = False
+
             if attendance_record:
                 current_status = attendance_record['status']
+                # ── NEW: Read is_locked flag from DB ──
+                is_locked = bool(attendance_record.get('is_locked', 0))
                 current_session = attendance_record.get('session_id')
                 remarks = attendance_record.get('remarks') or ''
                 
-                # Determine if this is a manual status
                 is_manual_status = (
                     current_session in ['manual_excuse', 'manual_status'] or
                     current_status in ['excused'] or
@@ -18560,7 +18549,23 @@ def get_student_status():
                     'Manual status' in remarks or
                     'Manually marked as excused' in remarks
                 )
-            
+
+            # ── NEW: If student is DB-locked as absent, skip ALL camera/detection logic ──
+            if is_locked and current_status == 'absent':
+                if DEBUG_MODE:
+                    logger.debug(f"🔒 DB-LOCKED ABSENT: {student_name} — ignoring camera detection")
+                student_list.append({
+                    'id': student_id,
+                    'name': student_name,
+                    'status': 'absent',
+                    'is_locked': True,
+                    'type': 'regular',
+                    'program': student.get('program_name', program_name),
+                    'year_level': student.get('year_level', year_level_num),
+                    'section': student.get('section_name', section_name)
+                })
+                continue
+
             # Priority 1: Manual status (protected)
             if is_manual_status:
                 if DEBUG_MODE: 
@@ -18569,6 +18574,7 @@ def get_student_status():
                     'id': student_id,
                     'name': student_name,
                     'status': current_status,
+                    'is_locked': False,
                     'type': 'regular',
                     'program': student.get('program_name', program_name),
                     'year_level': student.get('year_level', year_level_num),
@@ -18577,7 +18583,7 @@ def get_student_status():
                 manual_status_students.add(student_id)
                 continue
             
-            # Priority 2: Currently detected (real-time)
+            # Priority 2: Currently detected (real-time) — only if NOT locked
             if student_id in currently_present_ids:
                 current_status = 'present'
                 
@@ -18597,7 +18603,6 @@ def get_student_status():
                         original_status = missing_record['original_status']
                         current_status = original_status
                         
-                        # Mark as returned
                         cursor = conn.cursor(dictionary=True, buffered=True)
                         cursor.execute("""
                             UPDATE missing_periods 
@@ -18624,7 +18629,6 @@ def get_student_status():
                     if time_diff_seconds >= threshold_seconds:
                         current_status = 'late'
                         
-                        # Update attendance record
                         if attendance_record and attendance_record['status'] == 'present':
                             cursor = conn.cursor(dictionary=True, buffered=True)
                             cursor.execute("""
@@ -18676,6 +18680,7 @@ def get_student_status():
                 'id': student_id,
                 'name': student_name,
                 'status': current_status,
+                'is_locked': is_locked,
                 'type': 'regular',
                 'program': student.get('program_name', program_name),
                 'year_level': student.get('year_level', year_level_num),
@@ -18689,11 +18694,39 @@ def get_student_status():
             temp_remarks = temp_student.get('remarks') or ''
             current_status = temp_student['status']
             temp_session_id = temp_student.get('session_id')
+            temp_is_locked = bool(temp_student.get('is_locked', 0))
             
             if temp_session_id != session_id:
                 continue
+
+            # ── NEW: If temp student is locked absent, skip status logic ──
+            if temp_is_locked and current_status == 'absent':
+                temp_id = None
+                display_name = temp_name
+                if 'temp_id:' in temp_remarks:
+                    temp_id = temp_remarks.split('temp_id:')[1].strip()
+                    display_name = re.sub(r'\s*\(ID:\s*[^)]+\)', '', temp_name).strip()
+                if not temp_id:
+                    id_match = re.search(r'\(ID:\s*([^)]+)\)', temp_name)
+                    if id_match:
+                        temp_id = id_match.group(1).strip()
+                        display_name = re.sub(r'\s*\(ID:\s*[^)]+\)', '', temp_name).strip()
+                if not temp_id:
+                    temp_id = f"temp_{temp_counter}"
+                    temp_counter += 1
+
+                student_list.append({
+                    'id': temp_id,
+                    'name': display_name,
+                    'status': 'absent',
+                    'is_locked': True,
+                    'type': 'temporary',
+                    'program': program_name,
+                    'year_level': year_level_num,
+                    'section': section_name
+                })
+                continue
             
-            # Extract temp ID
             temp_id = None
             display_name = temp_name
             
@@ -18711,12 +18744,10 @@ def get_student_status():
                 temp_id = f"temp_{temp_counter}"
                 temp_counter += 1
             
-            # Check for manual status in temp student
             is_manual_temp = False
             if 'Manually marked' in temp_remarks or 'Manual status' in temp_remarks:
                 is_manual_temp = True
             
-            # Apply late conversion for non-manual temps
             if current_status == 'present' and session_start_time and not is_manual_temp:
                 arrival_time = temp_student['timestamp']
                 if isinstance(arrival_time, str):
@@ -18736,11 +18767,11 @@ def get_student_status():
                     """, (temp_name, session_id, temp_student['timestamp']))
                     cursor.close()
             
-            # Add temporary student to list
             student_list.append({
                 'id': temp_id,
                 'name': display_name,
                 'status': current_status,
+                'is_locked': temp_is_locked,
                 'type': 'temporary',
                 'program': program_name,
                 'year_level': year_level_num,
@@ -18786,7 +18817,6 @@ def get_student_status():
         import traceback
         logger.error(f"📝 Stack trace: {traceback.format_exc()}")
         
-        # Cleanup on error
         if cursor:
             try:
                 cursor.close()
@@ -18799,6 +18829,7 @@ def get_student_status():
                 pass
         
         return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @app.route('/api/debug_section_students')
 def debug_section_students():
@@ -18966,7 +18997,7 @@ def find_section_id(program_id, year_level, section_name, curriculum_id=None):
     
 @app.route('/api/manage_student', methods=['POST'])
 def manage_student():
-    """Handle student management actions - FIXED: Using correct schema with programs and year_sections"""
+    """Handle student management actions - FIXED: with is_locked support"""
     global session_start_time, session_threshold_seconds, current_session_id
     
     try:
@@ -18994,17 +19025,15 @@ def manage_student():
                 current_time_dt = datetime.now()
                 time_difference = current_time_dt - session_start_time
                 
-                # Use the global threshold
                 threshold_seconds = session_threshold_seconds
                 if not threshold_seconds:
-                    threshold_seconds = 900  # Default 15 minutes
+                    threshold_seconds = 900
                 
                 if time_difference.total_seconds() > threshold_seconds:
                     status = 'late'
                     if DEBUG_MODE: 
-                        logger.debug(f"  TEMPORARY STUDENT LATE: {student_name} arrived {time_difference.total_seconds():.1f} seconds after start (threshold: {threshold_seconds} seconds)")
+                        logger.debug(f"  TEMPORARY STUDENT LATE: {student_name} arrived {time_difference.total_seconds():.1f}s after start")
             
-            #    GET SESSION SUBJECT INFORMATION
             subject_code = 'Unknown Subject'
             subject_name = 'Unknown Subject'
             room = 'Unknown Room'
@@ -19025,8 +19054,6 @@ def manage_student():
                     subject_name = session_result.get('subject_name', 'Unknown Subject')
                     room = session_result.get('room', 'Unknown Room')
                     section_id = session_result.get('section_id')
-                    if DEBUG_MODE: 
-                        logger.debug(f"  Found session subject: {subject_code} - {subject_name}")
                 
                 cursor.close()
                 conn.close()
@@ -19036,7 +19063,6 @@ def manage_student():
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            #      Check if temporary student already exists in THIS session
             cursor.execute("""
                 SELECT id, status FROM attendance 
                 WHERE student_id IS NULL 
@@ -19048,25 +19074,26 @@ def manage_student():
             existing_temp_student = cursor.fetchone()
             
             if existing_temp_student:
-                #    UPDATE existing temporary student instead of creating duplicate
                 cursor.execute("""
                     UPDATE attendance 
                     SET status = %s, timestamp = %s,
-                        subject_code = %s, subject_name = %s, room = %s, section_id = %s
+                        subject_code = %s, subject_name = %s, room = %s, section_id = %s,
+                        is_locked = 0
                     WHERE id = %s
                 """, (status, current_time, subject_code, subject_name, room, section_id, existing_temp_student[0]))
                 
                 if DEBUG_MODE: 
                     logger.debug(f"  TEMPORARY STUDENT UPDATED: {student_name} ({student_id}) - {status}")
             else:
-                #    INSERT new temporary student
                 actual_session_id = current_session_id if current_session_id else 'manual_add'
                 
                 cursor.execute("""
                     INSERT INTO attendance 
-                    (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (None, display_name, current_time, 'student', status, actual_session_id, remarks, subject_code, subject_name, room, section_id))
+                    (student_id, name, timestamp, person_type, status, session_id, remarks,
+                     subject_code, subject_name, room, section_id, is_locked)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                """, (None, display_name, current_time, 'student', status, actual_session_id,
+                      remarks, subject_code, subject_name, room, section_id))
                 
                 if DEBUG_MODE: 
                     logger.debug(f"   TEMPORARY ATTENDANCE ADDED: {student_name} ({student_id}) - {status}")
@@ -19097,7 +19124,6 @@ def manage_student():
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            #    CORRECTED: Check students table with proper schema
             cursor.execute("""
                 SELECT first_name, last_name 
                 FROM students 
@@ -19107,12 +19133,11 @@ def manage_student():
             
             if student:
                 student_name = f"{student[0]} {student[1]}"
-
                 cursor.close()
                 conn.close()
                 
                 if DEBUG_MODE: 
-                    logger.debug(f"🗑️ REGULAR STUDENT REMOVED: {student_id}")
+                    logger.debug(f"🗑️ REGULAR STUDENT REMOVE ATTEMPTED: {student_id}")
                 return jsonify({
                     'success': True, 
                     'title': 'Action Restricted',
@@ -19154,7 +19179,6 @@ def manage_student():
                     'message': 'Please provide both student ID and new section'
                 })
             
-            # Parse new section format (e.g., "IT 4A", "CS 3B", "ACT 2C")
             match = re.match(r'(\w+)\s*(\d+)(\w+)', new_section)
             if not match:
                 return jsonify({
@@ -19163,14 +19187,13 @@ def manage_student():
                     'message': 'Please use format like "IT 4A" or "CS 3B"'
                 })
             
-            program_id = match.group(1).upper()  # IT, CS, ACT
-            year_level = int(match.group(2))     # 1, 2, 3, 4
-            section_name = match.group(3).upper()  # A, B, C
+            program_id = match.group(1).upper()
+            year_level = int(match.group(2))
+            section_name = match.group(3).upper()
             
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             
-            #    CORRECTED: Get student info with proper schema
             cursor.execute("""
                  SELECT 
                     s.first_name, 
@@ -19207,16 +19230,12 @@ def manage_student():
                 })
             
             if target_section_id:
-            
-            # Find the target section_id
                 cursor.execute("""
                     SELECT section_id, section_name, year_level
                     FROM year_sections  
                     WHERE section_id = %s AND status = 'active'
-            """, (target_section_id,))
-                
+                """, (target_section_id,))
             else:
-
                 cursor.execute("""
                     SELECT section_id, section_name, year_level 
                     FROM year_sections 
@@ -19226,8 +19245,8 @@ def manage_student():
                     AND status = 'active'
                     LIMIT 1
                 """, (program_id, year_level, section_name))
-            target_section = cursor.fetchone()
 
+            target_section = cursor.fetchone()
             
             if not target_section:
                 cursor.close()
@@ -19238,7 +19257,6 @@ def manage_student():
                     'message': f'Section {program_id} {year_level}{section_name} was not found or is not active'
                 })
             
-            #    CORRECTED: Update student's section_id
             cursor.execute("""
                 UPDATE students 
                 SET section_id = %s
@@ -19265,7 +19283,6 @@ def manage_student():
             remarks = student_data.get('remarks', 'Excused')
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            #    GET SESSION SUBJECT INFORMATION
             subject_code = 'Unknown Subject'
             subject_name = 'Unknown Subject'
             room = 'Unknown Room'
@@ -19296,7 +19313,6 @@ def manage_student():
             cursor = conn.cursor(dictionary=True)
             
             try:
-                # Check if student exists in students table (regular student)
                 cursor.execute("""
                     SELECT first_name, last_name 
                     FROM students 
@@ -19305,10 +19321,8 @@ def manage_student():
                 student = cursor.fetchone()
                 
                 if student:
-                    # REGULAR STUDENT
                     student_name = f"{student['first_name']} {student['last_name']}"
                     
-                    #      Check for existing attendance record in CURRENT SESSION
                     cursor.execute("""
                         SELECT id, status FROM attendance 
                         WHERE student_id = %s AND session_id = %s
@@ -19318,20 +19332,22 @@ def manage_student():
                     existing_record = cursor.fetchone()
                     
                     if existing_record:
-                        #    UPDATE existing record (PREVENTS DUPLICATE)
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = 'excused', remarks = %s, timestamp = %s,
-                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s,
+                                is_locked = 0
                             WHERE id = %s
                         """, (remarks, current_time, subject_code, subject_name, room, section_id, existing_record['id']))
                         action_type = "updated"
                     else:
                         cursor.execute("""
                             INSERT INTO attendance 
-                            (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (student_id, student_name, current_time, 'student', 'excused', current_session_id, remarks, subject_code, subject_name, room, section_id))
+                            (student_id, name, timestamp, person_type, status, session_id, remarks,
+                             subject_code, subject_name, room, section_id, is_locked)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                        """, (student_id, student_name, current_time, 'student', 'excused',
+                              current_session_id, remarks, subject_code, subject_name, room, section_id))
                         action_type = "marked"
                     
                     conn.commit()
@@ -19363,7 +19379,8 @@ def manage_student():
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = 'excused', remarks = %s, timestamp = %s,
-                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s,
+                                is_locked = 0
                             WHERE id = %s
                         """, (remarks, current_time, subject_code, subject_name, room, section_id, temp_student['id']))
                         
@@ -19382,7 +19399,6 @@ def manage_student():
                         })
                     
                     else:
-                        # STUDENT NOT FOUND
                         cursor.close()
                         conn.close()
                         logger.error(f"  STUDENT NOT FOUND: {student_id}")
@@ -19405,20 +19421,20 @@ def manage_student():
         
         elif action == 'mark_present':
             student_id = student_data.get('student_id')
-            status = student_data.get('status', 'present')  # Can be 'present', 'late', 'absent', 'excused'
+            status = student_data.get('status', 'present')
             remarks = student_data.get('remarks', 'Manually marked')
+            # ── NEW: Read is_locked from request (0 = unlock, 1 = lock) ──
+            is_locked = int(student_data.get('is_locked', 0))
             
-            # Validate status
-            if status not in ['present', 'late', 'absent', 'excused']:
+            if status not in ['present', 'late', 'absent', 'excused', 'missing']:
                 return jsonify({
                     'success': False, 
                     'title': 'Invalid Status',
-                    'message': 'Status must be present, late, absent, or excused'
+                    'message': 'Status must be present, late, absent, excused, or missing'
                 })
             
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            #    GET SESSION SUBJECT INFORMATION
             subject_code = 'Unknown Subject'
             subject_name = 'Unknown Subject'
             room = 'Unknown Room'
@@ -19449,7 +19465,6 @@ def manage_student():
             cursor = conn.cursor(dictionary=True)
             
             try:
-                # Check if student exists
                 cursor.execute("""
                     SELECT first_name, last_name 
                     FROM students 
@@ -19458,10 +19473,8 @@ def manage_student():
                 student = cursor.fetchone()
                 
                 if student:
-                    # REGULAR STUDENT
                     student_name = f"{student['first_name']} {student['last_name']}"
                     
-                    #      Check for existing record in CURRENT SESSION
                     cursor.execute("""
                         SELECT id FROM attendance 
                         WHERE student_id = %s AND session_id = %s
@@ -19471,13 +19484,15 @@ def manage_student():
                     existing_record = cursor.fetchone()
                     
                     if existing_record:
-                        #    UPDATE existing record (PREVENTS DUPLICATE)
+                        # ── UPDATE with is_locked ──
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = %s, remarks = %s, timestamp = %s,
-                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s,
+                                is_locked = %s
                             WHERE id = %s
-                        """, (status, remarks, current_time, subject_code, subject_name, room, section_id, existing_record['id']))
+                        """, (status, remarks, current_time, subject_code, subject_name, room,
+                              section_id, is_locked, existing_record['id']))
                         conn.commit()
                         cursor.close()
                         conn.close()
@@ -19485,19 +19500,22 @@ def manage_student():
                         student_status[student_id] = status
                         
                         if DEBUG_MODE: 
-                            logger.debug(f"  MANUAL STATUS UPDATED: {student_name} -> {status}")
+                            logger.debug(f"  MANUAL STATUS UPDATED: {student_name} -> {status} (locked={is_locked})")
                         return jsonify({
                             'success': True, 
                             'title': 'Status Updated',
                             'message': f'Student {student_name} status updated to {status}'
                         })
                     else:
-                        #    INSERT new record if none exists in this session
+                        # ── INSERT with is_locked ──
                         cursor.execute("""
                             INSERT INTO attendance 
-                            (student_id, name, timestamp, person_type, status, session_id, remarks, subject_code, subject_name, room, section_id)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (student_id, student_name, current_time, 'student', status, current_session_id, remarks, subject_code, subject_name, room, section_id))
+                            (student_id, name, timestamp, person_type, status, session_id, remarks,
+                             subject_code, subject_name, room, section_id, is_locked)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (student_id, student_name, current_time, 'student', status,
+                              current_session_id, remarks, subject_code, subject_name,
+                              room, section_id, is_locked))
                         
                         conn.commit()
                         cursor.close()
@@ -19506,7 +19524,7 @@ def manage_student():
                         student_status[student_id] = status
                         
                         if DEBUG_MODE: 
-                            logger.debug(f"   MANUAL ATTENDANCE ADDED: {student_name} -> {status}")
+                            logger.debug(f"   MANUAL ATTENDANCE ADDED: {student_name} -> {status} (locked={is_locked})")
                         return jsonify({
                             'success': True, 
                             'title': 'Attendance Added',
@@ -19514,7 +19532,6 @@ def manage_student():
                         })
                 else:
                     # TEMPORARY STUDENT
-                    #      Check in CURRENT SESSION only
                     cursor.execute("""
                         SELECT id, name FROM attendance 
                         WHERE student_id IS NULL 
@@ -19526,13 +19543,15 @@ def manage_student():
                     temp_student = cursor.fetchone()
                     
                     if temp_student:
-                        #    UPDATE existing temporary student (PREVENTS DUPLICATE)
+                        # ── UPDATE temp with is_locked ──
                         cursor.execute("""
                             UPDATE attendance 
                             SET status = %s, remarks = %s, timestamp = %s,
-                                subject_code = %s, subject_name = %s, room = %s, section_id = %s
+                                subject_code = %s, subject_name = %s, room = %s, section_id = %s,
+                                is_locked = %s
                             WHERE id = %s
-                        """, (status, remarks, current_time, subject_code, subject_name, room, section_id, temp_student['id']))
+                        """, (status, remarks, current_time, subject_code, subject_name, room,
+                              section_id, is_locked, temp_student['id']))
                         
                         conn.commit()
                         cursor.close()
@@ -19541,7 +19560,7 @@ def manage_student():
                         student_status[student_id] = status
                         
                         if DEBUG_MODE: 
-                            logger.debug(f"  TEMPORARY STUDENT STATUS UPDATED: {temp_student['name']} -> {status}")
+                            logger.debug(f"  TEMPORARY STUDENT STATUS UPDATED: {temp_student['name']} -> {status} (locked={is_locked})")
                         return jsonify({
                             'success': True, 
                             'title': 'Status Updated',
@@ -19582,6 +19601,7 @@ def manage_student():
             'title': 'System Error',
             'message': 'An error occurred while processing your request'
         })
+
     
 @app.route('/api/get_all_students')
 def get_all_students():
@@ -20182,6 +20202,7 @@ def end_session():
     """
     API 3: Finalizes the session, saves summary statistics INCLUDING DURATION
     FIXED: Prevents duplicate absent records and handles temporary students properly
+    UPDATED: Step 7 & 8 now exclude already-absent students (including auto-locked) from re-processing
     """
     print(" DEBUG: /api/end_session endpoint HIT!")
     
@@ -20198,66 +20219,71 @@ def end_session():
     try:
         with get_db_cursor() as cursor:
             print(f"  DEBUG Database connection established")
-            
+
             # 1. Get session start time AND SUBJECT INFO first
             print(f"  DEBUG Getting session start time and subject info")
-            cursor.execute("SELECT started_at, subject_code, subject_name, room FROM attendance_sessions WHERE session_id = %s", (session_id,))
+            cursor.execute("""
+                SELECT started_at, subject_code, subject_name, room 
+                FROM attendance_sessions 
+                WHERE session_id = %s
+            """, (session_id,))
             session_result = cursor.fetchone()
-            
+
             if not session_result:
                 print(f"  DEBUG Session not found: {session_id}")
-                print(f"  DEBUG Available sessions in database:")
-                # List all available sessions for debugging
-                cursor.execute("SELECT session_id, status FROM attendance_sessions ORDER BY started_at DESC LIMIT 10")
+                cursor.execute("""
+                    SELECT session_id, status 
+                    FROM attendance_sessions 
+                    ORDER BY started_at DESC LIMIT 10
+                """)
                 all_sessions = cursor.fetchall()
                 for session in all_sessions:
-                    print(f"   - {session['session_id'] if isinstance(session, dict) else session[0]} (status: {session['status'] if isinstance(session, dict) else session[1]})")
-                
+                    print(f"   - {session['session_id'] if isinstance(session, dict) else session[0]} "
+                          f"(status: {session['status'] if isinstance(session, dict) else session[1]})")
+
                 return jsonify({
-                    'success': False, 
+                    'success': False,
                     'message': f'Session not found: {session_id}',
-                    'available_sessions': [s['session_id'] if isinstance(s, dict) else s[0] for s in all_sessions]
+                    'available_sessions': [
+                        s['session_id'] if isinstance(s, dict) else s[0]
+                        for s in all_sessions
+                    ]
                 }), 404
-            
-            started_at = session_result['started_at'] if isinstance(session_result, dict) else session_result[0]
+
+            started_at   = session_result['started_at']   if isinstance(session_result, dict) else session_result[0]
             subject_code = session_result['subject_code'] if isinstance(session_result, dict) else session_result[1]
             subject_name = session_result['subject_name'] if isinstance(session_result, dict) else session_result[2]
-            room = session_result['room'] if isinstance(session_result, dict) else session_result[3]
-            
+            room         = session_result['room']         if isinstance(session_result, dict) else session_result[3]
+
             print(f"  DEBUG Session started at: {started_at}")
             print(f"  DEBUG Subject info - Code: {subject_code}, Name: {subject_name}, Room: {room}")
-            
+
             # 2. Calculate duration as TIME format (HH:MM:SS)
             from datetime import datetime, timedelta
-            ended_at = datetime.now()
+            ended_at           = datetime.now()
             duration_timedelta = ended_at - started_at
-            
-            # Convert to hours, minutes, seconds
-            total_seconds = int(duration_timedelta.total_seconds())
-            hours = total_seconds // 3600
-            minutes = (total_seconds % 3600) // 60
-            seconds = total_seconds % 60
-            
-            # Format as TIME string (HH:MM:SS)
-            duration_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            
+            total_seconds      = int(duration_timedelta.total_seconds())
+            hours              = total_seconds // 3600
+            minutes            = (total_seconds % 3600) // 60
+            seconds            = total_seconds % 60
+            duration_time      = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
             print(f"  DEBUG Calculated duration: {duration_time} (HH:MM:SS)")
-            
+
             # 3. Finalize Unrecognized Faces
             print(f"  DEBUG Processing {len(unrecognized_faces)} unrecognized faces")
             for face in unrecognized_faces:
-                face_status = face.get('status', 'skipped')
-                unrecognized_id = face.get('unrecognized_face_id') 
+                face_status    = face.get('status', 'skipped')
+                unrecognized_id = face.get('unrecognized_face_id')
 
                 if unrecognized_id:
                     try:
-                        unrecognized_sql = """
+                        notes = face.get('notes', f'Final status set to {face_status} during session end.')
+                        cursor.execute("""
                             UPDATE unrecognized_faces
                             SET final_status = %s, notes = %s
-                            WHERE id = %s AND session_id = %s;
-                        """
-                        notes = face.get('notes', f'Final status set to {face_status} during session end.')
-                        cursor.execute(unrecognized_sql, (face_status, notes, unrecognized_id, session_id))
+                            WHERE id = %s AND session_id = %s
+                        """, (face_status, notes, unrecognized_id, session_id))
                         print(f"  DEBUG Updated unrecognized face: {unrecognized_id}")
                     except Exception as e:
                         print(f"  WARNING: Could not update unrecognized face {unrecognized_id}: {e}")
@@ -20265,57 +20291,60 @@ def end_session():
 
             # 4. Get section_id for this session
             print(f"  DEBUG Getting section_id for session: {session_id}")
-            cursor.execute("SELECT section_id FROM attendance_sessions WHERE session_id = %s", (session_id,))
+            cursor.execute("""
+                SELECT section_id 
+                FROM attendance_sessions 
+                WHERE session_id = %s
+            """, (session_id,))
             session_result = cursor.fetchone()
-            
             section_id = session_result['section_id'] if isinstance(session_result, dict) else session_result[0]
             print(f"  DEBUG Found section_id: {section_id}")
 
             # 5. Get total enrolled students in this section
             print(f"  DEBUG Getting total enrolled students for section: {section_id}")
-            cursor.execute("SELECT COUNT(*) as count FROM students WHERE section_id = %s AND status = 'active'", (section_id,))
+            cursor.execute("""
+                SELECT COUNT(*) as count 
+                FROM students 
+                WHERE section_id = %s AND status = 'active'
+            """, (section_id,))
             total_enrolled_result = cursor.fetchone()
             total_enrolled = total_enrolled_result['count'] if isinstance(total_enrolled_result, dict) else total_enrolled_result[0]
             print(f"  DEBUG Total enrolled students: {total_enrolled}")
 
-            # 6. Get actual attendance counts from attendance table
+            # 6. Get current attendance counts (before inserting new absent records)
             print(f"  DEBUG Getting attendance counts for session: {session_id}")
             cursor.execute("""
                 SELECT 
                     COUNT(*) as total_attended,
                     SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count,
-                    SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_count,
+                    SUM(CASE WHEN status = 'late'    THEN 1 ELSE 0 END) as late_count,
                     SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_count,
-                    SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_count
+                    SUM(CASE WHEN status = 'absent'  THEN 1 ELSE 0 END) as absent_count
                 FROM attendance 
                 WHERE session_id = %s AND person_type = 'student'
             """, (session_id,))
             attendance_stats = cursor.fetchone()
-            
-            # Handle dictionary cursor and NULL values
+
             if attendance_stats:
                 if isinstance(attendance_stats, dict):
                     present_count = attendance_stats['present_count'] or 0
-                    late_count = attendance_stats['late_count'] or 0
+                    late_count    = attendance_stats['late_count']    or 0
                     excused_count = attendance_stats['excused_count'] or 0
-                    absent_count = attendance_stats['absent_count'] or 0
+                    absent_count  = attendance_stats['absent_count']  or 0
                     total_attended = attendance_stats['total_attended'] or 0
                 else:
-                    present_count = attendance_stats[1] or 0
-                    late_count = attendance_stats[2] or 0
-                    excused_count = attendance_stats[3] or 0
-                    absent_count = attendance_stats[4] or 0
+                    present_count  = attendance_stats[1] or 0
+                    late_count     = attendance_stats[2] or 0
+                    excused_count  = attendance_stats[3] or 0
+                    absent_count   = attendance_stats[4] or 0
                     total_attended = attendance_stats[0] or 0
             else:
                 present_count = late_count = excused_count = absent_count = total_attended = 0
 
-            print(f"  DEBUG Current attendance - Present: {present_count}, Late: {late_count}, Excused: {excused_count}, Absent: {absent_count}, Total Attended: {total_attended}")
+            print(f"  DEBUG Current attendance - Present: {present_count}, Late: {late_count}, "
+                  f"Excused: {excused_count}, Absent: {absent_count}, Total: {total_attended}")
 
-            # 7.      Calculate absent count PROPERLY (considering temporary students)
-            # Total records should equal total enrolled + temporary students
-            # But absent count should only consider enrolled students who are actually absent
-            
-            # Get count of temporary students in this session
+            # 7. Get count of temporary students in this session
             cursor.execute("""
                 SELECT COUNT(*) as temp_count 
                 FROM attendance 
@@ -20325,10 +20354,10 @@ def end_session():
             """, (session_id,))
             temp_result = cursor.fetchone()
             temp_student_count = temp_result['temp_count'] if isinstance(temp_result, dict) else temp_result[0]
-            
             print(f"  DEBUG Temporary students in session: {temp_student_count}")
-            
-            #    CORRECT absent calculation: Only enrolled students who don't have attendance records
+
+            # UPDATED: Exclude students who are ALREADY marked absent (including auto-locked absent)
+            # so they are never re-processed or double-inserted.
             cursor.execute("""
                 SELECT COUNT(*) as actual_absent_count
                 FROM students s 
@@ -20339,20 +20368,19 @@ def end_session():
                     FROM attendance 
                     WHERE session_id = %s 
                     AND student_id IS NOT NULL
-                    AND status IN ('present', 'late', 'excused')
+                    AND status IN ('present', 'late', 'excused', 'absent')
                 )
             """, (section_id, session_id))
-            
+
             absent_result = cursor.fetchone()
             actual_absent_count = absent_result['actual_absent_count'] if isinstance(absent_result, dict) else absent_result[0]
-            
-            print(f"  DEBUG Actual absent students (enrolled but not present/late/excused): {actual_absent_count}")
+            print(f"  DEBUG Students with NO attendance record at all (need absent insert): {actual_absent_count}")
 
-            # 8.      MARK ABSENT STUDENTS WITH PROPER DUPLICATE CHECK
+            # 8. MARK ABSENT — only students who have NO attendance record at all
             if actual_absent_count > 0:
                 print(f"  DEBUG Marking {actual_absent_count} students as absent")
                 try:
-                    # Get students who are enrolled but NOT marked as present/late/excused in this session
+                    # UPDATED: Same exclusion — skip anyone already with any attendance record
                     cursor.execute("""
                         SELECT s.student_id, s.first_name, s.last_name 
                         FROM students s 
@@ -20363,40 +20391,41 @@ def end_session():
                             FROM attendance 
                             WHERE session_id = %s 
                             AND student_id IS NOT NULL
-                            AND status IN ('present', 'late', 'excused')
+                            AND status IN ('present', 'late', 'excused', 'absent')
                         )
                     """, (section_id, session_id))
                     absent_students = cursor.fetchall()
-                    
+
                     print(f"  DEBUG Found {len(absent_students)} students to mark as absent")
-                    
-                    #      Check for existing absent records before inserting
+
                     absent_records_added = 0
                     for student in absent_students:
                         student_id = student['student_id'] if isinstance(student, dict) else student[0]
                         first_name = student['first_name'] if isinstance(student, dict) else student[1]
-                        last_name = student['last_name'] if isinstance(student, dict) else student[2]
-                        
-                        #    CHECK if absent record already exists for this student in this session
+                        last_name  = student['last_name']  if isinstance(student, dict) else student[2]
+
+                        # Safety duplicate check (should never trigger now, but kept as a guard)
                         cursor.execute("""
                             SELECT id FROM attendance 
-                            WHERE session_id = %s AND student_id = %s AND status = 'absent'
+                            WHERE session_id = %s AND student_id = %s
                         """, (session_id, student_id))
-                        existing_absent = cursor.fetchone()
-                        
-                        if not existing_absent:
-                            # Only insert if no absent record exists
+                        existing = cursor.fetchone()
+
+                        if not existing:
                             cursor.execute("""
                                 INSERT INTO attendance 
-                                (student_id, person_type, name, timestamp, status, session_id, section_id, subject_code, subject_name, room)
-                                VALUES (%s, 'student', %s, NOW(), 'absent', %s, %s, %s, %s, %s)
-                            """, (student_id, f"{first_name} {last_name}", session_id, section_id, subject_code, subject_name, room))
+                                (student_id, person_type, name, timestamp, status,
+                                 session_id, section_id, subject_code, subject_name, room, is_locked)
+                                VALUES (%s, 'student', %s, NOW(), 'absent', %s, %s, %s, %s, %s, 0)
+                            """, (student_id, f"{first_name} {last_name}",
+                                  session_id, section_id, subject_code, subject_name, room))
                             absent_records_added += 1
                         else:
-                            print(f"  DEBUG Absent record already exists for student {student_id}, skipping")
-                    
-                    print(f"  DEBUG Successfully inserted {absent_records_added} new absent records (skipped {len(absent_students) - absent_records_added} duplicates)")
-                    
+                            print(f"  DEBUG Record already exists for student {student_id}, skipping")
+
+                    print(f"  DEBUG Inserted {absent_records_added} new absent records "
+                          f"(skipped {len(absent_students) - absent_records_added} duplicates)")
+
                 except Exception as e:
                     print(f"  ERROR inserting absent records: {e}")
                     return jsonify({
@@ -20409,64 +20438,64 @@ def end_session():
                 SELECT 
                     COUNT(*) as total_attended,
                     SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count,
-                    SUM(CASE WHEN status = 'late' THEN 1 ELSE 0 END) as late_count,
-                    SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent_count,
+                    SUM(CASE WHEN status = 'late'    THEN 1 ELSE 0 END) as late_count,
+                    SUM(CASE WHEN status = 'absent'  THEN 1 ELSE 0 END) as absent_count,
                     SUM(CASE WHEN status = 'excused' THEN 1 ELSE 0 END) as excused_count
                 FROM attendance 
                 WHERE session_id = %s AND person_type = 'student'
             """, (session_id,))
             final_stats = cursor.fetchone()
-            
+
             if final_stats:
                 if isinstance(final_stats, dict):
                     final_present = final_stats['present_count'] or 0
-                    final_late = final_stats['late_count'] or 0
-                    final_absent = final_stats['absent_count'] or 0
+                    final_late    = final_stats['late_count']    or 0
+                    final_absent  = final_stats['absent_count']  or 0
                     final_excused = final_stats['excused_count'] or 0
-                    final_total = final_stats['total_attended'] or 0
+                    final_total   = final_stats['total_attended'] or 0
                 else:
                     final_present = final_stats[1] or 0
-                    final_late = final_stats[2] or 0
-                    final_absent = final_stats[3] or 0
+                    final_late    = final_stats[2] or 0
+                    final_absent  = final_stats[3] or 0
                     final_excused = final_stats[4] or 0
-                    final_total = final_stats[0] or 0
+                    final_total   = final_stats[0] or 0
             else:
                 final_present = final_late = final_absent = final_excused = final_total = 0
 
-            print(f"  DEBUG Final counts - Present: {final_present}, Late: {final_late}, Absent: {final_absent}, Excused: {final_excused}, Total Records: {final_total}")
+            print(f"  DEBUG Final counts - Present: {final_present}, Late: {final_late}, "
+                  f"Absent: {final_absent}, Excused: {final_excused}, Total Records: {final_total}")
 
             # 10. Update attendance_sessions with FINAL data INCLUDING DURATION
             print(f"  DEBUG Updating attendance_sessions table with duration")
-            summary_sql = """
+            cursor.execute("""
                 UPDATE attendance_sessions
                 SET ended_at = NOW(), status = 'completed',
-                    total_students = %s, present_count = %s, absent_count = %s, 
+                    total_students = %s, present_count = %s, absent_count = %s,
                     late_count = %s, excused_count = %s, duration_time = %s
-                WHERE session_id = %s;
-            """
-            cursor.execute(summary_sql, (
-                total_enrolled,  # Only count enrolled students (excludes temporary)
+                WHERE session_id = %s
+            """, (
+                total_enrolled,
                 final_present,
                 final_absent,
                 final_late,
                 final_excused,
-                duration_time,  # STORE AS TIME FORMAT
+                duration_time,
                 session_id
             ))
             print(f"  DEBUG Updated attendance_sessions successfully with duration: {duration_time}")
 
         print(f"   DEBUG Session ended successfully")
         return jsonify({
-            'success': True, 
+            'success': True,
             'message': 'Session ended successfully.',
             'stats': {
-                'total': total_enrolled,
-                'present': final_present,
-                'absent': final_absent,
-                'late': final_late,
-                'excused': final_excused,
-                'duration': duration_time,  # RETURN DURATION
-                'temporary_students': temp_student_count
+                'total':               total_enrolled,
+                'present':             final_present,
+                'absent':              final_absent,
+                'late':                final_late,
+                'excused':             final_excused,
+                'duration':            duration_time,
+                'temporary_students':  temp_student_count
             }
         }), 200
 

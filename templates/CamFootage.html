@@ -2418,6 +2418,17 @@ function calculateStatisticsFromStudentList() {
         students.forEach(student => {
             const studentElement = document.querySelector(`.student-row[data-student-id="${student.id}"]`);
             if (studentElement) {
+                // ── LOCK CHECK: If this row is DOM-locked as absent, ignore ALL backend updates ──
+                if (studentElement.getAttribute('data-locked') === 'true') {
+                    // Keep the absent status shown, never let backend override it
+                    const statusElement = studentElement.querySelector('.status');
+                    if (statusElement && statusElement.textContent.toLowerCase() !== 'absent') {
+                        statusElement.className = 'status absent';
+                        statusElement.textContent = 'Absent';
+                    }
+                    return; // skip this student entirely
+                }
+
                 const statusClass = getStatusClass(student.status);
                 const statusText = getStatusText(student.status);
                 
@@ -2427,7 +2438,7 @@ function calculateStatisticsFromStudentList() {
                     const newStatus = student.status.toLowerCase();
                     
                     if (currentStatus !== newStatus) {
-                        // NEW: Check if status change is allowed (for locked students)
+                        // Check if status change is allowed (for in-memory locked students)
                         const allowed = enhanceUpdateStudentStatuses_MissingTracking(
                             student.id, 
                             newStatus, 
@@ -2855,7 +2866,14 @@ function updateStudentList(students) {
     studentList.innerHTML = students.map(student => {
         // Determine status class and text
         let statusClass, statusText;
-        switch(student.status) {
+
+        // If student is in lockedAbsentStudents set, always render as absent
+        const isLockedAbsent = (typeof lockedAbsentStudents !== 'undefined' && lockedAbsentStudents.has(student.id))
+                               || student.is_locked;
+
+        const effectiveStatus = isLockedAbsent ? 'absent' : student.status;
+
+        switch(effectiveStatus) {
             case 'present':
                 statusClass = 'present';
                 statusText = 'Present';
@@ -2891,14 +2909,20 @@ function updateStudentList(students) {
         
         // Clean ID display
         let displayId = student.id || 'N/A';
+
+        // Lock attribute & icon
+        const lockedAttr = isLockedAbsent ? 'data-locked="true"' : '';
+        const lockIcon = isLockedAbsent
+            ? `<span class="material-icons" title="Auto-locked absent — right-click to override" style="font-size:14px;color:#f44336;vertical-align:middle;margin-left:4px;">lock</span>`
+            : '';
         
         return `
-            <div class="student-row" data-student-id="${student.id}" data-type="${student.type || 'regular'}">
+            <div class="student-row" data-student-id="${student.id}" data-type="${student.type || 'regular'}" ${lockedAttr}>
                 <div class="student-info">
                     <img src="${avatarSrc}" alt="${displayName}" 
                          class="avatar" onerror="this.src='/static/images/default-avatar.jpg'">
                     <div>
-                        <div class="student-name">${displayName}</div>
+                        <div class="student-name">${displayName}${lockIcon}</div>
                         <div class="student-id">ID: ${displayId}</div>
                     </div>
                 </div>
@@ -3445,6 +3469,14 @@ function showStatusContextMenu(x, y, studentRow) {
     const studentId = studentRow.getAttribute('data-student-id');
     const studentName = studentRow.querySelector('.student-name').textContent;
     const currentStatus = studentRow.querySelector('.status').textContent.toLowerCase();
+    const isLocked = studentRow.getAttribute('data-locked') === 'true';
+    const lockReason = studentRow.getAttribute('data-lock-reason') || '';
+    
+    const lockedBanner = isLocked ? `
+        <div style="padding: 6px 12px; background: #ffebee; border-bottom: 1px solid #ffcdd2; font-size: 12px; color: #c62828; display: flex; align-items: center; gap: 6px;">
+            <span class="material-icons" style="font-size: 14px;">lock</span>
+            Auto-locked absent — manual override below
+        </div>` : '';
     
     const menuHTML = `
         <div id="statusContextMenu" class="context-menu" style="position: fixed; top: ${y}px; left: ${x}px; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; min-width: 200px;">
@@ -3452,6 +3484,7 @@ function showStatusContextMenu(x, y, studentRow) {
                 ${studentName}
                 <div style="font-size: 12px; color: #666; font-weight: normal;">Current: ${currentStatus}</div>
             </div>
+            ${lockedBanner}
             <div class="menu-item" onclick="changeStudentStatus('${studentId}', 'present')" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;">
                    Mark as Present
             </div>
@@ -3489,6 +3522,22 @@ function closeContextMenu() {
 function changeStudentStatus(studentId, newStatus) {
     closeContextMenu();
     
+    // ── MANUAL OVERRIDE: Remove DOM lock so manual changes always win ──
+    const studentRow = document.querySelector(`.student-row[data-student-id="${studentId}"]`);
+    if (studentRow && studentRow.getAttribute('data-locked') === 'true') {
+        studentRow.removeAttribute('data-locked');
+        studentRow.removeAttribute('data-lock-reason');
+        console.log(`🔓 Manual override: removed lock from student ${studentId}`);
+    }
+    // Also remove from in-memory locked set
+    if (typeof lockedAbsentStudents !== 'undefined') {
+        lockedAbsentStudents.delete(studentId);
+    }
+    // Remove from missing tracking if present
+    if (typeof missingStudentTimestamps !== 'undefined') {
+        missingStudentTimestamps.delete(studentId);
+    }
+    
     let action, student_data;
     
     switch(newStatus) {
@@ -3500,7 +3549,8 @@ function changeStudentStatus(studentId, newStatus) {
             student_data = { 
                 student_id: studentId, 
                 status: newStatus,
-                remarks: `Manually marked as ${newStatus}`
+                remarks: `Manually marked as ${newStatus}`,
+                is_locked: 0  // Explicitly unlock in DB too
             };
             break;
         case 'excused':
